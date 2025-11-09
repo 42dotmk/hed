@@ -1,0 +1,7 @@
+-Wall
+-Wextra
+-std=c23
+-pedantic
+-O2
+-Iinclude
+-Isrc
