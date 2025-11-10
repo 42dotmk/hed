@@ -14,11 +14,10 @@ typedef struct {
 
 typedef struct {
     int enabled; 
-    WinDecor gutterLeft;
-    WinDecor gutterRight;
-    WinDecor gutterTop;
-    WinDecor gutterBottom;
-
+    WinDecor left;
+    WinDecor Right;
+    WinDecor Top;
+    WinDecor Bottom;
 } WindowDecorations;
 
 typedef struct {
