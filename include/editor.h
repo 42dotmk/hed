@@ -2,12 +2,15 @@
 #define EDITOR_H
 
 #include "buffer.h"
+#include "history.h"
+#include "quickfix.h"
 #include "sizedstr.h"
 
 #define HED_VERSION "0.2.0"
 #define TAB_STOP 4
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define MAX_BUFFERS 128
+#define CMD_HISTORY_MAX 1000
 
 #define CURSOR_STYLE_NONE "\x1b[0 q"
 #define CURSOR_STYLE_BLOCK "\x1b[1 q"
@@ -33,13 +36,28 @@ typedef struct {
     int screen_cols;
     int render_x;
     EditorMode mode;
-    char status_msg[80];
+    int show_line_numbers; /* 0=off, 1=on */
+    int relative_line_numbers; /* 0=absolute only, 1=relative (abs on current) */
+    char status_msg[256];
     char command_buf[80];
     int command_len;
     /* Clipboard (shared across buffers) */
     SizedStr clipboard;
     /* Search (shared across buffers) */
     SizedStr search_query;
+    /* Quickfix pane */
+    Qf qf;
+    /* Command history */
+    CmdHistory history;
+    /* Command-line completion (Tab) */
+    struct {
+        char **items;
+        int count;
+        int index;
+        char base[256];
+        char prefix[128];
+        int active; /* 1 when a completion set is active */
+    } cmd_complete;
 } Ed;
 
 /* Global editor state */
@@ -63,5 +81,6 @@ void ed_set_status_message(const char *fmt, ...);
 void ed_init(void);
 
 void ed_change_cursor_shape(void);
+
 
 #endif

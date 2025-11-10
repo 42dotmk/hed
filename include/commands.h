@@ -51,4 +51,31 @@ void cmd_buffer_list(const char *args);
 void cmd_buffer_switch(const char *args);
 void cmd_buffer_delete(const char *args);
 void cmd_edit(const char *args);
+void cmd_echo(const char *args);
+void cmd_history(const char *args);
+void cmd_registers(const char *args);
+void cmd_put(const char *args);
+void cmd_undo(const char *args);
+void cmd_redo(const char *args);
+void cmd_ln(const char *args);
+void cmd_rln(const char *args);
+
+/* ripgrep integration */
+void cmd_rg(const char *args);
+void cmd_fzf(const char *args);
+/* Shell → quickfix */
+void cmd_shq(const char *args);
+
+/* Quickfix commands */
+void cmd_copen(const char *args);
+void cmd_cclose(const char *args);
+void cmd_ctoggle(const char *args);
+void cmd_cadd(const char *args);
+void cmd_cclear(const char *args);
+void cmd_cnext(const char *args);
+void cmd_cprev(const char *args);
+void cmd_copenidx(const char *args);
+
+/* Helper to invoke a command programmatically (e.g., from keymaps) */
+int command_invoke(const char *name, const char *args);
 #endif

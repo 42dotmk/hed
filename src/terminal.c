@@ -197,32 +197,60 @@ void buf_scroll(void) {
     }
 }
 
+static int ln_gutter_width(void) {
+    if (!E.show_line_numbers) return 0;
+    Buffer *buf = buf_cur();
+    int maxline = 1;
+    if (buf && buf->num_rows > 0) {
+        if (E.relative_line_numbers) {
+            /* Worst-case relative value in view is roughly screen height */
+            int maxrel = E.screen_rows;
+            if (maxrel < 1) maxrel = 1;
+            maxline = maxrel;
+        } else {
+            maxline = buf->num_rows;
+        }
+    }
+    int w = 0; while (maxline > 0) { w++; maxline /= 10; }
+    if (w < 2) w = 2; /* minimum width */
+    return w;
+}
+
 void ed_draw_rows(char *ab, int *ablen, int maxlen) {
     Buffer *buf = buf_cur();
+    int gutter = ln_gutter_width();
+    int margin = gutter ? (gutter + 1) : 0; /* number + space */
+    int content_cols = E.screen_cols - margin;
+    if (content_cols < 0) content_cols = 0;
 
     for (int y = 0; y < E.screen_rows; y++) {
         int filerow = y + (buf ? buf->row_offset : 0);
+
+        /* Draw gutter */
+        if (E.show_line_numbers) {
+            if (buf && filerow < buf->num_rows) {
+                char nb[32];
+                int num = filerow + 1;
+                if (E.relative_line_numbers && buf) {
+                    int cur = buf->cursor_y;
+                    if (filerow != cur) num = abs(filerow - cur);
+                }
+                int n = snprintf(nb, sizeof(nb), "%*d ", gutter, num);
+                memcpy(&ab[*ablen], nb, n); *ablen += n;
+            } else {
+                for (int i = 0; i < margin; i++) ab[(*ablen)++] = ' ';
+            }
+        }
+
         if (!buf || filerow >= buf->num_rows) {
             if ((!buf || buf->num_rows == 0) && y == E.screen_rows / 3) {
-                char welcome[80];
-                int welcomelen = snprintf(welcome, sizeof(welcome),
-                    "Hed editor -- version %s", HED_VERSION);
-                if (welcomelen > E.screen_cols) welcomelen = E.screen_cols;
-                int padding = (E.screen_cols - welcomelen) / 2;
-                if (padding) {
-                    ab[(*ablen)++] = '~';
-                    padding--;
-                }
-                while (padding--) ab[(*ablen)++] = ' ';
-                memcpy(&ab[*ablen], welcome, welcomelen);
-                *ablen += welcomelen;
             } else {
                 ab[(*ablen)++] = '~';
             }
         } else {
             int len = buf->rows[filerow].render.len - buf->col_offset;
             if (len < 0) len = 0;
-            if (len > E.screen_cols) len = E.screen_cols;
+            if (len > content_cols) len = content_cols;
             if (len > 0) {
                 memcpy(&ab[*ablen], &buf->rows[filerow].render.data[buf->col_offset], len);
                 *ablen += len;
@@ -238,10 +266,11 @@ void ed_draw_rows(char *ab, int *ablen, int maxlen) {
 }
 
 void ed_draw_status_bar(char *ab, int *ablen, int maxlen) {
+    (void)maxlen;
     Buffer *buf = buf_cur();
 
-    memcpy(&ab[*ablen], "\x1b[7m", 4);
-    *ablen += 4;
+    // memcpy(&ab[*ablen], "\x1b[7m", 4);
+    // *ablen += 4;
 
     char status[80], rstatus[80];
     char *mode_str = "";
@@ -256,7 +285,7 @@ void ed_draw_status_bar(char *ab, int *ablen, int maxlen) {
         E.current_buffer + 1, E.num_buffers,
         buf && buf->filename ? buf->filename : "[No Name]",
         buf ? buf->num_rows : 0,
-        buf && buf->dirty ? "(modified) " : "", mode_str);
+        buf && buf->dirty ? "*" : "", mode_str);
     int rlen = snprintf(rstatus, sizeof(rstatus), "%d:%d ",
         buf ? buf->cursor_y + 1 : 1, buf ? buf->cursor_x + 1 : 1);
 
@@ -274,18 +303,42 @@ void ed_draw_status_bar(char *ab, int *ablen, int maxlen) {
             len++;
         }
     }
-    memcpy(&ab[*ablen], "\x1b[m", 3);
-    *ablen += 3;
+    // memcpy(&ab[*ablen], "\x1b[m", 3);
+    // *ablen += 3;
     ab[(*ablen)++] = '\r';
     ab[(*ablen)++] = '\n';
-    (void)maxlen;
 }
 
-void ed_draw_message_bar(char *ab, int *ablen, int maxlen) {
-    memcpy(&ab[*ablen], "\x1b[K", 3);
-    *ablen += 3;
+/* Compute how many message lines are needed for the current status message. */
+static int ed_message_lines_needed(void) {
+    /* In command mode we always show a single input line. */
+    if (E.mode == MODE_COMMAND) return 1;
 
+    const char *s = E.status_msg;
+    int cols = E.screen_cols > 0 ? E.screen_cols : 80;
+    int lines = 1;
+    int cur = 0;
+    for (const char *p = s; *p; ++p) {
+        if (*p == '\n') {
+            lines++;
+            cur = 0;
+        } else {
+            cur++;
+            if (cur >= cols) { lines++; cur = 0; }
+        }
+    }
+    if (lines < 1) lines = 1;
+    return lines;
+}
+
+/* Current frame's chosen message lines (computed in buf_refresh_screen). */
+static int g_msg_lines_current = 1;
+
+void ed_draw_message_bar(char *ab, int *ablen, int maxlen) {
+    (void)maxlen;
     if (E.mode == MODE_COMMAND) {
+        memcpy(&ab[*ablen], "\x1b[K", 3);
+        *ablen += 3;
         ab[(*ablen)++] = ':';
         int msglen = E.command_len;
         if (msglen > E.screen_cols - 1) msglen = E.screen_cols - 1;
@@ -293,16 +346,90 @@ void ed_draw_message_bar(char *ab, int *ablen, int maxlen) {
             memcpy(&ab[*ablen], E.command_buf, msglen);
             *ablen += msglen;
         }
-    } else {
-        int msglen = strlen(E.status_msg);
-        if (msglen > E.screen_cols) msglen = E.screen_cols;
-        memcpy(&ab[*ablen], E.status_msg, msglen);
-        *ablen += msglen;
+        return;
     }
+
+    /* Draw multi-line status message (wrap at screen width, respect newlines). */
+    const char *s = E.status_msg;
+    int cols = E.screen_cols > 0 ? E.screen_cols : 80;
+    int lines = g_msg_lines_current;
+    int drawn = 0;
+    const char *p = s;
+    while (drawn < lines) {
+        /* Clear this message line */
+        memcpy(&ab[*ablen], "\x1b[K", 3);
+        *ablen += 3;
+
+        int used = 0;
+        while (*p && *p != '\n' && used < cols) {
+            ab[(*ablen)++] = *p++;
+            used++;
+        }
+        /* If newline present, consume it and start next visual line. */
+        if (*p == '\n') p++;
+
+        /* Move to next terminal line if more to draw */
+        drawn++;
+        if (drawn < lines) {
+            ab[(*ablen)++] = '\r';
+            ab[(*ablen)++] = '\n';
+        }
+    }
+}
+
+static void ed_draw_quickfix(char *ab, int *ablen, int maxlen) {
     (void)maxlen;
+    if (!E.qf.open || E.qf.height <= 0) return;
+    int width = E.screen_cols;
+    int visible = E.qf.height;
+    if (visible < 1) return;
+
+    /* Header */
+    // memcpy(&ab[*ablen], "\x1b[7m", 4); *ablen += 4;
+    char hdr[128];
+    int hlen = snprintf(hdr, sizeof(hdr), " Quickfix (%d items)  j/k navigate  Enter open  q close ", E.qf.len);
+    if (hlen > width) hlen = width;
+    memcpy(&ab[*ablen], hdr, hlen); *ablen += hlen;
+    memcpy(&ab[*ablen], "\x1b[m", 3); *ablen += 3;
+    memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
+
+    /* Items */
+    int lines = visible - 1;
+    int start = E.qf.scroll;
+    for (int row = 0; row < lines; row++) {
+        int idx = start + row;
+        if (idx >= E.qf.len) {
+            memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
+            continue;
+        }
+        const QfItem *it = &E.qf.items[idx];
+        // if (idx == E.qf.sel) { memcpy(&ab[*ablen], "\x1b[7m", 4); *ablen += 4; }
+        char line[512];
+        int l = 0;
+        if (it->filename && it->filename[0]) l = snprintf(line, sizeof(line), "%s:%d:%d: %s", it->filename, it->line, it->col, it->text ? it->text : "");
+        else l = snprintf(line, sizeof(line), "%d:%d: %s", it->line, it->col, it->text ? it->text : "");
+        if (l > width) l = width;
+        if (l > 0) { memcpy(&ab[*ablen], line, l); *ablen += l; }
+        if (idx == E.qf.sel) { memcpy(&ab[*ablen], "\x1b[m", 3); *ablen += 3; }
+        memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
+    }
 }
 
 void buf_refresh_screen(void) {
+    /* Adjust available content rows based on message height. */
+    int needed = ed_message_lines_needed();
+    int old_rows = E.screen_rows;
+    /* Max message lines that fit: old_rows (content) + 1 (message default) */
+    int max_msg = old_rows + 1;
+    if (needed > max_msg) needed = max_msg;
+    g_msg_lines_current = needed;
+    int avail_rows = old_rows - (needed - 1);
+    if (E.qf.open && E.qf.height > 0) {
+        avail_rows -= E.qf.height;
+    }
+    if (avail_rows < 1) avail_rows = 1;
+    E.screen_rows = avail_rows;
+
     buf_scroll();
 
     char ab[8192];
@@ -315,13 +442,22 @@ void buf_refresh_screen(void) {
 
     ed_draw_rows(ab, &ablen, sizeof(ab));
     ed_draw_status_bar(ab, &ablen, sizeof(ab));
+    if (E.qf.open && E.qf.height > 0) {
+        ed_draw_quickfix(ab, &ablen, sizeof(ab));
+    }
     ed_draw_message_bar(ab, &ablen, sizeof(ab));
 
     Buffer *buf = buf_cur();
     char cursor_buf[32];
-    snprintf(cursor_buf, sizeof(cursor_buf), "\x1b[%d;%dH",
-        (buf ? buf->cursor_y - buf->row_offset : 0) + 1,
-        (E.render_x - (buf ? buf->col_offset : 0)) + 1);
+    int gutter = ln_gutter_width();
+    int margin = gutter ? (gutter + 1) : 0;
+    int cur_row = (buf ? buf->cursor_y - buf->row_offset : 0) + 1;
+    int cur_col = (E.render_x - (buf ? buf->col_offset : 0)) + 1 + margin;
+    if (E.qf.open && E.qf.focus) {
+        cur_row = E.screen_rows + 2; /* status bar is one line; quickfix header is next */
+        cur_col = 1;
+    }
+    snprintf(cursor_buf, sizeof(cursor_buf), "\x1b[%d;%dH", cur_row, cur_col);
     memcpy(&ab[ablen], cursor_buf, strlen(cursor_buf));
     ablen += strlen(cursor_buf);
 
@@ -329,6 +465,9 @@ void buf_refresh_screen(void) {
     ablen += 6;
 
     write(STDOUT_FILENO, ab, ablen);
+
+    /* Restore content rows */
+    E.screen_rows = old_rows;
 }
 
 void ed_set_status_message(const char *fmt, ...) {

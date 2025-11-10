@@ -1,4 +1,5 @@
 #include "keybinds.h"
+#include "commands.h"
 #include "hed.h"
 #include <sys/time.h>
 
@@ -10,7 +11,9 @@
 typedef struct {
     char *sequence;
     KeybindCallback callback;
+    CommandCallback command_callback; /* optional: invoked with cmdline */
     int mode;
+    char *desc; /* stores command line when using command_callback */
 } Keybind;
 
 /* Global keybinding storage */
@@ -60,6 +63,7 @@ static int timeout_exceeded(void) {
 /*** Default keybinding callbacks ***/
 
 /* Normal mode - mode switching */
+
 void kb_enter_insert_mode(void) {
     ed_set_mode(MODE_INSERT);
 }
@@ -151,6 +155,9 @@ void kb_search_next(void) {
     buf_find();
 }
 
+void kb_line_number_toggle(void) {
+    cmd_ln(NULL);
+}
 /* Visual mode operations */
 void kb_visual_yank(void) {
     buf_yank_line();
@@ -162,6 +169,30 @@ void kb_visual_delete(void) {
     buf_delete_line();
     ed_set_mode(MODE_NORMAL);
     ed_set_status_message("Deleted");
+}
+
+/* Undo/Redo */
+void kb_undo(void) {
+    if (undo_perform()) {
+        ed_set_status_message("Undid");
+    } else {
+        ed_set_status_message("Nothing to undo");
+    }
+}
+
+void kb_redo(void) {
+    if (redo_perform()) {
+        ed_set_status_message("Redid");
+    } else {
+        ed_set_status_message("Nothing to redo");
+    }
+}
+
+void kb_fzf(void) {
+    command_invoke("fzf", NULL);
+}
+void kb_quit_all(void) {
+    cmd_quit(NULL);
 }
 
 /* Initialize keybinding system */
@@ -182,8 +213,35 @@ void keybind_register(int mode, const char *sequence, KeybindCallback callback) 
     keybinds[keybind_count].sequence = strdup(sequence);
     keybinds[keybind_count].callback = callback;
     keybinds[keybind_count].mode = mode;
+    keybinds[keybind_count].command_callback = NULL;
+    keybinds[keybind_count].desc = NULL;
     keybind_count++;
 }
+
+static void kb_run_command(const char *cmdline) {
+    if (!cmdline) return;
+    while (*cmdline == ' ' || *cmdline == '\t' || *cmdline == ':') cmdline++;
+    const char *p = cmdline;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (p == cmdline) return;
+    char name[64];
+    size_t n = (size_t)(p - cmdline); if (n >= sizeof(name)) n = sizeof(name) - 1;
+    memcpy(name, cmdline, n); name[n] = '\0';
+    while (*p == ' ' || *p == '\t') p++;
+    const char *args = (*p ? p : NULL);
+    command_invoke(name, args);
+}
+
+void keybind_register_command(int mode, const char *sequence, const char *cmdline) {
+    if (keybind_count >= MAX_KEYBINDS) return;
+    keybinds[keybind_count].sequence = strdup(sequence);
+    keybinds[keybind_count].callback = NULL;
+    keybinds[keybind_count].command_callback = kb_run_command;
+    keybinds[keybind_count].mode = mode;
+    keybinds[keybind_count].desc = cmdline ? strdup(cmdline) : strdup("");
+    keybind_count++;
+}
+
 
 /* Clear the key buffer */
 void keybind_clear_buffer(void) {
@@ -238,9 +296,13 @@ int keybind_process(int key, int mode) {
         }
     }
 
-    /* Exact match found - execute callback */
+    /* Exact match found - execute action */
     if (exact_match >= 0) {
-        keybinds[exact_match].callback();
+        if (keybinds[exact_match].callback) {
+            keybinds[exact_match].callback();
+        } else if (keybinds[exact_match].command_callback) {
+            keybinds[exact_match].command_callback(keybinds[exact_match].desc);
+        }
         keybind_clear_buffer();
         return 1;
     }

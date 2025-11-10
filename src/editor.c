@@ -1,6 +1,113 @@
 #include "hed.h"
+#include <dirent.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 Ed E;
+
+/* --- Command-line (:) file path completion --- */
+static void cmdcomp_clear(void) {
+    if (E.cmd_complete.items) {
+        for (int i = 0; i < E.cmd_complete.count; i++) free(E.cmd_complete.items[i]);
+        free(E.cmd_complete.items);
+    }
+    E.cmd_complete.items = NULL;
+    E.cmd_complete.count = 0;
+    E.cmd_complete.index = 0;
+    E.cmd_complete.base[0] = '\0';
+    E.cmd_complete.prefix[0] = '\0';
+    E.cmd_complete.active = 0;
+}
+
+static void cmdcomp_apply_token(const char *replacement) {
+    int len = E.command_len;
+    int start = 0;
+    for (int i = len - 1; i >= 0; i--) {
+        if (E.command_buf[i] == ' ') { start = i + 1; break; }
+    }
+    int rlen = (int)strlen(replacement);
+    if (start + rlen >= (int)sizeof(E.command_buf)) rlen = (int)sizeof(E.command_buf) - 1 - start;
+    memcpy(E.command_buf + start, replacement, (size_t)rlen);
+    E.command_len = start + rlen;
+    E.command_buf[E.command_len] = '\0';
+}
+
+static void cmdcomp_build(void) {
+    cmdcomp_clear();
+    const char *home = getenv("HOME");
+    int len = E.command_len;
+    int start = 0;
+    for (int i = len - 1; i >= 0; i--) {
+        if (E.command_buf[i] == ' ') { start = i + 1; break; }
+    }
+    char token[PATH_MAX];
+    int tlen = len - start; if (tlen < 0) tlen = 0; if (tlen > (int)sizeof(token) - 1) tlen = (int)sizeof(token) - 1;
+    memcpy(token, E.command_buf + start, (size_t)tlen); token[tlen] = '\0';
+    /* Only start completion if token begins with '.', '~', or '/' */
+    if (tlen == 0) return;
+    char first = token[0];
+    if (!(first == '.' || first == '~' || first == '/')) return;
+    char full[PATH_MAX];
+    if (token[0] == '~' && home) {
+        if (token[1] == '/' || token[1] == '\0') snprintf(full, sizeof(full), "%s/%s", home, token[1] ? token + 2 - 1 : "");
+        else snprintf(full, sizeof(full), "%s", token); /* unsupported ~user */
+    } else {
+        snprintf(full, sizeof(full), "%s", token);
+    }
+    const char *slash = strrchr(full, '/');
+    char base[PATH_MAX];
+    char pref[PATH_MAX];
+    if (slash) {
+        size_t blen = (size_t)(slash - full + 1);
+        if (blen >= sizeof(base)) blen = sizeof(base) - 1;
+        memcpy(base, full, blen); base[blen] = '\0';
+        snprintf(pref, sizeof(pref), "%s", slash + 1);
+    } else {
+        base[0] = '\0'; snprintf(pref, sizeof(pref), "%s", full);
+    }
+    DIR *d = opendir(base[0] ? base : ".");
+    if (!d) return;
+    struct dirent *de;
+    int cap = 0; int count = 0; char **items = NULL;
+    while ((de = readdir(d)) != NULL) {
+        const char *name = de->d_name;
+        if (name[0] == '.' && pref[0] != '.') continue;
+        if (strncmp(name, pref, strlen(pref)) != 0) continue;
+        int isdir = 0;
+#ifdef DT_DIR
+        if (de->d_type == DT_DIR) isdir = 1;
+        if (de->d_type == DT_UNKNOWN)
+#endif
+        {
+            char path[PATH_MAX];
+            snprintf(path, sizeof(path), "%s%s", base[0] ? base : "", name);
+            struct stat st; if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) isdir = 1;
+        }
+        char cand[PATH_MAX];
+        /* Include base path so tokens like "src/" complete to "src/<entry>" */
+        snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name, isdir ? "/" : "");
+        if (count + 1 > cap) { cap = cap ? cap * 2 : 16; items = realloc(items, (size_t)cap * sizeof(char*)); }
+        items[count++] = strdup(cand);
+    }
+    closedir(d);
+    if (count == 0) { free(items); return; }
+    E.cmd_complete.items = items;
+    E.cmd_complete.count = count;
+    E.cmd_complete.index = 0;
+    snprintf(E.cmd_complete.base, sizeof(E.cmd_complete.base), "%s", base);
+    snprintf(E.cmd_complete.prefix, sizeof(E.cmd_complete.prefix), "%s", pref);
+    E.cmd_complete.active = 1;
+    cmdcomp_apply_token(items[0]);
+    ed_set_status_message("%d matches", count);
+}
+
+static void cmdcomp_next(void) {
+    if (!E.cmd_complete.active || E.cmd_complete.count == 0) { cmdcomp_build(); return; }
+    E.cmd_complete.index = (E.cmd_complete.index + 1) % E.cmd_complete.count;
+    cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
+}
+
+/* Command history moved to history.c */
 
 void ed_change_cursor_shape(void) {
     switch (E.mode) {
@@ -27,6 +134,9 @@ void ed_set_mode(EditorMode new_mode) {
 
     /* Clear keybind buffer when changing modes */
     keybind_clear_buffer();
+
+    /* Notify undo system for grouping (e.g., end insert runs) */
+    undo_on_mode_change(old_mode, new_mode);
 
     /* Fire mode change hook */
     HookModeEvent event = {old_mode, new_mode};
@@ -142,15 +252,38 @@ void ed_process_command(void) {
         /* Restore space if we modified the buffer */
         if (space) *space = ' ';
         ed_set_status_message("Unknown command: %s", E.command_buf);
+    } else {
+        /* Successful command: record to history and ':' register */
+        regs_set_cmd(E.command_buf, strlen(E.command_buf));
+        hist_add(&E.history, E.command_buf);
     }
 
     ed_set_mode(MODE_NORMAL);
     E.command_len = 0;
+    hist_reset_browse(&E.history);
+    cmdcomp_clear();
 }
 
 void ed_process_keypress(void) {
     int c = ed_read_key();
     Buffer *buf = buf_cur();
+
+    /* Quickfix focus input */
+    if (E.qf.open && E.qf.focus && E.mode != MODE_COMMAND) {
+        if (c == 'j' || c == 1003) { /* Down */
+            qf_move(&E.qf, 1);
+            return;
+        } else if (c == 'k' || c == 1002) { /* Up */
+            qf_move(&E.qf, -1);
+            return;
+        } else if (c == '\r') {
+            qf_open_selected(&E.qf);
+            return;
+        } else if (c == 'q' || c == '\x1b') {
+            E.qf.focus = 0; /* keep pane open */
+            return;
+        }
+    }
 
     if (E.mode == MODE_COMMAND) {
         if (c == '\r') {
@@ -158,12 +291,34 @@ void ed_process_keypress(void) {
         } else if (c == '\x1b') {
             E.mode = MODE_NORMAL;
             E.command_len = 0;
+            hist_reset_browse(&E.history);
+            cmdcomp_clear();
         } else if (c == 127 || c == CTRL_KEY('h')) {
             if (E.command_len > 0) E.command_len--;
+            hist_reset_browse(&E.history);
+            cmdcomp_clear();
+        } else if (c == 1002) { /* Up */
+            if (hist_browse_up(&E.history, E.command_buf, E.command_len,
+                               E.command_buf, (int)sizeof(E.command_buf))) {
+                E.command_len = (int)strlen(E.command_buf);
+            } else {
+                ed_set_status_message("No history match");
+            }
+            cmdcomp_clear();
+        } else if (c == 1003) { /* Down */
+            int restored = 0;
+            if (hist_browse_down(&E.history, E.command_buf, (int)sizeof(E.command_buf), &restored)) {
+                E.command_len = (int)strlen(E.command_buf);
+            }
+            cmdcomp_clear();
+        } else if (c == '\t') {
+            cmdcomp_next();
         } else if (!iscntrl(c) && c < 128) {
             if (E.command_len < (int)sizeof(E.command_buf) - 1) {
                 E.command_buf[E.command_len++] = c;
             }
+            hist_reset_browse(&E.history); /* typing resets browse */
+            cmdcomp_clear();
         }
         return;
     }
@@ -274,11 +429,21 @@ void ed_init(void) {
     E.status_msg[0] = '\0';
     E.command_len = 0;
     E.mode = MODE_NORMAL;  /* Direct assignment to avoid firing hook during init */
+    E.show_line_numbers = 0;
+    E.relative_line_numbers = 0;
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
+    qf_init(&E.qf);
 
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) die("get_window_size");
     E.screen_rows -= 2; /* Status bar and message bar */
+
+    /* Initialize registers */
+    regs_init();
+
+    /* Initialize undo system (4MB cap) */
+    undo_init();
+    undo_set_cap(4 * 1024 * 1024);
 
     /* Initialize hook system */
     hook_init();
@@ -288,6 +453,9 @@ void ed_init(void) {
 
     /* Initialize command system */
     command_init();
+
+    /* Load command history */
+    hist_init(&E.history);
 
     /* Create initial empty buffer */
     buf_new(NULL);

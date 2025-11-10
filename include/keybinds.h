@@ -30,6 +30,15 @@ void keybind_init(void);
 void keybind_register(int mode, const char *sequence, KeybindCallback callback);
 
 /**
+ * Register a keybinding that invokes a command (like typing :<name> <args>)
+ *
+ * @param mode     Editor mode (MODE_NORMAL, MODE_INSERT, etc.)
+ * @param sequence Key sequence (e.g., "ff", "<C-r>")
+ * @param cmdline  Command string to invoke (e.g., "echo Hello" or "rg TODO")
+ */
+void keybind_register_command(int mode, const char *sequence, const char *cmdline);
+
+/**
  * Process a key press through the keybinding system
  *
  * @param key  The key code from ed_read_key()
@@ -50,6 +59,7 @@ void keybind_clear_buffer(void);
  */
 void user_keybinds_init(void);
 
+void kb_line_number_toggle(void);
 void kb_enter_insert_mode(void);
 void kb_append_mode(void);
 void kb_enter_visual_mode(void);
@@ -65,4 +75,7 @@ void kb_cursor_bottom(void);
 void kb_search_next(void);
 void kb_visual_yank(void);
 void kb_visual_delete(void);
+void kb_undo(void);
+void kb_redo(void);
+void kb_fzf(void);
 #endif // KEYBINDS_H

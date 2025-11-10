@@ -23,5 +23,9 @@
 #include "keybinds.h"
 #include "buf_helpers.h"
 #include "commands.h"
+#include "history.h"
+#include "registers.h"
+#include "undo.h"
+#include "quickfix.h"
 
 #endif

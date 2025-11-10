@@ -279,32 +279,44 @@ void buf_insert_char(int c) {
     if (buf->cursor_y == buf->num_rows) {
         buf_row_insert(buf->num_rows, "", 0);
     }
-    buf_row_insert_char(&buf->rows[buf->cursor_y], buf->cursor_x, c);
+    int y0 = buf->cursor_y; int x0 = buf->cursor_x;
+    if (!undo_is_applying()) {
+        if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
+        char ch = (char)c;
+        undo_push_insert(y0, x0, &ch, 1, y0, x0, y0, x0 + 1);
+    }
+    buf_row_insert_char(&buf->rows[y0], x0, c);
 
     /* Fire hook */
-    HookCharEvent event = {buf, buf->cursor_y, buf->cursor_x, c};
+    HookCharEvent event = {buf, y0, x0, c};
     hook_fire_char(HOOK_CHAR_INSERT, &event);
 
-    buf->cursor_x++;
+    buf->cursor_x = x0 + 1;
 }
 
 void buf_insert_newline(void) {
     Buffer *buf = buf_cur();
     if (!buf) return;
-    if (buf->cursor_x == 0) {
+    int y0 = buf->cursor_y; int x0 = buf->cursor_x;
+    if (!undo_is_applying()) {
+        if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
+        const char nl = '\n';
+        undo_push_insert(y0, x0, &nl, 1, y0, x0, y0 + 1, 0);
+    }
+    if (x0 == 0) {
         buf_row_insert(buf->cursor_y, "", 0);
     } else {
-        Row *row = &buf->rows[buf->cursor_y];
-        const char *rest = row->chars.data + buf->cursor_x;
-        size_t rest_len = row->chars.len - buf->cursor_x;
-        buf_row_insert(buf->cursor_y + 1, rest, rest_len);
+        Row *row = &buf->rows[y0];
+        const char *rest = row->chars.data + x0;
+        size_t rest_len = row->chars.len - x0;
+        buf_row_insert(y0 + 1, rest, rest_len);
 
-        row = &buf->rows[buf->cursor_y];
-        row->chars.len = buf->cursor_x;
+        row = &buf->rows[y0];
+        row->chars.len = x0;
         row->chars.data[row->chars.len] = '\0';
         buf_row_update(row);
     }
-    buf->cursor_y++;
+    buf->cursor_y = y0 + 1;
     buf->cursor_x = 0;
 }
 
@@ -314,22 +326,33 @@ void buf_del_char(void) {
     if (buf->cursor_y == buf->num_rows) return;
     if (buf->cursor_x == 0 && buf->cursor_y == 0) return;
 
-    Row *row = &buf->rows[buf->cursor_y];
-    if (buf->cursor_x > 0) {
-        int deleted_char = (buf->cursor_x - 1 < (int)row->chars.len) ? row->chars.data[buf->cursor_x - 1] : 0;
-
-        buf_row_del_char(row, buf->cursor_x - 1);
+    int y = buf->cursor_y; int x = buf->cursor_x;
+    Row *row = &buf->rows[y];
+    if (x > 0) {
+        int deleted_char = (x - 1 < (int)row->chars.len) ? row->chars.data[x - 1] : 0;
+        if (!undo_is_applying()) {
+            char ch = (char)deleted_char;
+            undo_begin_group();
+            undo_push_delete(y, x - 1, &ch, 1, y, x, y, x - 1);
+        }
+        buf_row_del_char(row, x - 1);
 
         /* Fire hook */
-        HookCharEvent event = {buf, buf->cursor_y, buf->cursor_x - 1, deleted_char};
+        HookCharEvent event = {buf, y, x - 1, deleted_char};
         hook_fire_char(HOOK_CHAR_DELETE, &event);
 
-        buf->cursor_x--;
+        buf->cursor_x = x - 1;
     } else {
-        buf->cursor_x = buf->rows[buf->cursor_y - 1].chars.len;
-        buf_row_append(&buf->rows[buf->cursor_y - 1], &row->chars);
-        buf_row_del(buf->cursor_y);
-        buf->cursor_y--;
+        int prev_len = buf->rows[y - 1].chars.len;
+        if (!undo_is_applying()) {
+            const char nl = '\n';
+            undo_begin_group();
+            undo_push_delete(y - 1, prev_len, &nl, 1, y, x, y - 1, prev_len);
+        }
+        buf->cursor_x = prev_len;
+        buf_row_append(&buf->rows[y - 1], &row->chars);
+        buf_row_del(y);
+        buf->cursor_y = y - 1;
     }
 }
 
@@ -342,11 +365,24 @@ void buf_delete_line(void) {
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[buf->cursor_y].chars.data,
                             buf->rows[buf->cursor_y].chars.len);
+    /* Update registers: numbered delete and unnamed */
+    regs_push_delete(buf->rows[buf->cursor_y].chars.data,
+                     buf->rows[buf->cursor_y].chars.len);
 
     /* Fire hook before deletion */
     HookLineEvent event = {buf, buf->cursor_y, buf->rows[buf->cursor_y].chars.data,
                           buf->rows[buf->cursor_y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
+
+    if (!undo_is_applying()) {
+        int y0 = buf->cursor_y;
+        SizedStr cap = sstr_new();
+        sstr_append(&cap, buf->rows[y0].chars.data, buf->rows[y0].chars.len);
+        sstr_append_char(&cap, '\n');
+        undo_begin_group();
+        undo_push_delete(y0, 0, cap.data, cap.len, y0, 0, y0, 0);
+        sstr_free(&cap);
+    }
 
     buf_row_del(buf->cursor_y);
     if (buf->cursor_y >= buf->num_rows && buf->num_rows > 0)
@@ -361,6 +397,9 @@ void buf_yank_line(void) {
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[buf->cursor_y].chars.data,
                             buf->rows[buf->cursor_y].chars.len);
+    /* Update registers: yank '0' and unnamed */
+    regs_set_yank(buf->rows[buf->cursor_y].chars.data,
+                  buf->rows[buf->cursor_y].chars.len);
 }
 
 void buf_paste(void) {
@@ -368,6 +407,12 @@ void buf_paste(void) {
     if (!buf) return;
     if (E.clipboard.len == 0) return;
 
+    int at = (buf->cursor_y < buf->num_rows) ? (buf->cursor_y + 1) : buf->num_rows;
+    if (!undo_is_applying()) {
+        undo_begin_group();
+        undo_push_insert(at, 0, E.clipboard.data, E.clipboard.len,
+                         buf->cursor_y, buf->cursor_x, at, 0);
+    }
     if (buf->cursor_y < buf->num_rows) {
         buf->cursor_y++;
     }

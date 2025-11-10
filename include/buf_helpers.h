@@ -16,6 +16,10 @@ void buf_cursor_move_line_end(void);      /* Move cursor to end of line */
 void buf_cursor_move_word_forward(void);  /* Move cursor to next word */
 void buf_cursor_move_word_backward(void); /* Move cursor to previous word */
 
+/* Text-object deletions (prompt for delimiter, then delete around/inside) */
+void buf_delete_around_char(void);
+void buf_delete_inside_char(void);
+
 /* Screen positioning helpers */
 void buf_center_screen(void);             /* Center current line on screen */
 void buf_scroll_half_page_up(void);       /* Scroll up half a page */
