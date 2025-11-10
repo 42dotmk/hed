@@ -1,6 +1,9 @@
 #include "hed.h"
 
 int main(int argc, char *argv[]) {
+    log_init(".hedlog");
+    atexit(log_close);
+    log_msg("hed start argc=%d", argc);
     enable_raw_mode();
     ed_init();
 
@@ -9,6 +12,8 @@ int main(int argc, char *argv[]) {
             buf_open(argv[i]);
         }
         E.current_buffer = 0;
+        Window *win = window_cur();
+        if (win) win->buffer_index = 0;
     }
     ed_set_status_message("");
     while (1) {

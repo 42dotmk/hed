@@ -1,5 +1,8 @@
 #include "hed.h"
 #include <stdarg.h>
+#include "abuf.h"
+#include "ansi.h"
+#include "bottom_ui.h"
 
 struct termios orig_termios;
 
@@ -101,6 +104,8 @@ void buf_open(char *filename) {
         int idx = buf_new(filename);
         if (idx < 0) return;
         E.current_buffer = idx;
+        Window *win = window_cur();
+        if (win) win->buffer_index = idx;
         buf = buf_cur();
     }
 
@@ -173,38 +178,42 @@ void buf_save(void) {
 }
 
 /*** Output ***/
+static inline void ab_append_ch(Abuf *ab, char c) { ab_append(ab, &c, 1); }
 
-void buf_scroll(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+void window_scroll(Window *win) {
+    Buffer *buf = NULL;
+    if (!win) return;
+    if (E.num_buffers > 0 && win->buffer_index >= 0 && win->buffer_index < E.num_buffers)
+        buf = &E.buffers[win->buffer_index];
+    if (!buf || !win) return;
 
     E.render_x = 0;
-    if (buf->cursor_y < buf->num_rows) {
-        E.render_x = buf_row_cx_to_rx(&buf->rows[buf->cursor_y], buf->cursor_x);
+    if (win->cursor_y < buf->num_rows) {
+        E.render_x = buf_row_cx_to_rx(&buf->rows[win->cursor_y], win->cursor_x);
     }
 
-    if (buf->cursor_y < buf->row_offset) {
-        buf->row_offset = buf->cursor_y;
+    if (win->cursor_y < win->row_offset) {
+        win->row_offset = win->cursor_y;
     }
-    if (buf->cursor_y >= buf->row_offset + E.screen_rows) {
-        buf->row_offset = buf->cursor_y - E.screen_rows + 1;
+    if (win->cursor_y >= win->row_offset + win->height) {
+        win->row_offset = win->cursor_y - win->height + 1;
     }
-    if (E.render_x < buf->col_offset) {
-        buf->col_offset = E.render_x;
+    if (E.render_x < win->col_offset) {
+        win->col_offset = E.render_x;
     }
-    if (E.render_x >= buf->col_offset + E.screen_cols) {
-        buf->col_offset = E.render_x - E.screen_cols + 1;
+    if (E.render_x >= win->col_offset + win->width) {
+        win->col_offset = E.render_x - win->width + 1;
     }
 }
 
-static int ln_gutter_width(void) {
+static int ln_gutter_width(int view_rows) {
     if (!E.show_line_numbers) return 0;
     Buffer *buf = buf_cur();
     int maxline = 1;
     if (buf && buf->num_rows > 0) {
         if (E.relative_line_numbers) {
             /* Worst-case relative value in view is roughly screen height */
-            int maxrel = E.screen_rows;
+            int maxrel = view_rows;
             if (maxrel < 1) maxrel = 1;
             maxline = maxrel;
         } else {
@@ -212,19 +221,25 @@ static int ln_gutter_width(void) {
         }
     }
     int w = 0; while (maxline > 0) { w++; maxline /= 10; }
-    if (w < 2) w = 2; /* minimum width */
+    if (w < 2) w = 2;
     return w;
 }
 
-void ed_draw_rows(char *ab, int *ablen, int maxlen) {
-    Buffer *buf = buf_cur();
-    int gutter = ln_gutter_width();
+static void ed_draw_rows_win(Abuf *ab, const Window *win) {
+    Buffer *buf = NULL;
+    if (E.num_buffers > 0 && win->buffer_index >= 0 && win->buffer_index < E.num_buffers)
+        buf = &E.buffers[win->buffer_index];
+    log_msg("draw win top=%d left=%d h=%d w=%d buf=%p num_rows=%d y=%d x=%d off=%d,%d", win->top, win->left, win->height, win->width, (void*)buf, buf?buf->num_rows:-1, win->cursor_y, win->cursor_x, win->row_offset, win->col_offset);
+    int gutter = ln_gutter_width(win->height);
     int margin = gutter ? (gutter + 1) : 0; /* number + space */
-    int content_cols = E.screen_cols - margin;
+    int content_cols = win->width - margin;
     if (content_cols < 0) content_cols = 0;
 
-    for (int y = 0; y < E.screen_rows; y++) {
-        int filerow = y + (buf ? buf->row_offset : 0);
+    for (int y = 0; y < win->height; y++) {
+        int filerow = y + (buf ? win->row_offset : 0);
+
+        /* Move to start of this window row */
+        ansi_move(ab, win->top + y, win->left);
 
         /* Draw gutter */
         if (E.show_line_numbers) {
@@ -232,242 +247,165 @@ void ed_draw_rows(char *ab, int *ablen, int maxlen) {
                 char nb[32];
                 int num = filerow + 1;
                 if (E.relative_line_numbers && buf) {
-                    int cur = buf->cursor_y;
+                    int cur = win->cursor_y;
                     if (filerow != cur) num = abs(filerow - cur);
                 }
                 int n = snprintf(nb, sizeof(nb), "%*d ", gutter, num);
-                memcpy(&ab[*ablen], nb, n); *ablen += n;
+                ab_append(ab, nb, n);
             } else {
-                for (int i = 0; i < margin; i++) ab[(*ablen)++] = ' ';
+                for (int i = 0; i < margin; i++) ab_append_ch(ab, ' ');
             }
         }
 
         if (!buf || filerow >= buf->num_rows) {
-            if ((!buf || buf->num_rows == 0) && y == E.screen_rows / 3) {
+            if ((!buf || buf->num_rows == 0) && y == win->height / 3) {
             } else {
-                ab[(*ablen)++] = '~';
+                ab_append_ch(ab, '~');
             }
         } else {
-            int len = buf->rows[filerow].render.len - buf->col_offset;
+            int line_rlen = (int)buf->rows[filerow].render.len;
+            int len = line_rlen - win->col_offset;
             if (len < 0) len = 0;
             if (len > content_cols) len = content_cols;
             if (len > 0) {
-                memcpy(&ab[*ablen], &buf->rows[filerow].render.data[buf->col_offset], len);
-                *ablen += len;
+                int sel_active = (E.mode == MODE_VISUAL && win->focus);
+                int has_sel = 0;
+                int sel_start_rx = 0, sel_end_rx = 0;
+                if (sel_active) {
+                    int ay = win->visual_start_y, ax = win->visual_start_x;
+                    int by = win->cursor_y, bx = win->cursor_x;
+                    int sy = ay, sx = ax, ey = by, ex = bx;
+                    if (sy > ey || (sy == ey && sx > ex)) {
+                        sy = by; sx = bx; ey = ay; ex = ax;
+                    }
+                    if (filerow >= sy && filerow <= ey) {
+                        has_sel = 1;
+                        if (sy == ey) {
+                            int rs = buf_row_cx_to_rx(&buf->rows[filerow], sx);
+                            int re = buf_row_cx_to_rx(&buf->rows[filerow], ex);
+                            sel_start_rx = rs; sel_end_rx = re;
+                        } else if (filerow == sy) {
+                            int rs = buf_row_cx_to_rx(&buf->rows[filerow], sx);
+                            sel_start_rx = rs; sel_end_rx = line_rlen;
+                        } else if (filerow == ey) {
+                            int re = buf_row_cx_to_rx(&buf->rows[filerow], ex);
+                            sel_start_rx = 0; sel_end_rx = re;
+                        } else {
+                            sel_start_rx = 0; sel_end_rx = line_rlen;
+                        }
+                        if (sel_start_rx < 0) sel_start_rx = 0;
+                        if (sel_end_rx > line_rlen) sel_end_rx = line_rlen;
+                        if (sel_end_rx < sel_start_rx) has_sel = 0;
+                    }
+                }
+
+                #define APPEND_SLICE(start_rx_, slice_cols_) do { \
+                    int __sr = (start_rx_); int __len = (slice_cols_); \
+                    if (__len > 0) { \
+                        if (ts_is_enabled()) { \
+                            char linebuf[4096]; \
+                            size_t wrote = ts_highlight_line(buf, filerow, linebuf, sizeof(linebuf), __sr, __len); \
+                            if (wrote > 0) { \
+                                if ((int)wrote > __len) wrote = (size_t)__len; \
+                                ab_append(ab, linebuf, (int)wrote); \
+                            } else { \
+                                if (__sr + __len > line_rlen) __len = line_rlen - __sr; \
+                                if (__len > 0) ab_append(ab, &buf->rows[filerow].render.data[__sr], __len); \
+                            } \
+                        } else { \
+                            if (__sr + __len > line_rlen) __len = line_rlen - __sr; \
+                            if (__len > 0) ab_append(ab, &buf->rows[filerow].render.data[__sr], __len); \
+                        } \
+                    } \
+                } while(0)
+
+                if (!has_sel) {
+                    APPEND_SLICE(win->col_offset, len);
+                } else {
+                    int vis_start = win->col_offset;
+                    int vis_end = win->col_offset + content_cols;
+
+                    int pre_start = vis_start;
+                    int pre_end = sel_start_rx < vis_end ? (sel_start_rx > vis_start ? sel_start_rx : vis_start) : vis_end;
+                    int pre_len = pre_end - pre_start;
+                    APPEND_SLICE(pre_start, pre_len);
+
+                    int sel_vis_start = sel_start_rx < vis_start ? vis_start : sel_start_rx;
+                    int sel_vis_end = sel_end_rx > vis_end ? vis_end : sel_end_rx;
+                    int sel_len = sel_vis_end - sel_vis_start;
+                    if (sel_len > 0) {
+                        ansi_invert_on(ab); /* inverse */
+                        APPEND_SLICE(sel_vis_start, sel_len);
+                        ansi_sgr_reset(ab);  /* reset */
+                    }
+
+                    int post_start = sel_end_rx > vis_start ? (sel_end_rx < vis_end ? sel_end_rx : vis_end) : vis_start;
+                    int post_len = vis_end - post_start;
+                    APPEND_SLICE(post_start, post_len);
+                }
+                #undef APPEND_SLICE
             }
         }
 
-        memcpy(&ab[*ablen], "\x1b[K", 3);
-        *ablen += 3;
-        ab[(*ablen)++] = '\r';
-        ab[(*ablen)++] = '\n';
-    }
-    (void)maxlen;
-}
-
-void ed_draw_status_bar(char *ab, int *ablen, int maxlen) {
-    (void)maxlen;
-    Buffer *buf = buf_cur();
-
-    // memcpy(&ab[*ablen], "\x1b[7m", 4);
-    // *ablen += 4;
-
-    char status[80], rstatus[80];
-    char *mode_str = "";
-    switch (E.mode) {
-        case MODE_NORMAL: mode_str = "NORMAL"; break;
-        case MODE_INSERT: mode_str = "INSERT"; break;
-        case MODE_VISUAL: mode_str = "VISUAL"; break;
-        case MODE_COMMAND: mode_str = "COMMAND"; break;
-    }
-
-    int len = snprintf(status, sizeof(status), " [%d/%d] %.20s - %d lines %s%s",
-        E.current_buffer + 1, E.num_buffers,
-        buf && buf->filename ? buf->filename : "[No Name]",
-        buf ? buf->num_rows : 0,
-        buf && buf->dirty ? "*" : "", mode_str);
-    int rlen = snprintf(rstatus, sizeof(rstatus), "%d:%d ",
-        buf ? buf->cursor_y + 1 : 1, buf ? buf->cursor_x + 1 : 1);
-
-    if (len > E.screen_cols) len = E.screen_cols;
-    memcpy(&ab[*ablen], status, len);
-    *ablen += len;
-
-    while (len < E.screen_cols) {
-        if (E.screen_cols - len == rlen) {
-            memcpy(&ab[*ablen], rstatus, rlen);
-            *ablen += rlen;
-            break;
-        } else {
-            ab[(*ablen)++] = ' ';
-            len++;
-        }
-    }
-    // memcpy(&ab[*ablen], "\x1b[m", 3);
-    // *ablen += 3;
-    ab[(*ablen)++] = '\r';
-    ab[(*ablen)++] = '\n';
-}
-
-/* Compute how many message lines are needed for the current status message. */
-static int ed_message_lines_needed(void) {
-    /* In command mode we always show a single input line. */
-    if (E.mode == MODE_COMMAND) return 1;
-
-    const char *s = E.status_msg;
-    int cols = E.screen_cols > 0 ? E.screen_cols : 80;
-    int lines = 1;
-    int cur = 0;
-    for (const char *p = s; *p; ++p) {
-        if (*p == '\n') {
-            lines++;
-            cur = 0;
-        } else {
-            cur++;
-            if (cur >= cols) { lines++; cur = 0; }
-        }
-    }
-    if (lines < 1) lines = 1;
-    return lines;
-}
-
-/* Current frame's chosen message lines (computed in buf_refresh_screen). */
-static int g_msg_lines_current = 1;
-
-void ed_draw_message_bar(char *ab, int *ablen, int maxlen) {
-    (void)maxlen;
-    if (E.mode == MODE_COMMAND) {
-        memcpy(&ab[*ablen], "\x1b[K", 3);
-        *ablen += 3;
-        ab[(*ablen)++] = ':';
-        int msglen = E.command_len;
-        if (msglen > E.screen_cols - 1) msglen = E.screen_cols - 1;
-        if (msglen > 0) {
-            memcpy(&ab[*ablen], E.command_buf, msglen);
-            *ablen += msglen;
-        }
-        return;
-    }
-
-    /* Draw multi-line status message (wrap at screen width, respect newlines). */
-    const char *s = E.status_msg;
-    int cols = E.screen_cols > 0 ? E.screen_cols : 80;
-    int lines = g_msg_lines_current;
-    int drawn = 0;
-    const char *p = s;
-    while (drawn < lines) {
-        /* Clear this message line */
-        memcpy(&ab[*ablen], "\x1b[K", 3);
-        *ablen += 3;
-
-        int used = 0;
-        while (*p && *p != '\n' && used < cols) {
-            ab[(*ablen)++] = *p++;
-            used++;
-        }
-        /* If newline present, consume it and start next visual line. */
-        if (*p == '\n') p++;
-
-        /* Move to next terminal line if more to draw */
-        drawn++;
-        if (drawn < lines) {
-            ab[(*ablen)++] = '\r';
-            ab[(*ablen)++] = '\n';
-        }
-    }
-}
-
-static void ed_draw_quickfix(char *ab, int *ablen, int maxlen) {
-    (void)maxlen;
-    if (!E.qf.open || E.qf.height <= 0) return;
-    int width = E.screen_cols;
-    int visible = E.qf.height;
-    if (visible < 1) return;
-
-    /* Header */
-    // memcpy(&ab[*ablen], "\x1b[7m", 4); *ablen += 4;
-    char hdr[128];
-    int hlen = snprintf(hdr, sizeof(hdr), " Quickfix (%d items)  j/k navigate  Enter open  q close ", E.qf.len);
-    if (hlen > width) hlen = width;
-    memcpy(&ab[*ablen], hdr, hlen); *ablen += hlen;
-    memcpy(&ab[*ablen], "\x1b[m", 3); *ablen += 3;
-    memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
-
-    /* Items */
-    int lines = visible - 1;
-    int start = E.qf.scroll;
-    for (int row = 0; row < lines; row++) {
-        int idx = start + row;
-        if (idx >= E.qf.len) {
-            memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
-            continue;
-        }
-        const QfItem *it = &E.qf.items[idx];
-        // if (idx == E.qf.sel) { memcpy(&ab[*ablen], "\x1b[7m", 4); *ablen += 4; }
-        char line[512];
-        int l = 0;
-        if (it->filename && it->filename[0]) l = snprintf(line, sizeof(line), "%s:%d:%d: %s", it->filename, it->line, it->col, it->text ? it->text : "");
-        else l = snprintf(line, sizeof(line), "%d:%d: %s", it->line, it->col, it->text ? it->text : "");
-        if (l > width) l = width;
-        if (l > 0) { memcpy(&ab[*ablen], line, l); *ablen += l; }
-        if (idx == E.qf.sel) { memcpy(&ab[*ablen], "\x1b[m", 3); *ablen += 3; }
-        memcpy(&ab[*ablen], "\x1b[K\r\n", 5); *ablen += 5;
+        ansi_clear_eol(ab);
     }
 }
 
 void buf_refresh_screen(void) {
-    /* Adjust available content rows based on message height. */
-    int needed = ed_message_lines_needed();
-    int old_rows = E.screen_rows;
-    /* Max message lines that fit: old_rows (content) + 1 (message default) */
-    int max_msg = old_rows + 1;
-    if (needed > max_msg) needed = max_msg;
-    g_msg_lines_current = needed;
-    int avail_rows = old_rows - (needed - 1);
-    if (E.qf.open && E.qf.height > 0) {
-        avail_rows -= E.qf.height;
+    /* Live resize: get current terminal size and compute base content rows. */
+    int term_rows = E.screen_rows + 2; /* fallback if call fails */
+    int term_cols = E.screen_cols;
+    (void)get_window_size(&term_rows, &term_cols);
+    E.screen_cols = term_cols;
+    int base_rows = term_rows > 2 ? (term_rows - 2) : term_rows;
+    log_msg("frame: term=%dx%d base_rows=%d qf=%d", term_rows, term_cols, base_rows, (E.qf.open?E.qf.height:0));
+
+    /* Compute layout and apply content rows */
+    Layout lo; layout_compute(&lo);
+    E.screen_cols = lo.term_cols;
+    E.screen_rows = lo.content_rows;
+    windows_on_resize(lo.content_rows, lo.term_cols);
+    log_msg("windows: count=%d layout=%d avail_rows=%d", E.num_windows, E.window_layout, lo.content_rows);
+
+    /* Scroll active window */
+    Window *win = window_cur();
+    window_scroll(win);
+
+    Abuf ab; ab_init(&ab);
+    ansi_hide_cursor(&ab);
+    ansi_home(&ab);
+
+    /* Draw all windows */
+    for (int wi = 0; wi < E.num_windows; ++wi) {
+        ed_draw_rows_win(&ab, &E.windows[wi]);
     }
-    if (avail_rows < 1) avail_rows = 1;
-    E.screen_rows = avail_rows;
+    draw_status_bar(&ab, &lo);
+    if (E.qf.open && E.qf.height > 0) draw_quickfix(&ab, &lo);
+    draw_message_bar(&ab, &lo);
 
-    buf_scroll();
-
-    char ab[8192];
-    int ablen = 0;
-
-    memcpy(&ab[ablen], "\x1b[?25l", 6);
-    ablen += 6;
-    memcpy(&ab[ablen], "\x1b[H", 3);
-    ablen += 3;
-
-    ed_draw_rows(ab, &ablen, sizeof(ab));
-    ed_draw_status_bar(ab, &ablen, sizeof(ab));
-    if (E.qf.open && E.qf.height > 0) {
-        ed_draw_quickfix(ab, &ablen, sizeof(ab));
-    }
-    ed_draw_message_bar(ab, &ablen, sizeof(ab));
-
-    Buffer *buf = buf_cur();
-    char cursor_buf[32];
-    int gutter = ln_gutter_width();
+    Buffer *buf = NULL;
+    if (E.num_buffers > 0 && win->buffer_index >= 0 && win->buffer_index < E.num_buffers)
+        buf = &E.buffers[win->buffer_index];
+    int gutter = ln_gutter_width(win->height);
     int margin = gutter ? (gutter + 1) : 0;
-    int cur_row = (buf ? buf->cursor_y - buf->row_offset : 0) + 1;
-    int cur_col = (E.render_x - (buf ? buf->col_offset : 0)) + 1 + margin;
-    if (E.qf.open && E.qf.focus) {
+    int cur_row;
+    int cur_col;
+    if (E.mode == MODE_COMMAND) {
+        int base_row = E.screen_rows + 2 + (E.qf.open && E.qf.height > 0 ? E.qf.height : 0);
+        cur_row = base_row;
+        cur_col = 2 + E.command_len; /* ':' + content */
+    } else if (E.qf.open && E.qf.focus) {
         cur_row = E.screen_rows + 2; /* status bar is one line; quickfix header is next */
         cur_col = 1;
+    } else {
+        cur_row = (buf ? win->cursor_y - win->row_offset : 0) + win->top;
+        cur_col = (E.render_x - (buf ? win->col_offset : 0)) + win->left + margin;
     }
-    snprintf(cursor_buf, sizeof(cursor_buf), "\x1b[%d;%dH", cur_row, cur_col);
-    memcpy(&ab[ablen], cursor_buf, strlen(cursor_buf));
-    ablen += strlen(cursor_buf);
+    ansi_move(&ab, cur_row, cur_col);
+    ansi_show_cursor(&ab);
 
-    memcpy(&ab[ablen], "\x1b[?25h", 6);
-    ablen += 6;
-
-    write(STDOUT_FILENO, ab, ablen);
-
-    /* Restore content rows */
-    E.screen_rows = old_rows;
+    write(STDOUT_FILENO, ab.data, (size_t)ab.len);
+    ab_free(&ab);
 }
 
 void ed_set_status_message(const char *fmt, ...) {
@@ -475,4 +413,5 @@ void ed_set_status_message(const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(E.status_msg, sizeof(E.status_msg), fmt, ap);
     va_end(ap);
+    log_msg("status: %s", E.status_msg);
 }

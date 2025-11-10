@@ -70,22 +70,24 @@ void kb_enter_insert_mode(void) {
 
 void kb_append_mode(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    Window *win = window_cur();
+    if (!buf || !win) return;
 
     ed_set_mode(MODE_INSERT);
-    if (buf->cursor_y < buf->num_rows) {
-        Row *row = &buf->rows[buf->cursor_y];
-        if (buf->cursor_x < (int)row->chars.len) buf->cursor_x++;
+    if (win->cursor_y < buf->num_rows) {
+        Row *row = &buf->rows[win->cursor_y];
+        if (win->cursor_x < (int)row->chars.len) win->cursor_x++;
     }
 }
 
 void kb_enter_visual_mode(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    Window *win = window_cur();
+    if (!buf || !win) return;
 
     ed_set_mode(MODE_VISUAL);
-    buf->visual_start_x = buf->cursor_x;
-    buf->visual_start_y = buf->cursor_y;
+    win->visual_start_x = win->cursor_x;
+    win->visual_start_y = win->cursor_y;
 }
 
 void kb_enter_command_mode(void) {
@@ -110,44 +112,47 @@ void kb_paste(void) {
 
 void kb_delete_char(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    Window *win = window_cur();
+    if (!buf || !win) return;
 
-    if (buf->cursor_y < buf->num_rows) {
-        Row *row = &buf->rows[buf->cursor_y];
-        if (buf->cursor_x < (int)row->chars.len) {
-            buf_row_del_char(row, buf->cursor_x);
+    if (win->cursor_y < buf->num_rows) {
+        Row *row = &buf->rows[win->cursor_y];
+        if (win->cursor_x < (int)row->chars.len) {
+            buf_row_del_char(row, win->cursor_x);
         }
     }
 }
 
 /* Normal mode - cursor movement */
 void kb_cursor_line_start(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-    buf->cursor_x = 0;
+    Window *win = window_cur();
+    if (!win) return;
+    win->cursor_x = 0;
 }
 
 void kb_cursor_line_end(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
-    if (buf->cursor_y < buf->num_rows) {
-        buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+    Window *win = window_cur();
+    if (!buf || !win) return;
+    if (win->cursor_y < buf->num_rows) {
+        win->cursor_x = buf->rows[win->cursor_y].chars.len;
     }
 }
 
 void kb_cursor_top(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-    buf->cursor_y = 0;
-    buf->cursor_x = 0;
+    Window *win = window_cur();
+    if (!win) return;
+    win->cursor_y = 0;
+    win->cursor_x = 0;
 }
 
 void kb_cursor_bottom(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
-    buf->cursor_y = buf->num_rows - 1;
-    if (buf->cursor_y < 0) buf->cursor_y = 0;
-    buf->cursor_x = 0;
+    Window *win = window_cur();
+    if (!buf || !win) return;
+    win->cursor_y = buf->num_rows - 1;
+    if (win->cursor_y < 0) win->cursor_y = 0;
+    win->cursor_x = 0;
 }
 
 /* Normal mode - search */
@@ -188,12 +193,6 @@ void kb_redo(void) {
     }
 }
 
-void kb_fzf(void) {
-    command_invoke("fzf", NULL);
-}
-void kb_quit_all(void) {
-    cmd_quit(NULL);
-}
 
 /* Initialize keybinding system */
 void keybind_init(void) {

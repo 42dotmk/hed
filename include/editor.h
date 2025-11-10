@@ -4,6 +4,7 @@
 #include "buffer.h"
 #include "history.h"
 #include "quickfix.h"
+#include "window.h"
 #include "sizedstr.h"
 
 #define HED_VERSION "0.2.0"
@@ -32,6 +33,11 @@ typedef struct {
     Buffer buffers[MAX_BUFFERS];
     int num_buffers;
     int current_buffer;
+    /* Windows */
+    Window windows[8];
+    int num_windows;
+    int current_window;
+    int window_layout; /* 0=single, 1=vertical split, 2=horizontal split */
     int screen_rows;
     int screen_cols;
     int render_x;

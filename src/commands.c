@@ -227,11 +227,11 @@ void cmd_put(const char *args) {
     }
     const SizedStr *s = regs_get(reg);
     if (!s || s->len == 0) { ed_set_status_message("Register %c empty", reg); return; }
-    Buffer *buf = buf_cur(); if (!buf) return;
-    int at = buf->cursor_y < buf->num_rows ? buf->cursor_y + 1 : buf->num_rows;
+    Buffer *buf = buf_cur(); Window *win = window_cur(); if (!buf || !win) return;
+    int at = win->cursor_y < buf->num_rows ? win->cursor_y + 1 : buf->num_rows;
     buf_row_insert(at, s->data, s->len);
-    buf->cursor_y = at;
-    buf->cursor_x = 0;
+    win->cursor_y = at;
+    win->cursor_x = 0;
 }
 
 void cmd_undo(const char *args) {
@@ -306,10 +306,10 @@ void cmd_cclear(const char *args) {
 }
 
 static void cadd_current(const char *msg) {
-    Buffer *b = buf_cur();
+    Buffer *b = buf_cur(); Window *win = window_cur();
     const char *fn = b && b->filename ? b->filename : NULL;
-    int line = b ? b->cursor_y + 1 : 1;
-    int col  = b ? b->cursor_x + 1 : 1;
+    int line = (b && win) ? win->cursor_y + 1 : 1;
+    int col  = (b && win) ? win->cursor_x + 1 : 1;
     qf_add(&E.qf, fn, line, col, msg ? msg : "");
 }
 
@@ -664,4 +664,30 @@ int command_execute(const char *name, const char *args) {
 
 int command_invoke(const char *name, const char *args) {
     return command_execute(name, args);
+}
+
+/* Window commands */
+void cmd_split(const char *args) {
+    (void)args;
+    windows_split_horizontal();
+}
+void cmd_vsplit(const char *args) {
+    (void)args;
+    windows_split_vertical();
+}
+void cmd_wfocus(const char *args) {
+    (void)args;
+    windows_focus_next();
+}
+
+void cmd_wclose(const char *args) {
+    (void)args;
+    windows_close_current();
+}
+
+/* Logging */
+void cmd_logclear(const char *args) {
+    (void)args;
+    log_clear();
+    ed_set_status_message("log cleared");
 }

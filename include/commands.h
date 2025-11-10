@@ -79,6 +79,13 @@ void cmd_cnext(const char *args);
 void cmd_cprev(const char *args);
 void cmd_copenidx(const char *args);
 void cmd_buffers(const char *args);
+/* Logging */
+void cmd_logclear(const char *args);
+/* Window management */
+void cmd_split(const char *args);
+void cmd_vsplit(const char *args);
+void cmd_wfocus(const char *args);
+void cmd_wclose(const char *args);
 
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);

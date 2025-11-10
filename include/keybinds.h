@@ -78,4 +78,5 @@ void kb_visual_delete(void);
 void kb_undo(void);
 void kb_redo(void);
 void kb_fzf(void);
+void kb_quit_all(void);
 #endif // KEYBINDS_H

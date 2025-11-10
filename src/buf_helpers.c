@@ -2,42 +2,55 @@
 
 /*** Cursor movement helpers ***/
 
-void buf_cursor_move_top(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+static inline void cur_sync_from_window(Buffer *buf, Window *win) {
+    if (buf && win) { buf->cursor_x = win->cursor_x; buf->cursor_y = win->cursor_y; }
+}
+static inline void cur_sync_to_window(Buffer *buf, Window *win) {
+    if (buf && win) { win->cursor_x = buf->cursor_x; win->cursor_y = buf->cursor_y; }
+}
 
+void buf_cursor_move_top(void) {
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
     buf->cursor_y = 0;
     buf->cursor_x = 0;
+    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_bottom(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
     buf->cursor_y = buf->num_rows - 1;
     if (buf->cursor_y < 0) buf->cursor_y = 0;
     buf->cursor_x = 0;
+    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_line_start(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
     buf->cursor_x = 0;
+    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_line_end(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
     if (buf->cursor_y < buf->num_rows) {
         buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
     }
+    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_word_forward(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
+    if (buf->cursor_y >= buf->num_rows) { cur_sync_to_window(buf, win); return; }
 
     Row *row = &buf->rows[buf->cursor_y];
 
@@ -59,11 +72,13 @@ void buf_cursor_move_word_forward(void) {
         buf->cursor_y++;
         buf->cursor_x = 0;
     }
+    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_word_backward(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
 
     /* If at start of line, go to end of previous line */
     if (buf->cursor_x == 0) {
@@ -73,6 +88,7 @@ void buf_cursor_move_word_backward(void) {
                 buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
             }
         }
+        cur_sync_to_window(buf, win);
         return;
     }
 
@@ -88,72 +104,70 @@ void buf_cursor_move_word_backward(void) {
     while (buf->cursor_x > 0 && !isspace(row->chars.data[buf->cursor_x - 1])) {
         buf->cursor_x--;
     }
+    cur_sync_to_window(buf, win);
 }
 
 /*** Screen positioning helpers ***/
 
 void buf_center_screen(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
-
-    /* Center current line in the middle of the screen */
-    buf->row_offset = buf->cursor_y - (E.screen_rows / 2);
-    if (buf->row_offset < 0) buf->row_offset = 0;
-    if (buf->row_offset > buf->num_rows - E.screen_rows) {
-        buf->row_offset = buf->num_rows - E.screen_rows;
-        if (buf->row_offset < 0) buf->row_offset = 0;
+    Window *win = window_cur();
+    if (!win) return;
+    /* Center current line in the middle of the current window */
+    win->row_offset = win->cursor_y - (win->height / 2);
+    if (win->row_offset < 0) win->row_offset = 0;
+    int maxoff = buf->num_rows - win->height;
+    if (win->row_offset > maxoff) {
+        win->row_offset = maxoff;
+        if (win->row_offset < 0) win->row_offset = 0;
     }
 }
 
 void buf_scroll_half_page_up(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
     int half_page = E.screen_rows / 2;
-    buf->cursor_y -= half_page;
-    if (buf->cursor_y < 0) buf->cursor_y = 0;
+    win->cursor_y -= half_page;
+    if (win->cursor_y < 0) win->cursor_y = 0;
 }
 
 void buf_scroll_half_page_down(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
     int half_page = E.screen_rows / 2;
-    buf->cursor_y += half_page;
-    if (buf->cursor_y >= buf->num_rows) {
-        buf->cursor_y = buf->num_rows - 1;
-        if (buf->cursor_y < 0) buf->cursor_y = 0;
+    win->cursor_y += half_page;
+    if (win->cursor_y >= buf->num_rows) {
+        win->cursor_y = buf->num_rows - 1;
+        if (win->cursor_y < 0) win->cursor_y = 0;
     }
 }
 
 void buf_scroll_page_up(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
-    buf->cursor_y -= E.screen_rows;
-    if (buf->cursor_y < 0) buf->cursor_y = 0;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    win->cursor_y -= E.screen_rows;
+    if (win->cursor_y < 0) win->cursor_y = 0;
 }
 
 void buf_scroll_page_down(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-
-    buf->cursor_y += E.screen_rows;
-    if (buf->cursor_y >= buf->num_rows) {
-        buf->cursor_y = buf->num_rows - 1;
-        if (buf->cursor_y < 0) buf->cursor_y = 0;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    win->cursor_y += E.screen_rows;
+    if (win->cursor_y >= buf->num_rows) {
+        win->cursor_y = buf->num_rows - 1;
+        if (win->cursor_y < 0) win->cursor_y = 0;
     }
 }
 
 /*** Line operations helpers ***/
 
 void buf_join_lines(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows - 1) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows - 1) return;
 
     /* Append next line to current line with a space */
-    Row *current = &buf->rows[buf->cursor_y];
-    Row *next = &buf->rows[buf->cursor_y + 1];
+    Row *current = &buf->rows[win->cursor_y];
+    Row *next = &buf->rows[win->cursor_y + 1];
 
     /* Add space if current line doesn't end with one */
     if (current->chars.len > 0 &&
@@ -165,49 +179,46 @@ void buf_join_lines(void) {
     buf_row_append(current, &next->chars);
 
     /* Delete next line */
-    buf_row_del(buf->cursor_y + 1);
+    buf_row_del(win->cursor_y + 1);
 }
 
 void buf_duplicate_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
-
-    Row *row = &buf->rows[buf->cursor_y];
-    buf_row_insert(buf->cursor_y + 1, row->chars.data, row->chars.len);
-    buf->cursor_y++;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows) return;
+    Row *row = &buf->rows[win->cursor_y];
+    buf_row_insert(win->cursor_y + 1, row->chars.data, row->chars.len);
+    win->cursor_y++;
 }
 
 void buf_move_line_up(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y == 0 || buf->num_rows < 2) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y == 0 || buf->num_rows < 2) return;
 
     /* Swap with previous line */
-    Row temp = buf->rows[buf->cursor_y];
-    buf->rows[buf->cursor_y] = buf->rows[buf->cursor_y - 1];
-    buf->rows[buf->cursor_y - 1] = temp;
-
-    buf->cursor_y--;
+    Row temp = buf->rows[win->cursor_y];
+    buf->rows[win->cursor_y] = buf->rows[win->cursor_y - 1];
+    buf->rows[win->cursor_y - 1] = temp;
+    win->cursor_y--;
 }
 
 void buf_move_line_down(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows - 1) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows - 1) return;
 
     /* Swap with next line */
-    Row temp = buf->rows[buf->cursor_y];
-    buf->rows[buf->cursor_y] = buf->rows[buf->cursor_y + 1];
-    buf->rows[buf->cursor_y + 1] = temp;
-
-    buf->cursor_y++;
+    Row temp = buf->rows[win->cursor_y];
+    buf->rows[win->cursor_y] = buf->rows[win->cursor_y + 1];
+    buf->rows[win->cursor_y + 1] = temp;
+    win->cursor_y++;
 }
 
 /*** Text manipulation helpers ***/
 
 void buf_indent_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows) return;
 
-    Row *row = &buf->rows[buf->cursor_y];
+    Row *row = &buf->rows[win->cursor_y];
 
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
@@ -215,15 +226,15 @@ void buf_indent_line(void) {
     }
 
     buf_row_update(row);
-    buf->cursor_x += TAB_STOP;
+    win->cursor_x += TAB_STOP;
     buf->dirty++;
 }
 
 void buf_unindent_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows) return;
 
-    Row *row = &buf->rows[buf->cursor_y];
+    Row *row = &buf->rows[win->cursor_y];
 
     /* Remove up to TAB_STOP spaces from the beginning */
     int spaces_to_remove = 0;
@@ -240,8 +251,8 @@ void buf_unindent_line(void) {
     }
 
     buf_row_update(row);
-    buf->cursor_x -= spaces_to_remove;
-    if (buf->cursor_x < 0) buf->cursor_x = 0;
+    win->cursor_x -= spaces_to_remove;
+    if (win->cursor_x < 0) win->cursor_x = 0;
     buf->dirty++;
 }
 
@@ -278,14 +289,13 @@ void buf_toggle_comment(void) {
         for (int i = 0; i < comment_len; i++) {
             sstr_delete_char(&row->chars, 0);
         }
-        buf->cursor_x -= comment_len;
-        if (buf->cursor_x < 0) buf->cursor_x = 0;
+        Window *win = window_cur(); if (win) { win->cursor_x -= comment_len; if (win->cursor_x < 0) win->cursor_x = 0; }
     } else {
         /* Add comment */
         for (int i = comment_len - 1; i >= 0; i--) {
             sstr_insert_char(&row->chars, 0, comment[i]);
         }
-        buf->cursor_x += comment_len;
+        Window *win = window_cur(); if (win) { win->cursor_x += comment_len; }
     }
 
     buf_row_update(row);
@@ -295,8 +305,8 @@ void buf_toggle_comment(void) {
 /*** Navigation helpers ***/
 
 void buf_goto_line(int line_num) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
 
     /* Convert from 1-indexed to 0-indexed */
     line_num--;
@@ -304,13 +314,15 @@ void buf_goto_line(int line_num) {
     if (line_num < 0) line_num = 0;
     if (line_num >= buf->num_rows) line_num = buf->num_rows - 1;
 
-    buf->cursor_y = line_num;
-    buf->cursor_x = 0;
+    win->cursor_y = line_num;
+    win->cursor_x = 0;
 }
 
 void buf_find_matching_bracket(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
+    cur_sync_from_window(buf, win);
+    if (buf->cursor_y >= buf->num_rows) { cur_sync_to_window(buf, win); return; }
 
     Row *row = &buf->rows[buf->cursor_y];
     if (buf->cursor_x >= (int)row->chars.len) return;
@@ -352,6 +364,7 @@ void buf_find_matching_bracket(void) {
                     /* Found match */
                     buf->cursor_y = y;
                     buf->cursor_x = x;
+                    cur_sync_to_window(buf, win);
                     return;
                 }
             }
@@ -369,19 +382,20 @@ void buf_find_matching_bracket(void) {
 
     /* No match found */
     ed_set_status_message("No matching bracket found");
+    cur_sync_to_window(buf, win);
 }
 
 /*** Selection helpers ***/
 
 void buf_select_word(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || buf->cursor_y >= buf->num_rows) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win || win->cursor_y >= buf->num_rows) return;
 
-    Row *row = &buf->rows[buf->cursor_y];
+    Row *row = &buf->rows[win->cursor_y];
 
     /* Find word boundaries */
-    int start = buf->cursor_x;
-    int end = buf->cursor_x;
+    int start = win->cursor_x;
+    int end = win->cursor_x;
 
     /* Move start to beginning of word */
     while (start > 0 && !isspace(row->chars.data[start - 1])) {
@@ -394,35 +408,35 @@ void buf_select_word(void) {
     }
 
     /* Set visual selection */
-    buf->visual_start_x = start;
-    buf->visual_start_y = buf->cursor_y;
-    buf->cursor_x = end;
+    win->visual_start_x = start;
+    win->visual_start_y = win->cursor_y;
+    win->cursor_x = end;
 }
 
 void buf_select_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
 
-    buf->visual_start_x = 0;
-    buf->visual_start_y = buf->cursor_y;
+    win->visual_start_x = 0;
+    win->visual_start_y = win->cursor_y;
 
-    if (buf->cursor_y < buf->num_rows) {
-        buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+    if (win->cursor_y < buf->num_rows) {
+        win->cursor_x = buf->rows[win->cursor_y].chars.len;
     }
 }
 
 void buf_select_all(void) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!buf || !win) return;
 
-    buf->visual_start_x = 0;
-    buf->visual_start_y = 0;
+    win->visual_start_x = 0;
+    win->visual_start_y = 0;
 
-    buf->cursor_y = buf->num_rows - 1;
-    if (buf->cursor_y < 0) buf->cursor_y = 0;
+    win->cursor_y = buf->num_rows - 1;
+    if (win->cursor_y < 0) win->cursor_y = 0;
 
-    if (buf->cursor_y < buf->num_rows) {
-        buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+    if (win->cursor_y < buf->num_rows) {
+        win->cursor_x = buf->rows[win->cursor_y].chars.len;
     }
 }
 

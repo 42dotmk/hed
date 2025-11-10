@@ -131,6 +131,7 @@ void ed_set_mode(EditorMode new_mode) {
 
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
+    log_msg("mode: %d -> %d", old_mode, new_mode);
 
     /* Clear keybind buffer when changing modes */
     keybind_clear_buffer();
@@ -148,6 +149,7 @@ int ed_read_key(void) {
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
+    log_msg("key: 0x%02x", (unsigned char)c);
 
     if (c == '\x1b') {
         char seq[3];
@@ -184,48 +186,49 @@ int ed_read_key(void) {
 }
 
 void ed_move_cursor(int key) {
+    Window *win = window_cur();
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf || !win) return;
 
-    Row *row = (buf->cursor_y >= buf->num_rows) ? NULL : &buf->rows[buf->cursor_y];
+    Row *row = (win->cursor_y >= buf->num_rows) ? NULL : &buf->rows[win->cursor_y];
 
     switch (key) {
         case 1005: /* Left */
         case 'h':
-            if (buf->cursor_x != 0) {
-                buf->cursor_x--;
-            } else if (buf->cursor_y > 0) {
-                buf->cursor_y--;
-                buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+            if (win->cursor_x != 0) {
+                win->cursor_x--;
+            } else if (win->cursor_y > 0) {
+                win->cursor_y--;
+                win->cursor_x = buf->rows[win->cursor_y].chars.len;
             }
             break;
         case 1003: /* Down */
         case 'j':
-            if (buf->cursor_y < buf->num_rows - 1) {
-                buf->cursor_y++;
+            if (win->cursor_y < buf->num_rows - 1) {
+                win->cursor_y++;
             }
             break;
         case 1002: /* Up */
         case 'k':
-            if (buf->cursor_y != 0) {
-                buf->cursor_y--;
+            if (win->cursor_y != 0) {
+                win->cursor_y--;
             }
             break;
         case 1004: /* Right */
         case 'l':
-            if (row && buf->cursor_x < (int)row->chars.len) {
-                buf->cursor_x++;
-            } else if (row && buf->cursor_x == (int)row->chars.len && buf->cursor_y < buf->num_rows - 1) {
-                buf->cursor_y++;
-                buf->cursor_x = 0;
+            if (row && win->cursor_x < (int)row->chars.len) {
+                win->cursor_x++;
+            } else if (row && win->cursor_x == (int)row->chars.len && win->cursor_y < buf->num_rows - 1) {
+                win->cursor_y++;
+                win->cursor_x = 0;
             }
             break;
     }
 
-    row = (buf->cursor_y >= buf->num_rows) ? NULL : &buf->rows[buf->cursor_y];
+    row = (win->cursor_y >= buf->num_rows) ? NULL : &buf->rows[win->cursor_y];
     int rowlen = row ? row->chars.len : 0;
-    if (buf->cursor_x > rowlen) {
-        buf->cursor_x = rowlen;
+    if (win->cursor_x > rowlen) {
+        win->cursor_x = rowlen;
     }
 }
 
@@ -248,6 +251,7 @@ void ed_process_command(void) {
     }
 
     /* Execute command */
+    log_msg(":%s%s%s", cmd_name, cmd_args?" ":"", cmd_args?cmd_args:"");
     if (!command_execute(cmd_name, cmd_args)) {
         /* Restore space if we modified the buffer */
         if (space) *space = ' ';
@@ -338,7 +342,10 @@ void ed_process_keypress(void) {
         switch (c) {
             case '\x1b':
                 ed_set_mode(MODE_NORMAL);
-                if (buf && buf->cursor_x > 0) buf->cursor_x--;
+                {
+                    Window *win = window_cur();
+                    if (buf && win && win->cursor_x > 0) win->cursor_x--;
+                }
                 break;
             case '\r':
                 buf_insert_newline();
@@ -466,4 +473,7 @@ void ed_init(void) {
 
     /* Create initial empty buffer */
     buf_new(NULL);
+
+    /* Initialize windows (single full-screen window for now) */
+    windows_init();
 }

@@ -27,5 +27,8 @@
 #include "registers.h"
 #include "undo.h"
 #include "quickfix.h"
+#include "log.h"
+#include "window.h"
+#include "ts.h"
 
 #endif

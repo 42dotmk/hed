@@ -79,16 +79,16 @@ static void qf_jump_to(const QfItem *it) {
     if (it->filename) {
         buf_open((char *)it->filename);
     }
-    Buffer *b = buf_cur();
-    if (!b) return;
+    Buffer *b = buf_cur(); Window *win = window_cur();
+    if (!b || !win) return;
     if (it->line > 0) {
         buf_goto_line(it->line);
     }
     if (it->col > 0) {
-        if (b->cursor_y < b->num_rows) {
-            int max = b->rows[b->cursor_y].chars.len;
+        if (win->cursor_y < b->num_rows) {
+            int max = b->rows[win->cursor_y].chars.len;
             int cx = it->col - 1; if (cx < 0) cx = 0; if (cx > max) cx = max;
-            b->cursor_x = cx;
+            win->cursor_x = cx;
         }
     }
 }
@@ -103,4 +103,3 @@ void qf_open_idx(Qf *qf, int idx) {
     qf->sel = idx;
     qf_jump_to(&qf->items[idx]);
 }
-

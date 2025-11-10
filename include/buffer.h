@@ -21,14 +21,13 @@ typedef struct {
     int num_rows;
     int cursor_x;
     int cursor_y;
-    int row_offset;
-    int col_offset;
     char *filename;
     char *filetype;
     int dirty;
     int visual_start_x;
     int visual_start_y;
     char *cursor_style;
+    void *ts_internal; /* tree-sitter per-buffer state (opaque) */
 } Buffer;
 
 /* Buffer management */
