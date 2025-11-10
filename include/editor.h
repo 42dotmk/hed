@@ -49,6 +49,8 @@ typedef struct {
     Qf qf;
     /* Command history */
     CmdHistory history;
+    /* If set by a command, remain in MODE_COMMAND after executing it */
+    int stay_in_command;
     /* Command-line completion (Tab) */
     struct {
         char **items;

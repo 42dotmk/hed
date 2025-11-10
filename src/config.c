@@ -4,8 +4,7 @@
 #define mapi(x, y) keybind_register(MODE_INSERT, x, y)
 #define mapv(x, y) keybind_register(MODE_VISUAL, x, y)
 #define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y);
-
-#define cm(x, y) command_register(x, y)
+#define cm(name, cb, desc) command_register(name, cb, desc)
 
 
 static void on_mode_change(const HookModeEvent *event) {
@@ -43,9 +42,9 @@ void user_keybinds_init(void) {
     mapn("<C-r>", kb_redo);
     cmapn(" fs", "w");
     cmapn(" ff", "fzf");
-    cmapn(" bb", "ls");
+    cmapn(" bb", "buffers");
 
-    cmapn("<C-o>", "copen");
+    cmapn("<C-o>", "ctoggle");
     cmapn("<C-q>", "cclose");
     cmapn("<C-n>", "cnext");
     cmapn("<C-p>", "cprev");
@@ -70,38 +69,39 @@ void user_keybinds_init(void) {
 
 }
 void user_commands_init(void) { 
-    cm("q", cmd_quit);
-    cm("q!", cmd_quit_force);
-    cm("quit", cmd_quit);
-    cm("w", cmd_write);
-    cm("wq", cmd_write_quit);
-    cm("bn", cmd_buffer_next);
-    cm("bp", cmd_buffer_prev);
-    cm("ls", cmd_buffer_list);
-    cm("b", cmd_buffer_switch);
-    cm("bd", cmd_buffer_delete);
-    cm("e", cmd_edit);
-    cm("c", cmd_list_commands);
-    cm("echo", cmd_echo);
-    cm("history", cmd_history);
-    cm("reg", cmd_registers);
-    cm("regs", cmd_registers);
-    cm("put", cmd_put);
-    cm("undo", cmd_undo);
-    cm("redo", cmd_redo);
-    cm("ln", cmd_ln);
-    cm("rln", cmd_rln);
-    cm("copen", cmd_copen);
-    cm("cclose", cmd_cclose);
-    cm("ctoggle", cmd_ctoggle);
-    cm("cadd", cmd_cadd);
-    cm("cclear", cmd_cclear);
-    cm("cnext", cmd_cnext);
-    cm("cprev", cmd_cprev);
-    cm("copenidx", cmd_copenidx);
-    cm("rg", cmd_rg);
-    cm("shq", cmd_shq);
-    cm("fzf", cmd_fzf);
+    cm("q",     cmd_quit,        "quit");
+    cm("q!",    cmd_quit_force,  "quit!\n");
+    cm("quit",  cmd_quit,        "quit");
+    cm("w",     cmd_write,       "write");
+    cm("wq",    cmd_write_quit,  "write+quit");
+    cm("bn",    cmd_buffer_next, "next buf");
+    cm("bp",    cmd_buffer_prev, "prev buf");
+    cm("ls",    cmd_buffer_list, "list bufs");
+    cm("b",     cmd_buffer_switch,"switch buf");
+    cm("bd",    cmd_buffer_delete,"delete buf");
+    cm("e",     cmd_edit,        "edit file");
+    cm("c",     cmd_cpick,       "pick cmd");
+    cm("echo",  cmd_echo,        "echo");
+    cm("history", cmd_history,   "cmd hist");
+    cm("reg",   cmd_registers,   "registers");
+    cm("regs",  cmd_registers,   "registers");
+    cm("put",   cmd_put,         "put reg");
+    cm("undo",  cmd_undo,        "undo");
+    cm("redo",  cmd_redo,        "redo");
+    cm("ln",    cmd_ln,          "line nums");
+    cm("rln",   cmd_rln,         "rel nums");
+    cm("copen", cmd_copen,       "qf open");
+    cm("cclose",cmd_cclose,      "qf close");
+    cm("ctoggle",cmd_ctoggle,    "qf toggle");
+    cm("cadd",  cmd_cadd,        "qf add");
+    cm("cclear",cmd_cclear,      "qf clear");
+    cm("cnext", cmd_cnext,       "qf next");
+    cm("cprev", cmd_cprev,       "qf prev");
+    cm("copenidx", cmd_copenidx, "qf open N");
+    cm("rg",    cmd_rg,          "ripgrep");
+    cm("shq",   cmd_shq,         "shell→qf");
+    cm("cd",    cmd_cd,          "chdir");
+    cm("fzf",   cmd_fzf,         "file pick");
 }
 
 void user_hooks_init(void) {

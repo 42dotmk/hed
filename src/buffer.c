@@ -445,3 +445,41 @@ void buf_find(void) {
 
     ed_set_status_message("Not found: %s", E.search_query.data);
 }
+
+/* Reload current buffer's file from disk, discarding unsaved changes */
+void buf_reload_current(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filename) {
+        ed_set_status_message("reload: no file");
+        return;
+    }
+    /* Clear existing rows */
+    for (int i = 0; i < buf->num_rows; i++) {
+        buf_row_free(&buf->rows[i]);
+    }
+    free(buf->rows);
+    buf->rows = NULL;
+    buf->num_rows = 0;
+    buf->row_offset = buf->col_offset = 0;
+    buf->cursor_x = buf->cursor_y = 0;
+
+    /* Detect filetype (update) */
+    free(buf->filetype);
+    buf->filetype = buf_detect_filetype(buf->filename);
+
+    FILE *fp = fopen(buf->filename, "r");
+    if (!fp) {
+        ed_set_status_message("reload: cannot open %s", buf->filename);
+        buf->dirty = 0;
+        return;
+    }
+    char *line = NULL; size_t cap = 0; ssize_t len;
+    while ((len = getline(&line, &cap, fp)) != -1) {
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
+        buf_row_insert(buf->num_rows, line, (size_t)len);
+    }
+    free(line);
+    fclose(fp);
+    buf->dirty = 0;
+    ed_set_status_message("reloaded: %s", buf->filename);
+}

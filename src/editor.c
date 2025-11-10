@@ -258,10 +258,16 @@ void ed_process_command(void) {
         hist_add(&E.history, E.command_buf);
     }
 
-    ed_set_mode(MODE_NORMAL);
-    E.command_len = 0;
-    hist_reset_browse(&E.history);
-    cmdcomp_clear();
+    if (E.stay_in_command) {
+        E.stay_in_command = 0; /* consume flag: remain in command mode */
+        /* do not clear command buffer; command likely prefilled it */
+        E.mode = MODE_COMMAND;
+    } else {
+        ed_set_mode(MODE_NORMAL);
+        E.command_len = 0;
+        hist_reset_browse(&E.history);
+        cmdcomp_clear();
+    }
 }
 
 void ed_process_keypress(void) {
@@ -429,6 +435,7 @@ void ed_init(void) {
     E.status_msg[0] = '\0';
     E.command_len = 0;
     E.mode = MODE_NORMAL;  /* Direct assignment to avoid firing hook during init */
+    E.stay_in_command = 0;
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
     E.clipboard = sstr_new();

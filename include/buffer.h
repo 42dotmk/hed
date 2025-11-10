@@ -49,6 +49,8 @@ void buf_paste(void);
 void buf_find(void);
 /* Filetype detection */
 char *buf_detect_filetype(const char *filename);
+/* Reload current buffer's file content from disk (discard changes) */
+void buf_reload_current(void);
 
 /* Row operations */
 int buf_row_cx_to_rx(const Row *row, int cx);

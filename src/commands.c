@@ -1,5 +1,7 @@
 #include "hed.h"
 #include <stdlib.h>
+#include <limits.h>
+#include "fzf.h"
 
 #define MAX_COMMANDS 256
 
@@ -7,6 +9,7 @@
 typedef struct {
     char *name;
     CommandCallback callback;
+    char *desc; /* optional description */
 } Command;
 
 /* Global command storage */
@@ -29,12 +32,18 @@ void cmd_quit(const char *args) {
 
 void cmd_list_commands(const char *args) {
     (void)args;
-    char msg[256] = "Commands: ";
+    char msg[256] = "";
+    int off = 0;
     for (int i = 0; i < command_count; i++) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%s ", commands[i].name);
-        strncat(msg, buf, sizeof(msg) - strlen(msg) - 1);
+        const char *nm = commands[i].name ? commands[i].name : "";
+        const char *ds = commands[i].desc ? commands[i].desc : "";
+        int wrote = snprintf(msg + off, (int)sizeof(msg) - off,
+                             i == 0 ? "%s: %s" : " | %s: %s", nm, ds);
+        if (wrote < 0) break;
+        off += wrote;
+        if (off >= (int)sizeof(msg) - 1) { off = (int)sizeof(msg) - 1; break; }
     }
+    if (off == 0) snprintf(msg, sizeof(msg), "No commands");
     ed_set_status_message("%s", msg);
 }
 void cmd_quit_force(const char *args) {
@@ -353,6 +362,114 @@ void cmd_copenidx(const char *args) {
     qf_open_idx(&E.qf, idx - 1);
 }
 
+/* Escape single quotes for shell-safe printf (prototype) */
+static void shell_escape_single(const char *in, char *out, size_t outsz);
+
+void cmd_buffers(const char *args) {
+    (void)args;
+    if (E.num_buffers <= 0) { ed_set_status_message("no buffers"); return; }
+    /* Build list: index<TAB>name<TAB>modified<TAB>lines */
+    char pipebuf[8192]; size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\t%%s\t%%s\\n' ");
+    for (int i = 0; i < E.num_buffers; i++) {
+        char idxs[16]; snprintf(idxs, sizeof(idxs), "%d", i + 1);
+        const char *nm = E.buffers[i].filename ? E.buffers[i].filename : "[No Name]";
+        const char *mod = (E.buffers[i].dirty ? "*" : "-");
+        char lines[32]; snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
+        char eidx[32], enam[512], emod[8], elines[32];
+        shell_escape_single(idxs, eidx, sizeof(eidx));
+        shell_escape_single(nm, enam, sizeof(enam));
+        shell_escape_single(mod, emod, sizeof(emod));
+        shell_escape_single(lines, elines, sizeof(elines));
+        size_t need = strlen(eidx) + 1 + strlen(enam) + 1 + strlen(emod) + 1 + strlen(elines) + 1;
+        if (off + need + 4 >= sizeof(pipebuf)) break;
+        memcpy(pipebuf + off, eidx, strlen(eidx)); off += strlen(eidx);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, enam, strlen(enam)); off += strlen(enam);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, emod, strlen(emod)); off += strlen(emod);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, elines, strlen(elines)); off += strlen(elines);
+        pipebuf[off++] = ' ';
+    }
+    pipebuf[off] = '\0';
+
+    const char *fzf_opts = "--delimiter '\\t' --with-nth 2 "
+                           "--preview 'printf \"buf:%s modified:%s lines:%s\\n\\n\" {1} {3} {4}; "
+                           "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always --line-range :200 {2} || sed -n \"1,200p\" {2} 2>/dev/null' "
+                           "--preview-window right,60%,wrap";
+    char **sel = NULL; int cnt = 0;
+    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        fzf_free(sel, cnt); ed_set_status_message("buffers: canceled"); return; }
+    /* Parse selection: idx<TAB>name */
+    char *picked = sel[0];
+    char *tab = strchr(picked, '\t');
+    if (tab) *tab = '\0';
+    int idx = atoi(picked);
+    if (idx < 1 || idx > E.num_buffers) { fzf_free(sel, cnt); ed_set_status_message("buffers: invalid"); return; }
+    buf_switch(idx - 1);
+    ed_set_status_message("buffer %d", idx);
+    fzf_free(sel, cnt);
+}
+
+/* Command picker using fzf: :c → choose a command name, prefill and wait */
+/* Escape single quotes for shell-safe printf */
+static void shell_escape_single(const char *in, char *out, size_t outsz) {
+    size_t o = 0;
+    if (o < outsz) out[o++] = '\'';
+    for (const char *p = in; *p && o + 4 < outsz; p++) {
+        if (*p == '\'') { out[o++] = '\''; out[o++] = '\\'; out[o++] = '\''; out[o++] = '\''; }
+        else out[o++] = *p;
+    }
+    if (o < outsz) out[o++] = '\'';
+    if (o < outsz) out[o] = '\0'; else out[outsz - 1] = '\0';
+}
+
+void cmd_cpick(const char *args) {
+    (void)args;
+    /* Build printf list with name\tdesc lines for fzf preview */
+    char pipebuf[8192]; size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
+    for (int i = 0; i < command_count; i++) {
+        const char *nm = commands[i].name ? commands[i].name : "";
+        const char *ds = commands[i].desc ? commands[i].desc : "";
+        char en[256], ed[512];
+        shell_escape_single(nm, en, sizeof(en));
+        shell_escape_single(ds, ed, sizeof(ed));
+        size_t need = strlen(en) + 1 + strlen(ed) + 1;
+        if (off + need + 4 >= sizeof(pipebuf)) break;
+        memcpy(pipebuf + off, en, strlen(en)); off += strlen(en);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, ed, strlen(ed)); off += strlen(ed);
+        pipebuf[off++] = ' ';
+    }
+    pipebuf[off] = '\0';
+
+    const char *fzf_opts = "--delimiter '\t' --with-nth 1 --preview 'echo {2}' --preview-window right,60%,wrap";
+    char **sel = NULL; int cnt = 0;
+    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        ed_set_status_message("c: canceled");
+        fzf_free(sel, cnt); return;
+    }
+    /* Parse the picked line: name<TAB>desc */
+    char *picked = sel[0];
+    char *tab = strchr(picked, '\t');
+    if (tab) *tab = '\0';
+
+    /* Pre-fill command line and stay in command mode */
+    ed_set_mode(MODE_COMMAND);
+    E.command_len = 0;
+    size_t ll = strlen(picked);
+    size_t maxcopy = sizeof(E.command_buf) - 2;
+    if (ll > maxcopy) ll = maxcopy;
+    memcpy(E.command_buf, picked, ll); E.command_len = (int)ll;
+    E.command_buf[E.command_len++] = ' ';
+    E.command_buf[E.command_len] = '\0';
+    ed_set_status_message(":%s", E.command_buf);
+    E.stay_in_command = 1;
+    fzf_free(sel, cnt);
+}
+
 /* ---- ripgrep integration: :rg {pattern} ---- */
 void cmd_rg(const char *args) {
     if (!args || !*args) {
@@ -404,34 +521,28 @@ void cmd_rg(const char *args) {
  */
 void cmd_fzf(const char *args) {
     (void)args;
-    /* Build a pipeline that lists files and passes to fzf. Prefer rg --files. */
-    const char *pipeline = "(command -v rg >/dev/null 2>&1 && rg --files || find . -type f -print) | fzf -m";
-
-    /* Leave raw mode so fzf can take over the TUI cleanly. */
-    disable_raw_mode();
-    FILE *fp = popen(pipeline, "r");
-
     qf_clear(&E.qf);
-    int added = 0;
-    if (fp) {
-        char line[2048];
-        while (fgets(line, sizeof(line), fp)) {
-            size_t ll = strlen(line);
-            while (ll && (line[ll - 1] == '\n' || line[ll - 1] == '\r')) line[--ll] = '\0';
-            if (ll > 0) { qf_add(&E.qf, line, 1, 1, ""); added++; }
+    char **sel = NULL; int cnt = 0;
+    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files || find . -type f -print)";
+    const char *fzf_opts = "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain --color=always --line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null' --preview-window right,60%,wrap";
+    if (fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] && sel[0][0]) {
+        const char *picked = sel[0];
+        /* If buffer for this file exists, switch and reload; else open */
+        int found = -1;
+        for (int i = 0; i < E.num_buffers; i++) {
+            if (E.buffers[i].filename && strcmp(E.buffers[i].filename, picked) == 0) { found = i; break; }
         }
-        pclose(fp);
-    }
-
-    /* Restore raw mode and redraw. */
-    enable_raw_mode();
-
-    if (added > 0) {
-        qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("fzf: %d file(s)", added);
+        if (found >= 0) {
+            buf_switch(found);
+            buf_reload_current();
+        } else {
+            buf_open((char *)picked);
+        }
+        ed_set_status_message("opened: %s", picked);
     } else {
         ed_set_status_message("fzf: no selection");
     }
+    fzf_free(sel, cnt);
 }
 
 /* ---- shell → quickfix: :shq <command>
@@ -490,6 +601,41 @@ void cmd_shq(const char *args) {
     }
 }
 
+/* Change current working directory: :cd [path]
+ * - With no args, prints current working directory.
+ * - Supports ~ expansion.
+ */
+void cmd_cd(const char *args) {
+    char cwd[PATH_MAX];
+    if (!args || !*args) {
+        if (getcwd(cwd, sizeof(cwd))) {
+            ed_set_status_message("cwd: %s", cwd);
+        } else {
+            ed_set_status_message("cwd: (unknown)");
+        }
+        return;
+    }
+
+    while (*args == ' ' || *args == '\t') args++;
+    char path[PATH_MAX];
+    const char *home = getenv("HOME");
+    if (*args == '~' && home && (args[1] == '/' || args[1] == '\0')) {
+        snprintf(path, sizeof(path), "%s/%s", home, args[1] ? args + 2 - 1 : "");
+    } else {
+        snprintf(path, sizeof(path), "%s", args);
+    }
+
+    if (chdir(path) == 0) {
+        if (getcwd(cwd, sizeof(cwd))) {
+            ed_set_status_message("cd: %s", cwd);
+        } else {
+            ed_set_status_message("cd: ok");
+        }
+    } else {
+        ed_set_status_message("cd: %s", strerror(errno));
+    }
+}
+
 /* Initialize command system */
 void command_init(void) {
     command_count = 0;
@@ -497,13 +643,11 @@ void command_init(void) {
 }
 
 /* Register a command */
-void command_register(const char *name, CommandCallback callback) {
-    if (command_count >= MAX_COMMANDS) {
-        return;
-    }
-
+void command_register(const char *name, CommandCallback callback, const char *desc) {
+    if (command_count >= MAX_COMMANDS) return;
     commands[command_count].name = strdup(name);
     commands[command_count].callback = callback;
+    commands[command_count].desc = desc ? strdup(desc) : NULL;
     command_count++;
 }
 
