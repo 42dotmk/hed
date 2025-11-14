@@ -15,10 +15,7 @@ void enable_raw_mode(void);
 int get_cursor_position(int *rows, int *cols);
 int get_window_size(int *rows, int *cols);
 
-/* File I/O */
-char *buf_rows_to_string(int *buflen);
-void buf_open(char *filename);
-void buf_save(void);
+EdError buf_save_in(Buffer *buf);
 
 /* Output / Rendering */
 /* Scroll the active window to keep cursor visible */

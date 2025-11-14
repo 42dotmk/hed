@@ -49,50 +49,65 @@ void hook_register_char(HookType type, int mode, const char *filetype, HookCharC
     if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
         return;
     }
+    char *ft_copy = strdup(filetype);
+    if (!ft_copy) return;  /* OOM: fail gracefully */
+
     int idx = hooks[type].count++;
     hooks[type].entries[idx].callback = (void *)callback;
     hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = strdup(filetype);
+    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 void hook_register_line(HookType type, int mode, const char *filetype, HookLineCallback callback) {
     if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
         return;
     }
+    char *ft_copy = strdup(filetype);
+    if (!ft_copy) return;  /* OOM: fail gracefully */
+
     int idx = hooks[type].count++;
     hooks[type].entries[idx].callback = (void *)callback;
     hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = strdup(filetype);
+    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 void hook_register_buffer(HookType type, int mode, const char *filetype, HookBufferCallback callback) {
     if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
         return;
     }
+    char *ft_copy = strdup(filetype);
+    if (!ft_copy) return;  /* OOM: fail gracefully */
+
     int idx = hooks[type].count++;
     hooks[type].entries[idx].callback = (void *)callback;
     hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = strdup(filetype);
+    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 void hook_register_mode(HookType type, HookModeCallback callback) {
     if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
         return;
     }
+    char *ft_copy = strdup("*");
+    if (!ft_copy) return;  /* OOM: fail gracefully */
+
     int idx = hooks[type].count++;
     hooks[type].entries[idx].callback = (void *)callback;
     hooks[type].entries[idx].mode = -1;  /* Mode change hooks don't filter by mode */
-    hooks[type].entries[idx].filetype = strdup("*");
+    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 void hook_register_cursor(HookType type, int mode, const char *filetype, HookCursorCallback callback) {
     if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
         return;
     }
+    char *ft_copy = strdup(filetype);
+    if (!ft_copy) return;  /* OOM: fail gracefully */
+
     int idx = hooks[type].count++;
     hooks[type].entries[idx].callback = (void *)callback;
     hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = strdup(filetype);
+    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 /* Hook firing functions */

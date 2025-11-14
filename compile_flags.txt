@@ -2,6 +2,13 @@
 -Wextra
 -std=c23
 -pedantic
+-DUSE_TREESITTER
+-DUSE_LIBVTERM
 -O2
--Iinclude
 -Isrc
+-Isrc/ui
+-Isrc/buf
+-Isrc/lib
+-Isrc/utils
+
+-Isrc/commands

@@ -86,8 +86,27 @@ static void cmdcomp_build(void) {
         char cand[PATH_MAX];
         /* Include base path so tokens like "src/" complete to "src/<entry>" */
         snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name, isdir ? "/" : "");
-        if (count + 1 > cap) { cap = cap ? cap * 2 : 16; items = realloc(items, (size_t)cap * sizeof(char*)); }
-        items[count++] = strdup(cand);
+        if (count + 1 > cap) {
+            cap = cap ? cap * 2 : 16;
+            char **new_items = realloc(items, (size_t)cap * sizeof(char*));
+            if (!new_items) {
+                /* OOM: cleanup and abort completion */
+                for (int i = 0; i < count; i++) free(items[i]);
+                free(items);
+                closedir(d);
+                return;
+            }
+            items = new_items;
+        }
+        char *cand_copy = strdup(cand);
+        if (!cand_copy) {
+            /* OOM: cleanup and abort completion */
+            for (int i = 0; i < count; i++) free(items[i]);
+            free(items);
+            closedir(d);
+            return;
+        }
+        items[count++] = cand_copy;
     }
     closedir(d);
     if (count == 0) { free(items); return; }
@@ -131,7 +150,6 @@ void ed_set_mode(EditorMode new_mode) {
 
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
-    log_msg("mode: %d -> %d", old_mode, new_mode);
 
     /* Clear keybind buffer when changing modes */
     keybind_clear_buffer();
@@ -149,7 +167,6 @@ int ed_read_key(void) {
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
-    log_msg("key: 0x%02x", (unsigned char)c);
 
     if (c == '\x1b') {
         char seq[3];
@@ -162,19 +179,19 @@ int ed_read_key(void) {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
                 if (seq[2] == '~') {
                     switch (seq[1]) {
-                        case '3': return 127; /* Delete */
-                        case '5': return 1000; /* Page Up */
-                        case '6': return 1001; /* Page Down */
+                        case '3': return KEY_DELETE;
+                        case '5': return KEY_PAGE_UP;
+                        case '6': return KEY_PAGE_DOWN;
                     }
                 }
             } else {
                 switch (seq[1]) {
-                    case 'A': return 1002; /* Up */
-                    case 'B': return 1003; /* Down */
-                    case 'C': return 1004; /* Right */
-                    case 'D': return 1005; /* Left */
-                    case 'H': return 1006; /* Home */
-                    case 'F': return 1007; /* End */
+                    case 'A': return KEY_ARROW_UP;
+                    case 'B': return KEY_ARROW_DOWN;
+                    case 'C': return KEY_ARROW_RIGHT;
+                    case 'D': return KEY_ARROW_LEFT;
+                    case 'H': return KEY_HOME;
+                    case 'F': return KEY_END;
                 }
             }
         }
@@ -185,51 +202,30 @@ int ed_read_key(void) {
     }
 }
 
+/* Insert a single-byte or a UTF-8 multi-byte sequence as one unit */
+__attribute__((unused))
+static void insert_utf8_or_byte(int first) {
+    unsigned char uc = (unsigned char)first;
+    if (uc < 0x80) { buf_insert_char_in(buf_cur(), first); return; }
+    int need = 0;
+    if ((uc & 0xE0) == 0xC0) need = 2;
+    else if ((uc & 0xF0) == 0xE0) need = 3;
+    else if ((uc & 0xF8) == 0xF0) need = 4;
+    else { buf_insert_char_in(buf_cur(), first); return; }
+    char bytes[4]; bytes[0] = (char)first; int got = 1;
+    while (got < need) {
+        char b; int n = read(STDIN_FILENO, &b, 1);
+        if (n != 1) break;
+        unsigned char ub = (unsigned char)b;
+        bytes[got++] = b;
+        if ((ub & 0xC0) != 0x80) break; /* must be 10xxxxxx */
+    }
+    for (int i = 0; i < got; i++) buf_insert_char_in(buf_cur(), (unsigned char)bytes[i]);
+}
+
 void ed_move_cursor(int key) {
-    Window *win = window_cur();
-    Buffer *buf = buf_cur();
-    if (!buf || !win) return;
-
-    Row *row = (win->cursor_y >= buf->num_rows) ? NULL : &buf->rows[win->cursor_y];
-
-    switch (key) {
-        case 1005: /* Left */
-        case 'h':
-            if (win->cursor_x != 0) {
-                win->cursor_x--;
-            } else if (win->cursor_y > 0) {
-                win->cursor_y--;
-                win->cursor_x = buf->rows[win->cursor_y].chars.len;
-            }
-            break;
-        case 1003: /* Down */
-        case 'j':
-            if (win->cursor_y < buf->num_rows - 1) {
-                win->cursor_y++;
-            }
-            break;
-        case 1002: /* Up */
-        case 'k':
-            if (win->cursor_y != 0) {
-                win->cursor_y--;
-            }
-            break;
-        case 1004: /* Right */
-        case 'l':
-            if (row && win->cursor_x < (int)row->chars.len) {
-                win->cursor_x++;
-            } else if (row && win->cursor_x == (int)row->chars.len && win->cursor_y < buf->num_rows - 1) {
-                win->cursor_y++;
-                win->cursor_x = 0;
-            }
-            break;
-    }
-
-    row = (win->cursor_y >= buf->num_rows) ? NULL : &buf->rows[win->cursor_y];
-    int rowlen = row ? row->chars.len : 0;
-    if (win->cursor_x > rowlen) {
-        win->cursor_x = rowlen;
-    }
+    (void)key;
+    buf_move_cursor_key(key);
 }
 
 void ed_process_command(void) {
@@ -274,206 +270,248 @@ void ed_process_command(void) {
     }
 }
 
-void ed_process_keypress(void) {
-    int c = ed_read_key();
-    Buffer *buf = buf_cur();
+/* Mode-specific keypress handlers (refactored for clarity and maintainability) */
 
-    /* Quickfix focus input */
-    if (E.qf.open && E.qf.focus && E.mode != MODE_COMMAND) {
-        if (c == 'j' || c == 1003) { /* Down */
-            qf_move(&E.qf, 1);
-            return;
-        } else if (c == 'k' || c == 1002) { /* Up */
-            qf_move(&E.qf, -1);
-            return;
-        } else if (c == '\r') {
-            qf_open_selected(&E.qf);
-            return;
-        } else if (c == 'q' || c == '\x1b') {
-            E.qf.focus = 0; /* keep pane open */
-            return;
+static void handle_quickfix_keypress(int c) {
+    if (c == 'j' || c == KEY_ARROW_DOWN) { qf_move(&E.qf, 1); }
+    else if (c == 'k' || c == KEY_ARROW_UP) { qf_move(&E.qf, -1); }
+    else if (c == '\r') { qf_open_selected(&E.qf); }
+    else if (c == 'q') { qf_close(&E.qf); }
+    /* Other keys ignored in quickfix window */
+}
+
+static void handle_command_mode_keypress(int c) {
+    if (c == '\r') {
+        ed_process_command();
+    } else if (c == '\x1b') {
+        E.mode = MODE_NORMAL;
+        E.command_len = 0;
+        hist_reset_browse(&E.history);
+        cmdcomp_clear();
+    } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
+        if (E.command_len > 0) E.command_len--;
+        hist_reset_browse(&E.history);
+        cmdcomp_clear();
+    } else if (c == KEY_ARROW_UP) {
+        if (hist_browse_up(&E.history, E.command_buf, E.command_len,
+                           E.command_buf, (int)sizeof(E.command_buf))) {
+            E.command_len = (int)strlen(E.command_buf);
+        } else {
+            ed_set_status_message("No history match");
         }
+        cmdcomp_clear();
+    } else if (c == KEY_ARROW_DOWN) {
+        int restored = 0;
+        if (hist_browse_down(&E.history, E.command_buf, (int)sizeof(E.command_buf), &restored)) {
+            E.command_len = (int)strlen(E.command_buf);
+        }
+        cmdcomp_clear();
+    } else if (c == '\t') {
+        cmdcomp_next();
+    } else if (!iscntrl(c) && c < 128) {
+        if (E.command_len < (int)sizeof(E.command_buf) - 1) {
+            E.command_buf[E.command_len++] = c;
+        }
+        hist_reset_browse(&E.history);
+        cmdcomp_clear();
     }
+}
 
-    if (E.mode == MODE_COMMAND) {
-        if (c == '\r') {
-            ed_process_command();
-        } else if (c == '\x1b') {
-            E.mode = MODE_NORMAL;
-            E.command_len = 0;
-            hist_reset_browse(&E.history);
-            cmdcomp_clear();
-        } else if (c == 127 || c == CTRL_KEY('h')) {
-            if (E.command_len > 0) E.command_len--;
-            hist_reset_browse(&E.history);
-            cmdcomp_clear();
-        } else if (c == 1002) { /* Up */
-            if (hist_browse_up(&E.history, E.command_buf, E.command_len,
-                               E.command_buf, (int)sizeof(E.command_buf))) {
-                E.command_len = (int)strlen(E.command_buf);
-            } else {
-                ed_set_status_message("No history match");
-            }
-            cmdcomp_clear();
-        } else if (c == 1003) { /* Down */
-            int restored = 0;
-            if (hist_browse_down(&E.history, E.command_buf, (int)sizeof(E.command_buf), &restored)) {
-                E.command_len = (int)strlen(E.command_buf);
-            }
-            cmdcomp_clear();
-        } else if (c == '\t') {
-            cmdcomp_next();
-        } else if (!iscntrl(c) && c < 128) {
-            if (E.command_len < (int)sizeof(E.command_buf) - 1) {
-                E.command_buf[E.command_len++] = c;
-            }
-            hist_reset_browse(&E.history); /* typing resets browse */
-            cmdcomp_clear();
-        }
+static void handle_insert_mode_keypress(int c, Buffer *buf) {
+    /* Try keybindings first (e.g., Ctrl+S to save in insert mode) */
+    if (keybind_process(c, E.mode)) {
         return;
     }
 
-    if (E.mode == MODE_INSERT) {
-        /* Try keybindings first (e.g., Ctrl+S to save in insert mode) */
-        if (keybind_process(c, E.mode)) {
-            return;  /* Keybind handled the key */
+    switch (c) {
+        case '\x1b':
+            ed_set_mode(MODE_NORMAL);
+            {
+                Window *win = window_cur();
+                if (buf && win && win->cursor_x > 0) win->cursor_x--;
+            }
+            break;
+        case '\r':
+            buf_insert_newline_in(buf);
+            break;
+        case KEY_DELETE:
+        case CTRL_KEY('h'):
+            buf_del_char_in(buf);
+            break;
+        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
+        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
+            ed_move_cursor(c);
+            break;
+        default:
+            if (!iscntrl(c)) {
+                buf_insert_char_in(buf, c);
+            }
+            break;
+    }
+}
+
+static void handle_visual_mode_keypress(int c) {
+    /* Delegate to new visual mode module */
+    visual_mode_keypress(c);
+}
+
+/*
+ * Interactive search prompt.
+ * Reads a search query from the user and executes the search in the current buffer.
+ * Handles Enter (execute), Escape (cancel), and backspace during input.
+ */
+static void ed_start_search(Buffer *buf) {
+    if (!PTR_VALID(buf)) return;
+
+    /* Save current mode and enter command mode for visual feedback */
+    EditorMode saved_mode = E.mode;
+    ed_set_mode(MODE_COMMAND);
+    E.command_len = 0;
+    ed_set_status_message("Search: ");
+    ed_render_frame();
+
+    /* Read search query interactively */
+    int search_len = 0;
+    char search_buf[80];
+
+    while (1) {
+        int k = ed_read_key();
+
+        if (k == '\r') {
+            /* Execute search */
+            break;
         }
 
-        switch (c) {
-            case '\x1b':
-                ed_set_mode(MODE_NORMAL);
-                {
-                    Window *win = window_cur();
-                    if (buf && win && win->cursor_x > 0) win->cursor_x--;
-                }
-                break;
-            case '\r':
-                buf_insert_newline();
-                break;
-            case 127:
-            case CTRL_KEY('h'):
-                buf_del_char();
-                break;
-            case 1002: case 1003: case 1004: case 1005:
-                ed_move_cursor(c);
-                break;
-            default:
-                if (!iscntrl(c)) {
-                    buf_insert_char(c);
-                }
-                break;
+        if (k == '\x1b') {
+            /* Cancel search */
+            ed_set_mode(saved_mode);
+            return;
         }
-        return;
+
+        if (k == KEY_DELETE && search_len > 0) {
+            search_len--;
+        } else if (!iscntrl(k) && k >= 0 && search_len < 79) {
+            search_buf[search_len++] = (char)k;
+        }
+
+        search_buf[search_len] = '\0';
+        ed_set_status_message("Search: %s", search_buf);
+        ed_render_frame();
     }
 
-    if (E.mode == MODE_VISUAL) {
-        /* Try keybindings first */
-        if (keybind_process(c, E.mode)) {
-            return;  /* Keybind handled the key */
-        }
+    /* Update global search query and find in buffer */
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(search_buf, search_len);
+    E.mode = saved_mode;
+    buf_find_in(buf);
+}
 
-        switch (c) {
-            case '\x1b':
-                ed_set_mode(MODE_NORMAL);
-                break;
-            case 'h': case 'j': case 'k': case 'l':
-            case 1002: case 1003: case 1004: case 1005:
-                ed_move_cursor(c);
-                break;
-        }
-        return;
-    }
-
-    /* Normal mode */
-    if (!buf) return;
+static void handle_normal_mode_keypress(int c, Buffer *buf) {
+    if (!PTR_VALID(buf)) return;
 
     /* Try keybindings first */
     if (keybind_process(c, E.mode)) {
-        return;  /* Keybind handled the key */
+        return;
     }
 
     /* Fallback handlers for keys not bound */
     switch (c) {
         case 'h': case 'j': case 'k': case 'l':
-        case 1002: case 1003: case 1004: case 1005:
+        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
+        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
             ed_move_cursor(c);
             break;
         case '/':
-            /* Simple search prompt */
-            ed_set_mode(MODE_COMMAND);
-            E.command_len = 0;
-            ed_set_status_message("Search: ");
-            buf_refresh_screen();
-
-            /* Read search query */
-            int search_len = 0;
-            char search_buf[80];
-            while (1) {
-                int k = ed_read_key();
-                if (k == '\r') break;
-                if (k == '\x1b') {
-                    ed_set_mode(MODE_NORMAL);
-                    return;
-                }
-                if (k == 127 && search_len > 0) {
-                    search_len--;
-                } else if (!iscntrl(k) && k < 128 && search_len < 79) {
-                    search_buf[search_len++] = k;
-                }
-                search_buf[search_len] = '\0';
-                ed_set_status_message("Search: %s", search_buf);
-                buf_refresh_screen();
-            }
-
-            sstr_free(&E.search_query);
-            E.search_query = sstr_from(search_buf, search_len);
-            E.mode = MODE_NORMAL;
-            buf_find();
+            ed_start_search(buf);
             break;
     }
 }
 
-void ed_init(void) {
-    E.num_buffers = 0;
+/* Main keypress dispatcher - delegates to mode-specific handlers */
+void ed_process_keypress(void) {
+    int c = ed_read_key();
+    Buffer *buf = buf_cur();
+
+    /* Special case: Quickfix window input (overrides normal mode handling) */
+    Window *cwin = window_cur();
+    if (cwin && cwin->is_quickfix && E.mode != MODE_COMMAND) {
+        handle_quickfix_keypress(c);
+        return;
+    }
+
+    /* Special case: terminal pane input in normal mode */
+    if (cwin && cwin->is_term && E.mode == MODE_NORMAL) {
+        if (term_pane_handle_key(c)) {
+            return;
+        }
+    }
+
+    /* Dispatch to appropriate mode handler */
+    switch (E.mode) {
+        case MODE_COMMAND:
+            handle_command_mode_keypress(c);
+            break;
+        case MODE_INSERT:
+            handle_insert_mode_keypress(c, buf);
+            break;
+        case MODE_VISUAL:
+            handle_visual_mode_keypress(c);
+            break;
+        case MODE_NORMAL:
+            handle_normal_mode_keypress(c, buf);
+            break;
+    }
+}
+void ed_init_state(){
+    E.buffers.data = NULL;
+    E.buffers.len = 0;
+    E.buffers.cap = 0;
+    vec_reserve_typed(&E.buffers, BUFFERS_INITIAL_CAP, sizeof(Buffer));
     E.current_buffer = 0;
+    E.windows.data = NULL;
+    E.windows.len = 0;
+    E.windows.cap = 0;
+    vec_reserve_typed(&E.windows, WINDOWS_INITIAL_CAP, sizeof(Window));
     E.render_x = 0;
     E.screen_rows = 0;
     E.screen_cols = 0;
     E.status_msg[0] = '\0';
     E.command_len = 0;
-    E.mode = MODE_NORMAL;  /* Direct assignment to avoid firing hook during init */
+    E.mode = MODE_NORMAL;
     E.stay_in_command = 0;
+    E.term_open = 0;
+    E.term_height = 0;
+    E.term_window_index = -1;
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
-    qf_init(&E.qf);
+}
+void ed_init(void) {
+    ed_init_state();
 
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) die("get_window_size");
     E.screen_rows -= 2; /* Status bar and message bar */
-
-    /* Initialize registers */
+    qf_init(&E.qf);
     regs_init();
-
-    /* Initialize undo system (4MB cap) */
     undo_init();
     undo_set_cap(4 * 1024 * 1024);
-
-    /* Initialize hook system */
     hook_init();
-
-    /* Initialize keybinding system */
-    keybind_init();
-
-    /* Initialize command system */
     command_init();
-
-    /* Load command history */
+    keybind_init();
     hist_init(&E.history);
+    recent_files_init(&E.recent_files);
+    jump_list_init(&E.jump_list);
 
-    /* Create initial empty buffer */
-    buf_new(NULL);
+    /* Create messages buffer - critical, exit if it fails */
+    int msg_idx;
+    EdError err = buf_new_messages(&msg_idx);
+    if (err != ED_OK) {
+        fprintf(stderr, "Fatal: Failed to create messages buffer\n");
+        exit(1);
+    }
+    E.messages_buffer_index = msg_idx;
 
-    /* Initialize windows (single full-screen window for now) */
     windows_init();
+    E.wlayout_root = wlayout_init_root(0);
 }

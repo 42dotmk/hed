@@ -14,14 +14,15 @@ typedef enum {
     HOOK_BUFFER_CLOSE,
     HOOK_BUFFER_SWITCH,
     HOOK_BUFFER_SAVE,
+    // HOOK_BUFFER_VISIBLE,
+    // HOOK_BUFFER_HIDDEN,
+    // HOOK_BUFFER_MODIFIED,
+    // HOOK_BUFFER_FOCUSED,
 
-    /* Mode change hooks */
     HOOK_MODE_CHANGE,
 
-    /* Cursor movement hooks */
     HOOK_CURSOR_MOVE,
 
-    /* Total number of hook types (keep last) */
     HOOK_TYPE_COUNT
 } HookType;
 

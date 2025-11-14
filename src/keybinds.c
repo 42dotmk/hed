@@ -1,7 +1,8 @@
 #include "keybinds.h"
 #include "commands.h"
 #include "hed.h"
-#include <sys/time.h>
+#include "safe_string.h"
+#include <time.h>
 
 #define MAX_KEYBINDS 256
 #define KEY_BUFFER_SIZE 16
@@ -23,7 +24,7 @@ static int keybind_count = 0;
 /* Input buffer for multi-key sequences */
 static char key_buffer[KEY_BUFFER_SIZE];
 static int key_buffer_len = 0;
-static struct timeval last_key_time;
+static struct timespec last_key_time;
 
 /* Helper: convert key code to string representation */
 static void key_to_string(int key, char *buf, size_t bufsize) {
@@ -51,11 +52,11 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
 
 /* Helper: check if elapsed time exceeds timeout */
 static int timeout_exceeded(void) {
-    struct timeval now;
-    gettimeofday(&now, NULL);
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
 
     long elapsed_ms = (now.tv_sec - last_key_time.tv_sec) * 1000 +
-                      (now.tv_usec - last_key_time.tv_usec) / 1000;
+                      (now.tv_nsec - last_key_time.tv_nsec) / 1000000;
 
     return elapsed_ms > SEQUENCE_TIMEOUT_MS;
 }
@@ -88,6 +89,7 @@ void kb_enter_visual_mode(void) {
     ed_set_mode(MODE_VISUAL);
     win->visual_start_x = win->cursor_x;
     win->visual_start_y = win->cursor_y;
+    ed_set_status_message("-- VISUAL --");
 }
 
 void kb_enter_command_mode(void) {
@@ -98,16 +100,19 @@ void kb_enter_command_mode(void) {
 
 /* Normal mode - text operations */
 void kb_delete_line(void) {
-    buf_delete_line();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_delete_line_in(buf);
 }
 
 void kb_yank_line(void) {
-    buf_yank_line();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_yank_line_in(buf);
     ed_set_status_message("Yanked");
 }
 
 void kb_paste(void) {
-    buf_paste();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_paste_in(buf);
 }
 
 void kb_delete_char(void) {
@@ -118,7 +123,7 @@ void kb_delete_char(void) {
     if (win->cursor_y < buf->num_rows) {
         Row *row = &buf->rows[win->cursor_y];
         if (win->cursor_x < (int)row->chars.len) {
-            buf_row_del_char(row, win->cursor_x);
+            buf_row_del_char_in(buf, row, win->cursor_x);
         }
     }
 }
@@ -157,7 +162,18 @@ void kb_cursor_bottom(void) {
 
 /* Normal mode - search */
 void kb_search_next(void) {
-    buf_find();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_find_in(buf);
+}
+
+void kb_find_under_cursor(void) {
+    SizedStr w = sstr_new();
+    if (!buf_get_word_under_cursor(&w)) { sstr_free(&w); return; }
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(w.data, w.len);
+    ed_set_status_message("* %.*s", (int)(w.len > 40 ? 40 : w.len), w.data);
+    sstr_free(&w);
+    buf_find_in(buf_cur());
 }
 
 void kb_line_number_toggle(void) {
@@ -165,13 +181,15 @@ void kb_line_number_toggle(void) {
 }
 /* Visual mode operations */
 void kb_visual_yank(void) {
-    buf_yank_line();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_yank_line_in(buf);
     ed_set_mode(MODE_NORMAL);
     ed_set_status_message("Yanked");
 }
 
 void kb_visual_delete(void) {
-    buf_delete_line();
+    Buffer *buf = buf_cur(); if (!buf) return;
+    buf_delete_line_in(buf);
     ed_set_mode(MODE_NORMAL);
     ed_set_status_message("Deleted");
 }
@@ -193,13 +211,60 @@ void kb_redo(void) {
     }
 }
 
+/* Helper: perform jump in specified direction */
+static void kb_jump(int direction) {
+    int buffer_idx, cursor_x, cursor_y;
+    int success;
+    const char *direction_str;
+    const char *limit_msg;
+
+    if (direction < 0) {
+        success = jump_list_backward(&E.jump_list, &buffer_idx, &cursor_x, &cursor_y);
+        direction_str = "back";
+        limit_msg = "Already at oldest jump position";
+    } else {
+        success = jump_list_forward(&E.jump_list, &buffer_idx, &cursor_x, &cursor_y);
+        direction_str = "forward";
+        limit_msg = "Already at newest jump position";
+    }
+
+    if (success) {
+        /* Switch to the buffer without adding to jump list */
+        if (buffer_idx >= 0 && buffer_idx < (int)E.buffers.len) {
+            E.current_buffer = buffer_idx;
+            Window *win = window_cur();
+            if (win) {
+                win->buffer_index = buffer_idx;
+                win->cursor_x = cursor_x;
+                win->cursor_y = cursor_y;
+            }
+
+            Buffer *buf = buf_cur();
+            ed_set_status_message("Jumped %s to buffer %d: %s", direction_str,
+                buffer_idx + 1, buf->title);
+        } else {
+            ed_set_status_message("Jump target buffer no longer exists");
+        }
+    } else {
+        ed_set_status_message("%s", limit_msg);
+    }
+}
+
+void kb_jump_backward(void) {
+    kb_jump(-1);
+}
+
+void kb_jump_forward(void) {
+    kb_jump(1);
+}
+
 
 /* Initialize keybinding system */
 void keybind_init(void) {
     keybind_count = 0;
     key_buffer_len = 0;
     key_buffer[0] = '\0';
-    gettimeofday(&last_key_time, NULL);
+    clock_gettime(CLOCK_MONOTONIC, &last_key_time);
     user_keybinds_init();
 }
 
@@ -256,7 +321,7 @@ int keybind_process(int key, int mode) {
     }
 
     /* Update timestamp */
-    gettimeofday(&last_key_time, NULL);
+    clock_gettime(CLOCK_MONOTONIC, &last_key_time);
 
     /* Convert key to string and append to buffer */
     char key_str[32];
@@ -264,12 +329,17 @@ int keybind_process(int key, int mode) {
 
     /* Append to buffer if there's space */
     if (key_buffer_len + strlen(key_str) < KEY_BUFFER_SIZE - 1) {
-        strcat(key_buffer, key_str);
+        EdError err = safe_strcat(key_buffer, key_str, KEY_BUFFER_SIZE);
+        if (err != ED_OK) {
+            /* Shouldn't happen due to check above, but handle gracefully */
+            keybind_clear_buffer();
+            safe_strcpy(key_buffer, key_str, KEY_BUFFER_SIZE);
+        }
         key_buffer_len = strlen(key_buffer);
     } else {
         /* Buffer full, clear and start over */
         keybind_clear_buffer();
-        strcpy(key_buffer, key_str);
+        safe_strcpy(key_buffer, key_str, KEY_BUFFER_SIZE);
         key_buffer_len = strlen(key_buffer);
     }
 

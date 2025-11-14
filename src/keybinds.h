@@ -73,10 +73,13 @@ void kb_cursor_line_end(void);
 void kb_cursor_top(void);
 void kb_cursor_bottom(void);
 void kb_search_next(void);
+void kb_find_under_cursor(void);
 void kb_visual_yank(void);
 void kb_visual_delete(void);
 void kb_undo(void);
 void kb_redo(void);
 void kb_fzf(void);
 void kb_quit_all(void);
+void kb_jump_backward(void);  /* Ctrl-O - jump to previous buffer */
+void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
 #endif // KEYBINDS_H

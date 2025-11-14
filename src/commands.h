@@ -4,6 +4,17 @@
 /* Command callback signature */
 typedef void (*CommandCallback)(const char *args);
 
+/* Command entry structure */
+typedef struct {
+    char *name;
+    CommandCallback callback;
+    char *desc;
+} Command;
+
+/* Global command storage (for internal use by command modules) */
+extern Command commands[];
+extern int command_count;
+
 /* Command API */
 
 /**
@@ -40,6 +51,9 @@ int command_execute(const char *name, const char *args);
  */
 void user_commands_init(void);
 
+/* Helper to invoke a command programmatically (e.g., from keymaps) */
+int command_invoke(const char *name, const char *args);
+
 void cmd_quit(const char *args);
 void cmd_list_commands(const char *args);
 void cmd_quit_force(const char *args);
@@ -63,8 +77,12 @@ void cmd_rln(const char *args);
 /* ripgrep integration */
 void cmd_rg(const char *args);
 void cmd_fzf(const char *args);
-/* Shell → quickfix */
+void cmd_recent(const char *args);
+/* Current file incremental search via ripgrep + fzf */
+void cmd_ssearch(const char *args);
+/* Shell  quickfix */
 void cmd_shq(const char *args);
+void cmd_shell(const char *args);
 void cmd_cd(const char *args);
 /* Command picker via fzf */
 void cmd_cpick(const char *args);
@@ -86,18 +104,11 @@ void cmd_split(const char *args);
 void cmd_vsplit(const char *args);
 void cmd_wfocus(const char *args);
 void cmd_wclose(const char *args);
+/* Syntax highlighting (tree-sitter) */
+void cmd_ts(const char *args);      /* :ts on|off|auto */
+void cmd_tslang(const char *args);  /* :tslang <name> */
 /* Editing convenience */
 void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
-/* Layout/Decoration and Gutter commands */
-void cmd_gutter(const char *args);
-void cmd_wdecor(const char *args);
-void cmd_wthick(const char *args);
-void cmd_wborders(const char *args);
-void cmd_wedge(const char *args);
-void cmd_winc(const char *args);
-void cmd_wdec(const char *args);
 
-/* Helper to invoke a command programmatically (e.g., from keymaps) */
-int command_invoke(const char *name, const char *args);
 #endif
