@@ -3,6 +3,7 @@
 
 #ifdef USE_LIBVTERM
 
+#include <vterm.h>
 #include <pty.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -36,10 +37,6 @@ static void term_pane_reset(void) {
         int status;
         waitpid(t->pid, &status, WNOHANG);
         t->pid = -1;
-    }
-    if (t->screen) {
-        vterm_screen_free(t->screen);
-        t->screen = NULL;
     }
     if (t->vt) {
         vterm_free(t->vt);
@@ -158,7 +155,10 @@ void term_pane_draw(const Window *win, Abuf *ab) {
         ansi_move(ab, win->top + y, win->left);
         for (int x = 0; x < cols; x++) {
             VTermScreenCell cell;
-            vterm_screen_get_cell(t->screen, y, x, &cell);
+            VTermPos pos;
+            pos.row = y;
+            pos.col = x;
+            vterm_screen_get_cell(t->screen, pos, &cell);
             char ch = cell.chars[0] ? cell.chars[0] : ' ';
             ab_append(ab, &ch, 1);
         }
@@ -258,4 +258,3 @@ int term_pane_handle_key(int key) {
 }
 
 #endif /* USE_LIBVTERM */
-

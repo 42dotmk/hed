@@ -11,11 +11,10 @@ SRC_DIR = src
 BUILD_DIR = build
 
 TARGET = $(BUILD_DIR)/hed
-# Pick up sources recursively under src/
 SOURCES = $(shell find $(SRC_DIR) -type f -name "*.c")
 OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
-.PHONY: all clean run
+.PHONY: all clean run test_args
 
 all: clean $(BUILD_DIR) $(TARGET)
 
@@ -26,6 +25,7 @@ $(TARGET): $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS) $(VTERM_LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	# echo '@':$@, '^':$^, '<':$<
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

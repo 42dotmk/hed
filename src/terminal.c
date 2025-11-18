@@ -75,7 +75,9 @@ static char *buf_rows_to_string_in(Buffer *buf, int *out_len) {
     if (out_len) *out_len = 0;
     if (!buf) return NULL;
     size_t totlen = 0;
-    for (int j = 0; j < buf->num_rows; j++) totlen += buf->rows[j].chars.len + 1;
+    for (int j = 0; j < buf->num_rows; j++) 
+        totlen += buf->rows[j].chars.len + 1;
+
     if (out_len) *out_len = (int)totlen;
     char *buffer = malloc(totlen);
     char *p = buffer;

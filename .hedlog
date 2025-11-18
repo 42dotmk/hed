@@ -36170,3 +36170,17 @@ w
 [2025-11-14 01:19:57] status: term: libvterm not available (rebuild with -DUSE_LIBVTERM and link libvterm)
 [2025-11-14 01:19:57] status: Command completed successfully
 [2025-11-14 01:20:12] :q
+[2025-11-14 01:24:46] hed start argc=1
+[2025-11-14 01:24:49] :shell ls
+[2025-11-14 01:24:49] status: Running in term pane: ls
+[2025-11-15 14:06:01] hed start argc=1
+[2025-11-15 14:06:03] status: fzf: no selection
+[2025-11-15 14:06:04] status: Buffer is read-only
+[2025-11-15 14:06:04] status: Buffer is read-only
+[2025-11-15 14:06:06] status: Loaded: src/config.c
+[2025-11-15 14:06:06] status: Opened: src/config.c
+[2025-11-15 14:11:39] :q
+[2025-11-15 14:11:39] status: File has unsaved changes! Use :q! to force quit
+[2025-11-15 14:11:40] :q!
+[2025-11-18 15:06:45] hed start argc=1
+[2025-11-18 15:06:47] :q
