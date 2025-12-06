@@ -248,7 +248,7 @@ Clear logs: `:logclear`
 - **Single global state** (`Ed E`): Simplifies access patterns, all modules can access editor state
 - **Index-based references**: Windows reference buffers by index, not pointers (allows array reordering)
 - **Immediate mode rendering**: Full screen redrawn each frame, buffered in `Abuf` for efficiency
-- **Modal editing**: Four modes (NORMAL, INSERT, VISUAL, COMMAND) inherited from vim
+- **Modal editing**: Three modes (NORMAL, INSERT, COMMAND) inspired by vim
 - **Extension via registration**: Commands, keybindings, and hooks registered at init time
 - **Raw mode terminal**: Full control via termios and ANSI sequences
 - **No configuration files**: All configuration done in C code (`config.c`)

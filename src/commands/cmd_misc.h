@@ -24,6 +24,8 @@
  * - :O             - Insert new line above and enter insert mode
  * - :shell <cmd>   - Run shell command interactively (with terminal output)
  * - :git           - Run lazygit (via :shell)
+ * - :wrap          - Toggle soft-wrap for current window
+ * - :wrapdefault   - Toggle default soft-wrap for new windows
  */
 
 void cmd_list_commands(const char *args);
@@ -42,5 +44,7 @@ void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
 void cmd_shell(const char *args);
 void cmd_git(const char *args);
+void cmd_wrap(const char *args);
+void cmd_wrapdefault(const char *args);
 
 #endif /* CMD_MISC_H */

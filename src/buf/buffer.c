@@ -118,41 +118,6 @@ EdError buf_new(const char *filename, int *out_idx) {
     return ED_OK;
 }
 
-/* Create the special *messages buffer and return EdError status */
-EdError buf_new_messages(int *out_idx) {
-    if (!PTR_VALID(out_idx)) return ED_ERR_INVALID_ARG;
-    *out_idx = -1;
-
-    /* Ensure capacity for messages buffer */
-    if (!vec_reserve_typed(&E.buffers, E.buffers.len + 1, sizeof(Buffer))) {
-        return ED_ERR_NOMEM;
-    }
-
-    int idx = E.buffers.len++;
-    Buffer *buf = &E.buffers.data[idx];
-    buf_init(buf);
-
-    /* Set special properties for *messages buffer */
-    free(buf->title);
-    buf->title = strdup("*messages");
-    if (!buf->title) {
-        /* Critical OOM - can't start without messages buffer */
-        buf->title = NULL;
-        E.buffers.len--;
-        return ED_ERR_NOMEM;
-    }
-
-    buf->filename = NULL;
-    buf->readonly = 1;  /* Make it read-only */
-    buf->dirty = 0;
-
-    /* Add initial message */
-    buf_row_insert_in(buf, 0, "--- Messages ---", 16);
-
-    *out_idx = idx;
-    return ED_OK;
-}
-
 /* Opens a file and returns EdError status */
 EdError buf_open_file(const char *filename, Buffer **out) {
     if (!PTR_VALID(out)) return ED_ERR_INVALID_ARG;
@@ -301,11 +266,6 @@ EdError buf_close(int index) {
         return ED_ERR_INVALID_INDEX;
     }
 
-    /* Prevent closing the *messages buffer */
-    if (index == E.messages_buffer_index) {
-        return ED_ERR_BUFFER_READONLY;
-    }
-
     Buffer *buf = &E.buffers.data[index];
 
     if (buf->dirty) {
@@ -347,27 +307,6 @@ EdError buf_close(int index) {
 
     return ED_OK;
 }
-
-void buf_append_message(const char *msg) {
-    if (E.messages_buffer_index < 0 || E.messages_buffer_index >= (int)E.buffers.len) {
-        return;  /* Messages buffer not initialized or invalid */
-    }
-
-    Buffer *mbuf = &E.buffers.data[E.messages_buffer_index];
-
-    /* Temporarily make it writable */
-    int was_readonly = mbuf->readonly;
-    mbuf->readonly = 0;
-
-    /* Append the message as a new row into the messages buffer */
-    buf_row_insert_in(mbuf, mbuf->num_rows, msg, strlen(msg));
-
-    /* Restore readonly status */
-    mbuf->readonly = was_readonly;
-    mbuf->dirty = 0;  /* Messages buffer is never "dirty" */
-}
-
-/* buf_list was unused; removed. */
 
 /*** Row operations ***/
 

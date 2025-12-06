@@ -214,6 +214,20 @@ void cmd_rln(const char *args) {
         E.relative_line_numbers ? "on" : "off");
 }
 
+void cmd_wrap(const char *args) {
+    (void)args;
+    Window *win = window_cur();
+    if (!win) return;
+    win->wrap = !win->wrap;
+    ed_set_status_message("wrap: %s", win->wrap ? "on" : "off");
+}
+
+void cmd_wrapdefault(const char *args) {
+    (void)args;
+    E.default_wrap = !E.default_wrap;
+    ed_set_status_message("wrap default: %s", E.default_wrap ? "on" : "off");
+}
+
 void cmd_logclear(const char *args) {
     (void)args;
     log_clear();

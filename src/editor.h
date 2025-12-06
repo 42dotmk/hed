@@ -76,8 +76,8 @@ typedef struct {
     CmdHistory history;
     RecentFiles recent_files;
     JumpList jump_list;
-    int messages_buffer_index;
     int stay_in_command;
+    int default_wrap;        /* 0=unwrap windows by default, 1=wrap */
     struct {
         char **items;
         int count;

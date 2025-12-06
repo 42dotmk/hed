@@ -461,6 +461,7 @@ void ed_init_state(){
     E.stay_in_command = 0;
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
+    E.default_wrap = 0;
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
 }
@@ -480,14 +481,11 @@ void ed_init(void) {
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
 
-    /* Create messages buffer - critical, exit if it fails */
-    int msg_idx;
-    EdError err = buf_new_messages(&msg_idx);
-    if (err != ED_OK) {
-        fprintf(stderr, "Fatal: Failed to create messages buffer\n");
-        exit(1);
+    /* Ensure at least one editable buffer exists at startup */
+    int empty_idx = -1;
+    if (buf_new(NULL, &empty_idx) == ED_OK) {
+        E.current_buffer = empty_idx;
     }
-    E.messages_buffer_index = msg_idx;
 
     windows_init();
     E.wlayout_root = wlayout_init_root(0);

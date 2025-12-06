@@ -90,7 +90,6 @@ Buffer *buf_cur(void);
 
 /* Buffer creation and management - all return EdError */
 EdError buf_new(const char *filename, int *out_idx);
-EdError buf_new_messages(int *out_idx);
 EdError buf_close(int index);
 EdError buf_switch(int index);
 EdError buf_open_file(const char *filename, Buffer **out);
@@ -111,7 +110,4 @@ void buf_find_in(Buffer *buf);
 char *buf_detect_filetype(const char *filename);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);
-/* Append message to *messages buffer */
-void buf_append_message(const char *msg);
-
 #endif

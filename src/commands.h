@@ -88,6 +88,9 @@ void cmd_cd(const char *args);
 void cmd_cpick(const char *args);
 /* Git (lazygit wrapper) */
 void cmd_git(const char *args);
+/* Soft-wrap control */
+void cmd_wrap(const char *args);
+void cmd_wrapdefault(const char *args);
 
 /* Quickfix commands */
 void cmd_copen(const char *args);

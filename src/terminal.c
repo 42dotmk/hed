@@ -140,6 +140,18 @@ EdError buf_save_in(Buffer *buf) {
 /*** Output ***/
 static inline void ab_append_ch(Abuf *ab, char c) { ab_append(ab, &c, 1); }
 
+static int window_gutter_width(const Window *win, int view_rows);
+static int render_cols_ss(const SizedStr *r);
+static int row_visual_height(const Row *row, int content_cols, int wrap) {
+    if (!wrap) return 1;
+    if (!row) return 1;
+    if (content_cols <= 0) return 1;
+    int rcols = render_cols_ss(&row->render);
+    if (rcols <= 0) return 1;
+    int h = (rcols + content_cols - 1) / content_cols;
+    return h < 1 ? 1 : h;
+}
+
 void window_scroll(Window *win) {
     Buffer *buf = NULL;
     if (!win) return;
@@ -147,23 +159,70 @@ void window_scroll(Window *win) {
         buf = &E.buffers.data[win->buffer_index];
     if (!buf || !win) return;
 
+    int gutter = window_gutter_width(win, win->height);
+    int margin = gutter ? (gutter + 1) : 0;
+    int content_cols = win->width - margin;
+    if (content_cols <= 0) content_cols = 1;
+
     E.render_x = 0;
     if (win->cursor.y < buf->num_rows) {
         E.render_x = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
     }
 
-    if (win->cursor.y < win->row_offset) {
-        win->row_offset = win->cursor.y;
+    if (!win->wrap) {
+        if (win->cursor.y < win->row_offset) {
+            win->row_offset = win->cursor.y;
+        }
+        if (win->cursor.y >= win->row_offset + win->height) {
+            win->row_offset = win->cursor.y - win->height + 1;
+        }
+        if (E.render_x < win->col_offset) {
+            win->col_offset = E.render_x;
+        }
+        if (E.render_x >= win->col_offset + win->width) {
+            win->col_offset = E.render_x - win->width + 1;
+        }
+        return;
     }
-    if (win->cursor.y >= win->row_offset + win->height) {
-        win->row_offset = win->cursor.y - win->height + 1;
+
+    /* Wrap enabled: treat row_offset as visual (wrapped) row index */
+    win->col_offset = 0; /* no horizontal scroll when wrapped */
+
+    /* Compute cursor's visual row index */
+    int cursor_visual = 0;
+    for (int y = 0; y < buf->num_rows; y++) {
+        Row *row = &buf->rows[y];
+        int h = row_visual_height(row, content_cols, 1);
+        if (y < win->cursor.y) {
+            cursor_visual += h;
+        } else if (y == win->cursor.y) {
+            int rx = buf_row_cx_to_rx(row, win->cursor.x);
+            if (rx < 0) rx = 0;
+            int sub = rx / content_cols;
+            if (sub >= h) sub = h - 1;
+            cursor_visual += sub;
+            break;
+        } else {
+            break;
+        }
     }
-    if (E.render_x < win->col_offset) {
-        win->col_offset = E.render_x;
+
+    /* Total visual height */
+    int total_visual = 0;
+    for (int y = 0; y < buf->num_rows; y++) {
+        total_visual += row_visual_height(&buf->rows[y], content_cols, 1);
     }
-    if (E.render_x >= win->col_offset + win->width) {
-        win->col_offset = E.render_x - win->width + 1;
+
+    int max_off = total_visual - win->height;
+    if (max_off < 0) max_off = 0;
+
+    if (cursor_visual < win->row_offset) {
+        win->row_offset = cursor_visual;
+    } else if (cursor_visual >= win->row_offset + win->height) {
+        win->row_offset = cursor_visual - win->height + 1;
     }
+    if (win->row_offset < 0) win->row_offset = 0;
+    if (win->row_offset > max_off) win->row_offset = max_off;
 }
 
 static int window_gutter_width(const Window *win, int view_rows) {
@@ -199,37 +258,7 @@ static void render_slice_ss(const SizedStr *r, int start_col, int want_cols, int
     utf8_slice_by_columns(r->data, r->len, start_col, want_cols, out_start, out_len);
 }
 
-static void draw_quickfix_window(Abuf *ab, const Window *win) {
-    int width = win->width;
-    /* Header */
-    char hdr[128];
-    int hlen = snprintf(hdr, sizeof(hdr), " Quickfix (%d items)  j/k navigate  Enter open  q close ", E.qf.len);
-    if (hlen > width) hlen = width;
-    ansi_move(ab, win->top, win->left);
-    if (hlen > 0) ab_append(ab, hdr, hlen);
-    ansi_sgr_reset(ab);
-    ansi_clear_eol(ab);
-    /* Items */
-    int lines = win->height - 1; if (lines < 0) lines = 0;
-    int start = E.qf.scroll;
-    for (int row = 0; row < lines; row++) {
-        int idx = start + row;
-        ansi_move(ab, win->top + 1 + row, win->left);
-        if (idx >= E.qf.len) { ansi_clear_eol(ab); continue; }
-        const QfItem *it = &E.qf.items[idx];
-        char line[512]; int l = 0;
-        if (it->filename && it->filename[0]) l = snprintf(line, sizeof(line), "%s:%d:%d: %s", it->filename, it->line, it->col, it->text ? it->text : "");
-        else l = snprintf(line, sizeof(line), "%d:%d: %s", it->line, it->col, it->text ? it->text : "");
-        if (l > width) l = width;
-        if (idx == E.qf.sel) ansi_invert_on(ab);
-        if (l > 0) ab_append(ab, line, l);
-        ansi_sgr_reset(ab);
-        ansi_clear_eol(ab);
-    }
-}
-
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
-    if (win->is_quickfix) { draw_quickfix_window(ab, win); return; }
     Buffer *buf = NULL;
     if (E.buffers.len > 0 && win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len)
         buf = &E.buffers.data[win->buffer_index];
@@ -240,11 +269,33 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
 
     /* helper functions moved to file scope */
 
-    for (int y = 0; y < win->height; y++) {
-        int filerow = y + (buf ? win->row_offset : 0);
+    /* Determine starting logical row and wrapped sub-row based on visual offset */
+    int row = 0;
+    int sub = 0;
+    if (buf) {
+        int target = win->row_offset;
+        int y = 0;
+        while (y < buf->num_rows) {
+            int h = row_visual_height(&buf->rows[y], content_cols, win->wrap);
+            if (target < h) {
+                row = y;
+                sub = target;
+                break;
+            }
+            target -= h;
+            y++;
+        }
+        if (y >= buf->num_rows) {
+            row = buf->num_rows;
+            sub = 0;
+        }
+    }
+
+    for (int vy = 0; vy < win->height; vy++) {
+        int filerow = row;
 
         /* Move to start of this window row */
-        ansi_move(ab, win->top + y, win->left);
+        ansi_move(ab, win->top + vy, win->left);
 
         /* Draw gutter */
         if (E.show_line_numbers) {
@@ -263,15 +314,28 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         }
 
         if (!buf || filerow >= buf->num_rows) {
-            if ((!buf || buf->num_rows == 0) && y == win->height / 3) {
+            if ((!buf || buf->num_rows == 0) && vy == win->height / 3) {
             } else {
                 ab_append_ch(ab, '~');
             }
         } else {
             int line_rcols = render_cols_ss(&buf->rows[filerow].render);
-            int len = line_rcols - win->col_offset;
-            if (len < 0) len = 0;
-            if (len > content_cols) len = content_cols;
+            int start_rx;
+            int len;
+
+            if (win->wrap) {
+                start_rx = sub * content_cols;
+                if (start_rx < 0) start_rx = 0;
+                if (start_rx > line_rcols) start_rx = line_rcols;
+                len = line_rcols - start_rx;
+                if (len > content_cols) len = content_cols;
+            } else {
+                start_rx = win->col_offset;
+                len = line_rcols - win->col_offset;
+                if (len < 0) len = 0;
+                if (len > content_cols) len = content_cols;
+            }
+
             if (len > 0) {
                 int has_sel = 0;
                 int sel_start_rx = 0, sel_end_rx = 0;
@@ -296,7 +360,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 } while(0)
 
                 if (!has_sel) {
-                    APPEND_SLICE(win->col_offset, len);
+                    APPEND_SLICE(start_rx, len);
                 } else {
                     int vis_start = win->col_offset;
                     int vis_end = win->col_offset + content_cols;
@@ -324,6 +388,21 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         }
 
         ansi_clear_eol(ab);
+
+        /* Advance to next visual row */
+        if (buf && row < buf->num_rows) {
+            if (win->wrap) {
+                Row *r = &buf->rows[row];
+                int h = row_visual_height(r, content_cols, 1);
+                sub++;
+                if (sub >= h) {
+                    sub = 0;
+                    row++;
+                }
+            } else {
+                row++;
+            }
+        }
     }
 }
 
@@ -394,14 +473,43 @@ void ed_render_frame(void) {
     if (E.mode == MODE_COMMAND) {
         cur_row = lo.cmd_row;
         cur_col = 2 + E.command_len; /* ':' + content */
-    } else if (win && win->is_quickfix) {
-        cur_row = win->top + 1 + (E.qf.sel - E.qf.scroll);
-        if (cur_row < win->top + 1) cur_row = win->top + 1;
-        if (cur_row > win->top + win->height - 1) cur_row = win->top + win->height - 1;
-        cur_col = 1;
     } else {
-        cur_row = (buf ? win->cursor.y - win->row_offset : 0) + win->top;
-        cur_col = (E.render_x - (buf ? win->col_offset : 0)) + win->left + margin;
+        if (!buf || win->cursor.y >= buf->num_rows) {
+            cur_row = win->top;
+            cur_col = win->left + margin;
+        } else if (!win->wrap) {
+            cur_row = (win->cursor.y - win->row_offset) + win->top;
+            cur_col = (E.render_x - win->col_offset) + win->left + margin;
+        } else {
+            /* Map cursor to visual row/column when wrapped */
+            int content_cols = win->width - margin;
+            if (content_cols <= 0) content_cols = 1;
+
+            int visual_row = 0;
+            for (int y = 0; y < buf->num_rows; y++) {
+                Row *row = &buf->rows[y];
+                int h = row_visual_height(row, content_cols, 1);
+                if (y < win->cursor.y) {
+                    visual_row += h;
+                } else if (y == win->cursor.y) {
+                    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+                    if (rx < 0) rx = 0;
+                    int sub = rx / content_cols;
+                    if (sub >= h) sub = h - 1;
+                    visual_row += sub;
+                    break;
+                } else {
+                    break;
+                }
+            }
+            cur_row = (visual_row - win->row_offset) + win->top;
+
+            /* Horizontal: position within current wrapped segment */
+            int rx = E.render_x;
+            if (rx < 0) rx = 0;
+            int vis_col = rx % content_cols;
+            cur_col = vis_col + win->left + margin;
+        }
     }
     ansi_move(&ab, cur_row, cur_col);
     ansi_show_cursor(&ab);

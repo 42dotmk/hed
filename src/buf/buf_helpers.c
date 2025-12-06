@@ -30,6 +30,101 @@ static inline void cur_sync_to_window(Buffer *buf, Window *win) {
     cur_sync_to_window(buf, win); \
 } while(0)
 
+/* Visual-line helpers for soft-wrap navigation */
+static int row_visual_height_buf(const Buffer *buf, int row_index, int content_cols, int wrap) {
+    if (!wrap) return 1;
+    if (!buf) return 1;
+    if (row_index < 0 || row_index >= buf->num_rows) return 1;
+    if (content_cols <= 0) return 1;
+    const Row *row = &buf->rows[row_index];
+    int rcols = buf_row_cx_to_rx(row, (int)row->chars.len);
+    if (rcols <= 0) return 1;
+    int h = (rcols + content_cols - 1) / content_cols;
+    return h < 1 ? 1 : h;
+}
+
+static int cursor_visual_position(const Buffer *buf, const Window *win,
+                                  int content_cols, int *out_vis_col) {
+    if (!buf || !win || buf->num_rows <= 0) {
+        if (out_vis_col) *out_vis_col = 0;
+        return 0;
+    }
+    int cy = win->cursor.y;
+    if (cy < 0) cy = 0;
+    if (cy >= buf->num_rows) cy = buf->num_rows - 1;
+
+    int visual = 0;
+    for (int y = 0; y < cy; y++) {
+        visual += row_visual_height_buf(buf, y, content_cols, 1);
+    }
+    const Row *row = &buf->rows[cy];
+    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+    if (rx < 0) rx = 0;
+    int h = row_visual_height_buf(buf, cy, content_cols, 1);
+    int seg = rx / content_cols;
+    if (seg >= h) seg = h - 1;
+    int vis_col = rx % content_cols;
+    if (out_vis_col) *out_vis_col = vis_col;
+    return visual + seg;
+}
+
+static int buffer_total_visual_rows(const Buffer *buf, int content_cols) {
+    if (!buf || buf->num_rows <= 0) return 0;
+    int total = 0;
+    for (int y = 0; y < buf->num_rows; y++) {
+        total += row_visual_height_buf(buf, y, content_cols, 1);
+    }
+    return total;
+}
+
+static void cursor_from_visual(Buffer *buf, Window *win,
+                               int target_visual, int content_cols, int vis_col) {
+    if (!buf || !win || buf->num_rows <= 0) {
+        win->cursor.y = 0;
+        win->cursor.x = 0;
+        return;
+    }
+    if (target_visual < 0) target_visual = 0;
+
+    int y = 0;
+    while (y < buf->num_rows) {
+        int h = row_visual_height_buf(buf, y, content_cols, 1);
+        if (target_visual < h) break;
+        target_visual -= h;
+        y++;
+    }
+    if (y >= buf->num_rows) {
+        y = buf->num_rows - 1;
+        if (y < 0) {
+            win->cursor.y = 0;
+            win->cursor.x = 0;
+            return;
+        }
+        int h = row_visual_height_buf(buf, y, content_cols, 1);
+        target_visual = h - 1;
+        if (target_visual < 0) target_visual = 0;
+    }
+
+    Row *row = &buf->rows[y];
+    int rcols = buf_row_cx_to_rx(row, (int)row->chars.len);
+    if (rcols < 0) rcols = 0;
+    if (content_cols <= 0) content_cols = 1;
+
+    int seg_start = target_visual * content_cols;
+    if (seg_start > rcols) {
+        seg_start = (rcols / content_cols) * content_cols;
+    }
+    int rx = seg_start + vis_col;
+    int seg_end = seg_start + content_cols;
+    if (rx >= seg_end) rx = seg_end - 1;
+    if (rx >= rcols && rcols > 0) rx = rcols - 1;
+    if (rcols == 0) rx = 0;
+
+    int cx = buf_row_rx_to_cx(row, rx);
+    win->cursor.y = y;
+    win->cursor.x = cx;
+}
+
 void buf_cursor_move_top(void) {
     CURSOR_OP({
         buf->cursor.y = 0;
@@ -126,7 +221,8 @@ void buf_center_screen(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(win)) return;
-    /* Center current line in the middle of the current window */
+    /* Center current line in the middle of the current window (logical rows) */
+    if (!buf || win->wrap) return;
     win->row_offset = win->cursor.y - (win->height / 2);
     if (win->row_offset < 0) win->row_offset = 0;
     int maxoff = buf->num_rows - win->height;
@@ -421,6 +517,45 @@ static inline int _is_word_byte(unsigned char b) {
     return (b == '_' || (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b & 0x80));
 }
 
+/* UTF-8 helpers for codepoint-wise word operations */
+static int _utf8_cp_start(const char *s, int len, int idx) {
+    if (idx < 0) return 0;
+    if (idx > len) idx = len;
+    while (idx > 0 && ((unsigned char)s[idx] & 0xC0) == 0x80) {
+        idx--;
+    }
+    return idx;
+}
+
+static int _utf8_next_cp(const char *s, int len, int idx) {
+    if (idx < 0) idx = 0;
+    if (idx >= len) return len;
+    unsigned char c = (unsigned char)s[idx];
+    int adv = 1;
+    if ((c & 0x80) == 0) adv = 1;
+    else if ((c & 0xE0) == 0xC0) adv = 2;
+    else if ((c & 0xF0) == 0xE0) adv = 3;
+    else if ((c & 0xF8) == 0xF0) adv = 4;
+    if (idx + adv > len) adv = len - idx;
+    return idx + adv;
+}
+
+static int _utf8_prev_cp(const char *s, int len, int idx) {
+    if (idx <= 0) return -1;
+    if (idx > len) idx = len;
+    idx--; /* move to previous byte */
+    while (idx > 0 && ((unsigned char)s[idx] & 0xC0) == 0x80) {
+        idx--;
+    }
+    return idx;
+}
+
+static int _is_word_cp(const char *s, int len, int idx) {
+    if (idx < 0 || idx >= len) return 0;
+    unsigned char b = (unsigned char)s[idx];
+    return _is_word_byte(b);
+}
+
 int buf_get_line_under_cursor(SizedStr *out) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out)) return 0;
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
@@ -434,19 +569,10 @@ int buf_get_word_under_cursor(SizedStr *out) {
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
     Row *row = &buf->rows[win->cursor.y];
     if (row->chars.len == 0) return 0;
-    int n = (int)row->chars.len;
-    int cx = win->cursor.x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
-    int i = cx;
-    if (!_is_word_byte((unsigned char)row->chars.data[i])) {
-        while (i > 0 && !_is_word_byte((unsigned char)row->chars.data[i])) i--;
-        if (!_is_word_byte((unsigned char)row->chars.data[i])) return 0;
-    }
-    int start = i;
-    while (start > 0 && _is_word_byte((unsigned char)row->chars.data[start - 1])) start--;
-    int end = i + 1;
-    while (end < n && _is_word_byte((unsigned char)row->chars.data[end])) end++;
-    if (end <= start) return 0;
-    sstr_free(out); *out = sstr_from(row->chars.data + start, (size_t)(end - start));
+    int sx = 0, ex = 0;
+    if (!buf_get_word_range(&sx, &ex)) return 0;
+    if (ex <= sx) return 0;
+    sstr_free(out); *out = sstr_from(row->chars.data + sx, (size_t)(ex - sx));
     return 1;
 }
 
@@ -477,16 +603,33 @@ int buf_get_word_range(int *start_x, int *end_x) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return 0;
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
     Row *row = &buf->rows[win->cursor.y]; if (row->chars.len == 0) return 0;
-    int n = (int)row->chars.len; int cx = win->cursor.x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
-    int i = cx;
-    if (!_is_word_byte((unsigned char)row->chars.data[i])) {
-        while (i > 0 && !_is_word_byte((unsigned char)row->chars.data[i])) i--;
-        if (!_is_word_byte((unsigned char)row->chars.data[i])) return 0;
+
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int cx = win->cursor.x;
+    if (cx >= len) cx = len - 1;
+    if (cx < 0) cx = 0;
+
+    int i = _utf8_cp_start(s, len, cx);
+    if (!_is_word_cp(s, len, i)) {
+        int j = _utf8_prev_cp(s, len, i);
+        while (j >= 0 && !_is_word_cp(s, len, j)) {
+            j = _utf8_prev_cp(s, len, j);
+        }
+        if (j < 0) return 0;
+        i = j;
     }
-    int sx = i; while (sx > 0 && _is_word_byte((unsigned char)row->chars.data[sx - 1])) sx--;
-    int ex = i + 1; while (ex < n && _is_word_byte((unsigned char)row->chars.data[ex])) ex++;
+
+    int sx = i;
+    int ex = _utf8_next_cp(s, len, i);
+    while (ex < len && _is_word_cp(s, len, ex)) {
+        ex = _utf8_next_cp(s, len, ex);
+    }
+
     if (sx >= ex) return 0;
-    if (start_x) *start_x = sx; if (end_x) *end_x = ex; return 1;
+    if (start_x) *start_x = sx;
+    if (end_x) *end_x = ex;
+    return 1;
 }
 
 int buf_get_paragraph_range(int *start_y, int *end_y) {
@@ -669,11 +812,66 @@ void buf_move_cursor_key(int key) {
             break;
         case KEY_ARROW_DOWN:
         case 'j':
-            if (win->cursor.y < buf->num_rows - 1) win->cursor.y++;
+            if (win->wrap) {
+                int gutter = 0;
+                if (win->gutter_mode == 2) {
+                    gutter = win->gutter_fixed_width; if (gutter < 0) gutter = 0;
+                } else if (!(win->gutter_mode == 0 && !E.show_line_numbers)) {
+                    int maxline = buf->num_rows;
+                    if (E.relative_line_numbers) {
+                        int maxrel = win->height;
+                        if (maxrel < 1) maxrel = 1;
+                        maxline = maxrel;
+                    }
+                    gutter = 0;
+                    int tmp = maxline;
+                    while (tmp > 0) { gutter++; tmp /= 10; }
+                    if (gutter < 2) gutter = 2;
+                }
+                int margin = gutter ? (gutter + 1) : 0;
+                int content_cols = win->width - margin;
+                if (content_cols <= 0) content_cols = 1;
+                int vis_col = 0;
+                int cur_vis = cursor_visual_position(buf, win, content_cols, &vis_col);
+                int total_vis = buffer_total_visual_rows(buf, content_cols);
+                if (cur_vis < total_vis - 1) {
+                    int target = cur_vis + 1;
+                    cursor_from_visual(buf, win, target, content_cols, vis_col);
+                }
+            } else {
+                if (win->cursor.y < buf->num_rows - 1) win->cursor.y++;
+            }
             break;
         case KEY_ARROW_UP:
         case 'k':
-            if (win->cursor.y > 0) win->cursor.y--;
+            if (win->wrap) {
+                int gutter = 0;
+                if (win->gutter_mode == 2) {
+                    gutter = win->gutter_fixed_width; if (gutter < 0) gutter = 0;
+                } else if (!(win->gutter_mode == 0 && !E.show_line_numbers)) {
+                    int maxline = buf->num_rows;
+                    if (E.relative_line_numbers) {
+                        int maxrel = win->height;
+                        if (maxrel < 1) maxrel = 1;
+                        maxline = maxrel;
+                    }
+                    gutter = 0;
+                    int tmp = maxline;
+                    while (tmp > 0) { gutter++; tmp /= 10; }
+                    if (gutter < 2) gutter = 2;
+                }
+                int margin = gutter ? (gutter + 1) : 0;
+                int content_cols = win->width - margin;
+                if (content_cols <= 0) content_cols = 1;
+                int vis_col = 0;
+                int cur_vis = cursor_visual_position(buf, win, content_cols, &vis_col);
+                if (cur_vis > 0) {
+                    int target = cur_vis - 1;
+                    cursor_from_visual(buf, win, target, content_cols, vis_col);
+                }
+            } else {
+                if (win->cursor.y > 0) win->cursor.y--;
+            }
             break;
         case KEY_ARROW_RIGHT:
         case 'l':

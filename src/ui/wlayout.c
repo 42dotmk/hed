@@ -399,6 +399,11 @@ void wlayout_sync_quickfix(WLayoutNode **rootp, int qf_open, int qf_height) {
     if (!rootp) return; WLayoutNode *root = *rootp; if (!root) return;
     int qf_idx = find_quickfix_window();
     if (qf_open) {
+        Buffer *qfbuf = qf_get_or_create_buffer(&E.qf);
+        int qf_buf_index = -1;
+        if (qfbuf) {
+            qf_buf_index = (int)(qfbuf - E.buffers.data);
+        }
         if (qf_idx < 0) {
             /* Create a quickfix window at the end */
             if (!vec_reserve_typed(&E.windows, E.windows.len + 1, sizeof(Window))) {
@@ -409,7 +414,13 @@ void wlayout_sync_quickfix(WLayoutNode **rootp, int qf_open, int qf_height) {
             memset(w, 0, sizeof(*w));
             w->is_quickfix = 1;
             w->focus = 0;
-            w->buffer_index = E.current_buffer; /* irrelevant */
+            /* Visual options follow global/editor defaults; no special styling. */
+            w->wrap = E.default_wrap;
+            w->gutter_mode = 0;
+            w->gutter_fixed_width = 0;
+        }
+        if (qf_buf_index >= 0 && qf_idx >= 0 && qf_idx < (int)E.windows.len) {
+            E.windows.data[qf_idx].buffer_index = qf_buf_index;
         }
         if (!tree_has_leaf_index(root, qf_idx)) {
             /* Append as bottom split: wrap root */

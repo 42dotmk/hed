@@ -1,6 +1,8 @@
 #ifndef QUICKFIX_H
 #define QUICKFIX_H
 
+#include "buffer.h"
+
 typedef struct {
     char *text;
     char *filename; /* optional */
@@ -18,6 +20,20 @@ typedef struct {
     int len;
     int cap;
 } Qf;
+
+/* Quickfix buffer helpers
+ *
+ * The quickfix list is now backed by a real Buffer so the quickfix
+ * window renders like any other buffer window. These helpers let
+ * the UI/layout code access that buffer.
+ */
+
+/* Return the existing quickfix buffer if present, else NULL. */
+Buffer *qf_get_buffer(Qf *qf);
+/* Ensure a quickfix buffer exists, creating it on demand. */
+Buffer *qf_get_or_create_buffer(Qf *qf);
+/* True if the given buffer is the quickfix buffer. */
+int qf_is_quickfix_buffer(const Buffer *buf);
 
 /* API */
 void qf_init(Qf *qf);
@@ -38,4 +54,3 @@ void qf_open_selected(Qf *qf);
 void qf_open_idx(Qf *qf, int idx);
 
 #endif /* QUICKFIX_H */
-

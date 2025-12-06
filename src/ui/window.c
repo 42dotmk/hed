@@ -14,6 +14,7 @@ void windows_init(void) {
     E.windows.data[0].is_quickfix = 0;
     E.windows.data[0].row_offset = 0;
     E.windows.data[0].col_offset = 0;
+    E.windows.data[0].wrap = E.default_wrap;
     E.windows.data[0].cursor.x = 0;
     E.windows.data[0].cursor.y = 0;
     E.windows.data[0].gutter_mode = 0;

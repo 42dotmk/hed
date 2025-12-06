@@ -134,9 +134,6 @@ void cmd_buffer_delete(const char *args) {
             case ED_ERR_INVALID_INDEX:
                 ed_set_status_message("Invalid buffer index");
                 break;
-            case ED_ERR_BUFFER_READONLY:
-                ed_set_status_message("Cannot close *messages buffer");
-                break;
             case ED_ERR_BUFFER_DIRTY:
                 ed_set_status_message("Buffer has unsaved changes! Save first or use :bd!");
                 break;
