@@ -86,20 +86,6 @@
 #include "buffer.h"
 
 typedef struct {
-    int width;/* in characters or rows */
-    int height; /* in characters or rows */
-    Row *rows; /* array of strings for the content */
-} WinDecor;
-
-typedef struct {
-    int enabled; 
-    WinDecor left;
-    WinDecor Right;
-    WinDecor Top;
-    WinDecor Bottom;
-} WindowDecorations;
-
-typedef struct {
     int top;            /* 1-based row on the terminal */
     int left;           /* 1-based column on the terminal */
     int height;         /* number of content rows */
@@ -114,7 +100,6 @@ typedef struct {
     int cursor_y;       /* window-local cursor row (line index) */
     int visual_start_x; /* visual selection anchor (char index) */
     int visual_start_y; /* visual selection anchor row */
-    WindowDecorations decorations;
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;

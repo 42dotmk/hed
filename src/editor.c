@@ -126,8 +126,6 @@ static void cmdcomp_next(void) {
     cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
 }
 
-/* Command history moved to history.c */
-
 void ed_change_cursor_shape(void) {
     switch (E.mode) {
         case MODE_NORMAL:

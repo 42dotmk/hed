@@ -104,6 +104,7 @@ void cmd_split(const char *args);
 void cmd_vsplit(const char *args);
 void cmd_wfocus(const char *args);
 void cmd_wclose(const char *args);
+void cmd_new(const char *args);
 /* Syntax highlighting (tree-sitter) */
 void cmd_ts(const char *args);      /* :ts on|off|auto */
 void cmd_tslang(const char *args);  /* :tslang <name> */

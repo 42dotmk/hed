@@ -1,8 +1,66 @@
-#include "cmd_quickfix.h"
+/*
+ * UI COMMAND MODULE
+ * =================
+ *
+ * Consolidated window management and quickfix commands.
+ * Combines cmd_window.c and cmd_quickfix.c.
+ */
+
+#include "commands_ui.h"
 #include "cmd_util.h"
-#include "../hed.h"
+#include "hed.h"
 #include <string.h>
 #include <stdlib.h>
+
+/* ============================================
+ * WINDOW MANAGEMENT COMMANDS
+ * ============================================ */
+
+void cmd_split(const char *args) {
+    (void)args;
+    windows_split_horizontal();
+}
+
+void cmd_vsplit(const char *args) {
+    (void)args;
+    windows_split_vertical();
+}
+
+void cmd_wfocus(const char *args) {
+    (void)args;
+    windows_focus_next();
+}
+
+void cmd_wclose(const char *args) {
+    (void)args;
+    windows_close_current();
+}
+
+void cmd_new(const char *args) {
+    (void)args;
+
+    /* Create a new empty buffer */
+    int new_buf_idx = -1;
+    EdError err = buf_new(NULL, &new_buf_idx);
+    if (err != ED_OK || new_buf_idx < 0) {
+        ed_set_status_message("Failed to create new buffer");
+        return;
+    }
+
+    /* Create a new vertical split */
+    windows_split_vertical();
+
+    /* Attach the new buffer to the current (new) window */
+    Window *win = window_cur();
+    if (win && new_buf_idx < (int)E.buffers.len) {
+        Buffer *buf = &E.buffers.data[new_buf_idx];
+        win_attach_buf(win, buf);
+    }
+}
+
+/* ============================================
+ * QUICKFIX COMMANDS
+ * ============================================ */
 
 void cmd_copen(const char *args) {
     int h = parse_int_default(args, 8);

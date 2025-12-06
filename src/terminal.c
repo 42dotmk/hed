@@ -191,29 +191,12 @@ static int window_gutter_width(const Window *win, int view_rows) {
     return w;
 }
 
-/* UTF-8 helpers for render slicing: treat each codepoint as width=1 (tabs already expanded) */
+/* UTF-8 helpers for render slicing: use wcwidth() for proper wide char support */
 static int render_cols_ss(const SizedStr *r) {
-    int cols = 0; const unsigned char *p = (const unsigned char*)r->data; int n = (int)r->len;
-    for (int i = 0; i < n;) {
-        unsigned char c = p[i];
-        int adv = (c & 0x80) == 0 ? 1 : ((c & 0xE0) == 0xC0 ? 2 : ((c & 0xF0) == 0xE0 ? 3 : ((c & 0xF8) == 0xF0 ? 4 : 1)));
-        if (i + adv > n) adv = 1; i += adv; cols += 1;
-    }
-    return cols;
+    return utf8_display_width(r->data, r->len);
 }
 static void render_slice_ss(const SizedStr *r, int start_col, int want_cols, int *out_start, int *out_len) {
-    const unsigned char *p = (const unsigned char*)r->data; int n = (int)r->len;
-    int col = 0; int i = 0;
-    while (i < n && col < start_col) {
-        unsigned char c = p[i]; int adv = (c & 0x80) == 0 ? 1 : ((c & 0xE0) == 0xC0 ? 2 : ((c & 0xF0) == 0xE0 ? 3 : ((c & 0xF8) == 0xF0 ? 4 : 1)));
-        if (i + adv > n) adv = 1; i += adv; col++;
-    }
-    int sb = i; int taken = 0;
-    while (i < n && taken < want_cols) {
-        unsigned char c = p[i]; int adv = (c & 0x80) == 0 ? 1 : ((c & 0xE0) == 0xC0 ? 2 : ((c & 0xF0) == 0xE0 ? 3 : ((c & 0xF8) == 0xF0 ? 4 : 1)));
-        if (i + adv > n) adv = 1; i += adv; taken++;
-    }
-    if (out_start) *out_start = sb; if (out_len) *out_len = i - sb;
+    utf8_slice_by_columns(r->data, r->len, start_col, want_cols, out_start, out_len);
 }
 
 static void draw_quickfix_window(Abuf *ab, const Window *win) {

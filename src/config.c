@@ -77,6 +77,7 @@ void user_commands_init(void) {
   cm("vsplit", cmd_vsplit, "vertical split");
   cm("wfocus", cmd_wfocus, "focus next window");
   cm("wclose", cmd_wclose, "close window");
+  cm("new", cmd_new, "new split with empty buffer");
 }
 
 void user_keybinds_init(void) {
@@ -89,6 +90,7 @@ void nmode_bindings() {
   cmapn("  ", "fzf");
   cmapn(" bb", "ls");
   cmapn(" ff", "fzf");
+  cmapn(" fn", "new");
   cmapn(" fr", "recent");
   cmapn(" fs", "w");
   cmapn(" qq", "q!");

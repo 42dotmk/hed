@@ -3,47 +3,55 @@
 /*** Cursor movement helpers ***/
 
 static inline void cur_sync_from_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) { buf->cursor_x = win->cursor_x; buf->cursor_y = win->cursor_y; }
+    if (PTR_VALID(buf) && PTR_VALID(win)) { 
+         buf->cursor_x = win->cursor_x; 
+         buf->cursor_y = win->cursor_y; 
+    }
 }
 static inline void cur_sync_to_window(Buffer *buf, Window *win) {
     if (PTR_VALID(buf) && PTR_VALID(win)) { win->cursor_x = buf->cursor_x; win->cursor_y = buf->cursor_y; }
 }
 
+/*
+ * Macro to eliminate cursor sync boilerplate in helper functions.
+ * Usage: CURSOR_OP({ code that modifies buf->cursor_x/y })
+ */
+#define CURSOR_OP(code) do { \
+    Buffer *buf = buf_cur(); \
+    Window *win = window_cur(); \
+    if (!PTR_VALID(buf) || !PTR_VALID(win)) return; \
+    cur_sync_from_window(buf, win); \
+    code \
+    cur_sync_to_window(buf, win); \
+} while(0)
+
 void buf_cursor_move_top(void) {
-    Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    cur_sync_from_window(buf, win);
-    buf->cursor_y = 0;
-    buf->cursor_x = 0;
-    cur_sync_to_window(buf, win);
+    CURSOR_OP({
+        buf->cursor_y = 0;
+        buf->cursor_x = 0;
+    });
 }
 
 void buf_cursor_move_bottom(void) {
-    Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    cur_sync_from_window(buf, win);
-    buf->cursor_y = buf->num_rows - 1;
-    if (buf->cursor_y < 0) buf->cursor_y = 0;
-    buf->cursor_x = 0;
-    cur_sync_to_window(buf, win);
+    CURSOR_OP({
+        buf->cursor_y = buf->num_rows - 1;
+        if (buf->cursor_y < 0) buf->cursor_y = 0;
+        buf->cursor_x = 0;
+    });
 }
 
 void buf_cursor_move_line_start(void) {
-    Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    cur_sync_from_window(buf, win);
-    buf->cursor_x = 0;
-    cur_sync_to_window(buf, win);
+    CURSOR_OP({
+        buf->cursor_x = 0;
+    });
 }
 
 void buf_cursor_move_line_end(void) {
-    Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    cur_sync_from_window(buf, win);
-    if (BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) {
-        buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
-    }
-    cur_sync_to_window(buf, win);
+    CURSOR_OP({
+        if (BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) {
+            buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+        }
+    });
 }
 
 void buf_cursor_move_word_forward(void) {

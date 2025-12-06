@@ -5,6 +5,7 @@
 -DUSE_TREESITTER
 -DUSE_LIBVTERM
 -O2
+-I/usr/include
 -Isrc
 -Isrc/ui
 -Isrc/buf
