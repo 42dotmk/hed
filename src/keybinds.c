@@ -75,9 +75,9 @@ void kb_append_mode(void) {
     if (!buf || !win) return;
 
     ed_set_mode(MODE_INSERT);
-    if (win->cursor_y < buf->num_rows) {
-        Row *row = &buf->rows[win->cursor_y];
-        if (win->cursor_x < (int)row->chars.len) win->cursor_x++;
+    if (win->cursor.y < buf->num_rows) {
+        Row *row = &buf->rows[win->cursor.y];
+        if (win->cursor.x < (int)row->chars.len) win->cursor.x++;
     }
 }
 
@@ -108,45 +108,57 @@ void kb_delete_char(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!buf || !win) return;
-
-    if (win->cursor_y < buf->num_rows) {
-        Row *row = &buf->rows[win->cursor_y];
-        if (win->cursor_x < (int)row->chars.len) {
-            buf_row_del_char_in(buf, row, win->cursor_x);
-        }
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
     }
+    if (win->cursor.y >= buf->num_rows) return;
+
+    Row *row = &buf->rows[win->cursor.y];
+    int cx = win->cursor.x;
+    if (cx >= (int)row->chars.len) return;
+
+    int y = win->cursor.y;
+    char deleted_char = row->chars.data[cx];
+    if (!undo_is_applying()) {
+        undo_begin_group();
+        undo_push_delete(y, cx, &deleted_char, 1, y, cx, y, cx);
+        undo_commit_group();
+    }
+    /* Reuse core delete logic so window/buffer state stay consistent */
+    buf_del_char_in(buf);
 }
 
 /* Normal mode - cursor movement */
 void kb_cursor_line_start(void) {
     Window *win = window_cur();
     if (!win) return;
-    win->cursor_x = 0;
+    win->cursor.x = 0;
 }
 
 void kb_cursor_line_end(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!buf || !win) return;
-    if (win->cursor_y < buf->num_rows) {
-        win->cursor_x = buf->rows[win->cursor_y].chars.len;
+    if (win->cursor.y < buf->num_rows) {
+        win->cursor.x = buf->rows[win->cursor.y].chars.len;
     }
 }
 
 void kb_cursor_top(void) {
     Window *win = window_cur();
     if (!win) return;
-    win->cursor_y = 0;
-    win->cursor_x = 0;
+    win->cursor.y = 0;
+    win->cursor.x = 0;
 }
 
 void kb_cursor_bottom(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!buf || !win) return;
-    win->cursor_y = buf->num_rows - 1;
-    if (win->cursor_y < 0) win->cursor_y = 0;
-    win->cursor_x = 0;
+    win->cursor.y = buf->num_rows - 1;
+    if (win->cursor.y < 0) win->cursor.y = 0;
+    win->cursor.x = 0;
 }
 
 /* Normal mode - search */
@@ -209,8 +221,8 @@ static void kb_jump(int direction) {
             Window *win = window_cur();
             if (win) {
                 win->buffer_index = buffer_idx;
-                win->cursor_x = cursor_x;
-                win->cursor_y = cursor_y;
+                win->cursor.x = cursor_x;
+                win->cursor.y = cursor_y;
             }
 
             Buffer *buf = buf_cur();

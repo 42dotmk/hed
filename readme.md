@@ -4,14 +4,14 @@ A console-based text editor written in C, inspired by vim. Built with simplicity
 
 ## Features
 
-- **Modal Editing**: Normal, Insert, Visual, and Command modes
+- **Modal Editing**: Normal, Insert, and Command modes
 - **Multiple Buffers**: Work with up to 16 files simultaneously
 - **Buffer Management**: Switch between files, list all open buffers
 - **Vim-like Navigation**: hjkl keys and more
 - **File Operations**: Open, save, and quit with familiar commands
 - **Search**: Find text with `/` and navigate with `n`
 - **Basic Editing**: Cut, copy, paste, and delete operations
-- **Visual Mode**: Select and manipulate text
+<!-- Visual mode removed; selection-based editing is no longer available -->
 
 ## Building
 
@@ -54,7 +54,6 @@ make run
 | `l` | Move cursor right |
 | `i` | Enter insert mode (before cursor) |
 | `a` | Enter insert mode (after cursor) |
-| `v` | Enter visual mode |
 | `x` | Delete character under cursor |
 | `dd` | Delete current line (cut) |
 | `yy` | Yank (copy) current line |
@@ -75,15 +74,6 @@ make run
 | Any character | Insert character |
 | `Enter` | Insert newline |
 | `Backspace` | Delete previous character |
-
-### Visual Mode
-
-| Key | Action |
-|-----|--------|
-| `h/j/k/l` | Move cursor (extends selection) |
-| `y` | Yank (copy) selection |
-| `d` | Delete selection |
-| `ESC` | Return to normal mode |
 
 ### Command Mode
 

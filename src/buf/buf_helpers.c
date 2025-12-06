@@ -1,15 +1,20 @@
 #include "hed.h"
 
+/* Internal low-level row helpers (not part of public API) */
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
+void buf_row_del_in(Buffer *buf, int at);
+void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
+
 /*** Cursor movement helpers ***/
 
 static inline void cur_sync_from_window(Buffer *buf, Window *win) {
     if (PTR_VALID(buf) && PTR_VALID(win)) { 
-         buf->cursor_x = win->cursor_x; 
-         buf->cursor_y = win->cursor_y; 
+         buf->cursor.x = win->cursor.x; 
+         buf->cursor.y = win->cursor.y; 
     }
 }
 static inline void cur_sync_to_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) { win->cursor_x = buf->cursor_x; win->cursor_y = buf->cursor_y; }
+    if (PTR_VALID(buf) && PTR_VALID(win)) { win->cursor.x = buf->cursor.x; win->cursor.y = buf->cursor.y; }
 }
 
 /*
@@ -27,29 +32,29 @@ static inline void cur_sync_to_window(Buffer *buf, Window *win) {
 
 void buf_cursor_move_top(void) {
     CURSOR_OP({
-        buf->cursor_y = 0;
-        buf->cursor_x = 0;
+        buf->cursor.y = 0;
+        buf->cursor.x = 0;
     });
 }
 
 void buf_cursor_move_bottom(void) {
     CURSOR_OP({
-        buf->cursor_y = buf->num_rows - 1;
-        if (buf->cursor_y < 0) buf->cursor_y = 0;
-        buf->cursor_x = 0;
+        buf->cursor.y = buf->num_rows - 1;
+        if (buf->cursor.y < 0) buf->cursor.y = 0;
+        buf->cursor.x = 0;
     });
 }
 
 void buf_cursor_move_line_start(void) {
     CURSOR_OP({
-        buf->cursor_x = 0;
+        buf->cursor.x = 0;
     });
 }
 
 void buf_cursor_move_line_end(void) {
     CURSOR_OP({
-        if (BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) {
-            buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+        if (BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
+            buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
         }
     });
 }
@@ -58,27 +63,27 @@ void buf_cursor_move_word_forward(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     cur_sync_from_window(buf, win);
-    if (!BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) { cur_sync_to_window(buf, win); return; }
+    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) { cur_sync_to_window(buf, win); return; }
 
-    Row *row = &buf->rows[buf->cursor_y];
+    Row *row = &buf->rows[buf->cursor.y];
 
     /* Skip current word */
-    while (buf->cursor_x < (int)row->chars.len &&
-           !isspace(row->chars.data[buf->cursor_x])) {
-        buf->cursor_x++;
+    while (buf->cursor.x < (int)row->chars.len &&
+           !isspace(row->chars.data[buf->cursor.x])) {
+        buf->cursor.x++;
     }
 
     /* Skip whitespace */
-    while (buf->cursor_x < (int)row->chars.len &&
-           isspace(row->chars.data[buf->cursor_x])) {
-        buf->cursor_x++;
+    while (buf->cursor.x < (int)row->chars.len &&
+           isspace(row->chars.data[buf->cursor.x])) {
+        buf->cursor.x++;
     }
 
     /* If at end of line, move to next line */
-    if (buf->cursor_x >= (int)row->chars.len &&
-        buf->cursor_y < buf->num_rows - 1) {
-        buf->cursor_y++;
-        buf->cursor_x = 0;
+    if (buf->cursor.x >= (int)row->chars.len &&
+        buf->cursor.y < buf->num_rows - 1) {
+        buf->cursor.y++;
+        buf->cursor.x = 0;
     }
     cur_sync_to_window(buf, win);
 }
@@ -89,28 +94,28 @@ void buf_cursor_move_word_backward(void) {
     cur_sync_from_window(buf, win);
 
     /* If at start of line, go to end of previous line */
-    if (buf->cursor_x == 0) {
-        if (buf->cursor_y > 0) {
-            buf->cursor_y--;
-            if (BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) {
-                buf->cursor_x = buf->rows[buf->cursor_y].chars.len;
+    if (buf->cursor.x == 0) {
+        if (buf->cursor.y > 0) {
+            buf->cursor.y--;
+            if (BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
+                buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
             }
         }
         cur_sync_to_window(buf, win);
         return;
     }
 
-    Row *row = &buf->rows[buf->cursor_y];
-    buf->cursor_x--;
+    Row *row = &buf->rows[buf->cursor.y];
+    buf->cursor.x--;
 
     /* Skip whitespace */
-    while (buf->cursor_x > 0 && isspace(row->chars.data[buf->cursor_x])) {
-        buf->cursor_x--;
+    while (buf->cursor.x > 0 && isspace(row->chars.data[buf->cursor.x])) {
+        buf->cursor.x--;
     }
 
     /* Skip word */
-    while (buf->cursor_x > 0 && !isspace(row->chars.data[buf->cursor_x - 1])) {
-        buf->cursor_x--;
+    while (buf->cursor.x > 0 && !isspace(row->chars.data[buf->cursor.x - 1])) {
+        buf->cursor.x--;
     }
     cur_sync_to_window(buf, win);
 }
@@ -122,7 +127,7 @@ void buf_center_screen(void) {
     Window *win = window_cur();
     if (!PTR_VALID(win)) return;
     /* Center current line in the middle of the current window */
-    win->row_offset = win->cursor_y - (win->height / 2);
+    win->row_offset = win->cursor.y - (win->height / 2);
     if (win->row_offset < 0) win->row_offset = 0;
     int maxoff = buf->num_rows - win->height;
     if (win->row_offset > maxoff) {
@@ -135,35 +140,35 @@ void buf_scroll_half_page_up(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int half_page = E.screen_rows / 2;
-    win->cursor_y -= half_page;
-    if (win->cursor_y < 0) win->cursor_y = 0;
+    win->cursor.y -= half_page;
+    if (win->cursor.y < 0) win->cursor.y = 0;
 }
 
 void buf_scroll_half_page_down(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int half_page = E.screen_rows / 2;
-    win->cursor_y += half_page;
-    if (win->cursor_y >= buf->num_rows) {
-        win->cursor_y = buf->num_rows - 1;
-        if (win->cursor_y < 0) win->cursor_y = 0;
+    win->cursor.y += half_page;
+    if (win->cursor.y >= buf->num_rows) {
+        win->cursor.y = buf->num_rows - 1;
+        if (win->cursor.y < 0) win->cursor.y = 0;
     }
 }
 
 void buf_scroll_page_up(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    win->cursor_y -= E.screen_rows;
-    if (win->cursor_y < 0) win->cursor_y = 0;
+    win->cursor.y -= E.screen_rows;
+    if (win->cursor.y < 0) win->cursor.y = 0;
 }
 
 void buf_scroll_page_down(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    win->cursor_y += E.screen_rows;
-    if (win->cursor_y >= buf->num_rows) {
-        win->cursor_y = buf->num_rows - 1;
-        if (win->cursor_y < 0) win->cursor_y = 0;
+    win->cursor.y += E.screen_rows;
+    if (win->cursor.y >= buf->num_rows) {
+        win->cursor.y = buf->num_rows - 1;
+        if (win->cursor.y < 0) win->cursor.y = 0;
     }
 }
 
@@ -171,62 +176,107 @@ void buf_scroll_page_down(void) {
 
 void buf_join_lines(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor_y >= buf->num_rows - 1) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor.y >= buf->num_rows - 1) return;
 
-    /* Append next line to current line with a space */
-    Row *current = &buf->rows[win->cursor_y];
-    Row *next = &buf->rows[win->cursor_y + 1];
+    int y = win->cursor.y;
+    Row *current = &buf->rows[y];
+    Row *next = &buf->rows[y + 1];
+    if (!PTR_VALID(current) || !PTR_VALID(next)) return;
 
-    /* Add space if current line doesn't end with one */
-    if (current->chars.len > 0 &&
-        current->chars.data[current->chars.len - 1] != ' ') {
-        sstr_append_char(&current->chars, ' ');
+    int cx_before = win->cursor.x;
+    int need_space = (current->chars.len > 0 &&
+                      current->chars.data[current->chars.len - 1] != ' ');
+
+    int started_group = 0;
+    if (!undo_is_applying()) {
+        undo_begin_group();
+        started_group = 1;
     }
 
-    /* Append next line */
-    buf_row_append_in(buf, current, &next->chars);
+    /* Optional space insertion at end of current line */
+    if (need_space) {
+        char space = ' ';
+        int cx_ins = (int)current->chars.len;
+        if (!undo_is_applying()) {
+            undo_push_insert(y, cx_ins, &space, 1,
+                             y, cx_before, y, cx_before);
+        }
+        sstr_append_char(&current->chars, ' ');
+        buf_row_update(current);
+    }
 
-    /* Delete next line */
-    buf_row_del_in(buf, win->cursor_y + 1);
+    /* Delete logical newline between current and next line (merge lines) */
+    int cx_nl = (int)current->chars.len;
+    if (!undo_is_applying()) {
+        const char nl = '\n';
+        undo_push_delete(y, cx_nl, &nl, 1,
+                         y, cx_before, y, cx_before);
+    }
+    /* Append next line's text and remove the next row */
+    buf_row_append_in(buf, current, &next->chars);
+    buf_row_del_in(buf, y + 1);
+    buf->dirty++;
+
+    if (started_group && !undo_is_applying()) {
+        undo_commit_group();
+    }
 }
 
 void buf_duplicate_line(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
-    Row *row = &buf->rows[win->cursor_y];
-    buf_row_insert_in(buf, win->cursor_y + 1, row->chars.data, row->chars.len);
-    win->cursor_y++;
+    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    /* Implement as yank + paste so undo works naturally */
+    buf_yank_line_in(buf);
+    buf_paste_in(buf);
 }
 
 void buf_move_line_up(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor_y == 0 || buf->num_rows < 2) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor.y == 0 || buf->num_rows < 2) return;
 
     /* Swap with previous line */
-    Row temp = buf->rows[win->cursor_y];
-    buf->rows[win->cursor_y] = buf->rows[win->cursor_y - 1];
-    buf->rows[win->cursor_y - 1] = temp;
-    win->cursor_y--;
+    Row temp = buf->rows[win->cursor.y];
+    buf->rows[win->cursor.y] = buf->rows[win->cursor.y - 1];
+    buf->rows[win->cursor.y - 1] = temp;
+    win->cursor.y--;
 }
 
 void buf_move_line_down(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor_y >= buf->num_rows - 1) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor.y >= buf->num_rows - 1) return;
 
     /* Swap with next line */
-    Row temp = buf->rows[win->cursor_y];
-    buf->rows[win->cursor_y] = buf->rows[win->cursor_y + 1];
-    buf->rows[win->cursor_y + 1] = temp;
-    win->cursor_y++;
+    Row temp = buf->rows[win->cursor.y];
+    buf->rows[win->cursor.y] = buf->rows[win->cursor.y + 1];
+    buf->rows[win->cursor.y + 1] = temp;
+    win->cursor.y++;
 }
 
 /*** Text manipulation helpers ***/
 
 void buf_indent_line(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
 
-    Row *row = &buf->rows[win->cursor_y];
+    Row *row = &buf->rows[win->cursor.y];
+
+    int y = win->cursor.y;
+    int cx_before = win->cursor.x;
+
+    if (!undo_is_applying()) {
+        char spaces[TAB_STOP];
+        for (int i = 0; i < TAB_STOP; i++) spaces[i] = ' ';
+        int cx_after = cx_before + TAB_STOP;
+        undo_begin_group();
+        undo_push_insert(y, 0, spaces, (size_t)TAB_STOP,
+                         y, cx_before, y, cx_after);
+        undo_commit_group();
+    }
 
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
@@ -234,15 +284,19 @@ void buf_indent_line(void) {
     }
 
     buf_row_update(row);
-    win->cursor_x += TAB_STOP;
+    win->cursor.x += TAB_STOP;
     buf->dirty++;
 }
 
 void buf_unindent_line(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
 
-    Row *row = &buf->rows[win->cursor_y];
+    Row *row = &buf->rows[win->cursor.y];
 
     /* Remove up to TAB_STOP spaces from the beginning */
     int spaces_to_remove = 0;
@@ -254,19 +308,37 @@ void buf_unindent_line(void) {
         }
     }
 
+    int y = win->cursor.y;
+    int cx_before = win->cursor.x;
+
+    if (spaces_to_remove > 0 && !undo_is_applying()) {
+        char removed[8];
+        for (int i = 0; i < spaces_to_remove && i < (int)sizeof(removed); i++) removed[i] = ' ';
+        int cx_after = cx_before - spaces_to_remove;
+        if (cx_after < 0) cx_after = 0;
+        undo_begin_group();
+        undo_push_delete(y, 0, removed, (size_t)spaces_to_remove,
+                         y, cx_before, y, cx_after);
+        undo_commit_group();
+    }
+
     for (int i = 0; i < spaces_to_remove; i++) {
         sstr_delete_char(&row->chars, 0);
     }
 
     buf_row_update(row);
-    win->cursor_x -= spaces_to_remove;
-    if (win->cursor_x < 0) win->cursor_x = 0;
+    win->cursor.x -= spaces_to_remove;
+    if (win->cursor.x < 0) win->cursor.x = 0;
     buf->dirty++;
 }
 
 void buf_toggle_comment(void) {
-    Buffer *buf = buf_cur();
-    if (!PTR_VALID(buf) || !BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) return;
+    Buffer *buf = buf_cur(); Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
 
     /* Determine comment string based on filetype */
     const char *comment = "// ";
@@ -280,7 +352,8 @@ void buf_toggle_comment(void) {
         else if (strcmp(buf->filetype, "go") == 0) comment = "// ";
     }
 
-    Row *row = &buf->rows[buf->cursor_y];
+    int y = win->cursor.y;
+    Row *row = &buf->rows[y];
     int comment_len = strlen(comment);
 
     /* Check if line starts with comment */
@@ -292,22 +365,39 @@ void buf_toggle_comment(void) {
         }
     }
 
+    if (!undo_is_applying()) {
+        undo_begin_group();
+    }
+
     if (is_commented) {
         /* Remove comment */
+        if (!undo_is_applying()) {
+            undo_push_delete(y, 0, comment, (size_t)comment_len,
+                             y, win->cursor.x, y, win->cursor.x - comment_len);
+        }
         for (int i = 0; i < comment_len; i++) {
             sstr_delete_char(&row->chars, 0);
         }
-        Window *win = window_cur(); if (win) { win->cursor_x -= comment_len; if (win->cursor_x < 0) win->cursor_x = 0; }
+        win->cursor.x -= comment_len;
+        if (win->cursor.x < 0) win->cursor.x = 0;
     } else {
         /* Add comment */
+        if (!undo_is_applying()) {
+            undo_push_insert(y, 0, comment, (size_t)comment_len,
+                             y, win->cursor.x, y, win->cursor.x + comment_len);
+        }
         for (int i = comment_len - 1; i >= 0; i--) {
             sstr_insert_char(&row->chars, 0, comment[i]);
         }
-        Window *win = window_cur(); if (win) { win->cursor_x += comment_len; }
+        win->cursor.x += comment_len;
     }
 
     buf_row_update(row);
     buf->dirty++;
+
+    if (!undo_is_applying()) {
+        undo_commit_group();
+    }
 }
 
 /*** Navigation helpers ***/
@@ -322,8 +412,8 @@ void buf_goto_line(int line_num) {
     if (line_num < 0) line_num = 0;
     if (line_num >= buf->num_rows) line_num = buf->num_rows - 1;
 
-    win->cursor_y = line_num;
-    win->cursor_x = 0;
+    win->cursor.y = line_num;
+    win->cursor.x = 0;
 }
 
 /* Determine if a byte is part of a word (ASCII letters/digits/underscore, or non-ASCII byte) */
@@ -333,19 +423,19 @@ static inline int _is_word_byte(unsigned char b) {
 
 int buf_get_line_under_cursor(SizedStr *out) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out)) return 0;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return 0;
-    Row *row = &buf->rows[win->cursor_y];
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+    Row *row = &buf->rows[win->cursor.y];
     sstr_free(out); *out = sstr_from(row->chars.data, row->chars.len);
     return 1;
 }
 
 int buf_get_word_under_cursor(SizedStr *out) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out)) return 0;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return 0;
-    Row *row = &buf->rows[win->cursor_y];
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+    Row *row = &buf->rows[win->cursor.y];
     if (row->chars.len == 0) return 0;
     int n = (int)row->chars.len;
-    int cx = win->cursor_x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
+    int cx = win->cursor.x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
     int i = cx;
     if (!_is_word_byte((unsigned char)row->chars.data[i])) {
         while (i > 0 && !_is_word_byte((unsigned char)row->chars.data[i])) i--;
@@ -363,7 +453,7 @@ int buf_get_word_under_cursor(SizedStr *out) {
 int buf_get_paragraph_under_cursor(SizedStr *out) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out)) return 0;
     if (buf->num_rows == 0) return 0;
-    int y = win->cursor_y; if (y < 0) y = 0; if (y >= buf->num_rows) y = buf->num_rows - 1;
+    int y = win->cursor.y; if (y < 0) y = 0; if (y >= buf->num_rows) y = buf->num_rows - 1;
     int start = y; while (start > 0) {
         const Row *r = &buf->rows[start - 1];
         int blank = 1; for (size_t i = 0; i < r->chars.len; i++) { char c = r->chars.data[i]; if (!(c == ' ' || c == '\t')) { blank = 0; break; } }
@@ -385,9 +475,9 @@ int buf_get_paragraph_under_cursor(SizedStr *out) {
 
 int buf_get_word_range(int *start_x, int *end_x) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return 0;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return 0;
-    Row *row = &buf->rows[win->cursor_y]; if (row->chars.len == 0) return 0;
-    int n = (int)row->chars.len; int cx = win->cursor_x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+    Row *row = &buf->rows[win->cursor.y]; if (row->chars.len == 0) return 0;
+    int n = (int)row->chars.len; int cx = win->cursor.x; if (cx >= n) cx = n - 1; if (cx < 0) cx = 0;
     int i = cx;
     if (!_is_word_byte((unsigned char)row->chars.data[i])) {
         while (i > 0 && !_is_word_byte((unsigned char)row->chars.data[i])) i--;
@@ -401,7 +491,7 @@ int buf_get_word_range(int *start_x, int *end_x) {
 
 int buf_get_paragraph_range(int *start_y, int *end_y) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return 0;
-    if (buf->num_rows == 0) return 0; int y = win->cursor_y; if (y < 0) y = 0; if (y >= buf->num_rows) y = buf->num_rows - 1;
+    if (buf->num_rows == 0) return 0; int y = win->cursor.y; if (y < 0) y = 0; if (y >= buf->num_rows) y = buf->num_rows - 1;
     int sy = y; while (sy > 0) {
         const Row *r = &buf->rows[sy - 1]; int blank = 1; for (size_t i = 0; i < r->chars.len; i++) { char c = r->chars.data[i]; if (!(c == ' ' || c == '\t')) { blank = 0; break; } }
         if (blank) break; sy--;
@@ -443,13 +533,13 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
     /* Perform deletion */
     if (sy == ey) {
         if (sy < 0 || sy >= buf->num_rows) return; Row *row = &buf->rows[sy];
-        if (!undo_is_applying()) { undo_begin_group(); undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len, win->cursor_y, win->cursor_x, sy, sx); }
+        if (!undo_is_applying()) { undo_begin_group(); undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len, win->cursor.y, win->cursor.x, sy, sx); }
         /* shift left */
         if (ex > (int)row->chars.len) ex = (int)row->chars.len; if (sx < 0) sx = 0; if (ex < sx) ex = sx;
         size_t tail = row->chars.len - ex;
         memmove(row->chars.data + sx, row->chars.data + ex, tail);
         row->chars.len -= (ex - sx); row->chars.data[row->chars.len] = '\0'; buf_row_update(row);
-        win->cursor_x = sx;
+        win->cursor.x = sx;
     } else {
         /* Delete part of first line */
         Row *first = &buf->rows[sy]; if (sx > (int)first->chars.len) sx = (int)first->chars.len; first->chars.len = sx; first->chars.data[sx] = '\0'; buf_row_update(first);
@@ -460,21 +550,21 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         SizedStr tail = sstr_from(last->chars.data + lrx, last->chars.len - lrx);
         buf_row_del_in(buf, sy + 1);
         buf_row_append_in(buf, first, &tail); sstr_free(&tail);
-        win->cursor_y = sy; win->cursor_x = sx;
+        win->cursor.y = sy; win->cursor.x = sx;
     }
 }
 
 void buf_yank_word(void) {
     int sx=0, ex=0; 
     if (!buf_get_word_range(&sx,&ex)) return; 
-    int y = window_cur()->cursor_y; 
+    int y = window_cur()->cursor.y; 
     buf_yank_range(y, sx, y, ex); 
     ed_set_status_message("yanked word"); }
 
 void buf_delete_inner_word(void) {
     int sx=0, ex=0; 
     if (!buf_get_word_range(&sx,&ex)) return; 
-    int y = window_cur()->cursor_y; 
+    int y = window_cur()->cursor.y; 
     buf_delete_range(y, sx, y, ex); 
     ed_set_status_message("deleted inner word"); 
 }
@@ -482,12 +572,12 @@ void buf_delete_inner_word(void) {
 void buf_delete_word_forward(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
 
-    Row *row = &buf->rows[win->cursor_y];
+    Row *row = &buf->rows[win->cursor.y];
     if (row->chars.len == 0) return;
 
-    int cx = win->cursor_x;
+    int cx = win->cursor.x;
     int n = (int)row->chars.len;
 
     /* If at or past end of line, do nothing */
@@ -511,7 +601,7 @@ void buf_delete_word_forward(void) {
     }
 
     if (ex > cx) {
-        buf_delete_range(win->cursor_y, cx, win->cursor_y, ex);
+        buf_delete_range(win->cursor.y, cx, win->cursor.y, ex);
         ed_set_status_message("deleted word forward");
     }
 }
@@ -519,10 +609,10 @@ void buf_delete_word_forward(void) {
 void buf_delete_word_backward(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
 
-    Row *row = &buf->rows[win->cursor_y];
-    int cx = win->cursor_x;
+    Row *row = &buf->rows[win->cursor.y];
+    int cx = win->cursor.x;
 
     /* If at start of line, do nothing (could extend to join with previous line) */
     if (cx == 0) return;
@@ -547,74 +637,74 @@ void buf_delete_word_backward(void) {
     }
 
     if (sx < cx) {
-        buf_delete_range(win->cursor_y, sx, win->cursor_y, cx);
-        win->cursor_x = sx; /* Position cursor at deletion point */
+        buf_delete_range(win->cursor.y, sx, win->cursor.y, cx);
+        win->cursor.x = sx; /* Position cursor at deletion point */
         ed_set_status_message("deleted word backward");
     }
 }
 
 void buf_yank_paragraph(void) {
-    int sy=0, ey=0; if (!buf_get_paragraph_range(&sy,&ey)) return; buf_yank_range(sy, 0, ey, window_cur()->cursor_x /* ignored for full lines */); ed_set_status_message("yanked paragraph"); }
+    int sy=0, ey=0; if (!buf_get_paragraph_range(&sy,&ey)) return; buf_yank_range(sy, 0, ey, window_cur()->cursor.x /* ignored for full lines */); ed_set_status_message("yanked paragraph"); }
 
 void buf_delete_paragraph(void) {
     int sy=0, ey=0; if (!buf_get_paragraph_range(&sy,&ey)) return; buf_delete_range(sy, 0, ey, (int)buf_cur()->rows[ey].chars.len); ed_set_status_message("deleted paragraph"); }
 
 void buf_move_cursor_key(int key) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    Row *row = (win->cursor_y >= 0 && win->cursor_y < buf->num_rows) ? &buf->rows[win->cursor_y] : NULL;
+    Row *row = (win->cursor.y >= 0 && win->cursor.y < buf->num_rows) ? &buf->rows[win->cursor.y] : NULL;
     switch (key) {
         case KEY_ARROW_LEFT:
         case 'h':
             if (row) {
-                int rx = buf_row_cx_to_rx(row, win->cursor_x);
+                int rx = buf_row_cx_to_rx(row, win->cursor.x);
                 if (rx > 0) {
-                    win->cursor_x = buf_row_rx_to_cx(row, rx - 1);
-                } else if (win->cursor_y > 0) {
-                    win->cursor_y--;
-                    Row *pr = &buf->rows[win->cursor_y];
+                    win->cursor.x = buf_row_rx_to_cx(row, rx - 1);
+                } else if (win->cursor.y > 0) {
+                    win->cursor.y--;
+                    Row *pr = &buf->rows[win->cursor.y];
                     int prcols = buf_row_cx_to_rx(pr, (int)pr->chars.len);
-                    win->cursor_x = buf_row_rx_to_cx(pr, prcols);
+                    win->cursor.x = buf_row_rx_to_cx(pr, prcols);
                 }
             }
             break;
         case KEY_ARROW_DOWN:
         case 'j':
-            if (win->cursor_y < buf->num_rows - 1) win->cursor_y++;
+            if (win->cursor.y < buf->num_rows - 1) win->cursor.y++;
             break;
         case KEY_ARROW_UP:
         case 'k':
-            if (win->cursor_y > 0) win->cursor_y--;
+            if (win->cursor.y > 0) win->cursor.y--;
             break;
         case KEY_ARROW_RIGHT:
         case 'l':
             if (row) {
-                int rx = buf_row_cx_to_rx(row, win->cursor_x);
+                int rx = buf_row_cx_to_rx(row, win->cursor.x);
                 int rcols = buf_row_cx_to_rx(row, (int)row->chars.len);
                 if (rx < rcols) {
-                    win->cursor_x = buf_row_rx_to_cx(row, rx + 1);
-                } else if (win->cursor_y < buf->num_rows - 1) {
-                    win->cursor_y++;
-                    win->cursor_x = 0;
+                    win->cursor.x = buf_row_rx_to_cx(row, rx + 1);
+                } else if (win->cursor.y < buf->num_rows - 1) {
+                    win->cursor.y++;
+                    win->cursor.x = 0;
                 }
             }
             break;
     }
-    row = (win->cursor_y >= 0 && win->cursor_y < buf->num_rows) ? &buf->rows[win->cursor_y] : NULL;
+    row = (win->cursor.y >= 0 && win->cursor.y < buf->num_rows) ? &buf->rows[win->cursor.y] : NULL;
     int rowlen = row ? (int)row->chars.len : 0;
-    if (win->cursor_x > rowlen) win->cursor_x = rowlen;
-    if (win->cursor_x < 0) win->cursor_x = 0;
+    if (win->cursor.x > rowlen) win->cursor.x = rowlen;
+    if (win->cursor.x < 0) win->cursor.x = 0;
 }
 
 void buf_find_matching_bracket(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     cur_sync_from_window(buf, win);
-    if (!BOUNDS_CHECK(buf->cursor_y, buf->num_rows)) { cur_sync_to_window(buf, win); return; }
+    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) { cur_sync_to_window(buf, win); return; }
 
-    Row *row = &buf->rows[buf->cursor_y];
-    if (buf->cursor_x >= (int)row->chars.len) return;
+    Row *row = &buf->rows[buf->cursor.y];
+    if (buf->cursor.x >= (int)row->chars.len) return;
 
-    char ch = row->chars.data[buf->cursor_x];
+    char ch = row->chars.data[buf->cursor.x];
     char match;
     int direction;
 
@@ -634,8 +724,8 @@ void buf_find_matching_bracket(void) {
     }
 
     int depth = 1;
-    int y = buf->cursor_y;
-    int x = buf->cursor_x + direction;
+    int y = buf->cursor.y;
+    int x = buf->cursor.x + direction;
 
     /* Search for matching bracket */
     while (y >= 0 && y < buf->num_rows) {
@@ -649,8 +739,8 @@ void buf_find_matching_bracket(void) {
                 depth--;
                 if (depth == 0) {
                     /* Found match */
-                    buf->cursor_y = y;
-                    buf->cursor_x = x;
+                    buf->cursor.y = y;
+                    buf->cursor.x = x;
                     cur_sync_to_window(buf, win);
                     return;
                 }
@@ -677,25 +767,25 @@ void buf_find_matching_bracket(void) {
 void buf_select_word(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int sx=0, ex=0; if (!buf_get_word_range(&sx,&ex)) return;
-    win->cursor_x = ex;
+    win->cursor.x = ex;
 }
 
 void buf_select_line(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
-    win->cursor_x = buf->rows[win->cursor_y].chars.len;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    win->cursor.x = buf->rows[win->cursor.y].chars.len;
 }
 
 void buf_select_all(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    win->cursor_y = buf->num_rows - 1; if (win->cursor_y < 0) win->cursor_y = 0;
-    if (win->cursor_y < buf->num_rows) win->cursor_x = buf->rows[win->cursor_y].chars.len;
+    win->cursor.y = buf->num_rows - 1; if (win->cursor.y < 0) win->cursor.y = 0;
+    if (win->cursor.y < buf->num_rows) win->cursor.x = buf->rows[win->cursor.y].chars.len;
 }
 
 void buf_select_paragraph(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int sy=0, ey=0; if (!buf_get_paragraph_range(&sy,&ey)) return;
-    win->cursor_y = ey; win->cursor_x = (int)buf->rows[ey].chars.len;
+    win->cursor.y = ey; win->cursor.x = (int)buf->rows[ey].chars.len;
 }
 
 /*** Text-object deletion helpers ("da" / "di") ***/
@@ -723,8 +813,8 @@ static int bh_is_unescaped_quote(const Row *row, int x) {
 static int bh_find_enclosing_pair(Buffer *buf, char open, char close,
                                   int *oy, int *ox, int *cy, int *cx) {
     if (!buf || buf->num_rows == 0) return 0;
-    int cur_y = buf->cursor_y;
-    int cur_x = buf->cursor_x;
+    int cur_y = buf->cursor.y;
+    int cur_x = buf->cursor.x;
 
     int by = -1, bx = -1, found_open = 0;
     if (open == close) {
@@ -816,8 +906,8 @@ static void bh_delete_range(Buffer *buf, int sy, int sx, int ey, int ex) {
     }
     sstr_free(&tail);
 
-    buf->cursor_y = sy;
-    buf->cursor_x = sx;
+    buf->cursor.y = sy;
+    buf->cursor.x = sx;
 }
 
 void buf_delete_around_char(void) {

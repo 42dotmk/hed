@@ -75,9 +75,6 @@ int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta);
 /* Ensure quickfix leaf presence in root tree according to open/height. */
 void wlayout_sync_quickfix(WLayoutNode **root, int qf_open, int qf_height);
 
-/* Ensure terminal pane leaf presence in root tree according to open/height. */
-void wlayout_sync_term(WLayoutNode **root, int term_open, int term_height, int term_idx);
-
-
+/* Terminal pane support removed */
 
 #endif /* WLAYOUT_H */

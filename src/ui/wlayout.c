@@ -430,41 +430,8 @@ void wlayout_sync_quickfix(WLayoutNode **rootp, int qf_open, int qf_height) {
             /* Shift windows array and reindex */
             for (int i = qf_idx; i < (int)E.windows.len - 1; i++) E.windows.data[i] = E.windows.data[i+1];
             E.windows.len--;
-            /* Adjust terminal window index if needed */
-            if (E.term_window_index > qf_idx) {
-                E.term_window_index--;
-            } else if (E.term_window_index == qf_idx) {
-                E.term_open = 0;
-                E.term_window_index = -1;
-            }
             wlayout_reindex_after_close(*rootp, qf_idx);
             if (E.current_window >= (int)E.windows.len) E.current_window = E.windows.len - 1;
-        }
-    }
-}
-
-void wlayout_sync_term(WLayoutNode **rootp, int term_open, int term_height, int term_idx) {
-    if (!rootp) return;
-    WLayoutNode *root = *rootp;
-    if (!root) return;
-    if (!term_open) return;
-    if (term_idx < 0 || term_idx >= (int)E.windows.len) return;
-
-    if (!tree_has_leaf_index(root, term_idx)) {
-        tree_replace_root_with_split(rootp, root, term_idx, term_height);
-    } else {
-        WLayoutNode *stack[64];
-        int sp = 0;
-        stack[sp++] = *rootp;
-        while (sp) {
-            WLayoutNode *n = stack[--sp];
-            if (n->dir == WL_SINGLE && n->leaf_index == term_idx) {
-                n->fixed_size = (term_height > 0 ? term_height : 1);
-                break;
-            }
-            for (int i = 0; i < n->nchildren; i++) {
-                if (n->child[i]) stack[sp++] = n->child[i];
-            }
         }
     }
 }

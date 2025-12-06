@@ -45,7 +45,6 @@
 #include "term_cmd.h"
 #include "fzf.h"
 #include "bottom_ui.h"
-#include "term_pane.h"
 
 /* UI */
 #include "abuf.h"

@@ -148,15 +148,15 @@ void window_scroll(Window *win) {
     if (!buf || !win) return;
 
     E.render_x = 0;
-    if (win->cursor_y < buf->num_rows) {
-        E.render_x = buf_row_cx_to_rx(&buf->rows[win->cursor_y], win->cursor_x);
+    if (win->cursor.y < buf->num_rows) {
+        E.render_x = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
     }
 
-    if (win->cursor_y < win->row_offset) {
-        win->row_offset = win->cursor_y;
+    if (win->cursor.y < win->row_offset) {
+        win->row_offset = win->cursor.y;
     }
-    if (win->cursor_y >= win->row_offset + win->height) {
-        win->row_offset = win->cursor_y - win->height + 1;
+    if (win->cursor.y >= win->row_offset + win->height) {
+        win->row_offset = win->cursor.y - win->height + 1;
     }
     if (E.render_x < win->col_offset) {
         win->col_offset = E.render_x;
@@ -230,7 +230,6 @@ static void draw_quickfix_window(Abuf *ab, const Window *win) {
 
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     if (win->is_quickfix) { draw_quickfix_window(ab, win); return; }
-    if (win->is_term)     { term_pane_draw(win, ab);      return; }
     Buffer *buf = NULL;
     if (E.buffers.len > 0 && win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len)
         buf = &E.buffers.data[win->buffer_index];
@@ -253,7 +252,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 char nb[32];
                 int num = filerow + 1;
                 if (E.relative_line_numbers && buf) {
-                    int cur = win->cursor_y;
+                    int cur = win->cursor.y;
                     if (filerow != cur) num = abs(filerow - cur);
                 }
                 int n = snprintf(nb, sizeof(nb), "%*d ", gutter, num);
@@ -344,10 +343,6 @@ void ed_render_frame(void) {
     }
     /* Keep quickfix as a bottom quickfix window within the root layout */
     wlayout_sync_quickfix(&E.wlayout_root, E.qf.open && E.qf.height > 0, E.qf.height);
-    /* Keep terminal pane as a bottom window when open */
-    if (E.term_open && E.term_window_index >= 0 && E.term_window_index < (int)E.windows.len) {
-        wlayout_sync_term(&E.wlayout_root, 1, E.term_height, E.term_window_index);
-    }
     /* If qf requested focus, switch to its window once created */
     if (E.qf.open && E.qf.focus) {
         for (int i = 0; i < (int)E.windows.len; i++) if (E.windows.data[i].is_quickfix) {
@@ -404,11 +399,8 @@ void ed_render_frame(void) {
         if (cur_row < win->top + 1) cur_row = win->top + 1;
         if (cur_row > win->top + win->height - 1) cur_row = win->top + win->height - 1;
         cur_col = 1;
-    } else if (win && win->is_term) {
-        cur_row = win->top;
-        cur_col = win->left;
     } else {
-        cur_row = (buf ? win->cursor_y - win->row_offset : 0) + win->top;
+        cur_row = (buf ? win->cursor.y - win->row_offset : 0) + win->top;
         cur_col = (E.render_x - (buf ? win->col_offset : 0)) + win->left + margin;
     }
     ansi_move(&ab, cur_row, cur_col);

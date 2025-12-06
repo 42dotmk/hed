@@ -12,11 +12,10 @@ void windows_init(void) {
     E.windows.data[0].buffer_index = E.current_buffer;
     E.windows.data[0].focus = 1;
     E.windows.data[0].is_quickfix = 0;
-    E.windows.data[0].is_term = 0;
     E.windows.data[0].row_offset = 0;
     E.windows.data[0].col_offset = 0;
-    E.windows.data[0].cursor_x = 0;
-    E.windows.data[0].cursor_y = 0;
+    E.windows.data[0].cursor.x = 0;
+    E.windows.data[0].cursor.y = 0;
     E.windows.data[0].gutter_mode = 0;
     E.windows.data[0].gutter_fixed_width = 0;
 }
@@ -116,10 +115,6 @@ void windows_close_current(void) {
         return;
     }
     int idx = E.current_window;
-    if (idx >= 0 && idx < (int)E.windows.len && E.windows.data[idx].is_term) {
-        E.term_open = 0;
-        E.term_window_index = -1;
-    }
     /* Update layout tree first */
     if (E.wlayout_root) {
         E.wlayout_root = wlayout_close_leaf(E.wlayout_root, idx);

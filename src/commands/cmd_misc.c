@@ -164,12 +164,11 @@ void cmd_put(const char *args) {
         return;
     }
     Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win) return;
-    int at = win->cursor_y < buf->num_rows ? win->cursor_y + 1 : buf->num_rows;
-    buf_row_insert_in(buf, at, s->data, s->len);
-    win->cursor_y = at;
-    win->cursor_x = 0;
+    if (!buf) return;
+    /* Use the same paste machinery as normal-mode 'p' so undo works */
+    sstr_free(&E.clipboard);
+    E.clipboard = sstr_from(s->data, s->len);
+    buf_paste_in(buf);
 }
 
 void cmd_undo(const char *args) {
@@ -274,15 +273,12 @@ void cmd_new_line(const char *args) {
     if (!buf) return;
 
     if (buf->num_rows == 0) {
-        buf_row_insert_in(buf, 0, "", 0);
-        win->cursor_y = 0;
-        win->cursor_x = 0;
-        ed_set_mode(MODE_INSERT);
-        return;
+        win->cursor.y = 0;
+        win->cursor.x = 0;
+    } else {
+        Row *row = (win->cursor.y < buf->num_rows) ? &buf->rows[win->cursor.y] : NULL;
+        win->cursor.x = row ? (int)row->chars.len : 0;
     }
-
-    Row *row = (win->cursor_y < buf->num_rows) ? &buf->rows[win->cursor_y] : NULL;
-    win->cursor_x = row ? (int)row->chars.len : 0;
     buf_insert_newline_in(buf);
     ed_set_mode(MODE_INSERT);
 }
@@ -294,15 +290,7 @@ void cmd_new_line_above(const char *args) {
     Buffer *buf = buf_cur();
     if (!buf) return;
 
-    if (buf->num_rows == 0) {
-        buf_row_insert_in(buf, 0, "", 0);
-        win->cursor_y = 0;
-        win->cursor_x = 0;
-        ed_set_mode(MODE_INSERT);
-        return;
-    }
-
-    win->cursor_x = 0;
+    win->cursor.x = 0;
     buf_insert_newline_in(buf);
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
@@ -314,43 +302,7 @@ void cmd_shell(const char *args) {
         return;
     }
 
-    /* Prefer running inside terminal pane when available */
-    int height = E.term_height > 0 ? E.term_height : 10;
-    if (term_pane_open(args, height)) {
-        E.term_open = 1;
-        E.term_height = height;
-
-        /* Ensure a dedicated terminal window exists */
-        int idx = E.term_window_index;
-        int need_new = 0;
-        if (idx < 0 || idx >= (int)E.windows.len) {
-            need_new = 1;
-        } else if (!E.windows.data[idx].is_term) {
-            need_new = 1;
-        }
-        if (need_new) {
-            if (!vec_reserve_typed(&E.windows, E.windows.len + 1, sizeof(Window))) {
-                ed_set_status_message("term: out of memory");
-                term_pane_close();
-                E.term_open = 0;
-                return;
-            }
-            idx = (int)E.windows.len;
-            E.windows.len++;
-            Window *w = &E.windows.data[idx];
-            memset(w, 0, sizeof(*w));
-            w->is_quickfix = 0;
-            w->is_term = 1;
-            w->focus = 0;
-            w->buffer_index = E.current_buffer;
-            E.term_window_index = idx;
-        }
-
-        ed_set_status_message("Running in term pane: %s", args);
-        return;
-    }
-
-    /* Fallback: run command interactively, handing over the TTY */
+    /* Run command interactively, handing over the TTY */
     int status = term_cmd_run_interactive(args);
 
     if (status == 0) {
@@ -361,5 +313,19 @@ void cmd_shell(const char *args) {
         ed_set_status_message("Command exited with status %d", status);
     }
 
+    ed_render_frame();
+}
+
+void cmd_git(const char *args) {
+    (void)args;
+    /* Run lazygit as a full-screen TUI, like fzf: temporarily leave raw mode. */
+    int status = term_cmd_run_interactive("lazygit");
+    if (status == 0) {
+        ed_set_status_message("lazygit exited");
+    } else if (status == -1) {
+        ed_set_status_message("failed to run lazygit");
+    } else {
+        ed_set_status_message("lazygit exited with status %d", status);
+    }
     ed_render_frame();
 }

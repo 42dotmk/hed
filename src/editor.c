@@ -323,7 +323,7 @@ static void handle_insert_mode_keypress(int c, Buffer *buf) {
             ed_set_mode(MODE_NORMAL);
             {
                 Window *win = window_cur();
-                if (buf && win && win->cursor_x > 0) win->cursor_x--;
+                if (buf && win && win->cursor.x > 0) win->cursor.x--;
             }
             break;
         case '\r':
@@ -429,13 +429,6 @@ void ed_process_keypress(void) {
         return;
     }
 
-    /* Special case: terminal pane input in normal mode */
-    if (cwin && cwin->is_term && E.mode == MODE_NORMAL) {
-        if (term_pane_handle_key(c)) {
-            return;
-        }
-    }
-
     /* Dispatch to appropriate mode handler */
     switch (E.mode) {
         case MODE_COMMAND:
@@ -466,9 +459,6 @@ void ed_init_state(){
     E.command_len = 0;
     E.mode = MODE_NORMAL;
     E.stay_in_command = 0;
-    E.term_open = 0;
-    E.term_height = 0;
-    E.term_window_index = -1;
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
     E.clipboard = sstr_new();

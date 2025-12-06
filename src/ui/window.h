@@ -20,7 +20,7 @@
  *    - A window does NOT own its buffer; buffers are independent
  *
  * 3. Cursor State:
- *    - Each window has its own cursor position (cursor_x, cursor_y)
+ *    - Each window has its own cursor position
  *    - These are window-local coordinates within the buffer
  *    - Cursor positions are independent per window, even for the same buffer
  *
@@ -93,11 +93,9 @@ typedef struct {
     int buffer_index;   /* index into E.buffers */
     int focus;          /* 1 if focused */
     int is_quickfix;    /* 1 if this window is a quickfix pane */
-    int is_term;        /* 1 if this window is a terminal pane */
     int row_offset;     /* first visible buffer row */
     int col_offset;     /* first visible buffer column (render x) */
-    int cursor_x;       /* window-local cursor column (in chars) */
-    int cursor_y;       /* window-local cursor row (line index) */
+    Cursor cursor;      /* window-local cursor (x=col, y=row index) */
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;

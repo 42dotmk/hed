@@ -44,7 +44,7 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
         buf && buf->dirty ? "*" : "");
     Window *cwin = window_cur();
     int rlen = snprintf(rstatus, sizeof(rstatus), "%d:%d ",
-        cwin ? cwin->cursor_y + 1 : 1, cwin ? cwin->cursor_x + 1 : 1);
+        cwin ? cwin->cursor.y + 1 : 1, cwin ? cwin->cursor.x + 1 : 1);
     if (len > lo->term_cols) len = lo->term_cols;
     ansi_move(ab, lo->status_row, 1);
     ansi_clear_eol(ab);

@@ -28,21 +28,12 @@ int main(int argc, char *argv[]) {
         FD_SET(STDIN_FILENO, &rfds);
         int maxfd = STDIN_FILENO;
 
-        int tfd = term_pane_fd();
-        if (tfd >= 0) {
-            FD_SET(tfd, &rfds);
-            if (tfd > maxfd) maxfd = tfd;
-        }
-
         int rc = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (rc == -1) {
             if (errno == EINTR) continue;
             die("select");
         }
 
-        if (tfd >= 0 && FD_ISSET(tfd, &rfds)) {
-            term_pane_poll();
-        }
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             ed_process_keypress();
         }

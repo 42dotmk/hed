@@ -67,6 +67,7 @@
 #define CURSOR_STYLE_BLOCK "\x1b[1 q"
 #define CURSOR_STYLE_UNDERLINE "\x1b[3 q"
 #define CURSOR_STYLE_BEAM "\x1b[5 q"
+#include "cursor.h"
 #include "row.h"
 
 /* Buffer structure - represents a single file/document */
@@ -74,8 +75,7 @@ typedef struct {
     Row *rows;
 
     int num_rows;
-    int cursor_x;
-    int cursor_y;
+    Cursor cursor;
     char *filename;
     char *title;      /* Display title: filename or "[No Name]" */
     char *filetype;
@@ -113,12 +113,5 @@ char *buf_detect_filetype(const char *filename);
 void buf_reload(Buffer *buf);
 /* Append message to *messages buffer */
 void buf_append_message(const char *msg);
-
-/* New explicit-target variants (prefer these going forward) */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-void buf_row_del_in(Buffer *buf, int at);
-void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
-void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
-void buf_row_del_char_in(Buffer *buf, Row *row, int at);
 
 #endif

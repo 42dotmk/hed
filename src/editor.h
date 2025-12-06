@@ -78,9 +78,6 @@ typedef struct {
     JumpList jump_list;
     int messages_buffer_index;
     int stay_in_command;
-    int term_open;              /* 0/1: terminal pane visible */
-    int term_height;            /* desired terminal pane height */
-    int term_window_index;      /* window index for terminal pane, or -1 */
     struct {
         char **items;
         int count;

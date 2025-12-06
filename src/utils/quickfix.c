@@ -89,10 +89,10 @@ static void qf_jump_to(const QfItem *it) {
         buf_goto_line(it->line);
     }
     if (it->col > 0) {
-        if (win->cursor_y < b->num_rows) {
-            int max = b->rows[win->cursor_y].chars.len;
+        if (win->cursor.y < b->num_rows) {
+            int max = b->rows[win->cursor.y].chars.len;
             int cx = it->col - 1; if (cx < 0) cx = 0; if (cx > max) cx = max;
-            win->cursor_x = cx;
+            win->cursor.x = cx;
         }
     }
 }

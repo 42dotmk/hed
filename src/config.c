@@ -64,6 +64,7 @@ void user_commands_init(void) {
   cm("recent", cmd_recent, "recent files");
   cm("logclear", cmd_logclear, "clear .hedlog");
   cm("shell", cmd_shell, "run shell cmd");
+   cm("git", cmd_git, "run lazygit");
   /* Syntax highlighting */
   cm("ts", cmd_ts, "ts on|off|auto");
   cm("tslang", cmd_tslang, "tslang <name>");
@@ -94,6 +95,7 @@ void nmode_bindings() {
   cmapn(" rm", "shell make");
   cmapn(" sd", "rg");
   cmapn(" ss", "ssearch");
+  cmapn(" gg", "git");
   cmapn(" tl", "ln");
   cmapn(" wd", "wclose");
   cmapn(" ws", "split");

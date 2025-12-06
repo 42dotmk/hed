@@ -17,6 +17,13 @@ static size_t used_bytes = 0; /* sum of payload sizes in UNDO only */
 
 extern Ed E;
 
+/* Internal low-level row helpers (not part of public API) */
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
+void buf_row_del_in(Buffer *buf, int at);
+void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
+void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
+void buf_row_del_char_in(Buffer *buf, Row *row, int at);
+
 static void s_free(SizedStr *s) { sstr_free(s); }
 static void rec_free(UndoRec *r) { if (r) s_free(&r->payload); }
 
@@ -216,11 +223,11 @@ static void apply_forward(const UndoRec *r) {
     switch (r->type) {
         case UREC_INSERT_TEXT:
             buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor_y = r->cy_after; b->cursor_x = r->cx_after; } }
+            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_after; b->cursor.x = r->cx_after; } }
             break;
         case UREC_DELETE_TEXT:
             buf_delete_len_at(r->y, r->x, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor_y = r->cy_after; b->cursor_x = r->cx_after; } }
+            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_after; b->cursor.x = r->cx_after; } }
             break;
     }
 }
@@ -229,11 +236,11 @@ static void apply_inverse(const UndoRec *r) {
     switch (r->type) {
         case UREC_INSERT_TEXT:
             buf_delete_len_at(r->y, r->x, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor_y = r->cy_before; b->cursor_x = r->cx_before; } }
+            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_before; b->cursor.x = r->cx_before; } }
             break;
         case UREC_DELETE_TEXT:
             buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor_y = r->cy_before; b->cursor_x = r->cx_before; } }
+            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_before; b->cursor.x = r->cx_before; } }
             break;
     }
 }

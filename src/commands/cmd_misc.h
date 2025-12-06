@@ -23,6 +23,7 @@
  * - :o             - Insert new line below and enter insert mode
  * - :O             - Insert new line above and enter insert mode
  * - :shell <cmd>   - Run shell command interactively (with terminal output)
+ * - :git           - Run lazygit (via :shell)
  */
 
 void cmd_list_commands(const char *args);
@@ -40,5 +41,6 @@ void cmd_tslang(const char *args);
 void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
 void cmd_shell(const char *args);
+void cmd_git(const char *args);
 
 #endif /* CMD_MISC_H */

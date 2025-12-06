@@ -1,6 +1,13 @@
 #include "hed.h"
 #include "safe_string.h"
 
+/* Internal low-level row helpers (not part of public API) */
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
+void buf_row_del_in(Buffer *buf, int at);
+void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
+void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
+void buf_row_del_char_in(Buffer *buf, Row *row, int at);
+
 Buffer *buf_cur(void) {
     if (E.buffers.len == 0) return NULL;
     return &E.buffers.data[E.current_buffer];
@@ -51,8 +58,8 @@ static void buf_init(Buffer *buf) {
     if (!buf) return;
     buf->rows = NULL;
     buf->num_rows = 0;
-    buf->cursor_x = 0;
-    buf->cursor_y = 0;
+    buf->cursor.x = 0;
+    buf->cursor.y = 0;
     buf->filename = NULL;
     buf->title = strdup("[No Name]");
     if (!buf->title) buf->title = NULL;  /* Handle OOM gracefully */
@@ -234,7 +241,7 @@ EdError buf_switch(int index) {
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor_x, win->cursor_y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
     }
 
     E.current_buffer = index;
@@ -254,7 +261,7 @@ void buf_next(void) {
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor_x, win->cursor_y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
     }
 
     E.current_buffer = (E.current_buffer + 1) % E.buffers.len;
@@ -274,7 +281,7 @@ void buf_prev(void) {
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor_x, win->cursor_y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
     }
 
     E.current_buffer = (E.current_buffer - 1 + E.buffers.len) % E.buffers.len;
@@ -436,10 +443,10 @@ void buf_insert_char_in(Buffer *buf, int c) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (win->cursor_y == buf->num_rows) {
+    if (win->cursor.y == buf->num_rows) {
         buf_row_insert_in(buf, buf->num_rows, "", 0);
     }
-    int y0 = win->cursor_y; int x0 = win->cursor_x;
+    int y0 = win->cursor.y; int x0 = win->cursor.x;
     if (!undo_is_applying()) {
         if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
         char ch = (char)c;
@@ -451,7 +458,7 @@ void buf_insert_char_in(Buffer *buf, int c) {
     HookCharEvent event = {buf, y0, x0, c};
     hook_fire_char(HOOK_CHAR_INSERT, &event);
 
-    win->cursor_x = x0 + 1;
+    win->cursor.x = x0 + 1;
 }
 
 void buf_insert_newline_in(Buffer *buf) {
@@ -461,14 +468,14 @@ void buf_insert_newline_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    int y0 = win->cursor_y; int x0 = win->cursor_x;
+    int y0 = win->cursor.y; int x0 = win->cursor.x;
     if (!undo_is_applying()) {
         if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
         const char nl = '\n';
         undo_push_insert(y0, x0, &nl, 1, y0, x0, y0 + 1, 0);
     }
     if (x0 == 0) {
-        buf_row_insert_in(buf, win->cursor_y, "", 0);
+        buf_row_insert_in(buf, win->cursor.y, "", 0);
     } else {
         Row *row = &buf->rows[y0];
         const char *rest = row->chars.data + x0;
@@ -480,8 +487,8 @@ void buf_insert_newline_in(Buffer *buf) {
         row->chars.data[row->chars.len] = '\0';
         buf_row_update(row);
     }
-    win->cursor_y = y0 + 1;
-    win->cursor_x = 0;
+    win->cursor.y = y0 + 1;
+    win->cursor.x = 0;
 }
 
 void buf_del_char_in(Buffer *buf) {
@@ -491,10 +498,10 @@ void buf_del_char_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (win->cursor_y == buf->num_rows) return;
-    if (win->cursor_x == 0 && win->cursor_y == 0) return;
+    if (win->cursor.y == buf->num_rows) return;
+    if (win->cursor.x == 0 && win->cursor.y == 0) return;
 
-    int y = win->cursor_y; int x = win->cursor_x;
+    int y = win->cursor.y; int x = win->cursor.x;
     Row *row = &buf->rows[y];
     if (x > 0) {
         int deleted_char = (x - 1 < (int)row->chars.len) ? row->chars.data[x - 1] : 0;
@@ -509,7 +516,7 @@ void buf_del_char_in(Buffer *buf) {
         HookCharEvent event = {buf, y, x - 1, deleted_char};
         hook_fire_char(HOOK_CHAR_DELETE, &event);
 
-        win->cursor_x = x - 1;
+        win->cursor.x = x - 1;
     } else {
         int prev_len = buf->rows[y - 1].chars.len;
         if (!undo_is_applying()) {
@@ -517,10 +524,10 @@ void buf_del_char_in(Buffer *buf) {
             undo_begin_group();
             undo_push_delete(y - 1, prev_len, &nl, 1, y, x, y - 1, prev_len);
         }
-        win->cursor_x = prev_len;
+        win->cursor.x = prev_len;
         buf_row_append_in(buf, &buf->rows[y - 1], &row->chars);
         buf_row_del_in(buf, y);
-        win->cursor_y = y - 1;
+        win->cursor.y = y - 1;
     }
 }
 
@@ -531,23 +538,23 @@ void buf_delete_line_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
 
     /* Save to clipboard */
     sstr_free(&E.clipboard);
-    E.clipboard = sstr_from(buf->rows[win->cursor_y].chars.data,
-                            buf->rows[win->cursor_y].chars.len);
+    E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
+                            buf->rows[win->cursor.y].chars.len);
     /* Update registers: numbered delete and unnamed */
-    regs_push_delete(buf->rows[win->cursor_y].chars.data,
-                     buf->rows[win->cursor_y].chars.len);
+    regs_push_delete(buf->rows[win->cursor.y].chars.data,
+                     buf->rows[win->cursor.y].chars.len);
 
     /* Fire hook before deletion */
-    HookLineEvent event = {buf, win->cursor_y, buf->rows[win->cursor_y].chars.data,
-                          buf->rows[win->cursor_y].chars.len};
+    HookLineEvent event = {buf, win->cursor.y, buf->rows[win->cursor.y].chars.data,
+                          buf->rows[win->cursor.y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
 
     if (!undo_is_applying()) {
-        int y0 = win->cursor_y;
+        int y0 = win->cursor.y;
         SizedStr cap = sstr_new();
         sstr_append(&cap, buf->rows[y0].chars.data, buf->rows[y0].chars.len);
         sstr_append_char(&cap, '\n');
@@ -556,27 +563,27 @@ void buf_delete_line_in(Buffer *buf) {
         sstr_free(&cap);
     }
 
-    buf_row_del_in(buf, win->cursor_y);
+    buf_row_del_in(buf, win->cursor.y);
     if (buf->num_rows == 0) {
         buf_row_insert_in(buf, 0, "", 0);
-        win->cursor_y = 0;
+        win->cursor.y = 0;
         win->row_offset = 0;
-    } else if (win->cursor_y >= buf->num_rows) {
-        win->cursor_y = buf->num_rows - 1;
+    } else if (win->cursor.y >= buf->num_rows) {
+        win->cursor.y = buf->num_rows - 1;
     }
-    win->cursor_x = 0;
+    win->cursor.x = 0;
 }
 void buf_yank_line_in(Buffer *buf) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
 
     sstr_free(&E.clipboard);
-    E.clipboard = sstr_from(buf->rows[win->cursor_y].chars.data,
-                            buf->rows[win->cursor_y].chars.len);
+    E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
+                            buf->rows[win->cursor.y].chars.len);
     /* Update registers: yank '0' and unnamed */
-    regs_set_yank(buf->rows[win->cursor_y].chars.data,
-                  buf->rows[win->cursor_y].chars.len);
+    regs_set_yank(buf->rows[win->cursor.y].chars.data,
+                  buf->rows[win->cursor.y].chars.len);
 }
 
 void buf_paste_in(Buffer *buf) {
@@ -588,17 +595,17 @@ void buf_paste_in(Buffer *buf) {
     }
     if (E.clipboard.len == 0) return;
 
-    int at = (win->cursor_y < buf->num_rows) ? (win->cursor_y + 1) : buf->num_rows;
+    int at = (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
     if (!undo_is_applying()) {
         undo_begin_group();
         undo_push_insert(at, 0, E.clipboard.data, E.clipboard.len,
-                         win->cursor_y, win->cursor_x, at, 0);
+                         win->cursor.y, win->cursor.x, at, 0);
     }
-    if (win->cursor_y < buf->num_rows) {
-        win->cursor_y++;
+    if (win->cursor.y < buf->num_rows) {
+        win->cursor.y++;
     }
-    buf_row_insert_in(buf, win->cursor_y, E.clipboard.data, E.clipboard.len);
-    win->cursor_x = 0;
+    buf_row_insert_in(buf, win->cursor.y, E.clipboard.data, E.clipboard.len);
+    win->cursor.x = 0;
 }
 
 /*** Search ***/
@@ -608,7 +615,7 @@ void buf_find_in(Buffer *buf) {
     if (E.search_query.len == 0) return;
 
     Window *win = window_cur();
-    int start_y = win ? win->cursor_y : 0;
+    int start_y = win ? win->cursor.y : 0;
     int current = start_y;
 
     for (int i = 0; i < buf->num_rows; i++) {
@@ -617,8 +624,8 @@ void buf_find_in(Buffer *buf) {
         char *match = strstr(row->render.data, E.search_query.data);
         if (match) {
             if (win) {
-                win->cursor_y = current;
-                win->cursor_x = buf_row_rx_to_cx(row, match - row->render.data);
+                win->cursor.y = current;
+                win->cursor.x = buf_row_rx_to_cx(row, match - row->render.data);
             }
             Window *win = window_cur();
             if (win) win->row_offset = buf->num_rows;
@@ -644,7 +651,8 @@ void buf_reload(Buffer *buf) {
     buf->rows = NULL;
     buf->num_rows = 0;
     /* reset scroll will be handled by window */
-    buf->cursor_x = buf->cursor_y = 0;
+    buf->cursor.x = 0;
+    buf->cursor.y = 0;
 
     /* Detect filetype (update) */
     free(buf->filetype);
