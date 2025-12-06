@@ -274,36 +274,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
             if (len < 0) len = 0;
             if (len > content_cols) len = content_cols;
             if (len > 0) {
-                int sel_active = (E.mode == MODE_VISUAL && win->focus);
                 int has_sel = 0;
                 int sel_start_rx = 0, sel_end_rx = 0;
-                if (sel_active) {
-                    int ay = win->visual_start_y, ax = win->visual_start_x;
-                    int by = win->cursor_y, bx = win->cursor_x;
-                    int sy = ay, sx = ax, ey = by, ex = bx;
-                    if (sy > ey || (sy == ey && sx > ex)) {
-                        sy = by; sx = bx; ey = ay; ex = ax;
-                    }
-                    if (filerow >= sy && filerow <= ey) {
-                        has_sel = 1;
-                        if (sy == ey) {
-                            int rs = buf_row_cx_to_rx(&buf->rows[filerow], sx);
-                            int re = buf_row_cx_to_rx(&buf->rows[filerow], ex);
-                            sel_start_rx = rs; sel_end_rx = re;
-                        } else if (filerow == sy) {
-                            int rs = buf_row_cx_to_rx(&buf->rows[filerow], sx);
-                            sel_start_rx = rs; sel_end_rx = line_rcols;
-                        } else if (filerow == ey) {
-                            int re = buf_row_cx_to_rx(&buf->rows[filerow], ex);
-                            sel_start_rx = 0; sel_end_rx = re;
-                        } else {
-                            sel_start_rx = 0; sel_end_rx = line_rcols;
-                        }
-                        if (sel_start_rx < 0) sel_start_rx = 0;
-                        if (sel_end_rx > line_rcols) sel_end_rx = line_rcols;
-                        if (sel_end_rx < sel_start_rx) has_sel = 0;
-                    }
-                }
 
                 #define APPEND_SLICE(start_rx_, slice_cols_) do { \
                     int __sb = 0, __blen = 0; \

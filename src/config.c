@@ -2,14 +2,12 @@
 
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
 #define mapi(x, y) keybind_register(MODE_INSERT, x, y)
-#define mapv(x, y) keybind_register(MODE_VISUAL, x, y)
 #define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y);
 #define cm(name, cb, desc) command_register(name, cb, desc)
 
 /* Forward declarations for binding groups */
 void imode_bindings(void);
 void nmode_bindings(void);
-void vmode_bindings(void);
 
 static void on_mode_change(const HookModeEvent *event) {
   ed_change_cursor_shape();
@@ -83,7 +81,6 @@ void user_commands_init(void) {
 void user_keybinds_init(void) {
   nmode_bindings();
   imode_bindings();
-  vmode_bindings();
 }
 void imode_bindings() {}
 void nmode_bindings() {
@@ -140,7 +137,6 @@ void nmode_bindings() {
   mapn("i", kb_enter_insert_mode);
   mapn("n", kb_search_next);
   mapn("p", kb_paste);
-  mapn("v", kb_enter_visual_mode);
   mapn("w", buf_cursor_move_word_forward);
   mapn("x", kb_delete_char);
   mapn("yp", buf_yank_paragraph);
@@ -149,24 +145,4 @@ void nmode_bindings() {
   mapn("zz", buf_center_screen);
 }
 
-void vmode_bindings() {
-  /* Core operations */
-  mapv("y", visual_yank);
-  mapv("d", visual_delete);
-  mapv("x", visual_delete);
-  mapv("c", visual_change);
-
-  /* Indentation */
-  mapv(">", visual_indent);
-  mapv("<", visual_unindent);
-
-  /* Case operations */
-  mapv("~", visual_toggle_case);
-  mapv("u", visual_lowercase);
-  mapv("U", visual_uppercase);
-
-  /* Selection helpers (expand selection) */
-  mapv("w", buf_select_word);
-  mapv("p", buf_select_paragraph);
-  mapv("V", buf_select_line);
-}
+/* No visual mode bindings */

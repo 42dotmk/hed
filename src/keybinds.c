@@ -81,17 +81,6 @@ void kb_append_mode(void) {
     }
 }
 
-void kb_enter_visual_mode(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win) return;
-
-    ed_set_mode(MODE_VISUAL);
-    win->visual_start_x = win->cursor_x;
-    win->visual_start_y = win->cursor_y;
-    ed_set_status_message("-- VISUAL --");
-}
-
 void kb_enter_command_mode(void) {
     extern Ed E;
     ed_set_mode(MODE_COMMAND);
@@ -179,21 +168,6 @@ void kb_find_under_cursor(void) {
 void kb_line_number_toggle(void) {
     cmd_ln(NULL);
 }
-/* Visual mode operations */
-void kb_visual_yank(void) {
-    Buffer *buf = buf_cur(); if (!buf) return;
-    buf_yank_line_in(buf);
-    ed_set_mode(MODE_NORMAL);
-    ed_set_status_message("Yanked");
-}
-
-void kb_visual_delete(void) {
-    Buffer *buf = buf_cur(); if (!buf) return;
-    buf_delete_line_in(buf);
-    ed_set_mode(MODE_NORMAL);
-    ed_set_status_message("Deleted");
-}
-
 /* Undo/Redo */
 void kb_undo(void) {
     if (undo_perform()) {

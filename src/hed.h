@@ -46,7 +46,6 @@
 #include "fzf.h"
 #include "bottom_ui.h"
 #include "term_pane.h"
-#include "visual_mode.h"
 
 /* UI */
 #include "abuf.h"

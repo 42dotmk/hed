@@ -81,8 +81,6 @@ typedef struct {
     char *filetype;
     int dirty;
     int readonly;     /* Read-only flag (default: 0/false) */
-    int visual_start_x;
-    int visual_start_y;
     char *cursor_style;
     void *ts_internal; /* tree-sitter per-buffer state (opaque) */
 } Buffer;

@@ -98,8 +98,6 @@ typedef struct {
     int col_offset;     /* first visible buffer column (render x) */
     int cursor_x;       /* window-local cursor column (in chars) */
     int cursor_y;       /* window-local cursor row (line index) */
-    int visual_start_x; /* visual selection anchor (char index) */
-    int visual_start_y; /* visual selection anchor row */
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;

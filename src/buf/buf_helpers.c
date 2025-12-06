@@ -677,18 +677,17 @@ void buf_find_matching_bracket(void) {
 void buf_select_word(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int sx=0, ex=0; if (!buf_get_word_range(&sx,&ex)) return;
-    win->visual_start_x = sx; win->visual_start_y = win->cursor_y; win->cursor_x = ex;
+    win->cursor_x = ex;
 }
 
 void buf_select_line(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     if (!BOUNDS_CHECK(win->cursor_y, buf->num_rows)) return;
-    win->visual_start_x = 0; win->visual_start_y = win->cursor_y; win->cursor_x = buf->rows[win->cursor_y].chars.len;
+    win->cursor_x = buf->rows[win->cursor_y].chars.len;
 }
 
 void buf_select_all(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    win->visual_start_x = 0; win->visual_start_y = 0;
     win->cursor_y = buf->num_rows - 1; if (win->cursor_y < 0) win->cursor_y = 0;
     if (win->cursor_y < buf->num_rows) win->cursor_x = buf->rows[win->cursor_y].chars.len;
 }
@@ -696,7 +695,6 @@ void buf_select_all(void) {
 void buf_select_paragraph(void) {
     Buffer *buf = buf_cur(); Window *win = window_cur(); if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
     int sy=0, ey=0; if (!buf_get_paragraph_range(&sy,&ey)) return;
-    win->visual_start_y = sy; win->visual_start_x = 0;
     win->cursor_y = ey; win->cursor_x = (int)buf->rows[ey].chars.len;
 }
 

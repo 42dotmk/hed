@@ -59,8 +59,6 @@ static void buf_init(Buffer *buf) {
     buf->filetype = NULL;
     buf->dirty = 0;
     buf->readonly = 0;  /* Default: not read-only */
-    buf->visual_start_x = 0;
-    buf->visual_start_y = 0;
     buf->ts_internal = NULL;
 }
 

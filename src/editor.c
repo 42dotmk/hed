@@ -134,9 +134,6 @@ void ed_change_cursor_shape(void) {
         case MODE_INSERT:
             write(STDOUT_FILENO,CURSOR_STYLE_BEAM, 5);
             break;
-        case MODE_VISUAL:
-            write(STDOUT_FILENO,CURSOR_STYLE_UNDERLINE, 5);
-            break;
         case MODE_COMMAND:
             write(STDOUT_FILENO,CURSOR_STYLE_BLOCK, 5);
             break;
@@ -348,11 +345,6 @@ static void handle_insert_mode_keypress(int c, Buffer *buf) {
     }
 }
 
-static void handle_visual_mode_keypress(int c) {
-    /* Delegate to new visual mode module */
-    visual_mode_keypress(c);
-}
-
 /*
  * Interactive search prompt.
  * Reads a search query from the user and executes the search in the current buffer.
@@ -451,9 +443,6 @@ void ed_process_keypress(void) {
             break;
         case MODE_INSERT:
             handle_insert_mode_keypress(c, buf);
-            break;
-        case MODE_VISUAL:
-            handle_visual_mode_keypress(c);
             break;
         case MODE_NORMAL:
             handle_normal_mode_keypress(c, buf);

@@ -17,8 +17,6 @@ void windows_init(void) {
     E.windows.data[0].col_offset = 0;
     E.windows.data[0].cursor_x = 0;
     E.windows.data[0].cursor_y = 0;
-    E.windows.data[0].visual_start_x = 0;
-    E.windows.data[0].visual_start_y = 0;
     E.windows.data[0].gutter_mode = 0;
     E.windows.data[0].gutter_fixed_width = 0;
 }
