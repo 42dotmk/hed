@@ -267,14 +267,6 @@ void ed_process_command(void) {
 
 /* Mode-specific keypress handlers (refactored for clarity and maintainability) */
 
-static void handle_quickfix_keypress(int c) {
-    if (c == 'j' || c == KEY_ARROW_DOWN) { qf_move(&E.qf, 1); }
-    else if (c == 'k' || c == KEY_ARROW_UP) { qf_move(&E.qf, -1); }
-    else if (c == '\r') { qf_open_selected(&E.qf); }
-    else if (c == 'q') { qf_close(&E.qf); }
-    /* Other keys ignored in quickfix window */
-}
-
 static void handle_command_mode_keypress(int c) {
     if (c == '\r') {
         ed_process_command();
@@ -329,6 +321,22 @@ static void handle_insert_mode_keypress(int c, Buffer *buf) {
         case '\r':
             buf_insert_newline_in(buf);
             break;
+        case '\t': {
+            /* Insert tab character or spaces depending on expand_tab */
+            Window *win = window_cur();
+            if (!buf || !win) break;
+            int tabw = (E.tab_size > 0) ? E.tab_size : TAB_STOP;
+            if (!E.expand_tab) {
+                buf_insert_char_in(buf, '\t');
+            } else {
+                int cx = win->cursor.x;
+                int spaces = tabw - (cx % tabw);
+                for (int i = 0; i < spaces; i++) {
+                    buf_insert_char_in(buf, ' ');
+                }
+            }
+            break;
+        }
         case KEY_DELETE:
         case CTRL_KEY('h'):
             buf_del_char_in(buf);
@@ -421,13 +429,9 @@ static void handle_normal_mode_keypress(int c, Buffer *buf) {
 void ed_process_keypress(void) {
     int c = ed_read_key();
     Buffer *buf = buf_cur();
-
-    /* Special case: Quickfix window input (overrides normal mode handling) */
-    Window *cwin = window_cur();
-    if (cwin && cwin->is_quickfix && E.mode != MODE_COMMAND) {
-        handle_quickfix_keypress(c);
-        return;
-    }
+    Window *win = window_cur();
+    int old_x = win ? win->cursor.x : 0;
+    int old_y = win ? win->cursor.y : 0;
 
     /* Dispatch to appropriate mode handler */
     switch (E.mode) {
@@ -440,6 +444,14 @@ void ed_process_keypress(void) {
         case MODE_NORMAL:
             handle_normal_mode_keypress(c, buf);
             break;
+    }
+
+    /* Fire cursor-move hook if cursor changed position */
+    win = window_cur();
+    buf = buf_cur();
+    if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {
+        HookCursorEvent ev = {buf, old_x, old_y, win->cursor.x, win->cursor.y};
+        hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
     }
 }
 void ed_init_state(){
@@ -462,6 +474,8 @@ void ed_init_state(){
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
     E.default_wrap = 0;
+    E.expand_tab = 0;
+    E.tab_size = TAB_STOP;
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
 }

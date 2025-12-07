@@ -88,5 +88,7 @@ void hook_fire_cursor(HookType type, const HookCursorEvent *event);
 
 /* User hooks initialization (implemented in user_hooks.c) */
 void user_hooks_init(void);
+/* Additional built-in hooks (e.g., quickfix integration) */
+void user_hooks_quickfix_init(void);
 
 #endif

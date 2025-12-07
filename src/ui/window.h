@@ -115,4 +115,10 @@ void windows_split_horizontal(void); /* stacked */
 void windows_focus_next(void);       /* cycle focus */
 void windows_close_current(void);    /* close focused window */
 
+/* Directional focus helpers */
+void windows_focus_left(void);
+void windows_focus_right(void);
+void windows_focus_up(void);
+void windows_focus_down(void);
+
 #endif /* WINDOW_H */

@@ -36,6 +36,26 @@ void cmd_wclose(const char *args) {
     windows_close_current();
 }
 
+void cmd_wleft(const char *args) {
+    (void)args;
+    windows_focus_left();
+}
+
+void cmd_wright(const char *args) {
+    (void)args;
+    windows_focus_right();
+}
+
+void cmd_wup(const char *args) {
+    (void)args;
+    windows_focus_up();
+}
+
+void cmd_wdown(const char *args) {
+    (void)args;
+    windows_focus_down();
+}
+
 void cmd_new(const char *args) {
     (void)args;
 

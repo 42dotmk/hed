@@ -39,8 +39,8 @@ typedef struct WLayoutNode {
     int nchildren;
     struct WLayoutNode **child; /* length nchildren when dir != WL_SINGLE */
     int *weight;                /* per-child weight for size distribution */
-    int leaf_index;             /* index into E.windows when dir==WL_SINGLE and kind==window; else -1 */
-    int leaf_kind;              /* 0=window, 1=quickfix (for WL_SINGLE) */
+    int leaf_index;             /* index into E.windows when dir==WL_SINGLE; else -1 */
+    int leaf_kind;              /* reserved for future use */
     int fixed_size;             /* if >0, fixed size along split axis (rows for H, cols for V) */
     /* Cached computed rectangle (outer, including borders) */
     int top, left, height, width;
@@ -71,9 +71,6 @@ void wlayout_set_thickness_all(WLayoutNode *root, int thickness);
 
 /* Adjust weight of the split containing the given leaf index by delta. */
 int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta);
-
-/* Ensure quickfix leaf presence in root tree according to open/height. */
-void wlayout_sync_quickfix(WLayoutNode **root, int qf_open, int qf_height);
 
 /* Terminal pane support removed */
 

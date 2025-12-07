@@ -42,6 +42,8 @@ void hook_init(void) {
 
     /* Call user hooks initialization */
     user_hooks_init();
+    /* Built-in extra hooks (e.g., quickfix integration) */
+    user_hooks_quickfix_init();
 }
 
 /* Registration functions */

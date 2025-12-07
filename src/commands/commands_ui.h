@@ -32,6 +32,10 @@ void cmd_vsplit(const char *args);
 void cmd_wfocus(const char *args);
 void cmd_wclose(const char *args);
 void cmd_new(const char *args);
+void cmd_wleft(const char *args);
+void cmd_wright(const char *args);
+void cmd_wup(const char *args);
+void cmd_wdown(const char *args);
 
 /* Quickfix */
 void cmd_copen(const char *args);

@@ -108,7 +108,113 @@ void windows_focus_next(void) {
     E.current_buffer = E.windows.data[E.current_window].buffer_index;
 }
 
-/* windows_on_resize was unused and removed. */
+static void windows_focus_set(int idx) {
+    if (!BOUNDS_CHECK(idx, E.windows.len)) return;
+    for (int i = 0; i < (int)E.windows.len; i++) {
+        E.windows.data[i].focus = 0;
+    }
+    E.current_window = idx;
+    E.windows.data[idx].focus = 1;
+    E.current_buffer = E.windows.data[idx].buffer_index;
+}
+
+/* Find neighbor window index in a given direction relative to current.
+ * dir: 0=left, 1=right, 2=up, 3=down. Returns -1 if none. */
+static int windows_find_neighbor(int dir) {
+    if (E.windows.len <= 1) return -1;
+    if (!BOUNDS_CHECK(E.current_window, E.windows.len)) return -1;
+    Window *cur = &E.windows.data[E.current_window];
+
+    int cur_top = cur->top;
+    int cur_left = cur->left;
+    int cur_bottom = cur->top + cur->height - 1;
+    int cur_right = cur->left + cur->width - 1;
+
+    int best = -1;
+    int best_metric = 0;
+
+    for (int i = 0; i < (int)E.windows.len; i++) {
+        if (i == E.current_window) continue;
+        Window *w = &E.windows.data[i];
+        int w_top = w->top;
+        int w_left = w->left;
+        int w_bottom = w->top + w->height - 1;
+        int w_right = w->left + w->width - 1;
+
+        if (dir == 0) { /* left */
+            /* Must be strictly left and vertically overlapping */
+            if (w_right >= cur_left) continue;
+            if (w_bottom < cur_top || w_top > cur_bottom) continue;
+            int dist = cur_left - w_right;
+            if (best < 0 || dist < best_metric) {
+                best = i;
+                best_metric = dist;
+            }
+        } else if (dir == 1) { /* right */
+            if (w_left <= cur_right) continue;
+            if (w_bottom < cur_top || w_top > cur_bottom) continue;
+            int dist = w_left - cur_right;
+            if (best < 0 || dist < best_metric) {
+                best = i;
+                best_metric = dist;
+            }
+        } else if (dir == 2) { /* up */
+            if (w_bottom >= cur_top) continue;
+            if (w_right < cur_left || w_left > cur_right) continue;
+            int dist = cur_top - w_bottom;
+            if (best < 0 || dist < best_metric) {
+                best = i;
+                best_metric = dist;
+            }
+        } else if (dir == 3) { /* down */
+            if (w_top <= cur_bottom) continue;
+            if (w_right < cur_left || w_left > cur_right) continue;
+            int dist = w_top - cur_bottom;
+            if (best < 0 || dist < best_metric) {
+                best = i;
+                best_metric = dist;
+            }
+        }
+    }
+
+    return best;
+}
+
+void windows_focus_left(void) {
+    int idx = windows_find_neighbor(0);
+    if (idx >= 0) {
+        windows_focus_set(idx);
+    } else {
+        ed_set_status_message("no window left");
+    }
+}
+
+void windows_focus_right(void) {
+    int idx = windows_find_neighbor(1);
+    if (idx >= 0) {
+        windows_focus_set(idx);
+    } else {
+        ed_set_status_message("no window right");
+    }
+}
+
+void windows_focus_up(void) {
+    int idx = windows_find_neighbor(2);
+    if (idx >= 0) {
+        windows_focus_set(idx);
+    } else {
+        ed_set_status_message("no window up");
+    }
+}
+
+void windows_focus_down(void) {
+    int idx = windows_find_neighbor(3);
+    if (idx >= 0) {
+        windows_focus_set(idx);
+    } else {
+        ed_set_status_message("no window down");
+    }
+}
 
 void windows_close_current(void) {
     if (E.windows.len <= 1) {

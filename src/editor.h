@@ -78,6 +78,8 @@ typedef struct {
     JumpList jump_list;
     int stay_in_command;
     int default_wrap;        /* 0=unwrap windows by default, 1=wrap */
+    int expand_tab;          /* 0=insert '\t', 1=insert spaces */
+    int tab_size;            /* visual tab size (defaults to TAB_STOP) */
     struct {
         char **items;
         int count;

@@ -36400,3 +36400,141 @@ w
 [2025-12-07 00:56:52] :q!
 [2025-12-07 00:56:54] hed start argc=1
 [2025-12-07 00:56:58] :copen
+[2025-12-07 00:58:23] status: lazygit exited
+[2025-12-07 00:59:49] status: Loaded: src/utils/quickfix.h
+[2025-12-07 00:59:49] status: Opened: src/utils/quickfix.h
+[2025-12-07 01:01:26] hed start argc=1
+[2025-12-07 01:01:56] status: Loaded: src/ui/window.c
+[2025-12-07 01:01:56] status: Opened: src/ui/window.c
+[2025-12-07 01:02:10] :copen
+[2025-12-07 01:02:15] status: closed window (1 remaining)
+[2025-12-07 01:02:21] status: closed window (1 remaining)
+[2025-12-07 01:02:29] :q!
+[2025-12-07 01:02:51] hed start argc=1
+[2025-12-07 01:02:53] status: Loaded: src/ui/window.c
+[2025-12-07 01:02:53] status: Opened: src/ui/window.c
+[2025-12-07 01:03:07] :w
+[2025-12-07 01:03:07] status: 5036 bytes written to src/ui/window.c
+[2025-12-07 01:03:09] status: closed window (2 remaining)
+[2025-12-07 01:03:13] :copen
+[2025-12-07 01:03:15] status: closed window (2 remaining)
+[2025-12-07 01:03:29] status: fzf: no selection
+[2025-12-07 01:03:30] status: closed window (2 remaining)
+[2025-12-07 01:05:35] :q!
+[2025-12-07 01:05:37] hed start argc=1
+[2025-12-07 01:05:40] :copen
+[2025-12-07 01:05:42] status: Buffer is read-only
+[2025-12-07 01:05:42] status: Buffer is read-only
+[2025-12-07 01:05:42] status: Buffer is read-only
+[2025-12-07 01:05:44] :q
+[2025-12-07 01:05:46] hed start argc=1
+[2025-12-07 01:05:50] :cadd hello
+[2025-12-07 01:05:52] :copen
+[2025-12-07 01:05:55] status: closed window (1 remaining)
+[2025-12-07 01:06:01] status: Loaded: src/ui/window.c
+[2025-12-07 01:06:01] status: Opened: src/ui/window.c
+[2025-12-07 01:06:06] :q!
+[2025-12-07 01:07:54] hed start argc=1
+[2025-12-07 01:07:56] :copen
+[2025-12-07 01:07:58] status: closed window (1 remaining)
+[2025-12-07 01:08:03] :copen
+[2025-12-07 01:08:08] status: closed window (1 remaining)
+[2025-12-07 01:08:17] status: Loaded: makefile
+[2025-12-07 01:08:17] status: Opened: makefile
+[2025-12-07 01:08:23] status: Buffer is read-only
+[2025-12-07 01:08:23] status: Buffer is read-only
+[2025-12-07 01:08:25] :q
+[2025-12-07 01:19:04] hed start argc=1
+[2025-12-07 01:19:09] status: Loaded: src/ui/wlayout.h
+[2025-12-07 01:19:09] status: Opened: src/ui/wlayout.h
+[2025-12-07 01:21:05] :q!
+[2025-12-07 01:21:12] hed start argc=1
+[2025-12-07 01:21:15] status: Loaded: src/ui/window.h
+[2025-12-07 01:21:15] status: Opened: src/ui/window.h
+[2025-12-07 01:21:22] :w
+[2025-12-07 01:21:22] status: 4642 bytes written to src/ui/window.h
+[2025-12-07 01:21:51] :copen
+[2025-12-07 01:21:55] status: closed window (1 remaining)
+[2025-12-07 01:22:01] :cadd test
+[2025-12-07 01:22:03] :copen
+[2025-12-07 01:22:06] status: Loaded: src/ui/window.h
+[2025-12-07 01:22:11] status: closed window (1 remaining)
+[2025-12-07 01:24:58] status: Loaded: src/config.c
+[2025-12-07 01:24:58] status: Opened: src/config.c
+[2025-12-07 01:24:59] status: Search: 
+[2025-12-07 01:25:00] status: Search: c
+[2025-12-07 01:25:00] status: Search: cn
+[2025-12-07 01:25:00] status: Search: cne
+[2025-12-07 01:25:01] status: Search: cnex
+[2025-12-07 01:25:01] status: Search: cnext
+[2025-12-07 01:25:01] status: Found at line 57
+[2025-12-07 01:25:06] status: * cnext
+[2025-12-07 01:25:06] status: Found at line 107
+[2025-12-07 01:25:09] status: Quickfix empty
+[2025-12-07 01:25:10] status: Quickfix empty
+[2025-12-07 01:26:44] status: Loaded: src/ui/window.h
+[2025-12-07 01:26:44] status: rg: opened src/ui/window.h:95:50
+[2025-12-07 01:27:11] status: Loaded: src/ui/window.h
+[2025-12-07 01:27:11] status: rg: opened src/ui/window.h:95:9
+[2025-12-07 01:27:16] status: Loaded: src/utils/quickfix.c
+[2025-12-07 01:27:16] status: rg: opened src/utils/quickfix.c:20:8
+[2025-12-07 01:27:39] status: rg: no selection
+[2025-12-07 01:27:53] :copen
+[2025-12-07 01:27:56] status: Loaded: src/utils/quickfix.c
+[2025-12-07 01:27:58] status: closed window (1 remaining)
+[2025-12-07 01:28:05] :rg hello
+[2025-12-07 01:28:18] status: Loaded: src/terminal.c
+[2025-12-07 01:28:18] status: rg: opened src/terminal.c:347:29
+[2025-12-07 01:28:22] status: only one window
+[2025-12-07 01:28:23] :q
+[2025-12-07 01:29:25] hed start argc=1
+[2025-12-07 01:29:30] :shell make
+[2025-12-07 01:29:33] status: Command completed successfully
+[2025-12-07 01:29:44] status: no selection
+[2025-12-07 01:30:01] status: rg: 3 items
+[2025-12-07 01:30:06] status: Loaded: src/commands/cmd_search.h
+[2025-12-07 01:30:07] status: Loaded: src/commands/cmd_misc.h
+[2025-12-07 01:30:08] status: Loaded: src/commands/cmd_misc.h
+[2025-12-07 01:30:10] status: Loaded: src/commands/cmd_search.h
+[2025-12-07 01:30:10] status: Loaded: src/commands/commands_buffer.c
+[2025-12-07 01:30:11] status: Loaded: src/commands/commands_buffer.c
+[2025-12-07 01:33:17] status: closed window (1 remaining)
+[2025-12-07 01:33:21] status: Loaded: CLAUDE.md
+[2025-12-07 01:33:21] status: Opened: CLAUDE.md
+[2025-12-07 01:33:24] :q
+[2025-12-07 01:35:37] hed start argc=1
+[2025-12-07 01:35:45] status: closed window (2 remaining)
+[2025-12-07 01:35:45] status: closed window (1 remaining)
+[2025-12-07 01:35:58] status: Loaded: src/config.c
+[2025-12-07 01:35:58] status: Opened: src/config.c
+[2025-12-07 01:36:09] status: Search: 
+[2025-12-07 01:36:09] status: Search: k
+[2025-12-07 01:36:09] status: Search: ke
+[2025-12-07 01:36:10] status: Search: key
+[2025-12-07 01:36:10] status: Found at line 86
+[2025-12-07 01:38:31] :w
+[2025-12-07 01:38:31] status: 4965 bytes written to src/config.c
+[2025-12-07 01:38:56] :q!
+[2025-12-07 01:44:00] hed start argc=1
+[2025-12-07 01:44:04] status: closed window (1 remaining)
+[2025-12-07 01:44:13] :help
+[2025-12-07 01:44:13] status: Unknown command: help
+[2025-12-07 01:44:36] status: closed window (1 remaining)
+[2025-12-07 01:44:36] status: only one window
+[2025-12-07 01:44:39] status: Loaded: src/config.c
+[2025-12-07 01:44:39] status: Opened: src/config.c
+[2025-12-07 01:44:49] status: * keybind_register
+[2025-12-07 01:44:49] status: Found at line 5
+[2025-12-07 01:44:51] status: * keybind_register_command
+[2025-12-07 01:44:51] status: Found at line 5
+[2025-12-07 01:44:51] status: Found at line 5
+[2025-12-07 01:44:52] status: Found at line 5
+[2025-12-07 01:44:54] status: Found at line 5
+[2025-12-07 01:44:55] status: Found at line 5
+[2025-12-07 01:45:01] :q
+[2025-12-07 01:45:08] hed start argc=1
+[2025-12-07 01:45:10] status: Loaded: src/config.c
+[2025-12-07 01:45:10] status: Opened: src/config.c
+[2025-12-07 01:45:47] :wq
+[2025-12-07 01:45:47] status: 5388 bytes written to src/config.c
+[2025-12-07 01:46:42] hed start argc=1

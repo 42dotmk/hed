@@ -420,17 +420,6 @@ void ed_render_frame(void) {
         /* Always keep a root layout present */
         E.wlayout_root = wlayout_init_root(0);
     }
-    /* Keep quickfix as a bottom quickfix window within the root layout */
-    wlayout_sync_quickfix(&E.wlayout_root, E.qf.open && E.qf.height > 0, E.qf.height);
-    /* If qf requested focus, switch to its window once created */
-    if (E.qf.open && E.qf.focus) {
-        for (int i = 0; i < (int)E.windows.len; i++) if (E.windows.data[i].is_quickfix) {
-            for (int j = 0; j < (int)E.windows.len; j++) E.windows.data[j].focus = 0;
-            E.current_window = i; E.windows.data[i].focus = 1; E.current_buffer = E.windows.data[i].buffer_index;
-            E.qf.focus = 0; /* one-time handover */
-            break;
-        }
-    }
     wlayout_compute(E.wlayout_root, 1, 1, lo.content_rows, lo.term_cols);
 
     /* Scroll active window */
