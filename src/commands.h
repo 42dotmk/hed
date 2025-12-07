@@ -117,8 +117,11 @@ void cmd_wdown(const char *args);
 /* Syntax highlighting (tree-sitter) */
 void cmd_ts(const char *args);      /* :ts on|off|auto */
 void cmd_tslang(const char *args);  /* :tslang <name> */
+void cmd_tsi(const char *args);     /* :tsi <lang> */
 /* Editing convenience */
 void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
+/* Hot reload */
+void cmd_reload(const char *args);
 
 #endif

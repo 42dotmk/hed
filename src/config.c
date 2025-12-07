@@ -1,4 +1,5 @@
 #include "hed.h"
+#include "safe_string.h"
 
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
 #define mapi(x, y) keybind_register(MODE_INSERT, x, y)
@@ -14,26 +15,32 @@ static void on_mode_change(const HookModeEvent *event) {
   (void)event;
 }
 
+
 static void kb_del_win(char direction){
-    switch(direction) {
-        case 'h':
-            windows_focus_left();
+     switch(direction) {
+         case 'h':
+             windows_focus_left();
+             cmd_wclose(NULL);
+             break;
+         case 'j':
+             windows_focus_down();
             cmd_wclose(NULL);
-            break;
-        case 'j':
-            windows_focus_down();
-            cmd_wclose(NULL);
-            break;
-        case 'k':
-            windows_focus_up();
-            cmd_wclose(NULL);
-            break;
-        case 'l':
-            windows_focus_right();
-            cmd_wclose(NULL);
-            break;
-    }
+             break;
+         case 'k':
+             windows_focus_up();
+             cmd_wclose(NULL);
+             break;
+         case 'l':
+             windows_focus_right();
+             cmd_wclose(NULL);
+             break;
+     }
 }
+static void kb_del_up(){kb_del_win('k');}
+static void kb_del_down(){kb_del_win('j');}
+static void kb_del_left(){kb_del_win('h');}
+static void kb_del_right(){kb_del_win('l');}
+
 
 static void kb_end_append(void) {
   kb_cursor_line_end();
@@ -102,6 +109,8 @@ void user_commands_init(void) {
 
   cm("ts", cmd_ts, "ts on|off|auto");
   cm("tslang", cmd_tslang, "tslang <name>");
+  cm("tsi", cmd_tsi, "install ts lang");
+  cm("reload", cmd_reload, "rebuild+restart hed");
 }
 
 void user_keybinds_init(void) {
@@ -118,6 +127,7 @@ void nmode_bindings() {
   cmapn(" fs", "w");
   cmapn(" qq", "q!");
   cmapn(" rm", "shell make");
+  cmapn(" de", "shell yazzi");
   cmapn(" sd", "rg");
   cmapn(" ss", "ssearch");
   cmapn(" tw", "wrap");
@@ -131,6 +141,7 @@ void nmode_bindings() {
   cmapn(" wj", "wj");
   cmapn(" wk", "wk");
   cmapn(" wl", "wl");
+  cmapn(" rr", "reload");
 
   cmapn("<C-.>", "ctoggle");
   cmapn("<C-n>", "cnext");

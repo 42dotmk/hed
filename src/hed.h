@@ -21,6 +21,7 @@
 #include "strutil.h"
 #include "safe_string.h"
 #include "errors.h"
+#include "theme.h"
 
 /* Core modules */
 #include "editor.h"

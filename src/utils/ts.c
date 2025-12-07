@@ -1,23 +1,19 @@
 #include "hed.h"
 #include "ts.h"
 #include "buffer.h"
+#include "log.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <dlfcn.h>
-
-#ifdef USE_TREESITTER
 #include <tree_sitter/api.h>
-#endif
 
 /*
- * Tree-sitter scaffolding.
- * By default, these functions are no-ops unless compiled with USE_TREESITTER.
+ * Tree-sitter integration: always compiled in.
  */
 
-static int g_ts_enabled = 0;
+static int g_ts_enabled = 1;
 
-#ifdef USE_TREESITTER
 typedef struct {
     TSParser *parser;
     TSTree   *tree;
@@ -26,9 +22,6 @@ typedef struct {
     void *dl_handle;
     char lang_name[32];
 } TSState;
-#else
-typedef struct { int dummy; } TSState;
-#endif
 
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
 int  ts_is_enabled(void) { return g_ts_enabled; }
@@ -40,18 +33,15 @@ void ts_buffer_init(Buffer *buf) {
 }
 void ts_buffer_free(Buffer *buf) {
     if (!buf || !buf->ts_internal) return;
-#ifdef USE_TREESITTER
     TSState *st = (TSState *)buf->ts_internal;
     if (st->tree) ts_tree_delete(st->tree);
     if (st->parser) ts_parser_delete(st->parser);
     if (st->query) ts_query_delete(st->query);
     if (st->dl_handle) dlclose(st->dl_handle);
-#endif
     free(buf->ts_internal);
     buf->ts_internal = NULL;
 }
 
-#ifdef USE_TREESITTER
 static size_t build_source(Buffer *buf, char **out) {
     size_t total = 0;
     for (int i = 0; i < buf->num_rows; i++) total += buf->rows[i].chars.len + 1;
@@ -96,12 +86,12 @@ static void maybe_load_query(TSState *st, const char *lang) {
     st->query = ts_query_new(st->lang, buf, (uint32_t)sz, &err_offset, &err_type);
     free(buf);
 }
-#endif
 
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     if (!buf) return 0;
+    log_msg("Loading tree-sitter language: %s for buf: %s", lang_name, buf->title);
     ts_buffer_init(buf);
-#ifdef USE_TREESITTER
+    log_msg("tree-sitter is enabled for buf: %s", buf->title);
     TSState *st = (TSState *)buf->ts_internal;
     if (!st) return 0;
     if (st->parser) { ts_parser_delete(st->parser); st->parser = NULL; }
@@ -115,10 +105,6 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     maybe_load_query(st, lang_name);
     ts_buffer_reparse(buf);
     return 1;
-#else
-    (void)lang_name;
-    return 0;
-#endif
 }
 
 int ts_buffer_autoload(Buffer *buf) {
@@ -127,12 +113,73 @@ int ts_buffer_autoload(Buffer *buf) {
     const char *ext = strrchr(buf->filename, '.');
     if (!ext || !ext[1]) return 0;
     ext++;
-    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0) return ts_buffer_load_language(buf, "c");
+
+    /* Core C / C++ */
+    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
+        return ts_buffer_load_language(buf, "c");
+    if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
+        strcmp(ext, "cxx") == 0 || strcmp(ext, "hpp") == 0 ||
+        strcmp(ext, "hh") == 0  || strcmp(ext, "hxx") == 0)
+        return ts_buffer_load_language(buf, "cpp");
+
+    /* C# */
+    if (strcmp(ext, "cs") == 0)
+        return ts_buffer_load_language(buf, "c-sharp");
+
+    /* Make */
+    if (strcmp(buf->filename, "makefile") == 0 || strcmp(buf->filename, "Makefile") == 0)
+        return ts_buffer_load_language(buf, "make");
+
+    /* Python */
+    if (strcmp(ext, "py") == 0)
+        return ts_buffer_load_language(buf, "python");
+
+    /* HTML */
+    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
+        return ts_buffer_load_language(buf, "html");
+
+    /* Go */
+    if (strcmp(ext, "go") == 0)
+        return ts_buffer_load_language(buf, "go");
+
+    /* JavaScript / TypeScript */
+    if (strcmp(ext, "js") == 0)
+        return ts_buffer_load_language(buf, "javascript");
+    if (strcmp(ext, "ts") == 0 || strcmp(ext, "tsx") == 0)
+        return ts_buffer_load_language(buf, "typescript");
+
+    /* Rust */
+    if (strcmp(ext, "rs") == 0)
+        return ts_buffer_load_language(buf, "rust");
+
+    /* Lua */
+    if (strcmp(ext, "lua") == 0)
+        return ts_buffer_load_language(buf, "lua");
+
+    /* Shell */
+    if (strcmp(ext, "sh") == 0 || strcmp(ext, "bash") == 0 || strcmp(ext, "zsh") == 0)
+        return ts_buffer_load_language(buf, "bash");
+
+    /* JSON */
+    if (strcmp(ext, "json") == 0)
+        return ts_buffer_load_language(buf, "json");
+
+    /* YAML */
+    if (strcmp(ext, "yml") == 0 || strcmp(ext, "yaml") == 0)
+        return ts_buffer_load_language(buf, "yaml");
+
+    /* TOML */
+    if (strcmp(ext, "toml") == 0)
+        return ts_buffer_load_language(buf, "toml");
+
+    /* Markdown */
+    if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
+        return ts_buffer_load_language(buf, "markdown");
+
     return 0;
 }
 
 void ts_buffer_reparse(Buffer *buf) {
-#ifdef USE_TREESITTER
     if (!buf || !buf->ts_internal) return;
     TSState *st = (TSState *)buf->ts_internal;
     if (!st->parser || !st->lang) return;
@@ -141,16 +188,12 @@ void ts_buffer_reparse(Buffer *buf) {
     if (st->tree) ts_tree_delete(st->tree);
     st->tree = ts_parser_parse_string(st->parser, NULL, src, (uint32_t)len);
     free(src);
-#else
-    (void)buf;
-#endif
 }
 
 size_t ts_highlight_line(Buffer *buf, int line_index,
                          char *dst, size_t dst_cap,
                          int col_offset, int max_cols) {
     (void)dst_cap;
-#ifdef USE_TREESITTER
     if (!g_ts_enabled || !buf || !buf->ts_internal) return 0;
     TSState *st = (TSState *)buf->ts_internal;
     if (!st->tree || !st->query) return 0;
@@ -164,8 +207,12 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
     ts_query_cursor_exec(cur, st->query, root);
     ts_query_cursor_set_byte_range(cur, (uint32_t)start, (uint32_t)end);
 
-    /* Collect segments colorized; simple strategy: support @string, @comment */
-    typedef struct { uint32_t s, e; int color; } Seg;
+    /* Collect segments colorized.
+     * We support common capture names from tree-sitter-c's highlights:
+     *  @string, @comment, @variable, @constant, @number, @keyword,
+     *  @type, @function, @property, @label, @operator, @delimiter, etc.
+     */
+    typedef struct { uint32_t s, e; const char *sgr; } Seg;
     Seg segs[128]; int sc = 0;
     TSQueryMatch m;
     while (ts_query_cursor_next_match(cur, &m) && sc < 128) {
@@ -173,16 +220,73 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
             TSQueryCapture c = m.captures[i];
             const char *name; uint32_t nlen;
             name = ts_query_capture_name_for_id(st->query, c.index, &nlen);
-            int color = 0;
-            if (nlen && strncmp(name, "string", nlen) == 0) color = 36; /* cyan */
-            else if (nlen && strncmp(name, "comment", nlen) == 0) color = 90; /* gray */
-            else continue;
+            const char *sgr = NULL;
+
+            /* Match by prefix so dotted captures like "string.regex"
+             * or "function.builtin" still get colored.
+             */
+            if (nlen >= 6 && strncmp(name, "string", 6) == 0) {
+                sgr = COLOR_STRING;
+            } else if (nlen >= 6 && strncmp(name, "escape", 6) == 0) {
+                /* @escape, @string.escape, etc. */
+                sgr = COLOR_STRING;
+            } else if (nlen >= 7 && strncmp(name, "comment", 7) == 0) {
+                sgr = COLOR_COMMENT;
+            } else if (nlen >= 8 && strncmp(name, "variable", 8) == 0) {
+                sgr = COLOR_VARIABLE;
+            } else if (nlen >= 8 && strncmp(name, "constant", 8) == 0) {
+                /* includes constant.builtin, constant.macro */
+                sgr = COLOR_CONSTANT;
+            } else if (nlen >= 6 && strncmp(name, "number", 6) == 0) {
+                sgr = COLOR_NUMBER;
+            } else if ((nlen >= 7 && strncmp(name, "keyword", 7) == 0) ||
+                       (nlen >= 11 && strncmp(name, "conditional", 11) == 0) ||
+                       (nlen >= 6 && strncmp(name, "repeat", 6) == 0) ||
+                       (nlen >= 7 && strncmp(name, "include", 7) == 0)) {
+                /* keyword, keyword.function, conditional, repeat, include */
+                sgr = COLOR_KEYWORD;
+            } else if ((nlen >= 4 && strncmp(name, "type", 4) == 0) ||
+                       (nlen >= 6 && strncmp(name, "module", 6) == 0) ||
+                       (nlen >= 11 && strncmp(name, "constructor", 11) == 0)) {
+                /* type, type.builtin, constructor, module */
+                sgr = COLOR_TYPE;
+            } else if (nlen >= 8 && strncmp(name, "function", 8) == 0) {
+                /* covers function, function.method, function.builtin, function.special */
+                sgr = COLOR_FUNCTION;
+            } else if ((nlen >= 8 && strncmp(name, "property", 8) == 0) ||
+                       (nlen >= 9 && strncmp(name, "attribute", 9) == 0)) {
+                /* property, property.definition, attribute */
+                sgr = COLOR_ATTRIBUTE;
+            } else if (nlen >= 5 && strncmp(name, "label", 5) == 0) {
+                sgr = COLOR_LABEL;
+            } else if (nlen >= 8 && strncmp(name, "operator", 8) == 0) {
+                sgr = COLOR_OPERATOR;
+            } else if ((nlen >= 11 && strncmp(name, "punctuation", 11) == 0) ||
+                       (nlen >= 9 && strncmp(name, "delimiter", 9) == 0)) {
+                /* punctuation.bracket, punctuation.delimiter, punctuation.special, delimiter */
+                sgr = COLOR_PUNCT;
+            } else if (nlen >= 4 && strncmp(name, "text", 4) == 0) {
+                /* text.danger, text.warning, text.note */
+                if (nlen >= 11 && strncmp(name, "text.danger", 11) == 0)
+                    sgr = COLOR_DIAG_ERROR;
+                else if (nlen >= 12 && strncmp(name, "text.warning", 12) == 0)
+                    sgr = COLOR_DIAG_WARN;
+                else if (nlen >= 10 && strncmp(name, "text.note", 9) == 0)
+                    sgr = COLOR_DIAG_NOTE;
+                else
+                    sgr = COLOR_COMMENT;
+            } else if (nlen >= 9 && strncmp(name, "exception", 9) == 0) {
+                /* exception buckets: treat as errors */
+                sgr = COLOR_DIAG_ERROR;
+            } else {
+                continue;
+            }
             uint32_t s = ts_node_start_byte(c.node);
             uint32_t e = ts_node_end_byte(c.node);
             if (e <= start || s >= end) continue;
             if (s < start) s = (uint32_t)start;
             if (e > end) e = (uint32_t)end;
-            segs[sc++] = (Seg){ s, e, color };
+            segs[sc++] = (Seg){ s, e, sgr };
         }
     }
     ts_query_cursor_delete(cur);
@@ -204,14 +308,16 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
         while (si < sc && segs[si].e <= pos) si++;
         if (si < sc && segs[si].s <= pos && pos < segs[si].e) {
             /* inside colored seg */
-            char esc[16]; int el = snprintf(esc, sizeof(esc), "\x1b[%dm", segs[si].color);
-            if (out + el < dst_cap) { memcpy(dst+out, esc, el); out += el; }
+            size_t el = strlen(segs[si].sgr);
+            if (out + el < dst_cap) { memcpy(dst+out, segs[si].sgr, el); out += el; }
             while (rem > 0 && pos < segs[si].e && pos < line_start + (uint32_t)linelen) {
                 char ch = line[pos - line_start];
                 if (out + 1 < dst_cap) dst[out++] = ch;
                 pos++; rem--;
             }
-            const char *reset="\x1b[0m"; if (out + 4 < dst_cap) { memcpy(dst+out, reset, 4); out += 4; }
+            const char *reset = COLOR_RESET;
+            size_t rl = strlen(reset);
+            if (out + rl < dst_cap) { memcpy(dst+out, reset, rl); out += rl; }
             colored = 1;
         }
         if (!colored && rem > 0 && pos < line_start + (uint32_t)linelen) {
@@ -221,8 +327,4 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
         }
     }
     return out;
-#else
-    (void)buf; (void)line_index; (void)col_offset; (void)max_cols; (void)dst;
-    return 0;
-#endif
 }

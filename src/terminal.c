@@ -348,7 +348,6 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                             char linebuf[4096]; \
                             size_t wrote = ts_highlight_line(buf, filerow, linebuf, sizeof(linebuf), __sb, __blen); \
                             if (wrote > 0) { \
-                                if ((int)wrote > __blen) wrote = (size_t)__blen; \
                                 ab_append(ab, linebuf, (int)wrote); \
                             } else { \
                                 ab_append(ab, &buf->rows[filerow].render.data[__sb], __blen); \

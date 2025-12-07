@@ -279,6 +279,17 @@ void cmd_tslang(const char *args) {
     ed_set_status_message("tslang: %s", args);
 }
 
+void cmd_tsi(const char *args) {
+    if (!args || !*args) {
+        ed_set_status_message("tsi: <lang>");
+        return;
+    }
+    char cmd[256];
+    /* Run tsi from build/; assumes hed is run from repo root */
+    snprintf(cmd, sizeof(cmd), "tsi %s", args);
+    cmd_shell(cmd);
+}
+
 void cmd_new_line(const char *args) {
     (void)args;
     Window *win = window_cur();
@@ -342,4 +353,26 @@ void cmd_git(const char *args) {
         ed_set_status_message("lazygit exited with status %d", status);
     }
     ed_render_frame();
+}
+
+void cmd_reload(const char *args) {
+    (void)args;
+    /* Rebuild hed via make, then exec the new binary. */
+    int status = term_cmd_run_interactive("make -j4");
+    if (status != 0) {
+        ed_set_status_message("reload: build failed (status %d)", status);
+        return;
+    }
+
+    /* Leave raw mode before replacing the process image. */
+    disable_raw_mode();
+
+    /* Restart the editor; assume we are run from repo root. */
+    const char *exe = "hed";
+    execl(exe, exe, (char *)NULL);
+
+    /* If we reach here, exec failed. */
+    perror("execl");
+    enable_raw_mode();
+    ed_set_status_message("reload: failed to exec %s", exe);
 }

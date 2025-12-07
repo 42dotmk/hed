@@ -125,8 +125,14 @@ void kb_delete_char(void) {
         undo_push_delete(y, cx, &deleted_char, 1, y, cx, y, cx);
         undo_commit_group();
     }
-    /* Reuse core delete logic so window/buffer state stay consistent */
-    buf_del_char_in(buf);
+    /* Delete the character under the cursor, not before it */
+    sstr_delete_char(&row->chars, cx);
+    buf_row_update(row);
+    buf->dirty++;
+
+    /* Fire hook */
+    HookCharEvent event = {buf, y, cx, deleted_char};
+    hook_fire_char(HOOK_CHAR_DELETE, &event);
 }
 
 /* Normal mode - cursor movement */

@@ -2,7 +2,6 @@
 -Wextra
 -std=c23
 -pedantic
--DUSE_TREESITTER
 -O2
 -I/usr/include
 -Isrc

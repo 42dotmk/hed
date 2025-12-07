@@ -91,6 +91,17 @@ int term_cmd_run_interactive(const char *cmd) {
     /* Run command via system() - user can interact */
     int status = system(cmd);
 
+    /* Wait for user to acknowledge before returning to editor UI */
+    fprintf(stdout,
+            "\n\n[command finished with status %d] "
+            "Press Enter to return to hed...", status);
+    fflush(stdout);
+    int ch;
+    /* Consume until newline or EOF */
+    while ((ch = getchar()) != '\n' && ch != EOF) {
+        /* discard */
+    }
+
     enable_raw_mode();
     return status;
 }

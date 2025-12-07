@@ -26,6 +26,7 @@
  * - :git           - Run lazygit (via :shell)
  * - :wrap          - Toggle soft-wrap for current window
  * - :wrapdefault   - Toggle default soft-wrap for new windows
+ * - :reload        - Rebuild and restart hed (hot reload)
  */
 
 void cmd_list_commands(const char *args);
@@ -40,11 +41,13 @@ void cmd_rln(const char *args);
 void cmd_logclear(const char *args);
 void cmd_ts(const char *args);
 void cmd_tslang(const char *args);
+void cmd_tsi(const char *args);
 void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
 void cmd_shell(const char *args);
 void cmd_git(const char *args);
 void cmd_wrap(const char *args);
 void cmd_wrapdefault(const char *args);
+void cmd_reload(const char *args);
 
 #endif /* CMD_MISC_H */
