@@ -82,6 +82,14 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
     return 1;
 }
 
+int term_cmd_system(const char *cmd) {
+    if (!cmd || !*cmd) return -1;
+    disable_raw_mode();
+    int status = system(cmd);
+    enable_raw_mode();
+    return status;
+}
+
 int term_cmd_run_interactive(const char *cmd) {
     if (!cmd) return -1;
 

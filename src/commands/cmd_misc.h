@@ -27,6 +27,10 @@
  * - :wrap          - Toggle soft-wrap for current window
  * - :wrapdefault   - Toggle default soft-wrap for new windows
  * - :reload        - Rebuild and restart hed (hot reload)
+ * - :fmt           - Format current buffer via external tool
+ * - :tmux_toggle   - Toggle dedicated tmux runner pane
+ * - :tmux_send     - Send a command line to tmux runner pane
+ * - :tmux_kill     - Kill the dedicated tmux runner pane
  */
 
 void cmd_list_commands(const char *args);
@@ -49,5 +53,9 @@ void cmd_git(const char *args);
 void cmd_wrap(const char *args);
 void cmd_wrapdefault(const char *args);
 void cmd_reload(const char *args);
+void cmd_fmt(const char *args);
+void cmd_tmux_toggle(const char *args);
+void cmd_tmux_send(const char *args);
+void cmd_tmux_kill(const char *args);
 
 #endif /* CMD_MISC_H */

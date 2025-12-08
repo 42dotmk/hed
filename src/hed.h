@@ -44,6 +44,7 @@
 #include "ts.h"
 #include "quickfix.h"
 #include "term_cmd.h"
+#include "tmux.h"
 #include "fzf.h"
 #include "bottom_ui.h"
 

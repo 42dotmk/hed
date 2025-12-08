@@ -282,12 +282,16 @@ void cmd_edit(const char *args) {
 }
 
 void cmd_cd(const char *args) {
-    char cwd[PATH_MAX];
     if (!args || !*args) {
-        if (getcwd(cwd, sizeof(cwd))) {
-            ed_set_status_message("cwd: %s", cwd);
+        if (E.cwd[0]) {
+            ed_set_status_message("cwd: %s", E.cwd);
         } else {
-            ed_set_status_message("cwd: (unknown)");
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd))) {
+                ed_set_status_message("cwd: %s", cwd);
+            } else {
+                ed_set_status_message("cwd: (unknown)");
+            }
         }
         return;
     }
@@ -298,9 +302,10 @@ void cmd_cd(const char *args) {
     str_expand_tilde(trimmed, path, sizeof(path));
 
     if (chdir(path) == 0) {
-        if (getcwd(cwd, sizeof(cwd))) {
-            ed_set_status_message("cd: %s", cwd);
+        if (getcwd(E.cwd, sizeof(E.cwd))) {
+            ed_set_status_message("cd: %s", E.cwd);
         } else {
+            E.cwd[0] = '\0';
             ed_set_status_message("cd: ok");
         }
     } else {

@@ -76,6 +76,7 @@ void cmd_rln(const char *args);
 
 /* ripgrep integration */
 void cmd_rg(const char *args);
+void cmd_rg_word(const char *args);
 void cmd_fzf(const char *args);
 void cmd_recent(const char *args);
 /* Current file incremental search via ripgrep + fzf */
@@ -91,6 +92,11 @@ void cmd_git(const char *args);
 /* Soft-wrap control */
 void cmd_wrap(const char *args);
 void cmd_wrapdefault(const char *args);
+void cmd_fmt(const char *args);
+/* Tmux integration */
+void cmd_tmux_toggle(const char *args);
+void cmd_tmux_send(const char *args);
+void cmd_tmux_kill(const char *args);
 
 /* Quickfix commands */
 void cmd_copen(const char *args);

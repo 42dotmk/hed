@@ -19,6 +19,11 @@ void windows_init(void) {
     E.windows.data[0].cursor.y = 0;
     E.windows.data[0].gutter_mode = 0;
     E.windows.data[0].gutter_fixed_width = 0;
+    E.windows.data[0].sel_active = 0;
+    E.windows.data[0].sel_anchor_x = 0;
+    E.windows.data[0].sel_anchor_y = 0;
+    E.windows.data[0].sel_anchor_rx = 0;
+    E.windows.data[0].sel_block = 0;
 }
 
 /* Update geometry for the single main window. (unused) */
@@ -52,6 +57,7 @@ void windows_split_vertical(void) {
     int new_idx = E.windows.len;
     E.windows.data[new_idx] = *cur; /* copy state */
     E.windows.data[new_idx].focus = 1;
+    E.windows.data[new_idx].sel_active = 0;
     cur->focus = 0;
     E.windows.len++;
     E.current_window = new_idx;
@@ -87,6 +93,7 @@ void windows_split_horizontal(void) {
     int new_idx = E.windows.len;
     E.windows.data[new_idx] = *cur; /* copy state */
     E.windows.data[new_idx].focus = 1;
+    E.windows.data[new_idx].sel_active = 0;
     cur->focus = 0;
     E.windows.len++;
     E.current_window = new_idx;

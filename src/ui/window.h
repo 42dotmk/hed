@@ -85,7 +85,7 @@
 
 #include "buffer.h"
 
-typedef struct {
+typedef struct Window {
     int top;            /* 1-based row on the terminal */
     int left;           /* 1-based column on the terminal */
     int height;         /* number of content rows */
@@ -100,6 +100,12 @@ typedef struct {
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;
+    /* Visual selection state */
+    int sel_active;
+    int sel_anchor_x;
+    int sel_anchor_y;
+    int sel_anchor_rx; /* render column for block selections */
+    int sel_block;     /* 1 if block (column) selection */
 } Window;
 
 

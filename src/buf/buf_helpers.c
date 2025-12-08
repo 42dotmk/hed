@@ -673,10 +673,19 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
     if (sy > ey || (sy == ey && sx >= ex)) return;
     /* Capture to clipboard first */
     buf_yank_range(sy, sx, ey, ex);
-    /* Perform deletion */
+    /* Record undo as a single, self-contained group so that a
+     * single undo restores exactly this deleted region. */
+    if (!undo_is_applying()) {
+        int cy_before = win->cursor.y;
+        int cx_before = win->cursor.x;
+        undo_begin_group();
+        undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len,
+                         cy_before, cx_before, sy, sx);
+        undo_commit_group();
+    }
+    /* Perform deletion on the buffer */
     if (sy == ey) {
         if (sy < 0 || sy >= buf->num_rows) return; Row *row = &buf->rows[sy];
-        if (!undo_is_applying()) { undo_begin_group(); undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len, win->cursor.y, win->cursor.x, sy, sx); }
         /* shift left */
         if (ex > (int)row->chars.len) ex = (int)row->chars.len; if (sx < 0) sx = 0; if (ex < sx) ex = sx;
         size_t tail = row->chars.len - ex;
@@ -1077,35 +1086,12 @@ static int bh_find_enclosing_pair(Buffer *buf, char open, char close,
 }
 
 static void bh_delete_range(Buffer *buf, int sy, int sx, int ey, int ex) {
-    if (!PTR_VALID(buf) || sy > ey || (sy == ey && sx > ex)) return;
-
-    Row *start = &buf->rows[sy];
-    Row *end   = &buf->rows[ey];
-
-    SizedStr tail = sstr_new();
-    if (ex + 1 < (int)end->chars.len) {
-        sstr_append(&tail, end->chars.data + ex + 1, end->chars.len - (ex + 1));
-    }
-
-    if (sx < 0) sx = 0;
-    if (sx > (int)start->chars.len) sx = start->chars.len;
-    start->chars.len = sx;
-    if (start->chars.data) start->chars.data[start->chars.len] = '\0';
-    buf_row_update(start);
-
-    for (int i = sy + 1; i <= ey && sy + 1 < buf->num_rows; i++) {
-        buf_row_del_in(buf, sy + 1);
-    }
-
-    if (tail.len > 0) {
-        start = &buf->rows[sy];
-        sstr_append(&start->chars, tail.data, tail.len);
-        buf_row_update(start);
-    }
-    sstr_free(&tail);
-
-    buf->cursor.y = sy;
-    buf->cursor.x = sx;
+    /* Backwards-compatible wrapper: convert inclusive end to the
+     * exclusive range used by buf_delete_range(). Used by older
+     * callers; new code should prefer buf_delete_range directly. */
+    if (!PTR_VALID(buf)) return;
+    if (sy > ey || (sy == ey && sx > ex)) return;
+    buf_delete_range(sy, sx, ey, ex + 1);
 }
 
 void buf_delete_around_char(void) {
@@ -1130,22 +1116,109 @@ void buf_delete_around_char(void) {
         Row *row = &buf->rows[ey];
         while (ex + 1 < (int)row->chars.len && isspace((unsigned char)row->chars.data[ex + 1])) ex++;
     }
+    /* bh_delete_range now delegates to buf_delete_range, which will
+     * yank and record undo for the deleted text. */
     bh_delete_range(buf, sy, sx, ey, ex);
     ed_set_status_message("Deleted around %c", (open == close) ? open : close);
 }
 
 void buf_delete_inside_char(void) {
     Buffer *buf = buf_cur();
-    if (!PTR_VALID(buf)) return;
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
+
     ed_set_status_message("di: target?");
     int t = ed_read_key();
+
+    /* Word / paragraph / line text-objects */
+    if (t == 'w') {
+        buf_delete_inner_word();
+        return;
+    }
+    if (t == 'p') {
+        buf_delete_paragraph();
+        return;
+    }
+    if (t == 'd') {
+        if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+        Row *row = &buf->rows[win->cursor.y];
+        int len = (int)row->chars.len;
+        if (len <= 0) return;
+        buf_delete_range(win->cursor.y, 0, win->cursor.y, len);
+        ed_set_status_message("deleted line contents");
+        return;
+    }
+
+    /* Bracket / quote text-objects */
     char open = 0, close = 0;
-    if (!bh_map_delim(t, &open, &close)) { ed_set_status_message("di: unsupported target"); return; }
+    if (!bh_map_delim(t, &open, &close)) {
+        ed_set_status_message("di: unsupported target");
+        return;
+    }
     int oy, ox, cy, cx;
-    if (!bh_find_enclosing_pair(buf, open, close, &oy, &ox, &cy, &cx)) { ed_set_status_message("di: no enclosing pair"); return; }
+    if (!bh_find_enclosing_pair(buf, open, close, &oy, &ox, &cy, &cx)) {
+        ed_set_status_message("di: no enclosing pair");
+        return;
+    }
     int sy = oy, sx = ox + 1;
-    int ey = cy, ex = cx - 1;
-    if (ey < sy || (ey == sy && ex < sx)) { ed_set_status_message("di: empty"); return; }
-    bh_delete_range(buf, sy, sx, ey, ex);
+    int ey = cy, ex = cx;
+    if (ey < sy || (ey == sy && ex <= sx)) {
+        ed_set_status_message("di: empty");
+        return;
+    }
+    buf_delete_range(sy, sx, ey, ex);
     ed_set_status_message("Deleted inside %c", (open == close) ? open : close);
+}
+
+void buf_change_inside_char(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
+
+    ed_set_status_message("ci: target?");
+    int t = ed_read_key();
+
+    /* Word / paragraph / line text-objects */
+    if (t == 'w') {
+        buf_delete_inner_word();
+        ed_set_mode(MODE_INSERT);
+        return;
+    }
+    if (t == 'p') {
+        buf_delete_paragraph();
+        ed_set_mode(MODE_INSERT);
+        return;
+    }
+    if (t == 'd') {
+        if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+        Row *row = &buf->rows[win->cursor.y];
+        int len = (int)row->chars.len;
+        if (len > 0) {
+            buf_delete_range(win->cursor.y, 0, win->cursor.y, len);
+        }
+        ed_set_mode(MODE_INSERT);
+        ed_set_status_message("changed line contents");
+        return;
+    }
+
+    /* Bracket / quote text-objects */
+    char open = 0, close = 0;
+    if (!bh_map_delim(t, &open, &close)) {
+        ed_set_status_message("ci: unsupported target");
+        return;
+    }
+    int oy, ox, cy, cx;
+    if (!bh_find_enclosing_pair(buf, open, close, &oy, &ox, &cy, &cx)) {
+        ed_set_status_message("ci: no enclosing pair");
+        return;
+    }
+    int sy = oy, sx = ox + 1;
+    int ey = cy, ex = cx;
+    if (ey < sy || (ey == sy && ex <= sx)) {
+        ed_set_status_message("ci: empty");
+        return;
+    }
+    buf_delete_range(sy, sx, ey, ex);
+    ed_set_mode(MODE_INSERT);
+    ed_set_status_message("Changed inside %c", (open == close) ? open : close);
 }

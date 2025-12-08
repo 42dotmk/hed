@@ -38,6 +38,20 @@ static void recent_files_remove_at(RecentFiles *rf, int idx) {
     rf->len--;
 }
 
+/* Drop any duplicate paths, keeping the first occurrence (newest). */
+static void recent_files_dedup(RecentFiles *rf) {
+    if (!rf) return;
+    for (int i = 0; i < rf->len; i++) {
+        for (int j = i + 1; j < rf->len; ) {
+            if (strcmp(rf->items[i], rf->items[j]) == 0) {
+                recent_files_remove_at(rf, j);
+            } else {
+                j++;
+            }
+        }
+    }
+}
+
 /* Insert at front (index 0) */
 static void recent_files_insert_front(RecentFiles *rf, const char *filepath) {
     if (!filepath || !*filepath) return;
@@ -149,6 +163,9 @@ void recent_files_init(RecentFiles *rf) {
     free(line);
     fclose(fp);
     free(path);
+
+    /* Clean up any duplicates that may have been persisted previously. */
+    recent_files_dedup(rf);
 }
 
 void recent_files_free(RecentFiles *rf) {

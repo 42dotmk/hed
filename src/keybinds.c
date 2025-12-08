@@ -4,6 +4,9 @@
 #include "safe_string.h"
 #include <time.h>
 
+/* Internal buffer row helpers (non-public, defined in buffer.c) */
+void buf_row_del_in(Buffer *buf, int at);
+
 #define MAX_KEYBINDS 256
 #define KEY_BUFFER_SIZE 16
 #define SEQUENCE_TIMEOUT_MS 1000  /* 1 second timeout for multi-key sequences */
@@ -25,6 +28,205 @@ static int keybind_count = 0;
 static char key_buffer[KEY_BUFFER_SIZE];
 static int key_buffer_len = 0;
 static struct timespec last_key_time;
+
+/* Visual selection helpers */
+static void visual_clear(Window *win) {
+    if (!win) return;
+    win->sel_active = 0;
+    win->sel_block = 0;
+}
+
+static void visual_begin(int block) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win) return;
+    if (win->cursor.y < 0 || win->cursor.y >= buf->num_rows) return;
+    win->sel_active = 1;
+    win->sel_block = block ? 1 : 0;
+    win->sel_anchor_y = win->cursor.y;
+    win->sel_anchor_x = win->cursor.x;
+    win->sel_anchor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    ed_set_mode(block ? MODE_VISUAL_BLOCK : MODE_VISUAL);
+}
+
+static int visual_char_range(Buffer *buf, Window *win,
+                             int *sy, int *sx, int *ey, int *ex_excl) {
+    if (!buf || !win || !win->sel_active) return 0;
+    if (win->sel_block) return 0;
+    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+        !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+    int ay = win->sel_anchor_y, ax = win->sel_anchor_x;
+    int cy = win->cursor.y, cx = win->cursor.x;
+    int top_y = ay, top_x = ax, bot_y = cy, bot_x = cx;
+    if (ay > cy || (ay == cy && ax > cx)) {
+        top_y = cy; top_x = cx;
+        bot_y = ay; bot_x = ax;
+    }
+    if (top_y < 0) top_y = 0;
+    if (bot_y >= buf->num_rows) bot_y = buf->num_rows - 1;
+    Row *top_row = &buf->rows[top_y];
+    Row *bot_row = &buf->rows[bot_y];
+    if (top_x > (int)top_row->chars.len) top_x = (int)top_row->chars.len;
+    if (bot_x > (int)bot_row->chars.len) bot_x = (int)bot_row->chars.len;
+    if (sy) *sy = top_y;
+    if (sx) *sx = top_x;
+    if (ey) *ey = bot_y;
+    if (ex_excl) *ex_excl = bot_x + 1;
+    return 1;
+}
+
+static int visual_block_range(Buffer *buf, Window *win,
+                              int *sy, int *ey, int *start_rx, int *end_rx_excl) {
+    if (!buf || !win || !win->sel_active || !win->sel_block) return 0;
+    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+        !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+    int top_y = win->sel_anchor_y < win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+    int bot_y = win->sel_anchor_y > win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+    int cur_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    int start = win->sel_anchor_rx < cur_rx ? win->sel_anchor_rx : cur_rx;
+    int end = win->sel_anchor_rx > cur_rx ? win->sel_anchor_rx : cur_rx;
+    if (sy) *sy = top_y;
+    if (ey) *ey = bot_y;
+    if (start_rx) *start_rx = start;
+    if (end_rx_excl) *end_rx_excl = end + 1;
+    return 1;
+}
+
+static void sstr_delete_range(SizedStr *s, int start, int end_excl) {
+    if (!s || !s->data) return;
+    if (start < 0) start = 0;
+    if (end_excl < start) end_excl = start;
+    if (end_excl > (int)s->len) end_excl = (int)s->len;
+    if (start > (int)s->len) start = (int)s->len;
+    int rem = (int)s->len - end_excl;
+    memmove(s->data + start, s->data + end_excl, (size_t)rem);
+    s->len -= (end_excl - start);
+    if (s->data) s->data[s->len] = '\0';
+}
+
+static int visual_yank(Buffer *buf, Window *win, int block_mode) {
+    if (!buf || !win || !win->sel_active) return 0;
+    if (block_mode != 0) block_mode = 1;
+    if (win->sel_block) block_mode = 1;
+    SizedStr clip = sstr_new();
+    if (!block_mode) {
+        int sy, sx, ey, ex_excl;
+        if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl)) { sstr_free(&clip); return 0; }
+        for (int y = sy; y <= ey; y++) {
+            Row *r = &buf->rows[y];
+            int start = (y == sy) ? sx : 0;
+            int end_excl = (y == ey) ? ex_excl : (int)r->chars.len;
+            if (start < 0) start = 0;
+            if (end_excl < start) end_excl = start;
+            if (end_excl > (int)r->chars.len) end_excl = (int)r->chars.len;
+            sstr_append(&clip, r->chars.data + start, (size_t)(end_excl - start));
+            if (y != ey) sstr_append_char(&clip, '\n');
+        }
+    } else {
+        int sy, ey, start_rx, end_rx_excl;
+        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl)) { sstr_free(&clip); return 0; }
+        for (int y = sy; y <= ey; y++) {
+            Row *r = &buf->rows[y];
+            int cx0 = buf_row_rx_to_cx(r, start_rx);
+            int cx1 = buf_row_rx_to_cx(r, end_rx_excl);
+            if (cx0 < 0) cx0 = 0;
+            if (cx1 < cx0) cx1 = cx0;
+            if (cx1 > (int)r->chars.len) cx1 = (int)r->chars.len;
+            sstr_append(&clip, r->chars.data + cx0, (size_t)(cx1 - cx0));
+            if (y != ey) sstr_append_char(&clip, '\n');
+        }
+    }
+    sstr_free(&E.clipboard);
+    E.clipboard = clip;
+    regs_set_yank(E.clipboard.data, E.clipboard.len);
+    ed_set_status_message("Yanked");
+    return 1;
+}
+
+static int visual_delete(Buffer *buf, Window *win, int block_mode) {
+    if (!buf || !win || !win->sel_active) return 0;
+    if (buf->readonly) { ed_set_status_message("Buffer is read-only"); return 0; }
+    if (block_mode != 0) block_mode = 1;
+    if (win->sel_block) block_mode = 1;
+    if (!visual_yank(buf, win, block_mode)) return 0;
+
+    if (!block_mode) {
+        int sy, sx, ey, ex_excl;
+        if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl)) return 0;
+        if (!undo_is_applying()) {
+            undo_begin_group();
+            undo_push_delete(sy, sx,
+                             E.clipboard.data, E.clipboard.len,
+                             win->cursor.y, win->cursor.x,
+                             sy, sx);
+            undo_commit_group();
+        }
+        Row *start = &buf->rows[sy];
+        int start_len = (int)start->chars.len;
+        if (sx > start_len) sx = start_len;
+
+        if (sy == ey) {
+            int end_ex = ex_excl;
+            if (end_ex > start_len) end_ex = start_len;
+            sstr_delete_range(&start->chars, sx, end_ex);
+            buf_row_update(start);
+        } else {
+            Row *end = &buf->rows[ey];
+            int end_ex = ex_excl;
+            if (end_ex > (int)end->chars.len) end_ex = (int)end->chars.len;
+            SizedStr tail = sstr_from(end->chars.data + end_ex,
+                                      end->chars.len - (size_t)end_ex);
+            start->chars.len = (size_t)sx;
+            if (start->chars.data) start->chars.data[sx] = '\0';
+            sstr_append(&start->chars, tail.data, tail.len);
+            sstr_free(&tail);
+            buf_row_update(start);
+            /* Remove intermediate rows including end row */
+            for (int y = ey; y > sy; y--) {
+                buf_row_del_in(buf, y);
+            }
+        }
+        buf->dirty++;
+        win->cursor.y = sy;
+        win->cursor.x = sx;
+    } else {
+        int sy, ey, start_rx, end_rx_excl;
+        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl)) return 0;
+        if (!undo_is_applying()) {
+            int start_cx = buf_row_rx_to_cx(&buf->rows[sy], start_rx);
+            undo_begin_group();
+            undo_push_delete(sy, start_cx,
+                             E.clipboard.data, E.clipboard.len,
+                             win->cursor.y, win->cursor.x,
+                             sy, start_cx);
+            undo_commit_group();
+        }
+        for (int y = sy; y <= ey; y++) {
+            Row *r = &buf->rows[y];
+            int cx0 = buf_row_rx_to_cx(r, start_rx);
+            int cx1 = buf_row_rx_to_cx(r, end_rx_excl);
+            if (cx0 < 0) cx0 = 0;
+            if (cx1 < cx0) cx1 = cx0;
+            if (cx1 > (int)r->chars.len) cx1 = (int)r->chars.len;
+            if (cx0 == cx1) continue;
+            sstr_delete_range(&r->chars, cx0, cx1);
+            buf_row_update(r);
+        }
+        buf->dirty++;
+        win->cursor.y = sy;
+        Row *r = &buf->rows[win->cursor.y];
+        win->cursor.x = buf_row_rx_to_cx(r, start_rx);
+    }
+    visual_clear(win);
+    ed_set_mode(MODE_NORMAL);
+    return 1;
+}
+
+/* Expose small wrappers for other modules */
+void kb_visual_clear(struct Window *win) { visual_clear(win); }
+void kb_visual_begin(int block) { visual_begin(block); }
+int kb_visual_yank(struct Buffer *buf, struct Window *win, int block_mode) { return visual_yank(buf, win, block_mode); }
+int kb_visual_delete(struct Buffer *buf, struct Window *win, int block_mode) { return visual_delete(buf, win, block_mode); }
 
 /* Helper: convert key code to string representation */
 static void key_to_string(int key, char *buf, size_t bufsize) {
@@ -85,6 +287,28 @@ void kb_enter_command_mode(void) {
     extern Ed E;
     ed_set_mode(MODE_COMMAND);
     E.command_len = 0;
+}
+
+void kb_visual_toggle(void) {
+    Window *win = window_cur();
+    if (!win) return;
+    if (E.mode == MODE_VISUAL && win->sel_active && !win->sel_block) {
+        visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return;
+    }
+    visual_begin(0);
+}
+
+void kb_visual_block_toggle(void) {
+    Window *win = window_cur();
+    if (!win) return;
+    if (E.mode == MODE_VISUAL_BLOCK && win->sel_active) {
+        visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return;
+    }
+    visual_begin(1);
 }
 
 /* Normal mode - text operations */
@@ -248,6 +472,31 @@ void kb_jump_backward(void) {
 
 void kb_jump_forward(void) {
     kb_jump(1);
+}
+
+/* Tmux integration: send current paragraph to tmux runner pane */
+void kb_tmux_send_line(void) {
+    SizedStr para = sstr_new();
+    if (!buf_get_paragraph_under_cursor(&para) || para.len == 0) {
+        sstr_free(&para);
+        ed_set_status_message("tmux: no paragraph to send");
+        return;
+    }
+
+    char *cmd = malloc(para.len + 1);
+    if (!cmd) {
+        sstr_free(&para);
+        ed_set_status_message("tmux: out of memory");
+        return;
+    }
+
+    memcpy(cmd, para.data, para.len);
+    cmd[para.len] = '\0';
+
+    tmux_send_command(cmd);
+
+    free(cmd);
+    sstr_free(&para);
 }
 
 

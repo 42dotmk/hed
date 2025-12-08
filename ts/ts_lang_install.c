@@ -112,12 +112,6 @@ int main(int argc, char **argv) {
     char build_dir[1024];
     snprintf(build_dir, sizeof(build_dir), "ts/build/%s", lang);
 
-    /* If build dir exists, reuse it; otherwise clone.
-     *
-     * Try two sources, in order:
-     *   1) https://github.com/tree-sitter-grammars/tree-sitter-<lang>.git
-     *   2) https://github.com/tree-sitter/tree-sitter-<lang>.git
-     */
     if (!file_exists(build_dir)) {
         char repo_url[512];
         char cmd[1024];

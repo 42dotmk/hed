@@ -40,6 +40,9 @@
  */
 int term_cmd_run(const char *cmd, char ***out_lines, int *out_count);
 
+/* Run a non-interactive command via system(), handling raw mode toggling. */
+int term_cmd_system(const char *cmd);
+
 /*
  * Run a terminal command interactively without capturing output.
  *

@@ -3,6 +3,8 @@
 
 /* Keybinding callback signature */
 typedef void (*KeybindCallback)(void);
+struct Buffer;
+struct Window;
 
 /* Keybinding API */
 
@@ -58,7 +60,6 @@ void keybind_clear_buffer(void);
  * This is where users define their custom keybindings
  */
 void user_keybinds_init(void);
-
 void kb_line_number_toggle(void);
 void kb_enter_insert_mode(void);
 void kb_append_mode(void);
@@ -79,4 +80,11 @@ void kb_fzf(void);
 void kb_quit_all(void);
 void kb_jump_backward(void);  /* Ctrl-O - jump to previous buffer */
 void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
+void kb_tmux_send_line(void); /* Send current line to tmux runner pane */
+void kb_visual_toggle(void);      /* Enter/exit visual mode */
+void kb_visual_block_toggle(void);/* Enter/exit visual block mode */
+void kb_visual_clear(struct Window *win);
+void kb_visual_begin(int block_mode);
+int kb_visual_yank(struct Buffer *buf, struct Window *win, int block_mode);
+int kb_visual_delete(struct Buffer *buf, struct Window *win, int block_mode);
 #endif // KEYBINDS_H

@@ -11,6 +11,7 @@
  * - :cpick         - Interactive command picker with fzf
  * - :ssearch       - Search current file with ripgrep/fzf
  * - :rg [pattern]  - Ripgrep search with live results
+ * - :rgword        - Ripgrep search for word under cursor (quickfix)
  * - :fzf           - Interactive file picker
  * - :recent        - Pick from recently opened files
  * - :shq <cmd>     - Run shell command and capture to quickfix
@@ -19,6 +20,7 @@
 void cmd_cpick(const char *args);
 void cmd_ssearch(const char *args);
 void cmd_rg(const char *args);
+void cmd_rg_word(const char *args);
 void cmd_fzf(const char *args);
 void cmd_recent(const char *args);
 void cmd_shq(const char *args);

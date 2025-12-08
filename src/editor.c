@@ -135,6 +135,8 @@ void ed_change_cursor_shape(void) {
             write(STDOUT_FILENO,CURSOR_STYLE_BEAM, 5);
             break;
         case MODE_COMMAND:
+        case MODE_VISUAL:
+        case MODE_VISUAL_BLOCK:
             write(STDOUT_FILENO,CURSOR_STYLE_BLOCK, 5);
             break;
     }
@@ -145,6 +147,16 @@ void ed_set_mode(EditorMode new_mode) {
 
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
+
+    /* Clear visual selection when leaving a visual mode */
+    if ((old_mode == MODE_VISUAL || old_mode == MODE_VISUAL_BLOCK) &&
+        !(new_mode == MODE_VISUAL || new_mode == MODE_VISUAL_BLOCK)) {
+        Window *win = window_cur();
+        if (win) {
+            win->sel_active = 0;
+            win->sel_block = 0;
+        }
+    }
 
     /* Clear keybind buffer when changing modes */
     keybind_clear_buffer();
@@ -425,6 +437,67 @@ static void handle_normal_mode_keypress(int c, Buffer *buf) {
     }
 }
 
+static void handle_visual_mode_keypress(int c, Buffer *buf, int block_mode) {
+    Window *win = window_cur();
+    if (!buf || !win) return;
+
+    if (c == '\x1b') {
+        kb_visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return;
+    }
+
+    if (c == 'y') {
+        if (kb_visual_yank(buf, win, block_mode)) {
+            kb_visual_clear(win);
+            ed_set_mode(MODE_NORMAL);
+        }
+        return;
+    }
+    if (c == 'd') {
+        kb_visual_delete(buf, win, block_mode);
+        return;
+    }
+    if (c == 'v' && !block_mode) {
+        kb_visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return;
+    }
+    if (c == CTRL_KEY('v')) {
+        if (block_mode) {
+            kb_visual_clear(win);
+            ed_set_mode(MODE_NORMAL);
+        } else {
+            kb_visual_begin(1);
+        }
+        return;
+    }
+
+    /* Movement extends selection */
+    switch (c) {
+        case 'h': case 'j': case 'k': case 'l':
+        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
+        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
+            ed_move_cursor(c);
+            return;
+        case 'i':
+            kb_visual_clear(win);
+            kb_enter_insert_mode();
+            return;
+        case 'a':
+            kb_visual_clear(win);
+            kb_append_mode();
+            return;
+        case ':':
+            kb_visual_clear(win);
+            kb_enter_command_mode();
+            return;
+    }
+
+    /* Allow other normal-mode bindings to fire (they'll clear buffer if unmatched) */
+    keybind_process(c, MODE_NORMAL);
+}
+
 /* Main keypress dispatcher - delegates to mode-specific handlers */
 void ed_process_keypress(void) {
     int c = ed_read_key();
@@ -443,6 +516,12 @@ void ed_process_keypress(void) {
             break;
         case MODE_NORMAL:
             handle_normal_mode_keypress(c, buf);
+            break;
+        case MODE_VISUAL:
+            handle_visual_mode_keypress(c, buf, 0);
+            break;
+        case MODE_VISUAL_BLOCK:
+            handle_visual_mode_keypress(c, buf, 1);
             break;
     }
 
@@ -476,11 +555,17 @@ void ed_init_state(){
     E.default_wrap = 0;
     E.expand_tab = 0;
     E.tab_size = TAB_STOP;
+    E.cwd[0] = '\0';
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
 }
 void ed_init(void) {
     ed_init_state();
+
+    /* Initialize editor working directory to process CWD at startup. */
+    if (!getcwd(E.cwd, sizeof(E.cwd))) {
+        E.cwd[0] = '\0';
+    }
 
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) die("get_window_size");
     E.screen_rows -= 2; /* Status bar and message bar */

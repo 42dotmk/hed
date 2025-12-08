@@ -1,6 +1,8 @@
 #ifndef EDITOR_H
 #define EDITOR_H
 
+#include <limits.h>
+
 #include "buffer.h"
 #include "history.h"
 #include "recent_files.h"
@@ -42,7 +44,9 @@
 typedef enum {
     MODE_NORMAL,
     MODE_INSERT,
-    MODE_COMMAND
+    MODE_COMMAND,
+    MODE_VISUAL,
+    MODE_VISUAL_BLOCK
 } EditorMode;
 
 /* Typed vectors for editor arrays */
@@ -80,6 +84,7 @@ typedef struct {
     int default_wrap;        /* 0=unwrap windows by default, 1=wrap */
     int expand_tab;          /* 0=insert '\t', 1=insert spaces */
     int tab_size;            /* visual tab size (defaults to TAB_STOP) */
+    char cwd[PATH_MAX];      /* editor working directory (logical cwd) */
     struct {
         char **items;
         int count;

@@ -71,7 +71,7 @@
 #include "row.h"
 
 /* Buffer structure - represents a single file/document */
-typedef struct {
+typedef struct Buffer {
     Row *rows;
 
     int num_rows;

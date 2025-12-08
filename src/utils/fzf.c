@@ -1,4 +1,5 @@
 #include "hed.h"
+#include "cmd_util.h"
 #include "fzf.h"
 #include "term_cmd.h"
 #include <limits.h>
@@ -19,18 +20,6 @@ int fzf_run_opts(const char *input_cmd, const char *fzf_opts, int multi, char **
 
 int fzf_run(const char *input_cmd, int multi, char ***out_lines, int *out_count) {
     return fzf_run_opts(input_cmd, NULL, multi, out_lines, out_count);
-}
-
-/* Helper to escape with single quotes for printf */
-static void shell_escape_single(const char *in, char *out, size_t outsz) {
-    size_t o = 0;
-    if (o < outsz) out[o++] = '\'';
-    for (const char *p = in; *p && o + 4 < outsz; p++) {
-        if (*p == '\'') { out[o++] = '\''; out[o++] = '\\'; out[o++] = '\''; out[o++] = '\''; }
-        else out[o++] = *p;
-    }
-    if (o < outsz) out[o++] = '\'';
-    if (o < outsz) out[o] = '\0'; else out[outsz - 1] = '\0';
 }
 
 int fzf_pick_list(const char **items, int count, int multi, char ***out_lines, int *out_count) {

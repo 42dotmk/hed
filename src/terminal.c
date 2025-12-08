@@ -258,6 +258,65 @@ static void render_slice_ss(const SizedStr *r, int start_col, int want_cols, int
     utf8_slice_by_columns(r->data, r->len, start_col, want_cols, out_start, out_len);
 }
 
+/* Compute selection span (render columns, exclusive end) for a row. Returns 1 if selection applies. */
+static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx, int row,
+                           int *start_rx, int *end_rx) {
+    if (!buf || !win || !win->sel_active) return 0;
+    if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK)) return 0;
+    if (!BOUNDS_CHECK(row, buf->num_rows)) return 0;
+
+    if (win->sel_block || E.mode == MODE_VISUAL_BLOCK) {
+        int sy = win->sel_anchor_y < win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+        int ey = win->sel_anchor_y > win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+        if (row < sy || row > ey) return 0;
+        int anchor_rx = win->sel_anchor_rx;
+        int start = anchor_rx < cur_rx ? anchor_rx : cur_rx;
+        int end = anchor_rx > cur_rx ? anchor_rx : cur_rx;
+        int rcols = render_cols_ss(&buf->rows[row].render);
+        if (start < 0) start = 0;
+        if (end < start) end = start;
+        if (start > rcols) start = rcols;
+        if (end > rcols) end = rcols;
+        if (start_rx) *start_rx = start;
+        if (end_rx) *end_rx = end + 1;
+        return 1;
+    }
+
+    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+        !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
+
+    int ay = win->sel_anchor_y, ax = win->sel_anchor_x;
+    int cy = win->cursor.y, cx = win->cursor.x;
+    int top_y = ay, top_x = ax, bot_y = cy, bot_x = cx;
+    if (ay > cy || (ay == cy && ax > cx)) {
+        top_y = cy; top_x = cx;
+        bot_y = ay; bot_x = ax;
+    }
+    if (row < top_y || row > bot_y) return 0;
+
+    Row *r = &buf->rows[row];
+    int start_cx = 0;
+    int end_cx_excl = (int)r->chars.len;
+
+    if (top_y == bot_y) {
+        start_cx = top_x < bot_x ? top_x : bot_x;
+        end_cx_excl = (top_x > bot_x ? top_x : bot_x) + 1;
+    } else if (row == top_y) {
+        start_cx = top_x;
+    } else if (row == bot_y) {
+        end_cx_excl = bot_x + 1;
+    }
+
+    if (start_cx < 0) start_cx = 0;
+    if (start_cx > (int)r->chars.len) start_cx = (int)r->chars.len;
+    if (end_cx_excl < start_cx) end_cx_excl = start_cx;
+    if (end_cx_excl > (int)r->chars.len) end_cx_excl = (int)r->chars.len;
+
+    if (start_rx) *start_rx = buf_row_cx_to_rx(r, start_cx);
+    if (end_rx) *end_rx = buf_row_cx_to_rx(r, end_cx_excl);
+    return 1;
+}
+
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     Buffer *buf = NULL;
     if (E.buffers.len > 0 && win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len)
@@ -266,6 +325,10 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     int margin = gutter ? (gutter + 1) : 0; /* number + space */
     int content_cols = win->width - margin;
     if (content_cols < 0) content_cols = 0;
+    int cursor_rx = 0;
+    if (buf && win->cursor.y >= 0 && win->cursor.y < buf->num_rows) {
+        cursor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    }
 
     /* helper functions moved to file scope */
 
@@ -337,8 +400,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
             }
 
             if (len > 0) {
-                int has_sel = 0;
                 int sel_start_rx = 0, sel_end_rx = 0;
+                int has_sel = visual_row_span(buf, win, cursor_rx, filerow, &sel_start_rx, &sel_end_rx);
 
                 #define APPEND_SLICE(start_rx_, slice_cols_) do { \
                     int __sb = 0, __blen = 0; \
@@ -361,8 +424,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 if (!has_sel) {
                     APPEND_SLICE(start_rx, len);
                 } else {
-                    int vis_start = win->col_offset;
-                    int vis_end = win->col_offset + content_cols;
+                    int vis_start = win->wrap ? start_rx : win->col_offset;
+                    int vis_end = vis_start + content_cols;
 
                     int pre_start = vis_start;
                     int pre_end = sel_start_rx < vis_end ? (sel_start_rx > vis_start ? sel_start_rx : vis_start) : vis_end;

@@ -46,11 +46,16 @@ void qf_toggle(Qf *qf, int height);
 void qf_focus(Qf *qf);
 void qf_blur(Qf *qf);
 
+/* Recompute quickfix window cursor/scroll and selection marker.
+ * Intended to be called after updating qf->sel externally (e.g., from hooks). */
+void qf_update_view(Qf *qf);
+
 void qf_clear(Qf *qf);
 int  qf_add(Qf *qf, const char *filename, int line, int col, const char *text);
 
 void qf_move(Qf *qf, int delta);
 void qf_open_selected(Qf *qf);
+void qf_preview_selected(Qf *qf);
 void qf_open_idx(Qf *qf, int idx);
 
 #endif /* QUICKFIX_H */
