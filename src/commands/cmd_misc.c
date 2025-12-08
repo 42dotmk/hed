@@ -331,7 +331,7 @@ void cmd_fmt(const char *args) {
 
   /* Reload buffer from disk to pick up formatted content. */
   buf_reload(buf);
-  ed_set_status_message("fmt: formatted (%s)", ft);
+  ed_set_status_message("fmt: formatted (%s)", buf->filename);
 }
 
 void cmd_ts(const char *args) {

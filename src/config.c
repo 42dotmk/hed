@@ -3,8 +3,10 @@
 
 #define cmd(name, cb, desc) command_register(name, cb, desc)
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
+#define mapv(x, y) keybind_register(MODE_VISUAL, x, y)
 #define mapi(x, y) keybind_register(MODE_INSERT, x, y)
 #define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y)
+#define cmapv(x, y) keybind_register_command(MODE_VISUAL, x, y)
 
 static void kb_del_win(char direction);
 static void kb_del_up() { kb_del_win('k'); }
@@ -138,9 +140,12 @@ void nmode_bindings() {
   cmapn("U", "redo");
   cmapn("u", "undo");
   mapn("$", kb_cursor_line_end);
+  mapv("$", kb_cursor_line_end);
   mapn("%", buf_find_matching_bracket);
+  mapv("%", buf_find_matching_bracket);
   mapn("*", kb_find_under_cursor);
   mapn("0", kb_cursor_line_start);
+  mapv("0", kb_cursor_line_start);
   mapn(":", kb_enter_command_mode);
   mapn("<<", buf_unindent_line);
   mapn("<C-d>", buf_scroll_half_page_down);
@@ -185,19 +190,16 @@ static void kb_del_win(char direction) {
   switch (direction) {
   case 'h':
     windows_focus_left();
-    cmd_wclose(NULL);
     break;
   case 'j':
     windows_focus_down();
-    cmd_wclose(NULL);
     break;
   case 'k':
     windows_focus_up();
-    cmd_wclose(NULL);
     break;
   case 'l':
     windows_focus_right();
-    cmd_wclose(NULL);
     break;
   }
+  cmd_wclose(NULL);
 }
