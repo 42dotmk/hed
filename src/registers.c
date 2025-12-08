@@ -41,11 +41,19 @@ void regs_set_unnamed(const char *data, size_t len) {
     /* Keep editor clipboard in sync */
     sstr_free(&E.clipboard);
     if (data && len) E.clipboard = sstr_from(data, len); else E.clipboard = sstr_new();
+    E.clipboard_is_block = 0;
+}
+
+void regs_set_yank_block(const char *data, size_t len, int is_block) {
+    rs_assign(&R.yank0, data, len);
+    rs_assign(&R.unnamed, data, len);
+    sstr_free(&E.clipboard);
+    if (data && len) E.clipboard = sstr_from(data, len); else E.clipboard = sstr_new();
+    E.clipboard_is_block = is_block ? 1 : 0;
 }
 
 void regs_set_yank(const char *data, size_t len) {
-    rs_assign(&R.yank0, data, len);
-    regs_set_unnamed(data, len);
+    regs_set_yank_block(data, len, 0);
 }
 
 void regs_push_delete(const char *data, size_t len) {
@@ -82,4 +90,3 @@ const SizedStr *regs_get(char name) {
     if (name == ':') return &R.cmd;
     return &R.unnamed;
 }
-

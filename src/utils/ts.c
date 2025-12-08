@@ -21,6 +21,7 @@ typedef struct {
     TSQuery *query;
     void *dl_handle;
     char lang_name[32];
+    int parsed_dirty; /* last buf->dirty value parsed; -1 = needs parse */
 } TSState;
 
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
@@ -30,6 +31,9 @@ void ts_buffer_init(Buffer *buf) {
     if (!buf) return;
     if (buf->ts_internal) return;
     buf->ts_internal = calloc(1, sizeof(TSState));
+    if (buf->ts_internal) {
+        ((TSState *)buf->ts_internal)->parsed_dirty = -1;
+    }
 }
 void ts_buffer_free(Buffer *buf) {
     if (!buf || !buf->ts_internal) return;
@@ -87,18 +91,32 @@ static void maybe_load_query(TSState *st, const char *lang) {
     free(buf);
 }
 
+static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
+    if (!st || !st->lang || !st->parser) return 0;
+    return (strncmp(st->lang_name, lang_name, sizeof(st->lang_name)) == 0);
+}
+
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     if (!buf) return 0;
-    log_msg("Loading tree-sitter language: %s for buf: %s", lang_name, buf->title);
     ts_buffer_init(buf);
-    log_msg("tree-sitter is enabled for buf: %s", buf->title);
     TSState *st = (TSState *)buf->ts_internal;
     if (!st) return 0;
+
+    /* If the requested language is already loaded, just ensure we reparse later. */
+    if (ts_lang_is_loaded(st, lang_name)) {
+        st->parsed_dirty = -1; /* force reparse */
+        return 1;
+    }
+
+    log_msg("Loading tree-sitter language: %s for buf: %s", lang_name, buf->title);
+    log_msg("tree-sitter is enabled for buf: %s", buf->title);
+
     if (st->parser) { ts_parser_delete(st->parser); st->parser = NULL; }
     if (st->tree) { ts_tree_delete(st->tree); st->tree = NULL; }
     if (st->query) { ts_query_delete(st->query); st->query = NULL; }
     if (st->dl_handle) { dlclose(st->dl_handle); st->dl_handle = NULL; }
     st->lang = NULL; st->lang_name[0] = '\0';
+    st->parsed_dirty = -1;
     if (!load_lang(st, lang_name)) return 0;
     st->parser = ts_parser_new();
     if (!ts_parser_set_language(st->parser, st->lang)) return 0;
@@ -109,84 +127,93 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
 
 int ts_buffer_autoload(Buffer *buf) {
     if (!buf || !buf->filename) return 0;
+    ts_buffer_init(buf);
+    TSState *st = (TSState *)buf->ts_internal;
+    const char *want = NULL;
+
     /* Detect by extension */
     const char *ext = strrchr(buf->filename, '.');
-    if (!ext || !ext[1]) return 0;
-    ext++;
+    if (ext && ext[1]) {
+        ext++;
 
-    /* Core C / C++ */
-    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
-        return ts_buffer_load_language(buf, "c");
-    if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
-        strcmp(ext, "cxx") == 0 || strcmp(ext, "hpp") == 0 ||
-        strcmp(ext, "hh") == 0  || strcmp(ext, "hxx") == 0)
-        return ts_buffer_load_language(buf, "cpp");
+        /* Core C / C++ */
+        if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
+            want = "c";
+        else if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
+                 strcmp(ext, "cxx") == 0 || strcmp(ext, "hpp") == 0 ||
+                 strcmp(ext, "hh") == 0  || strcmp(ext, "hxx") == 0)
+            want = "cpp";
 
-    /* C# */
-    if (strcmp(ext, "cs") == 0)
-        return ts_buffer_load_language(buf, "c-sharp");
+        /* C# */
+        else if (strcmp(ext, "cs") == 0)
+            want = "c-sharp";
+
+        /* Python */
+        else if (strcmp(ext, "py") == 0)
+            want = "python";
+
+        /* HTML */
+        else if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
+            want = "html";
+
+        /* Go */
+        else if (strcmp(ext, "go") == 0)
+            want = "go";
+
+        /* JavaScript / TypeScript */
+        else if (strcmp(ext, "js") == 0)
+            want = "javascript";
+        else if (strcmp(ext, "ts") == 0 || strcmp(ext, "tsx") == 0)
+            want = "typescript";
+
+        /* Rust */
+        else if (strcmp(ext, "rs") == 0)
+            want = "rust";
+
+        /* Lua */
+        else if (strcmp(ext, "lua") == 0)
+            want = "lua";
+
+        /* Shell */
+        else if (strcmp(ext, "sh") == 0 || strcmp(ext, "bash") == 0 || strcmp(ext, "zsh") == 0)
+            want = "bash";
+
+        /* JSON */
+        else if (strcmp(ext, "json") == 0)
+            want = "json";
+
+        /* YAML */
+        else if (strcmp(ext, "yml") == 0 || strcmp(ext, "yaml") == 0)
+            want = "yaml";
+
+        /* TOML */
+        else if (strcmp(ext, "toml") == 0)
+            want = "toml";
+
+        /* Markdown */
+        else if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
+            want = "markdown";
+    }
 
     /* Make */
-    if (strcmp(buf->filename, "makefile") == 0 || strcmp(buf->filename, "Makefile") == 0)
-        return ts_buffer_load_language(buf, "make");
+    if (!want && (strcmp(buf->filename, "makefile") == 0 || strcmp(buf->filename, "Makefile") == 0))
+        want = "make";
 
-    /* Python */
-    if (strcmp(ext, "py") == 0)
-        return ts_buffer_load_language(buf, "python");
-
-    /* HTML */
-    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
-        return ts_buffer_load_language(buf, "html");
-
-    /* Go */
-    if (strcmp(ext, "go") == 0)
-        return ts_buffer_load_language(buf, "go");
-
-    /* JavaScript / TypeScript */
-    if (strcmp(ext, "js") == 0)
-        return ts_buffer_load_language(buf, "javascript");
-    if (strcmp(ext, "ts") == 0 || strcmp(ext, "tsx") == 0)
-        return ts_buffer_load_language(buf, "typescript");
-
-    /* Rust */
-    if (strcmp(ext, "rs") == 0)
-        return ts_buffer_load_language(buf, "rust");
-
-    /* Lua */
-    if (strcmp(ext, "lua") == 0)
-        return ts_buffer_load_language(buf, "lua");
-
-    /* Shell */
-    if (strcmp(ext, "sh") == 0 || strcmp(ext, "bash") == 0 || strcmp(ext, "zsh") == 0)
-        return ts_buffer_load_language(buf, "bash");
-
-    /* JSON */
-    if (strcmp(ext, "json") == 0)
-        return ts_buffer_load_language(buf, "json");
-
-    /* YAML */
-    if (strcmp(ext, "yml") == 0 || strcmp(ext, "yaml") == 0)
-        return ts_buffer_load_language(buf, "yaml");
-
-    /* TOML */
-    if (strcmp(ext, "toml") == 0)
-        return ts_buffer_load_language(buf, "toml");
-
-    /* Markdown */
-    if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
-        return ts_buffer_load_language(buf, "markdown");
-
-    return 0;
+    if (!want) return 0;
+    if (ts_lang_is_loaded(st, want)) return 1;
+    return ts_buffer_load_language(buf, want);
 }
 
 void ts_buffer_reparse(Buffer *buf) {
     if (!buf || !buf->ts_internal) return;
     TSState *st = (TSState *)buf->ts_internal;
     if (!st->parser || !st->lang) return;
+    if (st->parsed_dirty == buf->dirty && st->tree) return;
     char *src = NULL; size_t len = build_source(buf, &src);
     if (!src) return;
     if (st->tree) ts_tree_delete(st->tree);
     st->tree = ts_parser_parse_string(st->parser, NULL, src, (uint32_t)len);
+    st->parsed_dirty = buf->dirty;
     free(src);
 }
 

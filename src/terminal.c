@@ -261,15 +261,15 @@ static void render_slice_ss(const SizedStr *r, int start_col, int want_cols, int
 /* Compute selection span (render columns, exclusive end) for a row. Returns 1 if selection applies. */
 static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx, int row,
                            int *start_rx, int *end_rx) {
-    if (!buf || !win || !win->sel_active) return 0;
+    if (!buf || !win || win->sel.type == SEL_NONE) return 0;
     if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK)) return 0;
     if (!BOUNDS_CHECK(row, buf->num_rows)) return 0;
 
-    if (win->sel_block || E.mode == MODE_VISUAL_BLOCK) {
-        int sy = win->sel_anchor_y < win->cursor.y ? win->sel_anchor_y : win->cursor.y;
-        int ey = win->sel_anchor_y > win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+    if (win->sel.type == SEL_BLOCK || E.mode == MODE_VISUAL_BLOCK) {
+        int sy = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y : win->cursor.y;
+        int ey = win->sel.anchor_y > win->cursor.y ? win->sel.anchor_y : win->cursor.y;
         if (row < sy || row > ey) return 0;
-        int anchor_rx = win->sel_anchor_rx;
+        int anchor_rx = win->sel.block_start_rx;
         int start = anchor_rx < cur_rx ? anchor_rx : cur_rx;
         int end = anchor_rx > cur_rx ? anchor_rx : cur_rx;
         int rcols = render_cols_ss(&buf->rows[row].render);
@@ -282,10 +282,10 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx, int
         return 1;
     }
 
-    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+    if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
         !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
 
-    int ay = win->sel_anchor_y, ax = win->sel_anchor_x;
+    int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
     int cy = win->cursor.y, cx = win->cursor.x;
     int top_y = ay, top_x = ax, bot_y = cy, bot_x = cx;
     if (ay > cy || (ay == cy && ax > cx)) {

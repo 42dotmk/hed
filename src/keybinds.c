@@ -1,6 +1,5 @@
-#include "keybinds.h"
-#include "commands.h"
 #include "hed.h"
+#include "keybinds.h"
 #include "safe_string.h"
 #include <time.h>
 
@@ -32,8 +31,36 @@ static struct timespec last_key_time;
 /* Visual selection helpers */
 static void visual_clear(Window *win) {
     if (!win) return;
-    win->sel_active = 0;
-    win->sel_block = 0;
+    win->sel.type = SEL_NONE;
+}
+
+Selection kb_make_selection(Window *win, Buffer *buf, SelectionType forced_type) {
+    Selection s = (Selection){ .type = SEL_NONE };
+    if (!win || !buf) return s;
+    if (forced_type != SEL_NONE) {
+        s.type = forced_type;
+    } else if (win->sel.type != SEL_NONE) {
+        s = win->sel;
+    }
+    if (s.type == SEL_CHAR) {
+        s.anchor_y = win->sel.anchor_y;
+        s.anchor_x = win->sel.anchor_x;
+        s.cursor_y = win->cursor.y;
+        s.cursor_x = win->cursor.x;
+    } else if (s.type == SEL_BLOCK) {
+        s.anchor_y = win->sel.anchor_y;
+        s.cursor_y = win->cursor.y;
+        s.anchor_rx = win->sel.anchor_rx;
+        s.block_start_rx = win->sel.anchor_rx;
+        s.block_end_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+        if (s.block_start_rx > s.block_end_rx) {
+            int t = s.block_start_rx; s.block_start_rx = s.block_end_rx; s.block_end_rx = t;
+        }
+    } else if (s.type == SEL_LINE) {
+        s.anchor_y = win->cursor.y;
+        s.cursor_y = win->cursor.y;
+    }
+    return s;
 }
 
 static void visual_begin(int block) {
@@ -41,21 +68,21 @@ static void visual_begin(int block) {
     Window *win = window_cur();
     if (!buf || !win) return;
     if (win->cursor.y < 0 || win->cursor.y >= buf->num_rows) return;
-    win->sel_active = 1;
-    win->sel_block = block ? 1 : 0;
-    win->sel_anchor_y = win->cursor.y;
-    win->sel_anchor_x = win->cursor.x;
-    win->sel_anchor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    win->sel.type = block ? SEL_BLOCK : SEL_CHAR;
+    win->sel.anchor_y = win->cursor.y;
+    win->sel.anchor_x = win->cursor.x;
+    win->sel.anchor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    win->sel.block_start_rx = win->sel.anchor_rx;
+    win->sel.block_end_rx = win->sel.anchor_rx;
     ed_set_mode(block ? MODE_VISUAL_BLOCK : MODE_VISUAL);
 }
 
 static int visual_char_range(Buffer *buf, Window *win,
                              int *sy, int *sx, int *ey, int *ex_excl) {
-    if (!buf || !win || !win->sel_active) return 0;
-    if (win->sel_block) return 0;
-    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+    if (!buf || !win || win->sel.type != SEL_CHAR) return 0;
+    if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
         !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
-    int ay = win->sel_anchor_y, ax = win->sel_anchor_x;
+    int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
     int cy = win->cursor.y, cx = win->cursor.x;
     int top_y = ay, top_x = ax, bot_y = cy, bot_x = cx;
     if (ay > cy || (ay == cy && ax > cx)) {
@@ -77,14 +104,14 @@ static int visual_char_range(Buffer *buf, Window *win,
 
 static int visual_block_range(Buffer *buf, Window *win,
                               int *sy, int *ey, int *start_rx, int *end_rx_excl) {
-    if (!buf || !win || !win->sel_active || !win->sel_block) return 0;
-    if (!BOUNDS_CHECK(win->sel_anchor_y, buf->num_rows) ||
+    if (!buf || !win || win->sel.type != SEL_BLOCK) return 0;
+    if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
         !BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
-    int top_y = win->sel_anchor_y < win->cursor.y ? win->sel_anchor_y : win->cursor.y;
-    int bot_y = win->sel_anchor_y > win->cursor.y ? win->sel_anchor_y : win->cursor.y;
+    int top_y = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y : win->cursor.y;
+    int bot_y = win->sel.anchor_y > win->cursor.y ? win->sel.anchor_y : win->cursor.y;
     int cur_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-    int start = win->sel_anchor_rx < cur_rx ? win->sel_anchor_rx : cur_rx;
-    int end = win->sel_anchor_rx > cur_rx ? win->sel_anchor_rx : cur_rx;
+    int start = win->sel.anchor_rx < cur_rx ? win->sel.anchor_rx : cur_rx;
+    int end = win->sel.anchor_rx > cur_rx ? win->sel.anchor_rx : cur_rx;
     if (sy) *sy = top_y;
     if (ey) *ey = bot_y;
     if (start_rx) *start_rx = start;
@@ -105,9 +132,9 @@ static void sstr_delete_range(SizedStr *s, int start, int end_excl) {
 }
 
 static int visual_yank(Buffer *buf, Window *win, int block_mode) {
-    if (!buf || !win || !win->sel_active) return 0;
+    if (!buf || !win || win->sel.type == SEL_NONE) return 0;
     if (block_mode != 0) block_mode = 1;
-    if (win->sel_block) block_mode = 1;
+    if (win->sel.type == SEL_BLOCK) block_mode = 1;
     SizedStr clip = sstr_new();
     if (!block_mode) {
         int sy, sx, ey, ex_excl;
@@ -138,16 +165,17 @@ static int visual_yank(Buffer *buf, Window *win, int block_mode) {
     }
     sstr_free(&E.clipboard);
     E.clipboard = clip;
-    regs_set_yank(E.clipboard.data, E.clipboard.len);
+    E.clipboard_is_block = block_mode ? 1 : 0;
+    regs_set_yank_block(E.clipboard.data, E.clipboard.len, E.clipboard_is_block);
     ed_set_status_message("Yanked");
     return 1;
 }
 
 static int visual_delete(Buffer *buf, Window *win, int block_mode) {
-    if (!buf || !win || !win->sel_active) return 0;
+    if (!buf || !win || win->sel.type == SEL_NONE) return 0;
     if (buf->readonly) { ed_set_status_message("Buffer is read-only"); return 0; }
     if (block_mode != 0) block_mode = 1;
-    if (win->sel_block) block_mode = 1;
+    if (win->sel.type == SEL_BLOCK) block_mode = 1;
     if (!visual_yank(buf, win, block_mode)) return 0;
 
     if (!block_mode) {
@@ -192,15 +220,8 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
     } else {
         int sy, ey, start_rx, end_rx_excl;
         if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl)) return 0;
-        if (!undo_is_applying()) {
-            int start_cx = buf_row_rx_to_cx(&buf->rows[sy], start_rx);
-            undo_begin_group();
-            undo_push_delete(sy, start_cx,
-                             E.clipboard.data, E.clipboard.len,
-                             win->cursor.y, win->cursor.x,
-                             sy, start_cx);
-            undo_commit_group();
-        }
+        int made_group = 0;
+        if (!undo_is_applying()) { undo_begin_group(); made_group = 1; }
         for (int y = sy; y <= ey; y++) {
             Row *r = &buf->rows[y];
             int cx0 = buf_row_rx_to_cx(r, start_rx);
@@ -209,9 +230,17 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
             if (cx1 < cx0) cx1 = cx0;
             if (cx1 > (int)r->chars.len) cx1 = (int)r->chars.len;
             if (cx0 == cx1) continue;
+            if (!undo_is_applying()) {
+                SizedStr seg = sstr_from(r->chars.data + cx0, (size_t)(cx1 - cx0));
+                undo_push_delete(y, cx0, seg.data, seg.len,
+                                 win->cursor.y, win->cursor.x,
+                                 y, cx0);
+                sstr_free(&seg);
+            }
             sstr_delete_range(&r->chars, cx0, cx1);
             buf_row_update(r);
         }
+        if (made_group && !undo_is_applying()) undo_commit_group();
         buf->dirty++;
         win->cursor.y = sy;
         Row *r = &buf->rows[win->cursor.y];
@@ -223,10 +252,10 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
 }
 
 /* Expose small wrappers for other modules */
-void kb_visual_clear(struct Window *win) { visual_clear(win); }
+void kb_visual_clear(Window *win) { visual_clear(win); }
 void kb_visual_begin(int block) { visual_begin(block); }
-int kb_visual_yank(struct Buffer *buf, struct Window *win, int block_mode) { return visual_yank(buf, win, block_mode); }
-int kb_visual_delete(struct Buffer *buf, struct Window *win, int block_mode) { return visual_delete(buf, win, block_mode); }
+int kb_visual_yank(Buffer *buf, Window *win, int block_mode) { return visual_yank(buf, win, block_mode); }
+int kb_visual_delete(Buffer *buf, Window *win, int block_mode) { return visual_delete(buf, win, block_mode); }
 
 /* Helper: convert key code to string representation */
 static void key_to_string(int key, char *buf, size_t bufsize) {
@@ -292,7 +321,7 @@ void kb_enter_command_mode(void) {
 void kb_visual_toggle(void) {
     Window *win = window_cur();
     if (!win) return;
-    if (E.mode == MODE_VISUAL && win->sel_active && !win->sel_block) {
+    if (E.mode == MODE_VISUAL && win->sel.type == SEL_CHAR) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
         return;
@@ -303,7 +332,7 @@ void kb_visual_toggle(void) {
 void kb_visual_block_toggle(void) {
     Window *win = window_cur();
     if (!win) return;
-    if (E.mode == MODE_VISUAL_BLOCK && win->sel_active) {
+    if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_BLOCK) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
         return;

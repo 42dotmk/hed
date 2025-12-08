@@ -3,8 +3,9 @@
 
 /* Keybinding callback signature */
 typedef void (*KeybindCallback)(void);
-struct Buffer;
-struct Window;
+typedef struct Buffer Buffer;
+typedef struct Window Window;
+#include "ui/window.h"
 
 /* Keybinding API */
 
@@ -83,8 +84,9 @@ void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
 void kb_tmux_send_line(void); /* Send current line to tmux runner pane */
 void kb_visual_toggle(void);      /* Enter/exit visual mode */
 void kb_visual_block_toggle(void);/* Enter/exit visual block mode */
-void kb_visual_clear(struct Window *win);
+void kb_visual_clear(Window *win);
 void kb_visual_begin(int block_mode);
-int kb_visual_yank(struct Buffer *buf, struct Window *win, int block_mode);
-int kb_visual_delete(struct Buffer *buf, struct Window *win, int block_mode);
+int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
+int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
+Selection kb_make_selection(Window *win, Buffer *buf, SelectionType forced_type);
 #endif // KEYBINDS_H

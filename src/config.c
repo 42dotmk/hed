@@ -1,137 +1,88 @@
 #include "hed.h"
 #include "safe_string.h"
 
+#define cmd(name, cb, desc) command_register(name, cb, desc)
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
 #define mapi(x, y) keybind_register(MODE_INSERT, x, y)
-#define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y);
+#define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y)
 
-/* Forward declarations for binding groups */
-void imode_bindings(void);
-void nmode_bindings(void);
+
+static void kb_del_win(char direction);
+static void kb_del_up() { kb_del_win('k'); }
+static void kb_del_down() { kb_del_win('j'); }
+static void kb_del_left() { kb_del_win('h'); }
+static void kb_del_right() { kb_del_win('l'); }
+static void kb_end_append(void) { kb_cursor_line_end(); kb_append_mode(); }
+static void kb_start_insert(void) { kb_cursor_line_start(); kb_enter_insert_mode(); }
 
 static void on_mode_change(const HookModeEvent *event) {
   ed_change_cursor_shape();
   (void)event;
 }
-
-static void kb_del_win(char direction) {
-  switch (direction) {
-  case 'h':
-    windows_focus_left();
-    cmd_wclose(NULL);
-    break;
-  case 'j':
-    windows_focus_down();
-    cmd_wclose(NULL);
-    break;
-  case 'k':
-    windows_focus_up();
-    cmd_wclose(NULL);
-    break;
-  case 'l':
-    windows_focus_right();
-    cmd_wclose(NULL);
-    break;
-  }
-}
-static void kb_del_up() { kb_del_win('k'); }
-static void kb_del_down() { kb_del_win('j'); }
-static void kb_del_left() { kb_del_win('h'); }
-static void kb_del_right() { kb_del_win('l'); }
-
-static void kb_end_append(void) {
-  kb_cursor_line_end();
-  kb_append_mode();
-}
-
-static void kb_start_insert(void) {
-  kb_cursor_line_start();
-  kb_enter_insert_mode();
-}
-
-typedef struct {
-  const char *name;
-  CommandCallback cb;
-  const char *desc;
-} CommandDef;
-
-static const CommandDef command_defs[] = {
-    {"q", cmd_quit, "quit"},
-    {"q!", cmd_quit_force, "quit!\n"},
-    {"quit", cmd_quit, "quit"},
-    {"w", cmd_write, "write"},
-    {"wq", cmd_write_quit, "write+quit"},
-    {"bn", cmd_buffer_next, "next buf"},
-    {"bp", cmd_buffer_prev, "prev buf"},
-    {"ls", cmd_buffer_list, "list bufs"},
-    {"b", cmd_buffer_switch, "switch buf"},
-    {"bd", cmd_buffer_delete, "delete buf"},
-    {"e", cmd_edit, "edit file"},
-    {"c", cmd_cpick, "pick cmd"},
-    {"echo", cmd_echo, "echo"},
-    {"history", cmd_history, "cmd hist"},
-    {"reg", cmd_registers, "registers"},
-    {"put", cmd_put, "put reg"},
-    {"undo", cmd_undo, "undo"},
-    {"redo", cmd_redo, "redo"},
-    {"ln", cmd_ln, "line nums"},
-    {"rln", cmd_rln, "rel nums"},
-    {"copen", cmd_copen, "qf open"},
-    {"cclose", cmd_cclose, "qf close"},
-    {"ctoggle", cmd_ctoggle, "qf toggle"},
-    {"cadd", cmd_cadd, "qf add"},
-    {"cclear", cmd_cclear, "qf clear"},
-    {"cnext", cmd_cnext, "qf next"},
-    {"cprev", cmd_cprev, "qf prev"},
-    {"copenidx", cmd_copenidx, "qf open N"},
-    {"ssearch", cmd_ssearch, "search current file"},
-    {"rgword", cmd_rg_word, "ripgrep word under cursor"},
-    {"rg", cmd_rg, "ripgrep"},
-    {"shq", cmd_shq, "shell cmd"},
-    {"cd", cmd_cd, "chdir"},
-    {"fzf", cmd_fzf, "file pick"},
-    {"recent", cmd_recent, "recent files"},
-    {"logclear", cmd_logclear, "clear .hedlog"},
-    {"shell", cmd_shell, "run shell cmd"},
-    {"git", cmd_git, "run lazygit"},
-    {"wrap", cmd_wrap, "toggle wrap"},
-    {"wrapdefault", cmd_wrapdefault, "toggle default wrap"},
-    {"tmux_toggle", cmd_tmux_toggle, "tmux toggle runner pane"},
-    {"tmux_send", cmd_tmux_send, "tmux send command"},
-    {"tmux_kill", cmd_tmux_kill, "tmux kill runner pane"},
-    {"fmt", cmd_fmt, "format buffer"},
-    {"new_line", cmd_new_line, "open new line below"},
-    {"new_line_above", cmd_new_line_above, "open new line above"},
-    {"split", cmd_split, "horizontal split"},
-    {"vsplit", cmd_vsplit, "vertical split"},
-    {"wfocus", cmd_wfocus, "focus next window"},
-    {"wclose", cmd_wclose, "close window"},
-    {"new", cmd_new, "new split with empty buffer"},
-    {"wh", cmd_wleft, "focus window left"},
-    {"wj", cmd_wdown, "focus window down"},
-    {"wk", cmd_wup, "focus window up"},
-    {"wl", cmd_wright, "focus window right"},
-    {"ts", cmd_ts, "ts on|off|auto"},
-    {"tslang", cmd_tslang, "tslang <name>"},
-    {"tsi", cmd_tsi, "install ts lang"},
-    {"reload", cmd_reload, "rebuild+restart hed"},
-};
-
-void user_hooks_init(void) {
-  hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
-}
+void user_hooks_init(void) { hook_register_mode(HOOK_MODE_CHANGE, on_mode_change); }
 
 void user_commands_init(void) {
-  for (size_t i = 0; i < sizeof(command_defs) / sizeof(command_defs[0]); i++) {
-    command_register(command_defs[i].name, command_defs[i].cb,
-                     command_defs[i].desc);
-  }
+    cmd("q", cmd_quit, "quit");
+    cmd("q!", cmd_quit_force, "quit!");
+    cmd("quit", cmd_quit, "quit");
+    cmd("w", cmd_write, "write");
+    cmd("wq", cmd_write_quit, "write+quit");
+    cmd("bn", cmd_buffer_next, "next buf");
+    cmd("bp", cmd_buffer_prev, "prev buf");
+    cmd("ls", cmd_buffer_list, "list bufs");
+    cmd("b", cmd_buffer_switch, "switch buf");
+    cmd("bd", cmd_buffer_delete, "delete buf");
+    cmd("e", cmd_edit, "edit file");
+    cmd("c", cmd_cpick, "pick cmd");
+    cmd("echo", cmd_echo, "echo");
+    cmd("history", cmd_history, "cmd hist");
+    cmd("reg", cmd_registers, "registers");
+    cmd("put", cmd_put, "put reg");
+    cmd("undo", cmd_undo, "undo");
+    cmd("redo", cmd_redo, "redo");
+    cmd("ln", cmd_ln, "line nums");
+    cmd("rln", cmd_rln, "rel nums");
+    cmd("copen", cmd_copen, "qf open");
+    cmd("cclose", cmd_cclose, "qf close");
+    cmd("ctoggle", cmd_ctoggle, "qf toggle");
+    cmd("cadd", cmd_cadd, "qf add");
+    cmd("cclear", cmd_cclear, "qf clear");
+    cmd("cnext", cmd_cnext, "qf next");
+    cmd("cprev", cmd_cprev, "qf prev");
+    cmd("copenidx", cmd_copenidx, "qf open N");
+    cmd("ssearch", cmd_ssearch, "search current file");
+    cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
+    cmd("rg", cmd_rg, "ripgrep");
+    cmd("shq", cmd_shq, "shell cmd");
+    cmd("cd", cmd_cd, "chdir");
+    cmd("fzf", cmd_fzf, "file pick");
+    cmd("recent", cmd_recent, "recent files");
+    cmd("logclear", cmd_logclear, "clear .hedlog");
+    cmd("shell", cmd_shell, "run shell cmd");
+    cmd("git", cmd_git, "run lazygit");
+    cmd("wrap", cmd_wrap, "toggle wrap");
+    cmd("wrapdefault", cmd_wrapdefault, "toggle default wrap");
+    cmd("tmux_toggle", cmd_tmux_toggle, "tmux toggle runner pane");
+    cmd("tmux_send", cmd_tmux_send, "tmux send command");
+    cmd("tmux_kill", cmd_tmux_kill, "tmux kill runner pane");
+    cmd("fmt", cmd_fmt, "format buffer");
+    cmd("new_line", cmd_new_line, "open new line below");
+    cmd("new_line_above", cmd_new_line_above, "open new line above");
+    cmd("split", cmd_split, "horizontal split");
+    cmd("vsplit", cmd_vsplit, "vertical split");
+    cmd("wfocus", cmd_wfocus, "focus next window");
+    cmd("wclose", cmd_wclose, "close window");
+    cmd("new", cmd_new, "new split with empty buffer");
+    cmd("wh", cmd_wleft, "focus window left");
+    cmd("wj", cmd_wdown, "focus window down");
+    cmd("wk", cmd_wup, "focus window up");
+    cmd("wl", cmd_wright, "focus window right");
+    cmd("ts", cmd_ts, "ts on|off|auto");
+    cmd("tslang", cmd_tslang, "tslang <name>");
+    cmd("tsi", cmd_tsi, "install ts lang");
+    cmd("reload", cmd_reload, "rebuild+restart hed");
 }
 
-void user_keybinds_init(void) {
-  nmode_bindings();
-  imode_bindings();
-}
 void imode_bindings() {}
 void nmode_bindings() {
   cmapn("  ", "fzf");
@@ -143,7 +94,7 @@ void nmode_bindings() {
   cmapn(" cf", "fmt");
   cmapn(" qq", "q!");
   cmapn(" rm", "shell make");
-  cmapn(" de", "shell yazzi");
+  cmapn(" dd", "shell nnn");
   cmapn(" sd", "rg");
   cmapn(" ss", "ssearch");
   cmapn(" sa", "rgword");
@@ -216,5 +167,28 @@ void nmode_bindings() {
   mapn("yy", kb_yank_line);
   mapn("zz", buf_center_screen);
 }
+void user_keybinds_init(void) {
+  nmode_bindings();
+  imode_bindings();
+}
 
-/* No visual mode bindings */
+static void kb_del_win(char direction) {
+  switch (direction) {
+  case 'h':
+    windows_focus_left();
+    cmd_wclose(NULL);
+    break;
+  case 'j':
+    windows_focus_down();
+    cmd_wclose(NULL);
+    break;
+  case 'k':
+    windows_focus_up();
+    cmd_wclose(NULL);
+    break;
+  case 'l':
+    windows_focus_right();
+    cmd_wclose(NULL);
+    break;
+  }
+}

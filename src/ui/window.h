@@ -1,6 +1,7 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+
 /*
  * WINDOW OWNERSHIP AND LIFECYCLE DOCUMENTATION
  * ============================================
@@ -85,6 +86,22 @@
 
 #include "buffer.h"
 
+/* Unified selection description for yanks/deletes */
+typedef enum {
+    SEL_NONE = 0,
+    SEL_CHAR,
+    SEL_LINE,
+    SEL_BLOCK
+} SelectionType;
+
+typedef struct {
+    SelectionType type;
+    int anchor_y, anchor_x;
+    int cursor_y, cursor_x;
+    int anchor_rx;        /* render column for block anchor */
+    int block_start_rx, block_end_rx; /* for SEL_BLOCK: render columns, end exclusive */
+} Selection;
+
 typedef struct Window {
     int top;            /* 1-based row on the terminal */
     int left;           /* 1-based column on the terminal */
@@ -101,11 +118,7 @@ typedef struct Window {
     int gutter_mode;
     int gutter_fixed_width;
     /* Visual selection state */
-    int sel_active;
-    int sel_anchor_x;
-    int sel_anchor_y;
-    int sel_anchor_rx; /* render column for block selections */
-    int sel_block;     /* 1 if block (column) selection */
+    Selection sel;
 } Window;
 
 

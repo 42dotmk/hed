@@ -75,6 +75,7 @@ typedef struct {
 
     SizedStr clipboard;
     SizedStr search_query;
+    int clipboard_is_block;
     Qf qf;
     struct WLayoutNode *wlayout_root;
     CmdHistory history;

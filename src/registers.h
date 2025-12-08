@@ -13,6 +13,7 @@ void regs_set_unnamed(const char *data, size_t len);
 
 /* Set yank register '0' and unnamed */
 void regs_set_yank(const char *data, size_t len);
+void regs_set_yank_block(const char *data, size_t len, int is_block);
 
 /* Push a delete into numbered registers '1'..'9' and set unnamed */
 void regs_push_delete(const char *data, size_t len);
@@ -27,4 +28,3 @@ void regs_set_cmd(const char *data, size_t len);
 const SizedStr *regs_get(char name);
 
 #endif /* REGISTERS_H */
-

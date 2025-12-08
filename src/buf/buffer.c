@@ -483,6 +483,7 @@ void buf_delete_line_in(Buffer *buf) {
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
                             buf->rows[win->cursor.y].chars.len);
+    E.clipboard_is_block = 0;
     /* Update registers: numbered delete and unnamed */
     regs_push_delete(buf->rows[win->cursor.y].chars.data,
                      buf->rows[win->cursor.y].chars.len);
@@ -520,6 +521,7 @@ void buf_yank_line_in(Buffer *buf) {
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
                             buf->rows[win->cursor.y].chars.len);
+    E.clipboard_is_block = 0;
     /* Update registers: yank '0' and unnamed */
     regs_set_yank(buf->rows[win->cursor.y].chars.data,
                   buf->rows[win->cursor.y].chars.len);
@@ -534,17 +536,91 @@ void buf_paste_in(Buffer *buf) {
     }
     if (E.clipboard.len == 0) return;
 
+    /* Block paste: insert column slice into successive lines */
+    if (E.clipboard_is_block) {
+        if (!undo_is_applying()) undo_begin_group();
+        int cx = win->cursor.x;
+        /* Split clipboard into lines */
+        const char *data = E.clipboard.data;
+        size_t len = E.clipboard.len;
+        int line_idx = 0;
+        size_t start = 0;
+        for (size_t i = 0; i <= len; i++) {
+            if (i == len || data[i] == '\n') {
+                size_t seglen = i - start;
+                int row = win->cursor.y + line_idx;
+                if (row >= buf->num_rows) {
+                    /* pad with empty lines if needed */
+                    while (buf->num_rows <= row) {
+                        buf_row_insert_in(buf, buf->num_rows, "", 0);
+                    }
+                }
+                Row *r = &buf->rows[row];
+                int icx = cx;
+                if (icx < 0) icx = 0;
+                if (icx > (int)r->chars.len) icx = (int)r->chars.len;
+                if (!undo_is_applying()) {
+                    undo_push_insert(row, icx, data + start, seglen,
+                                     win->cursor.y, win->cursor.x,
+                                     row, icx + (int)seglen);
+                }
+                for (size_t k = 0; k < seglen; k++) {
+                    buf_row_insert_char_in(buf, r, icx + (int)k, data[start + k]);
+                }
+                line_idx++;
+                start = i + 1;
+            }
+        }
+        if (!undo_is_applying()) undo_commit_group();
+        /* Place cursor at end of first inserted segment */
+        win->cursor.x = cx + (int)(E.clipboard.len ? (strcspn(E.clipboard.data, "\n")) : 0);
+        return;
+    }
+
+    /* Character-wise paste: insert into current line */
+    if (!strchr(E.clipboard.data, '\n')) {
+        if (!undo_is_applying()) {
+            undo_begin_group();
+            undo_push_insert(win->cursor.y, win->cursor.x, E.clipboard.data, E.clipboard.len,
+                             win->cursor.y, win->cursor.x,
+                             win->cursor.y, win->cursor.x + (int)E.clipboard.len);
+        }
+        if (win->cursor.y >= buf->num_rows) {
+            buf_row_insert_in(buf, buf->num_rows, "", 0);
+        }
+        Row *r = &buf->rows[win->cursor.y];
+        int cx = win->cursor.x;
+        if (cx < 0) cx = 0;
+        if (cx > (int)r->chars.len) cx = (int)r->chars.len;
+        for (size_t k = 0; k < E.clipboard.len; k++) {
+            buf_row_insert_char_in(buf, r, cx + (int)k, E.clipboard.data[k]);
+        }
+        win->cursor.x = cx + (int)E.clipboard.len;
+        if (!undo_is_applying()) undo_commit_group();
+        return;
+    }
+
+    /* Line-wise paste: insert lines below current */
     int at = (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
     if (!undo_is_applying()) {
         undo_begin_group();
         undo_push_insert(at, 0, E.clipboard.data, E.clipboard.len,
                          win->cursor.y, win->cursor.x, at, 0);
     }
-    if (win->cursor.y < buf->num_rows) {
-        win->cursor.y++;
+    size_t start = 0;
+    size_t len = E.clipboard.len;
+    int insert_row = at;
+    for (size_t i = 0; i <= len; i++) {
+        if (i == len || E.clipboard.data[i] == '\n') {
+            size_t seglen = i - start;
+            buf_row_insert_in(buf, insert_row, E.clipboard.data + start, seglen);
+            insert_row++;
+            start = i + 1;
+        }
     }
-    buf_row_insert_in(buf, win->cursor.y, E.clipboard.data, E.clipboard.len);
+    win->cursor.y = insert_row - 1;
     win->cursor.x = 0;
+    if (!undo_is_applying()) undo_commit_group();
 }
 
 /*** Search ***/

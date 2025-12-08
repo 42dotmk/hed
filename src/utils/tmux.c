@@ -2,9 +2,114 @@
 #include "tmux.h"
 #include "cmd_util.h"
 #include <stdarg.h>
+#include <sys/wait.h>
 
 static char tmux_pane_id[64] = {0};
 static int tmux_pane_id_set = 0;
+
+#define TMUX_HISTORY_MAX 64
+static char *tmux_history[TMUX_HISTORY_MAX];
+static int tmux_history_len = 0;
+static int tmux_hist_idx = -1;
+static char tmux_hist_saved[512];
+static int tmux_hist_saved_len = 0;
+static char tmux_hist_prefix[512];
+static int tmux_hist_prefix_len = 0;
+
+__attribute__((unused)) static void tmux_history_clear(void) {
+    for (int i = 0; i < tmux_history_len; i++) free(tmux_history[i]);
+    tmux_history_len = 0;
+}
+
+void tmux_history_reset_browse(void) {
+    tmux_hist_idx = -1;
+    tmux_hist_saved_len = 0;
+    tmux_hist_saved[0] = '\0';
+    tmux_hist_prefix_len = 0;
+    tmux_hist_prefix[0] = '\0';
+}
+
+static int tmux_hist_prefix_match(const char *entry) {
+    if (!entry) return 0;
+    for (int i = 0; i < tmux_hist_prefix_len; i++) {
+        if (!entry[i] || entry[i] != tmux_hist_prefix[i]) return 0;
+    }
+    return 1;
+}
+
+static void tmux_history_add(const char *cmd) {
+    if (!cmd || !*cmd) return;
+    /* Dedup existing entry */
+    for (int i = 0; i < tmux_history_len; i++) {
+        if (strcmp(tmux_history[i], cmd) == 0) {
+            free(tmux_history[i]);
+            memmove(&tmux_history[i], &tmux_history[i + 1],
+                    (size_t)(tmux_history_len - i - 1) * sizeof(char *));
+            tmux_history_len--;
+            break;
+        }
+    }
+    if (tmux_history_len == TMUX_HISTORY_MAX) {
+        free(tmux_history[TMUX_HISTORY_MAX - 1]);
+        tmux_history_len--;
+    }
+    memmove(&tmux_history[1], &tmux_history[0], (size_t)tmux_history_len * sizeof(char *));
+    tmux_history[0] = strdup(cmd);
+    if (tmux_history[0]) tmux_history_len++;
+    tmux_history_reset_browse();
+}
+
+int tmux_history_browse_up(const char *current_args, int current_len, char *out, int out_cap) {
+    if (!out || out_cap <= 0 || tmux_history_len == 0) return 0;
+    if (!current_args) current_args = "";
+    if (current_len < 0) current_len = 0;
+
+    if (tmux_hist_idx == -1) {
+        tmux_hist_saved_len = current_len;
+        if (tmux_hist_saved_len > (int)sizeof(tmux_hist_saved) - 1)
+            tmux_hist_saved_len = (int)sizeof(tmux_hist_saved) - 1;
+        memcpy(tmux_hist_saved, current_args, (size_t)tmux_hist_saved_len);
+        tmux_hist_saved[tmux_hist_saved_len] = '\0';
+
+        tmux_hist_prefix_len = current_len;
+        if (tmux_hist_prefix_len > (int)sizeof(tmux_hist_prefix) - 1)
+            tmux_hist_prefix_len = (int)sizeof(tmux_hist_prefix) - 1;
+        memcpy(tmux_hist_prefix, current_args, (size_t)tmux_hist_prefix_len);
+        tmux_hist_prefix[tmux_hist_prefix_len] = '\0';
+    }
+
+    int start = (tmux_hist_idx == -1) ? 0 : tmux_hist_idx + 1;
+    for (int i = start; i < tmux_history_len; i++) {
+        if (tmux_hist_prefix_match(tmux_history[i])) {
+            tmux_hist_idx = i;
+            snprintf(out, (size_t)out_cap, "%s", tmux_history[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int tmux_history_browse_down(char *out, int out_cap, int *restored) {
+    if (restored) *restored = 0;
+    if (!out || out_cap <= 0 || tmux_history_len == 0) return 0;
+    if (tmux_hist_idx == -1) return 0;
+
+    for (int i = tmux_hist_idx - 1; i >= 0; i--) {
+        if (tmux_hist_prefix_match(tmux_history[i])) {
+            tmux_hist_idx = i;
+            snprintf(out, (size_t)out_cap, "%s", tmux_history[i]);
+            return 1;
+        }
+    }
+
+    tmux_hist_idx = -1;
+    if (restored) *restored = 1;
+    int n = tmux_hist_saved_len;
+    if (n > out_cap - 1) n = out_cap - 1;
+    memcpy(out, tmux_hist_saved, (size_t)n);
+    out[n] = '\0';
+    return 1;
+}
 
 static int tmux_systemf(const char *fmt, ...) {
     char cmd[256];
@@ -12,7 +117,11 @@ static int tmux_systemf(const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(cmd, sizeof(cmd), fmt, ap);
     va_end(ap);
-    return term_cmd_system(cmd);
+    int status = term_cmd_system(cmd);
+    if (status == -1) return -1;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return status;
 }
 
 int tmux_is_available(void) {
@@ -151,6 +260,14 @@ int tmux_toggle_pane(void) {
         /* Currently visible in this window -> hide by breaking into its own window. */
         int status = tmux_systemf("tmux break-pane -dP -s %s", tmux_pane_id);
         if (status != 0) {
+            /* Fallback: if breaking fails, try killing the pane so next toggle recreates it. */
+            int kill_status = tmux_systemf("tmux kill-pane -t %s", tmux_pane_id);
+            tmux_pane_id_set = 0;
+            tmux_pane_id[0] = '\0';
+            if (kill_status == 0) {
+                ed_set_status_message("tmux: runner pane closed (break failed: %d)", status);
+                return 1;
+            }
             ed_set_status_message("tmux: failed to hide pane %s (status %d)", tmux_pane_id, status);
             return 0;
         }
@@ -210,6 +327,7 @@ int tmux_send_command(const char *cmd) {
         return 0;
     }
 
+    tmux_history_add(cmd);
     ed_set_status_message("tmux: sent to pane %s", tmux_pane_id);
     return 1;
 }
