@@ -599,7 +599,7 @@ void ed_init_state(){
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
 }
-void ed_init(void) {
+void ed_init(int create_default_buffer) {
     ed_init_state();
 
     /* Initialize editor working directory to process CWD at startup. */
@@ -620,10 +620,12 @@ void ed_init(void) {
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
 
-    /* Ensure at least one editable buffer exists at startup */
-    int empty_idx = -1;
-    if (buf_new(NULL, &empty_idx) == ED_OK) {
-        E.current_buffer = empty_idx;
+    /* Ensure at least one editable buffer exists at startup if requested */
+    if (create_default_buffer) {
+        int empty_idx = -1;
+        if (buf_new(NULL, &empty_idx) == ED_OK) {
+            E.current_buffer = empty_idx;
+        }
     }
 
     windows_init();

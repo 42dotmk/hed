@@ -43,7 +43,6 @@ typedef struct Window {
 /* Window management */
 void windows_init(void);
 Window *window_cur(void);
-/* Attach a buffer to a window and sync editor focus if needed */
 void win_attach_buf(Window *win, Buffer *buf);
 
 /* Simple 2-way splits */

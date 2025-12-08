@@ -68,6 +68,7 @@
 #define CURSOR_STYLE_UNDERLINE "\x1b[3 q"
 #define CURSOR_STYLE_BEAM "\x1b[5 q"
 #include "cursor.h"
+#include "errors.h"
 #include "row.h"
 
 /* Buffer structure - represents a single file/document */

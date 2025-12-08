@@ -27,7 +27,7 @@ Outputs: `build/hed` (editor) and `build/tsi` (tree-sitter grammar installer).
 ```bash
 ./build/hed [file ...]
 ```
-Multiple filenames open multiple buffers. Logs go to `.hedlog` (clear with `:logclear`).
+Use `-c "<command>"` to run a command at startup (same as typing `:<command>`), e.g., `-c "e other.txt"` or `-c "q!"`. Multiple filenames open multiple buffers. Logs go to `.hedlog` (clear with `:logclear`).
 
 ## Quickstart Keys
 - Modes: `ESC` -> Normal, `i`/`a` enter Insert/Append, `o`/`O` open a new line, `v` Visual, `Ctrl-v` block-visual, `:` Command line.

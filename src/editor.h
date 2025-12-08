@@ -116,7 +116,7 @@ void ed_process_command(void);
 void ed_set_mode(EditorMode new_mode);
 void ed_set_status_message(const char *fmt, ...);
 
-void ed_init(void);
+void ed_init(int create_default_buffer);
 void ed_change_cursor_shape(void);
 
 

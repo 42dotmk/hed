@@ -36,6 +36,7 @@
 #include "row.h"
 #include "buffer.h"
 #include "buf_helpers.h"
+#include "textobj.h"
 
 /* Utilities */
 #include "history.h"
