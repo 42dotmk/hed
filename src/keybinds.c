@@ -27,6 +27,8 @@ static int keybind_count = 0;
 static char key_buffer[KEY_BUFFER_SIZE];
 static int key_buffer_len = 0;
 static struct timespec last_key_time;
+static int pending_count = 0; /* numeric prefix */
+static int have_count = 0;
 
 /* Visual selection helpers */
 static void visual_clear(Window *win) {
@@ -581,10 +583,18 @@ void keybind_register_command(int mode, const char *sequence, const char *cmdlin
 void keybind_clear_buffer(void) {
     key_buffer_len = 0;
     key_buffer[0] = '\0';
+    pending_count = 0;
+    have_count = 0;
 }
 
 /* Process a key press through the keybinding system */
 int keybind_process(int key, int mode) {
+    /* Numeric prefix only applies in normal mode */
+    if (mode != MODE_NORMAL) {
+        pending_count = 0;
+        have_count = 0;
+    }
+
     /* Check timeout - if too much time passed, clear buffer */
     if (key_buffer_len > 0 && timeout_exceeded()) {
         keybind_clear_buffer();
@@ -592,6 +602,19 @@ int keybind_process(int key, int mode) {
 
     /* Update timestamp */
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
+
+    /* Numeric prefix handling (normal mode, idle buffer) */
+    if (mode == MODE_NORMAL && key_buffer_len == 0) {
+        if (key >= '0' && key <= '9') {
+            if (have_count || key != '0') {
+                int digit = key - '0';
+                pending_count = pending_count * 10 + digit;
+                if (pending_count > 1000000) pending_count = 1000000; /* cap runaway counts */
+                have_count = 1;
+                return 1; /* consume digit, wait for next key */
+            }
+        }
+    }
 
     /* Convert key to string and append to buffer */
     char key_str[32];
@@ -637,10 +660,16 @@ int keybind_process(int key, int mode) {
 
     /* Exact match found - execute action */
     if (exact_match >= 0) {
+        int repeat = have_count ? pending_count : 1;
+        if (repeat < 1) repeat = 1;
         if (keybinds[exact_match].callback) {
-            keybinds[exact_match].callback();
+            for (int r = 0; r < repeat; r++) {
+                keybinds[exact_match].callback();
+            }
         } else if (keybinds[exact_match].command_callback) {
-            keybinds[exact_match].command_callback(keybinds[exact_match].desc);
+            for (int r = 0; r < repeat; r++) {
+                keybinds[exact_match].command_callback(keybinds[exact_match].desc);
+            }
         }
         keybind_clear_buffer();
         return 1;
