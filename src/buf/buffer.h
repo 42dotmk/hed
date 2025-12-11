@@ -11,7 +11,8 @@
  *    - All buffers live in the growable vector E.buffers (BufferVec)
  *    - Buffers are stored in a dynamically-sized array that grows as needed
  *    - No fixed limit on number of buffers (previously MAX_BUFFERS = 256)
- *    - When a buffer is "closed", its resources are freed and remaining buffers shift down
+ *    - When a buffer is "closed", its resources are freed and remaining buffers
+ * shift down
  *
  * 2. String Ownership (filename, title, filetype):
  *    - These strings are OWNED by the Buffer struct
@@ -46,7 +47,8 @@
  *    - Frees all owned resources (strings, rows, tree-sitter state)
  *    - Shifts remaining buffers down in the array
  *    - Updates all buffer indices in windows to reflect the shift
- *    - IMPORTANT: After closing, all buffer indices > closed_index are decremented
+ *    - IMPORTANT: After closing, all buffer indices > closed_index are
+ * decremented
  *
  * Thread Safety:
  * -------------
@@ -78,10 +80,10 @@ typedef struct Buffer {
     int num_rows;
     Cursor cursor;
     char *filename;
-    char *title;      /* Display title: filename or "[No Name]" */
+    char *title; /* Display title: filename or "[No Name]" */
     char *filetype;
     int dirty;
-    int readonly;     /* Read-only flag (default: 0/false) */
+    int readonly; /* Read-only flag (default: 0/false) */
     char *cursor_style;
     void *ts_internal; /* tree-sitter per-buffer state (opaque) */
 } Buffer;
@@ -95,10 +97,13 @@ EdError buf_close(int index);
 EdError buf_switch(int index);
 EdError buf_open_file(const char *filename, Buffer **out);
 
-int buf_find_by_filename(const char *filename);  /* Find buffer index by filename, returns -1 if not found */
+int buf_find_by_filename(
+    const char
+        *filename); /* Find buffer index by filename, returns -1 if not found */
 void buf_next(void);
 void buf_prev(void);
-void buf_open_or_switch(const char *filename);  /* Open file or switch to it if already open */
+void buf_open_or_switch(
+    const char *filename); /* Open file or switch to it if already open */
 
 void buf_insert_char_in(Buffer *buf, int c);
 void buf_insert_newline_in(Buffer *buf);

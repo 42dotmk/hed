@@ -23,8 +23,8 @@
  *
  * Parameters:
  *   cmd        - Shell command to execute
- *   out_lines  - Output: array of strings (one per line), caller must free with term_cmd_free()
- *   out_count  - Output: number of lines captured
+ *   out_lines  - Output: array of strings (one per line), caller must free with
+ * term_cmd_free() out_count  - Output: number of lines captured
  *
  * Returns:
  *   1 on success (command ran, may have captured 0+ lines)

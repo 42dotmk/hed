@@ -3,9 +3,6 @@
 
 /* Keybinding callback signature */
 typedef void (*KeybindCallback)(void);
-typedef struct Buffer Buffer;
-typedef struct Window Window;
-#include "ui/window.h"
 
 /* Keybinding API */
 
@@ -39,7 +36,8 @@ void keybind_register(int mode, const char *sequence, KeybindCallback callback);
  * @param sequence Key sequence (e.g., "ff", "<C-r>")
  * @param cmdline  Command string to invoke (e.g., "echo Hello" or "rg TODO")
  */
-void keybind_register_command(int mode, const char *sequence, const char *cmdline);
+void keybind_register_command(int mode, const char *sequence,
+                              const char *cmdline);
 
 /**
  * Process a key press through the keybinding system
@@ -61,32 +59,6 @@ void keybind_clear_buffer(void);
  * This is where users define their custom keybindings
  */
 void user_keybinds_init(void);
-void kb_line_number_toggle(void);
-void kb_enter_insert_mode(void);
-void kb_append_mode(void);
-void kb_enter_command_mode(void);
-void kb_delete_line(void);
-void kb_yank_line(void);
-void kb_paste(void);
-void kb_delete_char(void);
-void kb_cursor_line_start(void);
-void kb_cursor_line_end(void);
-void kb_cursor_top(void);
-void kb_cursor_bottom(void);
-void kb_search_next(void);
-void kb_find_under_cursor(void);
-void kb_undo(void);
-void kb_redo(void);
-void kb_fzf(void);
-void kb_quit_all(void);
-void kb_jump_backward(void);  /* Ctrl-O - jump to previous buffer */
-void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
-void kb_tmux_send_line(void); /* Send current line to tmux runner pane */
-void kb_visual_toggle(void);      /* Enter/exit visual mode */
-void kb_visual_block_toggle(void);/* Enter/exit visual block mode */
-void kb_visual_clear(Window *win);
-void kb_visual_begin(int block_mode);
-int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
-int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
-Selection kb_make_selection(Window *win, Buffer *buf, SelectionType forced_type);
+
+/* Built-in keybinding callbacks live in keybinds_builtins.h */
 #endif // KEYBINDS_H

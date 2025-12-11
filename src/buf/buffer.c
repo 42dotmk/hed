@@ -9,14 +9,17 @@ void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
 void buf_row_del_char_in(Buffer *buf, Row *row, int at);
 
 Buffer *buf_cur(void) {
-    if (E.buffers.len == 0) return NULL;
+    if (E.buffers.len == 0)
+        return NULL;
     return &E.buffers.data[E.current_buffer];
 }
 
 int buf_find_by_filename(const char *filename) {
-    if (!filename) return -1;
+    if (!filename)
+        return -1;
     for (int i = 0; i < (int)E.buffers.len; i++) {
-        if (E.buffers.data[i].filename && strcmp(E.buffers.data[i].filename, filename) == 0) {
+        if (E.buffers.data[i].filename &&
+            strcmp(E.buffers.data[i].filename, filename) == 0) {
             return i;
         }
     }
@@ -24,30 +27,50 @@ int buf_find_by_filename(const char *filename) {
 }
 
 char *buf_detect_filetype(const char *filename) {
-    if (!filename) return strdup("txt");
+    if (!filename)
+        return strdup("txt");
 
     const char *ext = strrchr(filename, '.');
-    if (!ext || ext == filename) return strdup("txt");
+    if (!ext || ext == filename)
+        return strdup("txt");
 
     ext++; /* Skip the dot */
 
     /* Common filetypes */
-    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0) return strdup("c");
-    if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 || strcmp(ext, "cxx") == 0) return strdup("cpp");
-    if (strcmp(ext, "hpp") == 0 || strcmp(ext, "hh") == 0 || strcmp(ext, "hxx") == 0) return strdup("cpp");
-    if (strcmp(ext, "py") == 0) return strdup("python");
-    if (strcmp(ext, "js") == 0) return strdup("javascript");
-    if (strcmp(ext, "ts") == 0) return strdup("typescript");
-    if (strcmp(ext, "java") == 0) return strdup("java");
-    if (strcmp(ext, "rs") == 0) return strdup("rust");
-    if (strcmp(ext, "go") == 0) return strdup("go");
-    if (strcmp(ext, "sh") == 0) return strdup("shell");
-    if (strcmp(ext, "md") == 0) return strdup("markdown");
-    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0) return strdup("html");
-    if (strcmp(ext, "css") == 0) return strdup("css");
-    if (strcmp(ext, "json") == 0) return strdup("json");
-    if (strcmp(ext, "xml") == 0) return strdup("xml");
-    if (strcmp(ext, "txt") == 0) return strdup("txt");
+    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
+        return strdup("c");
+    if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
+        strcmp(ext, "cxx") == 0)
+        return strdup("cpp");
+    if (strcmp(ext, "hpp") == 0 || strcmp(ext, "hh") == 0 ||
+        strcmp(ext, "hxx") == 0)
+        return strdup("cpp");
+    if (strcmp(ext, "py") == 0)
+        return strdup("python");
+    if (strcmp(ext, "js") == 0)
+        return strdup("javascript");
+    if (strcmp(ext, "ts") == 0)
+        return strdup("typescript");
+    if (strcmp(ext, "java") == 0)
+        return strdup("java");
+    if (strcmp(ext, "rs") == 0)
+        return strdup("rust");
+    if (strcmp(ext, "go") == 0)
+        return strdup("go");
+    if (strcmp(ext, "sh") == 0)
+        return strdup("shell");
+    if (strcmp(ext, "md") == 0)
+        return strdup("markdown");
+    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
+        return strdup("html");
+    if (strcmp(ext, "css") == 0)
+        return strdup("css");
+    if (strcmp(ext, "json") == 0)
+        return strdup("json");
+    if (strcmp(ext, "xml") == 0)
+        return strdup("xml");
+    if (strcmp(ext, "txt") == 0)
+        return strdup("txt");
 
     /* Default: use the extension as-is */
     return strdup(ext);
@@ -55,23 +78,26 @@ char *buf_detect_filetype(const char *filename) {
 
 /* Initialize a Buffer struct in-place with default values */
 static void buf_init(Buffer *buf) {
-    if (!buf) return;
+    if (!buf)
+        return;
     buf->rows = NULL;
     buf->num_rows = 0;
     buf->cursor.x = 0;
     buf->cursor.y = 0;
     buf->filename = NULL;
     buf->title = strdup("[No Name]");
-    if (!buf->title) buf->title = NULL;  /* Handle OOM gracefully */
+    if (!buf->title)
+        buf->title = NULL; /* Handle OOM gracefully */
     buf->filetype = NULL;
     buf->dirty = 0;
-    buf->readonly = 0;  /* Default: not read-only */
+    buf->readonly = 0; /* Default: not read-only */
     buf->ts_internal = NULL;
 }
 
 /* Create a new buffer and return EdError status */
 EdError buf_new(const char *filename, int *out_idx) {
-    if (!PTR_VALID(out_idx)) return ED_ERR_INVALID_ARG;
+    if (!PTR_VALID(out_idx))
+        return ED_ERR_INVALID_ARG;
     *out_idx = -1;
 
     /* Ensure capacity for new buffer */
@@ -91,7 +117,7 @@ EdError buf_new(const char *filename, int *out_idx) {
         if (!buf->title) {
             /* OOM on title allocation - cleanup and fail */
             buf->title = NULL;
-            E.buffers.len--;  /* Rollback buffer creation */
+            E.buffers.len--; /* Rollback buffer creation */
             return ED_ERR_NOMEM;
         }
 
@@ -100,7 +126,7 @@ EdError buf_new(const char *filename, int *out_idx) {
             /* OOM on filename allocation - cleanup and fail */
             free(buf->title);
             buf->title = NULL;
-            E.buffers.len--;  /* Rollback buffer creation */
+            E.buffers.len--; /* Rollback buffer creation */
             return ED_ERR_NOMEM;
         }
     }
@@ -110,7 +136,7 @@ EdError buf_new(const char *filename, int *out_idx) {
         /* OOM on filetype allocation - cleanup and fail */
         free(buf->title);
         free(buf->filename);
-        E.buffers.len--;  /* Rollback buffer creation */
+        E.buffers.len--; /* Rollback buffer creation */
         return ED_ERR_NOMEM;
     }
 
@@ -120,13 +146,16 @@ EdError buf_new(const char *filename, int *out_idx) {
 
 /* Opens a file and returns EdError status */
 EdError buf_open_file(const char *filename, Buffer **out) {
-    if (!PTR_VALID(out)) return ED_ERR_INVALID_ARG;
+    if (!PTR_VALID(out))
+        return ED_ERR_INVALID_ARG;
     *out = NULL;
-    if (!PTR_VALID(filename)) return ED_ERR_INVALID_ARG;
+    if (!PTR_VALID(filename))
+        return ED_ERR_INVALID_ARG;
 
     int idx;
     EdError err = buf_new(filename, &idx);
-    if (err != ED_OK) return err;
+    if (err != ED_OK)
+        return err;
     Buffer *buf = &E.buffers.data[idx];
 
     FILE *fp = fopen(filename, "r");
@@ -141,8 +170,8 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     size_t linecap = 0;
     ssize_t linelen;
     while ((linelen = getline(&line, &linecap, fp)) != -1) {
-        while (linelen > 0 && (line[linelen - 1] == '\n' ||
-                               line[linelen - 1] == '\r'))
+        while (linelen > 0 &&
+               (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
         buf_row_insert_in(buf, buf->num_rows, line, linelen);
     }
@@ -206,11 +235,13 @@ EdError buf_switch(int index) {
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
+                      win->cursor.y);
     }
 
     E.current_buffer = index;
-    if (win) win->buffer_index = index;
+    if (win)
+        win->buffer_index = index;
     Buffer *buf = buf_cur();
 
     /* Fire hook */
@@ -221,16 +252,19 @@ EdError buf_switch(int index) {
 }
 
 void buf_next(void) {
-    if (E.buffers.len <= 1) return;
+    if (E.buffers.len <= 1)
+        return;
 
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
+                      win->cursor.y);
     }
 
     E.current_buffer = (E.current_buffer + 1) % E.buffers.len;
-    if (win) win->buffer_index = E.current_buffer;
+    if (win)
+        win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
 
     /* Fire hook */
@@ -241,16 +275,19 @@ void buf_next(void) {
 }
 
 void buf_prev(void) {
-    if (E.buffers.len <= 1) return;
+    if (E.buffers.len <= 1)
+        return;
 
     /* Record current position before switching */
     Window *win = window_cur();
     if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
+                      win->cursor.y);
     }
 
     E.current_buffer = (E.current_buffer - 1 + E.buffers.len) % E.buffers.len;
-    if (win) win->buffer_index = E.current_buffer;
+    if (win)
+        win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
 
     /* Fire hook */
@@ -300,7 +337,8 @@ EdError buf_close(int index) {
         if (err == ED_OK) {
             E.current_buffer = 0;
         }
-        /* If buffer creation fails, editor will be in an invalid state, but better than crashing */
+        /* If buffer creation fails, editor will be in an invalid state, but
+         * better than crashing */
     } else if (E.current_buffer >= (int)E.buffers.len) {
         E.current_buffer = (int)E.buffers.len - 1;
     }
@@ -310,12 +348,12 @@ EdError buf_close(int index) {
 
 /*** Row operations ***/
 
-
-
 /* Insert a row into a specific buffer (no window/state changes) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
-    if (!buf) return;
-    if (at < 0 || at > buf->num_rows) return;
+    if (!buf)
+        return;
+    if (at < 0 || at > buf->num_rows)
+        return;
 
     Row *new_rows = realloc(buf->rows, sizeof(Row) * (buf->num_rows + 1));
     if (!new_rows) {
@@ -323,7 +361,8 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
         return;
     }
     buf->rows = new_rows;
-    memmove(&buf->rows[at + 1], &buf->rows[at], sizeof(Row) * (buf->num_rows - at));
+    memmove(&buf->rows[at + 1], &buf->rows[at],
+            sizeof(Row) * (buf->num_rows - at));
 
     buf->rows[at].chars = sstr_from(s, len);
     buf->rows[at].render = sstr_new();
@@ -337,20 +376,21 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
     hook_fire_line(HOOK_LINE_INSERT, &event);
 }
 
-
-
 void buf_row_del_in(Buffer *buf, int at) {
-    if (!PTR_VALID(buf)) return;
-    if (!BOUNDS_CHECK(at, buf->num_rows)) return;
+    if (!PTR_VALID(buf))
+        return;
+    if (!BOUNDS_CHECK(at, buf->num_rows))
+        return;
     row_free(&buf->rows[at]);
-    memmove(&buf->rows[at], &buf->rows[at + 1], sizeof(Row) * (buf->num_rows - at - 1));
+    memmove(&buf->rows[at], &buf->rows[at + 1],
+            sizeof(Row) * (buf->num_rows - at - 1));
     buf->num_rows--;
     buf->dirty++;
 }
 
-
 void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c) {
-    if (!buf || !row) return;
+    if (!buf || !row)
+        return;
     sstr_insert_char(&row->chars, at, c);
     buf_row_update(row);
     buf->dirty++;
@@ -359,25 +399,27 @@ void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c) {
 /* Legacy wrapper removed; use buf_row_insert_char_in */
 
 void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str) {
-    if (!buf || !row || !str) return;
+    if (!buf || !row || !str)
+        return;
     sstr_append(&row->chars, str->data, str->len);
     buf_row_update(row);
     buf->dirty++;
 }
 
-
 void buf_row_del_char_in(Buffer *buf, Row *row, int at) {
-    if (!buf || !row) return;
-    if (at < 0 || at >= (int)row->chars.len) return;
+    if (!buf || !row)
+        return;
+    if (at < 0 || at >= (int)row->chars.len)
+        return;
     sstr_delete_char(&row->chars, at);
     buf_row_update(row);
     buf->dirty++;
 }
 
-
 void buf_insert_char_in(Buffer *buf, int c) {
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
@@ -385,9 +427,13 @@ void buf_insert_char_in(Buffer *buf, int c) {
     if (win->cursor.y == buf->num_rows) {
         buf_row_insert_in(buf, buf->num_rows, "", 0);
     }
-    int y0 = win->cursor.y; int x0 = win->cursor.x;
+    int y0 = win->cursor.y;
+    int x0 = win->cursor.x;
     if (!undo_is_applying()) {
-        if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
+        if (E.mode == MODE_INSERT)
+            undo_open_insert_group();
+        else
+            undo_begin_group();
         char ch = (char)c;
         undo_push_insert(y0, x0, &ch, 1, y0, x0, y0, x0 + 1);
     }
@@ -402,14 +448,19 @@ void buf_insert_char_in(Buffer *buf, int c) {
 
 void buf_insert_newline_in(Buffer *buf) {
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    int y0 = win->cursor.y; int x0 = win->cursor.x;
+    int y0 = win->cursor.y;
+    int x0 = win->cursor.x;
     if (!undo_is_applying()) {
-        if (E.mode == MODE_INSERT) undo_open_insert_group(); else undo_begin_group();
+        if (E.mode == MODE_INSERT)
+            undo_open_insert_group();
+        else
+            undo_begin_group();
         const char nl = '\n';
         undo_push_insert(y0, x0, &nl, 1, y0, x0, y0 + 1, 0);
     }
@@ -432,18 +483,23 @@ void buf_insert_newline_in(Buffer *buf) {
 
 void buf_del_char_in(Buffer *buf) {
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (win->cursor.y == buf->num_rows) return;
-    if (win->cursor.x == 0 && win->cursor.y == 0) return;
+    if (win->cursor.y == buf->num_rows)
+        return;
+    if (win->cursor.x == 0 && win->cursor.y == 0)
+        return;
 
-    int y = win->cursor.y; int x = win->cursor.x;
+    int y = win->cursor.y;
+    int x = win->cursor.x;
     Row *row = &buf->rows[y];
     if (x > 0) {
-        int deleted_char = (x - 1 < (int)row->chars.len) ? row->chars.data[x - 1] : 0;
+        int deleted_char =
+            (x - 1 < (int)row->chars.len) ? row->chars.data[x - 1] : 0;
         if (!undo_is_applying()) {
             char ch = (char)deleted_char;
             undo_begin_group();
@@ -472,12 +528,14 @@ void buf_del_char_in(Buffer *buf) {
 
 void buf_delete_line_in(Buffer *buf) {
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        return;
 
     /* Save to clipboard */
     sstr_free(&E.clipboard);
@@ -489,8 +547,9 @@ void buf_delete_line_in(Buffer *buf) {
                      buf->rows[win->cursor.y].chars.len);
 
     /* Fire hook before deletion */
-    HookLineEvent event = {buf, win->cursor.y, buf->rows[win->cursor.y].chars.data,
-                          buf->rows[win->cursor.y].chars.len};
+    HookLineEvent event = {buf, win->cursor.y,
+                           buf->rows[win->cursor.y].chars.data,
+                           buf->rows[win->cursor.y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
 
     if (!undo_is_applying()) {
@@ -515,8 +574,10 @@ void buf_delete_line_in(Buffer *buf) {
 }
 void buf_yank_line_in(Buffer *buf) {
     Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win)) return;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return;
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        return;
 
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
@@ -529,16 +590,19 @@ void buf_yank_line_in(Buffer *buf) {
 
 void buf_paste_in(Buffer *buf) {
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (E.clipboard.len == 0) return;
+    if (E.clipboard.len == 0)
+        return;
 
     /* Block paste: insert column slice into successive lines */
     if (E.clipboard_is_block) {
-        if (!undo_is_applying()) undo_begin_group();
+        if (!undo_is_applying())
+            undo_begin_group();
         int cx = win->cursor.x;
         /* Split clipboard into lines */
         const char *data = E.clipboard.data;
@@ -557,23 +621,28 @@ void buf_paste_in(Buffer *buf) {
                 }
                 Row *r = &buf->rows[row];
                 int icx = cx;
-                if (icx < 0) icx = 0;
-                if (icx > (int)r->chars.len) icx = (int)r->chars.len;
+                if (icx < 0)
+                    icx = 0;
+                if (icx > (int)r->chars.len)
+                    icx = (int)r->chars.len;
                 if (!undo_is_applying()) {
                     undo_push_insert(row, icx, data + start, seglen,
-                                     win->cursor.y, win->cursor.x,
-                                     row, icx + (int)seglen);
+                                     win->cursor.y, win->cursor.x, row,
+                                     icx + (int)seglen);
                 }
                 for (size_t k = 0; k < seglen; k++) {
-                    buf_row_insert_char_in(buf, r, icx + (int)k, data[start + k]);
+                    buf_row_insert_char_in(buf, r, icx + (int)k,
+                                           data[start + k]);
                 }
                 line_idx++;
                 start = i + 1;
             }
         }
-        if (!undo_is_applying()) undo_commit_group();
+        if (!undo_is_applying())
+            undo_commit_group();
         /* Place cursor at end of first inserted segment */
-        win->cursor.x = cx + (int)(E.clipboard.len ? (strcspn(E.clipboard.data, "\n")) : 0);
+        win->cursor.x =
+            cx + (int)(E.clipboard.len ? (strcspn(E.clipboard.data, "\n")) : 0);
         return;
     }
 
@@ -581,27 +650,32 @@ void buf_paste_in(Buffer *buf) {
     if (!strchr(E.clipboard.data, '\n')) {
         if (!undo_is_applying()) {
             undo_begin_group();
-            undo_push_insert(win->cursor.y, win->cursor.x, E.clipboard.data, E.clipboard.len,
-                             win->cursor.y, win->cursor.x,
-                             win->cursor.y, win->cursor.x + (int)E.clipboard.len);
+            undo_push_insert(win->cursor.y, win->cursor.x, E.clipboard.data,
+                             E.clipboard.len, win->cursor.y, win->cursor.x,
+                             win->cursor.y,
+                             win->cursor.x + (int)E.clipboard.len);
         }
         if (win->cursor.y >= buf->num_rows) {
             buf_row_insert_in(buf, buf->num_rows, "", 0);
         }
         Row *r = &buf->rows[win->cursor.y];
         int cx = win->cursor.x;
-        if (cx < 0) cx = 0;
-        if (cx > (int)r->chars.len) cx = (int)r->chars.len;
+        if (cx < 0)
+            cx = 0;
+        if (cx > (int)r->chars.len)
+            cx = (int)r->chars.len;
         for (size_t k = 0; k < E.clipboard.len; k++) {
             buf_row_insert_char_in(buf, r, cx + (int)k, E.clipboard.data[k]);
         }
         win->cursor.x = cx + (int)E.clipboard.len;
-        if (!undo_is_applying()) undo_commit_group();
+        if (!undo_is_applying())
+            undo_commit_group();
         return;
     }
 
     /* Line-wise paste: insert lines below current */
-    int at = (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
+    int at =
+        (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
     if (!undo_is_applying()) {
         undo_begin_group();
         undo_push_insert(at, 0, E.clipboard.data, E.clipboard.len,
@@ -613,21 +687,25 @@ void buf_paste_in(Buffer *buf) {
     for (size_t i = 0; i <= len; i++) {
         if (i == len || E.clipboard.data[i] == '\n') {
             size_t seglen = i - start;
-            buf_row_insert_in(buf, insert_row, E.clipboard.data + start, seglen);
+            buf_row_insert_in(buf, insert_row, E.clipboard.data + start,
+                              seglen);
             insert_row++;
             start = i + 1;
         }
     }
     win->cursor.y = insert_row - 1;
     win->cursor.x = 0;
-    if (!undo_is_applying()) undo_commit_group();
+    if (!undo_is_applying())
+        undo_commit_group();
 }
 
 /*** Search ***/
 
 void buf_find_in(Buffer *buf) {
-    if (!buf) return;
-    if (E.search_query.len == 0) return;
+    if (!buf)
+        return;
+    if (E.search_query.len == 0)
+        return;
 
     Window *win = window_cur();
     int start_y = win ? win->cursor.y : 0;
@@ -643,7 +721,8 @@ void buf_find_in(Buffer *buf) {
                 win->cursor.x = buf_row_rx_to_cx(row, match - row->render.data);
             }
             Window *win = window_cur();
-            if (win) win->row_offset = buf->num_rows;
+            if (win)
+                win->row_offset = buf->num_rows;
             ed_set_status_message("Found at line %d", current + 1);
             return;
         }
@@ -679,9 +758,12 @@ void buf_reload(Buffer *buf) {
         buf->dirty = 0;
         return;
     }
-    char *line = NULL; size_t cap = 0; ssize_t len;
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t len;
     while ((len = getline(&line, &cap, fp)) != -1) {
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            len--;
         buf_row_insert_in(buf, buf->num_rows, line, (size_t)len);
     }
     free(line);

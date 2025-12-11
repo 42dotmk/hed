@@ -13,7 +13,7 @@ typedef struct {
     JumpEntry *entries;
     int len;
     int cap;
-    int current;  /* Current position in the list (-1 if not navigating) */
+    int current; /* Current position in the list (-1 if not navigating) */
 } JumpList;
 
 /* Initialize jump list */

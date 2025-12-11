@@ -1,6 +1,6 @@
 #include "cmd_search.h"
-#include "cmd_util.h"
 #include "../hed.h"
+#include "cmd_util.h"
 #include "fzf.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +11,8 @@ void cmd_cpick(const char *args) {
     /* Build printf list with name\tdesc lines for fzf preview */
     char pipebuf[8192];
     size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
+    off +=
+        snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
 
     for (int i = 0; i < command_count; i++) {
         const char *nm = commands[i].name ? commands[i].name : "";
@@ -20,15 +21,19 @@ void cmd_cpick(const char *args) {
         shell_escape_single(nm, en, sizeof(en));
         shell_escape_single(ds, ed, sizeof(ed));
         size_t need = strlen(en) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf)) break;
-        memcpy(pipebuf + off, en, strlen(en)); off += strlen(en);
+        if (off + need + 4 >= sizeof(pipebuf))
+            break;
+        memcpy(pipebuf + off, en, strlen(en));
+        off += strlen(en);
         pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed)); off += strlen(ed);
+        memcpy(pipebuf + off, ed, strlen(ed));
+        off += strlen(ed);
         pipebuf[off++] = ' ';
     }
     pipebuf[off] = '\0';
 
-    const char *fzf_opts = "--delimiter '\t' --with-nth 1 --preview 'echo {2}' --preview-window right,60%,wrap";
+    const char *fzf_opts = "--delimiter '\t' --with-nth 1 --preview 'echo {2}' "
+                           "--preview-window right,60%,wrap";
     char **sel = NULL;
     int cnt = 0;
     if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
@@ -40,14 +45,16 @@ void cmd_cpick(const char *args) {
     /* Parse the picked line: name<TAB>desc */
     char *picked = sel[0];
     char *tab = strchr(picked, '\t');
-    if (tab) *tab = '\0';
+    if (tab)
+        *tab = '\0';
 
     /* Pre-fill command line and stay in command mode */
     ed_set_mode(MODE_COMMAND);
     E.command_len = 0;
     size_t ll = strlen(picked);
     size_t maxcopy = sizeof(E.command_buf) - 2;
-    if (ll > maxcopy) ll = maxcopy;
+    if (ll > maxcopy)
+        ll = maxcopy;
     memcpy(E.command_buf, picked, ll);
     E.command_len = (int)ll;
     E.command_buf[E.command_len++] = ' ';
@@ -79,17 +86,18 @@ void cmd_ssearch(const char *args) {
     /* Build fzf options with ripgrep reload bound to query changes */
     char esc_query[8];
     snprintf(esc_query, sizeof(esc_query), "''");
-    const char *rg_base = "rg --vimgrep --no-heading --color=never -n --column --";
+    const char *rg_base =
+        "rg --vimgrep --no-heading --color=never -n --column --";
     char esc_file[1024];
     shell_escape_single(buf->filename, esc_file, sizeof(esc_file));
 
     char fzf_opts[4096];
     snprintf(fzf_opts, sizeof(fzf_opts),
-        "--ansi --phony --query %s "
-        "--bind 'change:reload:%s {q} %s 2>/dev/null || true' "
-        "--bind 'alt-a:select-all,alt-d:deselect-all,alt-t:toggle-all' "
-        "--delimiter ':' --with-nth 4..",
-        esc_query, rg_base, esc_file);
+             "--ansi --phony --query %s "
+             "--bind 'change:reload:%s {q} %s 2>/dev/null || true' "
+             "--bind 'alt-a:select-all,alt-d:deselect-all,alt-t:toggle-all' "
+             "--delimiter ':' --with-nth 4..",
+             esc_query, rg_base, esc_file);
 
     char **sel = NULL;
     int cnt = 0;
@@ -128,9 +136,12 @@ void cmd_ssearch(const char *args) {
         }
 
         Window *win = window_cur();
-        if (!win) return;
-        if (lno < 1) lno = 1;
-        if (lno > buf->num_rows) lno = buf->num_rows;
+        if (!win)
+            return;
+        if (lno < 1)
+            lno = 1;
+        if (lno > buf->num_rows)
+            lno = buf->num_rows;
         win->cursor.y = lno - 1;
         win->cursor.x = 0;
         (void)col;
@@ -146,16 +157,19 @@ void cmd_ssearch(const char *args) {
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
 
         char *p1 = strchr(tmp, ':');
-        if (!p1) continue;
+        if (!p1)
+            continue;
         *p1 = '\0'; /* file (we know it's the current file) */
 
         char *p2 = strchr(p1 + 1, ':');
-        if (!p2) continue;
+        if (!p2)
+            continue;
         *p2 = '\0';
         int lno = atoi(p1 + 1);
 
         char *p3 = strchr(p2 + 1, ':');
-        if (!p3) continue;
+        if (!p3)
+            continue;
         *p3 = '\0';
         int col = atoi(p2 + 1);
 
@@ -173,7 +187,8 @@ void cmd_ssearch(const char *args) {
 }
 
 void cmd_rg(const char *args) {
-    /* If a pattern is provided, run rg once and populate quickfix directly (no fzf). */
+    /* If a pattern is provided, run rg once and populate quickfix directly (no
+     * fzf). */
     if (args && *args) {
         char pattern[512];
         size_t pn = str_trim_whitespace(args, pattern, sizeof(pattern));
@@ -182,9 +197,10 @@ void cmd_rg(const char *args) {
             shell_escape_single(pattern, esc_pat, sizeof(esc_pat));
 
             char cmd[1600];
-            snprintf(cmd, sizeof(cmd),
-                     "rg --vimgrep --no-heading --color=never -n --column -- %s",
-                     esc_pat);
+            snprintf(
+                cmd, sizeof(cmd),
+                "rg --vimgrep --no-heading --color=never -n --column -- %s",
+                esc_pat);
             cmd_shq(cmd);
             return;
         }
@@ -194,19 +210,20 @@ void cmd_rg(const char *args) {
     char esc_query[512];
     snprintf(esc_query, sizeof(esc_query), "''");
 
-    const char *rg_base = "rg --vimgrep --no-heading --color=never -n --column --";
+    const char *rg_base =
+        "rg --vimgrep --no-heading --color=never -n --column --";
     char fzf_opts[2048];
     snprintf(fzf_opts, sizeof(fzf_opts),
-        "--ansi --phony --query %s "
-        "--bind 'change:reload:%s {q} 2>/dev/null || true' "
-        "--bind 'alt-a:select-all,alt-d:deselect-all,alt-t:toggle-all' "
-        "--delimiter ':' --with-nth 4.. "
-        "--preview 'printf \"%%s:%%s\\n\\n\" {1} {2}; "
-        "command -v bat >/dev/null 2>&1 && "
-        "bat --style=plain --color=always --highlight-line {2} {1} "
-        "|| sed -n \"1,200p\" {1} 2>/dev/null' "
-        "--preview-window right,60%%,wrap,+{2}",
-        esc_query, rg_base);
+             "--ansi --phony --query %s "
+             "--bind 'change:reload:%s {q} 2>/dev/null || true' "
+             "--bind 'alt-a:select-all,alt-d:deselect-all,alt-t:toggle-all' "
+             "--delimiter ':' --with-nth 4.. "
+             "--preview 'printf \"%%s:%%s\\n\\n\" {1} {2}; "
+             "command -v bat >/dev/null 2>&1 && "
+             "bat --style=plain --color=always --highlight-line {2} {1} "
+             "|| sed -n \"1,200p\" {1} 2>/dev/null' "
+             "--preview-window right,60%%,wrap,+{2}",
+             esc_query, rg_base);
 
     char **sel = NULL;
     int cnt = 0;
@@ -263,15 +280,18 @@ void cmd_rg(const char *args) {
         char tmp[1024];
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
         char *p1 = strchr(tmp, ':');
-        if (!p1) continue;
+        if (!p1)
+            continue;
         *p1 = '\0';
         char *file = tmp;
         char *p2 = strchr(p1 + 1, ':');
-        if (!p2) continue;
+        if (!p2)
+            continue;
         *p2 = '\0';
         int lno = atoi(p1 + 1);
         char *p3 = strchr(p2 + 1, ':');
-        if (!p3) continue;
+        if (!p3)
+            continue;
         *p3 = '\0';
         int col = atoi(p2 + 1);
         qf_add(&E.qf, file, lno, col, p3 + 1);
@@ -291,9 +311,14 @@ void cmd_fzf(const char *args) {
     qf_clear(&E.qf);
     char **sel = NULL;
     int cnt = 0;
-    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files || find . -type f -print)";
-    const char *fzf_opts = "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain --color=always --line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null' --preview-window right,60%,wrap";
-    if (fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] && sel[0][0]) {
+    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files "
+                                 "|| find . -type f -print)";
+    const char *fzf_opts =
+        "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain "
+        "--color=always --line-range :200 {} || sed -n \"1,200p\" {} "
+        "2>/dev/null' --preview-window right,60%,wrap";
+    if (fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 &&
+        sel[0] && sel[0][0]) {
         buf_open_or_switch(sel[0]);
     } else {
         ed_set_status_message("fzf: no selection");
@@ -313,7 +338,8 @@ void cmd_rg_word(const char *args) {
 
     char pattern[512];
     size_t n = w.len;
-    if (n >= sizeof(pattern)) n = sizeof(pattern) - 1;
+    if (n >= sizeof(pattern))
+        n = sizeof(pattern) - 1;
     memcpy(pattern, w.data, n);
     pattern[n] = '\0';
     sstr_free(&w);
@@ -345,7 +371,8 @@ void cmd_recent(const char *args) {
 
     for (int i = 0; i < len && off < (int)sizeof(cmd) - 1024; i++) {
         const char *file = recent_files_get(&E.recent_files, i);
-        if (!file) continue;
+        if (!file)
+            continue;
 
         char escaped[1024];
         shell_escape_single(file, escaped, sizeof(escaped));
@@ -362,9 +389,13 @@ void cmd_recent(const char *args) {
 
     char **sel = NULL;
     int cnt = 0;
-    const char *fzf_opts = "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain --color=always --line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null' --preview-window right,60%,wrap";
+    const char *fzf_opts =
+        "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain "
+        "--color=always --line-range :200 {} || sed -n \"1,200p\" {} "
+        "2>/dev/null' --preview-window right,60%,wrap";
 
-    if (fzf_run_opts(cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] && sel[0][0]) {
+    if (fzf_run_opts(cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] &&
+        sel[0][0]) {
         buf_open_or_switch(sel[0]);
     } else {
         ed_set_status_message("no selection");

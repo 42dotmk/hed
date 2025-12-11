@@ -5,12 +5,12 @@
 
 #include "buffer.h"
 #include "history.h"
-#include "recent_files.h"
 #include "jump_list.h"
 #include "quickfix.h"
-#include "window.h"
+#include "recent_files.h"
 #include "sizedstr.h"
 #include "vector.h"
+#include "window.h"
 
 #define HED_VERSION "0.2.0"
 #define TAB_STOP 4
@@ -56,18 +56,19 @@ VEC_DEFINE(WindowVec, Window);
 /* Editor configuration - global state */
 typedef struct {
     EditorMode mode;
-    BufferVec buffers;      /* Growable buffer array */
+    BufferVec buffers; /* Growable buffer array */
     int current_buffer;
     /* Windows */
-    WindowVec windows;      /* Growable window array */
+    WindowVec windows; /* Growable window array */
     int current_window;
     int window_layout; /* 0=single, 1=vertical split, 2=horizontal split */
     int screen_rows;
     int screen_cols;
     int render_x;
 
-    int show_line_numbers; /* 0=off, 1=on */
-    int relative_line_numbers; /* 0=absolute only, 1=relative (abs on current) */
+    int show_line_numbers;     /* 0=off, 1=on */
+    int relative_line_numbers; /* 0=absolute only, 1=relative (abs on current)
+                                */
 
     char status_msg[256];
     char command_buf[128];
@@ -82,10 +83,10 @@ typedef struct {
     RecentFiles recent_files;
     JumpList jump_list;
     int stay_in_command;
-    int default_wrap;        /* 0=unwrap windows by default, 1=wrap */
-    int expand_tab;          /* 0=insert '\t', 1=insert spaces */
-    int tab_size;            /* visual tab size (defaults to TAB_STOP) */
-    char cwd[PATH_MAX];      /* editor working directory (logical cwd) */
+    int default_wrap;   /* 0=unwrap windows by default, 1=wrap */
+    int expand_tab;     /* 0=insert '\t', 1=insert spaces */
+    int tab_size;       /* visual tab size (defaults to TAB_STOP) */
+    char cwd[PATH_MAX]; /* editor working directory (logical cwd) */
     struct {
         char **items;
         int count;
@@ -115,9 +116,9 @@ void ed_process_command(void);
 
 void ed_set_mode(EditorMode new_mode);
 void ed_set_status_message(const char *fmt, ...);
+void ed_search_prompt(void);
 
 void ed_init(int create_default_buffer);
 void ed_change_cursor_shape(void);
-
 
 #endif

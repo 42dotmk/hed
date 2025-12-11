@@ -18,4 +18,3 @@ void log_clear(void);
 void log_close(void);
 
 #endif /* LOG_H */
-

@@ -1,8 +1,8 @@
 #ifndef LSP_H
 #define LSP_H
 
-#include <sys/select.h>
 #include "buffer.h"
+#include <sys/select.h>
 
 /*
  * Minimal Language Server Protocol (LSP) client interface for hed.
@@ -37,4 +37,3 @@ void lsp_request_definition(Buffer *buf, int line, int col);
 void lsp_request_completion(Buffer *buf, int line, int col);
 
 #endif /* LSP_H */
-

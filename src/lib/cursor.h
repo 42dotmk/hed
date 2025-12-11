@@ -7,4 +7,3 @@ typedef struct {
 } Cursor;
 
 #endif /* CURSOR_H */
-

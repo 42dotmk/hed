@@ -93,7 +93,7 @@ EdError safe_sprintf(char *dst, size_t dst_size, const char *fmt, ...)
  *       return ED_ERR_INVALID_RANGE;
  *   }
  */
-#define RANGE_VALID(start, end, size) \
+#define RANGE_VALID(start, end, size)                                          \
     ((start) >= 0 && (end) >= (start) && (end) <= (size))
 
 #endif /* SAFE_STRING_H */

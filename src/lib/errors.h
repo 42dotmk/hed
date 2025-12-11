@@ -26,15 +26,15 @@ typedef enum {
     ED_OK = 0,
 
     /* Memory errors */
-    ED_ERR_NOMEM,           /* Out of memory */
-    ED_ERR_ALLOC_FAILED,    /* Memory allocation failed */
+    ED_ERR_NOMEM,        /* Out of memory */
+    ED_ERR_ALLOC_FAILED, /* Memory allocation failed */
 
     /* File I/O errors */
-    ED_ERR_FILE_NOT_FOUND,  /* File does not exist */
-    ED_ERR_FILE_OPEN,       /* Cannot open file */
-    ED_ERR_FILE_READ,       /* Error reading file */
-    ED_ERR_FILE_WRITE,      /* Error writing file */
-    ED_ERR_FILE_PERM,       /* Permission denied */
+    ED_ERR_FILE_NOT_FOUND, /* File does not exist */
+    ED_ERR_FILE_OPEN,      /* Cannot open file */
+    ED_ERR_FILE_READ,      /* Error reading file */
+    ED_ERR_FILE_WRITE,     /* Error writing file */
+    ED_ERR_FILE_PERM,      /* Permission denied */
 
     /* Buffer errors */
     ED_ERR_BUFFER_FULL,     /* Maximum buffers reached */
@@ -44,25 +44,25 @@ typedef enum {
     ED_ERR_BUFFER_EMPTY,    /* Buffer has no content */
 
     /* Window errors */
-    ED_ERR_WINDOW_FULL,     /* Maximum windows reached */
-    ED_ERR_WINDOW_INVALID,  /* Invalid window reference */
-    ED_ERR_WINDOW_LAST,     /* Cannot close last window */
+    ED_ERR_WINDOW_FULL,    /* Maximum windows reached */
+    ED_ERR_WINDOW_INVALID, /* Invalid window reference */
+    ED_ERR_WINDOW_LAST,    /* Cannot close last window */
 
     /* Input/validation errors */
-    ED_ERR_INVALID_ARG,     /* Invalid argument */
-    ED_ERR_INVALID_INDEX,   /* Index out of bounds */
-    ED_ERR_INVALID_RANGE,   /* Invalid range specification */
-    ED_ERR_INVALID_INPUT,   /* Invalid user input */
+    ED_ERR_INVALID_ARG,   /* Invalid argument */
+    ED_ERR_INVALID_INDEX, /* Index out of bounds */
+    ED_ERR_INVALID_RANGE, /* Invalid range specification */
+    ED_ERR_INVALID_INPUT, /* Invalid user input */
 
     /* Operation errors */
-    ED_ERR_NOT_FOUND,       /* Item not found */
-    ED_ERR_NOT_SUPPORTED,   /* Operation not supported */
-    ED_ERR_NO_MATCH,        /* No match found (search, etc.) */
-    ED_ERR_CANCELLED,       /* Operation cancelled by user */
+    ED_ERR_NOT_FOUND,     /* Item not found */
+    ED_ERR_NOT_SUPPORTED, /* Operation not supported */
+    ED_ERR_NO_MATCH,      /* No match found (search, etc.) */
+    ED_ERR_CANCELLED,     /* Operation cancelled by user */
 
     /* System errors */
-    ED_ERR_SYSTEM,          /* System error (check errno) */
-    ED_ERR_UNKNOWN          /* Unknown error */
+    ED_ERR_SYSTEM, /* System error (check errno) */
+    ED_ERR_UNKNOWN /* Unknown error */
 } EdError;
 
 /*
@@ -75,16 +75,12 @@ const char *ed_error_string(EdError err);
  * Check if error code indicates success.
  * Returns 1 if successful, 0 if error.
  */
-static inline int ed_error_ok(EdError err) {
-    return err == ED_OK;
-}
+static inline int ed_error_ok(EdError err) { return err == ED_OK; }
 
 /*
  * Check if error code indicates failure.
  * Returns 1 if error, 0 if successful.
  */
-static inline int ed_error_failed(EdError err) {
-    return err != ED_OK;
-}
+static inline int ed_error_failed(EdError err) { return err != ED_OK; }
 
 #endif /* ERRORS_H */

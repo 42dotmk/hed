@@ -25,12 +25,17 @@ void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
 void buf_row_del_char_in(Buffer *buf, Row *row, int at);
 
 static void s_free(SizedStr *s) { sstr_free(s); }
-static void rec_free(UndoRec *r) { if (r) s_free(&r->payload); }
+static void rec_free(UndoRec *r) {
+    if (r)
+        s_free(&r->payload);
+}
 
 static void undo_vec_reserve(UndoVec *v, int need) {
-    if (v->cap >= need) return;
+    if (v->cap >= need)
+        return;
     int ncap = v->cap ? v->cap * 2 : 64;
-    if (ncap < need) ncap = need;
+    if (ncap < need)
+        ncap = need;
     v->items = realloc(v->items, (size_t)ncap * sizeof(UndoRec));
     v->cap = ncap;
 }
@@ -40,12 +45,14 @@ static void undo_vec_push(UndoVec *v, const UndoRec *r) {
     v->items[v->len++] = *r; /* shallow copy; payload already allocated */
 }
 
-__attribute__((unused)) static int undo_vec_pop_group(UndoVec *v, int group_id) {
+__attribute__((unused)) static int undo_vec_pop_group(UndoVec *v,
+                                                      int group_id) {
     /* Returns number of records popped for this group (from end). */
     int count = 0;
     while (v->len > 0) {
         UndoRec *r = &v->items[v->len - 1];
-        if (r->group_id != group_id) break;
+        if (r->group_id != group_id)
+            break;
         v->len--;
         count++;
     }
@@ -54,8 +61,10 @@ __attribute__((unused)) static int undo_vec_pop_group(UndoVec *v, int group_id) 
 
 static void prune_undo_cap(void) {
     /* Drop oldest group(s) until within cap_bytes. */
-    if (used_bytes <= cap_bytes) return;
-    if (UNDO.len == 0) return;
+    if (used_bytes <= cap_bytes)
+        return;
+    if (UNDO.len == 0)
+        return;
     /* Find the first group's range */
     int first_gid = UNDO.items[0].group_id;
     int i = 0;
@@ -66,16 +75,23 @@ static void prune_undo_cap(void) {
     }
     /* Shift remaining */
     if (i > 0) {
-        memmove(&UNDO.items[0], &UNDO.items[i], (size_t)(UNDO.len - i) * sizeof(UndoRec));
+        memmove(&UNDO.items[0], &UNDO.items[i],
+                (size_t)(UNDO.len - i) * sizeof(UndoRec));
         UNDO.len -= i;
     }
 }
 
 void undo_init(void) {
-    UNDO.items = NULL; UNDO.len = UNDO.cap = 0;
-    REDO.items = NULL; REDO.len = REDO.cap = 0;
-    current_group_id = 0; group_open = 0; insert_group_open = 0;
-    applying = 0; used_bytes = 0; cap_bytes = 4 * 1024 * 1024;
+    UNDO.items = NULL;
+    UNDO.len = UNDO.cap = 0;
+    REDO.items = NULL;
+    REDO.len = REDO.cap = 0;
+    current_group_id = 0;
+    group_open = 0;
+    insert_group_open = 0;
+    applying = 0;
+    used_bytes = 0;
+    cap_bytes = 4 * 1024 * 1024;
 }
 
 void undo_set_cap(size_t bytes) { cap_bytes = bytes; }
@@ -111,7 +127,8 @@ void undo_on_mode_change(EditorMode old_mode, EditorMode new_mode) {
 
 void undo_clear_redo(void) {
     /* Free all redo records */
-    for (int i = 0; i < REDO.len; i++) rec_free(&REDO.items[i]);
+    for (int i = 0; i < REDO.len; i++)
+        rec_free(&REDO.items[i]);
     REDO.len = 0;
 }
 
@@ -120,27 +137,38 @@ int undo_is_applying(void) { return applying; }
 /* ---------- Buffer editing primitives for apply ---------- */
 
 static void buf_insert_text_at(int y, int x, const char *data, size_t len) {
-    Buffer *buf = buf_cur(); if (!buf) return;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
     if (buf->num_rows == 0) {
         buf_row_insert_in(buf, 0, "", 0);
     }
-    if (y < 0) y = 0; if (y > buf->num_rows) y = buf->num_rows;
+    if (y < 0)
+        y = 0;
+    if (y > buf->num_rows)
+        y = buf->num_rows;
     if (y == buf->num_rows) {
         /* append new line if inserting beyond last line and no current line */
         buf_row_insert_in(buf, buf->num_rows, "", 0);
-        y = buf->num_rows - 1; x = 0;
+        y = buf->num_rows - 1;
+        x = 0;
     }
     Row *row = &buf->rows[y];
-    if (x < 0) x = 0; if (x > (int)row->chars.len) x = (int)row->chars.len;
+    if (x < 0)
+        x = 0;
+    if (x > (int)row->chars.len)
+        x = (int)row->chars.len;
 
     /* Insert segment by segment, splitting on '\n' */
     int cx = x;
-    size_t i = 0; size_t start = 0;
+    size_t i = 0;
+    size_t start = 0;
     while (i <= len) {
         if (i == len || data[i] == '\n') {
             size_t seglen = i - start;
             for (size_t k = 0; k < seglen; k++) {
-                buf_row_insert_char_in(buf, &buf->rows[y], cx + (int)k, data[start + k]);
+                buf_row_insert_char_in(buf, &buf->rows[y], cx + (int)k,
+                                       data[start + k]);
             }
             cx += (int)seglen;
             if (i < len && data[i] == '\n') {
@@ -154,7 +182,8 @@ static void buf_insert_text_at(int y, int x, const char *data, size_t len) {
                 r->chars.len = cx;
                 r->chars.data[r->chars.len] = '\0';
                 buf_row_update(r);
-                y += 1; cx = 0;
+                y += 1;
+                cx = 0;
             }
             start = i + 1;
         }
@@ -163,10 +192,17 @@ static void buf_insert_text_at(int y, int x, const char *data, size_t len) {
 }
 
 static void buf_delete_len_at(int y, int x, size_t len) {
-    Buffer *buf = buf_cur(); if (!buf) return;
-    if (len == 0) return;
-    if (y < 0) y = 0; if (y >= buf->num_rows) return;
-    if (x < 0) x = 0;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+    if (len == 0)
+        return;
+    if (y < 0)
+        y = 0;
+    if (y >= buf->num_rows)
+        return;
+    if (x < 0)
+        x = 0;
 
     while (len > 0 && y < buf->num_rows) {
         Row *row = &buf->rows[y];
@@ -176,7 +212,8 @@ static void buf_delete_len_at(int y, int x, size_t len) {
             len--;
         } else {
             /* at end of line: delete newline by merging next line */
-            if (y + 1 >= buf->num_rows) break;
+            if (y + 1 >= buf->num_rows)
+                break;
             Row *next = &buf->rows[y + 1];
             buf_row_append_in(buf, row, &next->chars);
             buf_row_del_in(buf, y + 1);
@@ -189,13 +226,20 @@ static void buf_delete_len_at(int y, int x, size_t len) {
 
 /* no push_common to avoid unused warnings */
 
-void undo_push_insert(int y, int x, const char *data, size_t len,
-                      int cy_before, int cx_before, int cy_after, int cx_after) {
-    UndoRec r; r.type = UREC_INSERT_TEXT; r.y = y; r.x = x;
+void undo_push_insert(int y, int x, const char *data, size_t len, int cy_before,
+                      int cx_before, int cy_after, int cx_after) {
+    UndoRec r;
+    r.type = UREC_INSERT_TEXT;
+    r.y = y;
+    r.x = x;
     r.payload = sstr_from(data ? data : "", len);
-    r.cy_before = cy_before; r.cx_before = cx_before;
-    r.cy_after = cy_after; r.cx_after = cx_after;
-    if (!group_open) { undo_begin_group(); }
+    r.cy_before = cy_before;
+    r.cx_before = cx_before;
+    r.cy_after = cy_after;
+    r.cx_after = cx_after;
+    if (!group_open) {
+        undo_begin_group();
+    }
     r.group_id = current_group_id;
     undo_vec_push(&UNDO, &r);
     used_bytes += r.payload.len;
@@ -203,13 +247,20 @@ void undo_push_insert(int y, int x, const char *data, size_t len,
     prune_undo_cap();
 }
 
-void undo_push_delete(int y, int x, const char *data, size_t len,
-                      int cy_before, int cx_before, int cy_after, int cx_after) {
-    UndoRec r; r.type = UREC_DELETE_TEXT; r.y = y; r.x = x;
+void undo_push_delete(int y, int x, const char *data, size_t len, int cy_before,
+                      int cx_before, int cy_after, int cx_after) {
+    UndoRec r;
+    r.type = UREC_DELETE_TEXT;
+    r.y = y;
+    r.x = x;
     r.payload = sstr_from(data ? data : "", len);
-    r.cy_before = cy_before; r.cx_before = cx_before;
-    r.cy_after = cy_after; r.cx_after = cx_after;
-    if (!group_open) { undo_begin_group(); }
+    r.cy_before = cy_before;
+    r.cx_before = cx_before;
+    r.cy_after = cy_after;
+    r.cx_after = cx_after;
+    if (!group_open) {
+        undo_begin_group();
+    }
     r.group_id = current_group_id;
     undo_vec_push(&UNDO, &r);
     used_bytes += r.payload.len;
@@ -221,37 +272,63 @@ void undo_push_delete(int y, int x, const char *data, size_t len,
 
 static void apply_forward(const UndoRec *r) {
     switch (r->type) {
-        case UREC_INSERT_TEXT:
-            buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_after; b->cursor.x = r->cx_after; } }
-            break;
-        case UREC_DELETE_TEXT:
-            buf_delete_len_at(r->y, r->x, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_after; b->cursor.x = r->cx_after; } }
-            break;
+    case UREC_INSERT_TEXT:
+        buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
+        {
+            Buffer *b = buf_cur();
+            if (b) {
+                b->cursor.y = r->cy_after;
+                b->cursor.x = r->cx_after;
+            }
+        }
+        break;
+    case UREC_DELETE_TEXT:
+        buf_delete_len_at(r->y, r->x, r->payload.len);
+        {
+            Buffer *b = buf_cur();
+            if (b) {
+                b->cursor.y = r->cy_after;
+                b->cursor.x = r->cx_after;
+            }
+        }
+        break;
     }
 }
 
 static void apply_inverse(const UndoRec *r) {
     switch (r->type) {
-        case UREC_INSERT_TEXT:
-            buf_delete_len_at(r->y, r->x, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_before; b->cursor.x = r->cx_before; } }
-            break;
-        case UREC_DELETE_TEXT:
-            buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
-            { Buffer *b = buf_cur(); if (b) { b->cursor.y = r->cy_before; b->cursor.x = r->cx_before; } }
-            break;
+    case UREC_INSERT_TEXT:
+        buf_delete_len_at(r->y, r->x, r->payload.len);
+        {
+            Buffer *b = buf_cur();
+            if (b) {
+                b->cursor.y = r->cy_before;
+                b->cursor.x = r->cx_before;
+            }
+        }
+        break;
+    case UREC_DELETE_TEXT:
+        buf_insert_text_at(r->y, r->x, r->payload.data, r->payload.len);
+        {
+            Buffer *b = buf_cur();
+            if (b) {
+                b->cursor.y = r->cy_before;
+                b->cursor.x = r->cx_before;
+            }
+        }
+        break;
     }
 }
 
 int undo_perform(void) {
-    if (UNDO.len == 0) return 0;
+    if (UNDO.len == 0)
+        return 0;
     int gid = UNDO.items[UNDO.len - 1].group_id;
     applying = 1;
     /* collect records of this group */
     int start = UNDO.len - 1;
-    while (start >= 0 && UNDO.items[start].group_id == gid) start--;
+    while (start >= 0 && UNDO.items[start].group_id == gid)
+        start--;
     start++;
     /* apply in reverse order, and move to REDO */
     for (int i = UNDO.len - 1; i >= start; i--) {
@@ -269,12 +346,14 @@ int undo_perform(void) {
 }
 
 int redo_perform(void) {
-    if (REDO.len == 0) return 0;
+    if (REDO.len == 0)
+        return 0;
     int gid = REDO.items[REDO.len - 1].group_id;
     applying = 1;
     /* find group's start in REDO */
     int start = REDO.len - 1;
-    while (start >= 0 && REDO.items[start].group_id == gid) start--;
+    while (start >= 0 && REDO.items[start].group_id == gid)
+        start--;
     start++;
     /* apply in forward order */
     for (int i = start; i < REDO.len; i++) {

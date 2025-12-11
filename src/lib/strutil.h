@@ -29,8 +29,8 @@ int utf8_display_width(const char *str, size_t byte_len);
  * Example: "Hello你好" (5 ASCII + 2 wide chars = 9 columns)
  *   start_col=5, num_cols=4 -> extracts "你好" (6 bytes)
  */
-void utf8_slice_by_columns(const char *str, size_t byte_len,
-                           int start_col, int num_cols,
-                           int *out_byte_start, int *out_byte_len);
+void utf8_slice_by_columns(const char *str, size_t byte_len, int start_col,
+                           int num_cols, int *out_byte_start,
+                           int *out_byte_len);
 
 #endif

@@ -73,11 +73,15 @@ void hook_init(void);
  * Use "*" for filetype to match all file types
  * Mode callbacks don't take mode/filetype filters as they fire on mode changes
  */
-void hook_register_char(HookType type, int mode, const char *filetype, HookCharCallback callback);
-void hook_register_line(HookType type, int mode, const char *filetype, HookLineCallback callback);
-void hook_register_buffer(HookType type, int mode, const char *filetype, HookBufferCallback callback);
+void hook_register_char(HookType type, int mode, const char *filetype,
+                        HookCharCallback callback);
+void hook_register_line(HookType type, int mode, const char *filetype,
+                        HookLineCallback callback);
+void hook_register_buffer(HookType type, int mode, const char *filetype,
+                          HookBufferCallback callback);
 void hook_register_mode(HookType type, HookModeCallback callback);
-void hook_register_cursor(HookType type, int mode, const char *filetype, HookCursorCallback callback);
+void hook_register_cursor(HookType type, int mode, const char *filetype,
+                          HookCursorCallback callback);
 
 /* Hook firing functions */
 void hook_fire_char(HookType type, const HookCharEvent *event);

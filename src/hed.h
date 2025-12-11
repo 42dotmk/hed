@@ -3,51 +3,52 @@
 #define _GNU_SOURCE
 #define _DEFAULT_SOURCE
 
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <errno.h>
-#include <unistd.h>
-#include <termios.h>
 #include <sys/ioctl.h>
-#include <fcntl.h>
 #include <sys/types.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* Library helpers - must come first for type definitions */
-#include "sizedstr.h"
-#include "log.h"
 #include "ansi.h"
-#include "strutil.h"
-#include "safe_string.h"
 #include "errors.h"
+#include "helpers.h"
+#include "log.h"
+#include "safe_string.h"
+#include "sizedstr.h"
+#include "strutil.h"
 #include "theme.h"
 
 /* Core modules */
+#include "commands.h"
 #include "editor.h"
-#include "terminal.h"
 #include "hooks.h"
 #include "keybinds.h"
 #include "registers.h"
+#include "terminal.h"
 #include "undo.h"
-#include "commands.h"
 
 /* Buffer subsystem */
-#include "row.h"
-#include "buffer.h"
 #include "buf_helpers.h"
+#include "buffer.h"
+#include "row.h"
 #include "textobj.h"
 
 /* Utilities */
+#include "bottom_ui.h"
+#include "fzf.h"
 #include "history.h"
-#include "recent_files.h"
 #include "jump_list.h"
-#include "ts.h"
 #include "quickfix.h"
+#include "recent_files.h"
 #include "term_cmd.h"
 #include "tmux.h"
-#include "fzf.h"
-#include "bottom_ui.h"
+#include "ts.h"
 
 /* UI */
 #include "abuf.h"

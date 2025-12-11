@@ -1,11 +1,11 @@
-#include "hed.h"
 #include "ts.h"
 #include "buffer.h"
+#include "hed.h"
 #include "log.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <tree_sitter/api.h>
 
 /*
@@ -16,7 +16,7 @@ static int g_ts_enabled = 1;
 
 typedef struct {
     TSParser *parser;
-    TSTree   *tree;
+    TSTree *tree;
     TSLanguage *lang;
     TSQuery *query;
     void *dl_handle;
@@ -25,30 +25,38 @@ typedef struct {
 } TSState;
 
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
-int  ts_is_enabled(void) { return g_ts_enabled; }
+int ts_is_enabled(void) { return g_ts_enabled; }
 
 void ts_buffer_init(Buffer *buf) {
-    if (!buf) return;
-    if (buf->ts_internal) return;
+    if (!buf)
+        return;
+    if (buf->ts_internal)
+        return;
     buf->ts_internal = calloc(1, sizeof(TSState));
     if (buf->ts_internal) {
         ((TSState *)buf->ts_internal)->parsed_dirty = -1;
     }
 }
 void ts_buffer_free(Buffer *buf) {
-    if (!buf || !buf->ts_internal) return;
+    if (!buf || !buf->ts_internal)
+        return;
     TSState *st = (TSState *)buf->ts_internal;
-    if (st->tree) ts_tree_delete(st->tree);
-    if (st->parser) ts_parser_delete(st->parser);
-    if (st->query) ts_query_delete(st->query);
-    if (st->dl_handle) dlclose(st->dl_handle);
+    if (st->tree)
+        ts_tree_delete(st->tree);
+    if (st->parser)
+        ts_parser_delete(st->parser);
+    if (st->query)
+        ts_query_delete(st->query);
+    if (st->dl_handle)
+        dlclose(st->dl_handle);
     free(buf->ts_internal);
     buf->ts_internal = NULL;
 }
 
 static size_t build_source(Buffer *buf, char **out) {
     size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++) total += buf->rows[i].chars.len + 1;
+    for (int i = 0; i < buf->num_rows; i++)
+        total += buf->rows[i].chars.len + 1;
     char *s = malloc(total + 1);
     size_t off = 0;
     for (int i = 0; i < buf->num_rows; i++) {
@@ -62,19 +70,27 @@ static size_t build_source(Buffer *buf, char **out) {
 }
 
 static int load_lang(TSState *st, const char *lang_name) {
-    if (!lang_name || !*lang_name) return 0;
+    if (!lang_name || !*lang_name)
+        return 0;
     char path[512];
     const char *base = getenv("HED_TS_PATH");
-    if (base && *base) snprintf(path, sizeof(path), "%s/%s.so", base, lang_name);
-    else snprintf(path, sizeof(path), "ts-langs/%s.so", lang_name);
+    if (base && *base)
+        snprintf(path, sizeof(path), "%s/%s.so", base, lang_name);
+    else
+        snprintf(path, sizeof(path), "ts-langs/%s.so", lang_name);
     void *h = dlopen(path, RTLD_NOW);
-    if (!h) return 0;
-    char sym[64]; snprintf(sym, sizeof(sym), "tree_sitter_%s", lang_name);
-    TSLanguage *(*langfn)(void) = (TSLanguage *(*)(void))dlsym(h, sym);
-    if (!langfn) { dlclose(h); return 0; }
+    if (!h)
+        return 0;
+    char sym[64];
+    snprintf(sym, sizeof(sym), "tree_sitter_%s", lang_name);
+    TSLanguage *(*langfn)(void) = (TSLanguage * (*)(void)) dlsym(h, sym);
+    if (!langfn) {
+        dlclose(h);
+        return 0;
+    }
     st->lang = langfn();
     st->dl_handle = h;
-    strncpy(st->lang_name, lang_name, sizeof(st->lang_name)-1);
+    strncpy(st->lang_name, lang_name, sizeof(st->lang_name) - 1);
     return 1;
 }
 
@@ -82,51 +98,79 @@ static void maybe_load_query(TSState *st, const char *lang) {
     char qpath[512];
     snprintf(qpath, sizeof(qpath), "queries/%s/highlights.scm", lang);
     FILE *fp = fopen(qpath, "r");
-    if (!fp) return;
-    fseek(fp, 0, SEEK_END); long sz = ftell(fp); fseek(fp, 0, SEEK_SET);
+    if (!fp)
+        return;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
     char *buf = malloc((size_t)sz + 1);
-    fread(buf, 1, (size_t)sz, fp); buf[sz] = '\0'; fclose(fp);
-    uint32_t err_offset; TSQueryError err_type;
-    st->query = ts_query_new(st->lang, buf, (uint32_t)sz, &err_offset, &err_type);
+    fread(buf, 1, (size_t)sz, fp);
+    buf[sz] = '\0';
+    fclose(fp);
+    uint32_t err_offset;
+    TSQueryError err_type;
+    st->query =
+        ts_query_new(st->lang, buf, (uint32_t)sz, &err_offset, &err_type);
     free(buf);
 }
 
 static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
-    if (!st || !st->lang || !st->parser) return 0;
+    if (!st || !st->lang || !st->parser)
+        return 0;
     return (strncmp(st->lang_name, lang_name, sizeof(st->lang_name)) == 0);
 }
 
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
-    if (!buf) return 0;
+    if (!buf)
+        return 0;
     ts_buffer_init(buf);
     TSState *st = (TSState *)buf->ts_internal;
-    if (!st) return 0;
+    if (!st)
+        return 0;
 
-    /* If the requested language is already loaded, just ensure we reparse later. */
+    /* If the requested language is already loaded, just ensure we reparse
+     * later. */
     if (ts_lang_is_loaded(st, lang_name)) {
         st->parsed_dirty = -1; /* force reparse */
         return 1;
     }
 
-    log_msg("Loading tree-sitter language: %s for buf: %s", lang_name, buf->title);
+    log_msg("Loading tree-sitter language: %s for buf: %s", lang_name,
+            buf->title);
     log_msg("tree-sitter is enabled for buf: %s", buf->title);
 
-    if (st->parser) { ts_parser_delete(st->parser); st->parser = NULL; }
-    if (st->tree) { ts_tree_delete(st->tree); st->tree = NULL; }
-    if (st->query) { ts_query_delete(st->query); st->query = NULL; }
-    if (st->dl_handle) { dlclose(st->dl_handle); st->dl_handle = NULL; }
-    st->lang = NULL; st->lang_name[0] = '\0';
+    if (st->parser) {
+        ts_parser_delete(st->parser);
+        st->parser = NULL;
+    }
+    if (st->tree) {
+        ts_tree_delete(st->tree);
+        st->tree = NULL;
+    }
+    if (st->query) {
+        ts_query_delete(st->query);
+        st->query = NULL;
+    }
+    if (st->dl_handle) {
+        dlclose(st->dl_handle);
+        st->dl_handle = NULL;
+    }
+    st->lang = NULL;
+    st->lang_name[0] = '\0';
     st->parsed_dirty = -1;
-    if (!load_lang(st, lang_name)) return 0;
+    if (!load_lang(st, lang_name))
+        return 0;
     st->parser = ts_parser_new();
-    if (!ts_parser_set_language(st->parser, st->lang)) return 0;
+    if (!ts_parser_set_language(st->parser, st->lang))
+        return 0;
     maybe_load_query(st, lang_name);
     ts_buffer_reparse(buf);
     return 1;
 }
 
 int ts_buffer_autoload(Buffer *buf) {
-    if (!buf || !buf->filename) return 0;
+    if (!buf || !buf->filename)
+        return 0;
     ts_buffer_init(buf);
     TSState *st = (TSState *)buf->ts_internal;
     const char *want = NULL;
@@ -141,7 +185,7 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "c";
         else if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
                  strcmp(ext, "cxx") == 0 || strcmp(ext, "hpp") == 0 ||
-                 strcmp(ext, "hh") == 0  || strcmp(ext, "hxx") == 0)
+                 strcmp(ext, "hh") == 0 || strcmp(ext, "hxx") == 0)
             want = "cpp";
 
         /* C# */
@@ -152,6 +196,9 @@ int ts_buffer_autoload(Buffer *buf) {
         else if (strcmp(ext, "py") == 0)
             want = "python";
 
+        else if (strcmp(ext, "el") == 0 || strcmp(ext, "elisp") == 0 ||
+                 strcmp(ext, "lisp") == 0 || strcmp(ext, "cl") == 0)
+            want = "commonlisp";
         /* HTML */
         else if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
             want = "html";
@@ -175,7 +222,8 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "lua";
 
         /* Shell */
-        else if (strcmp(ext, "sh") == 0 || strcmp(ext, "bash") == 0 || strcmp(ext, "zsh") == 0)
+        else if (strcmp(ext, "sh") == 0 || strcmp(ext, "bash") == 0 ||
+                 strcmp(ext, "zsh") == 0)
             want = "bash";
 
         /* JSON */
@@ -196,37 +244,48 @@ int ts_buffer_autoload(Buffer *buf) {
     }
 
     /* Make */
-    if (!want && (strcmp(buf->filename, "makefile") == 0 || strcmp(buf->filename, "Makefile") == 0))
+    if (!want && (strcmp(buf->filename, "makefile") == 0 ||
+                  strcmp(buf->filename, "Makefile") == 0))
         want = "make";
 
-    if (!want) return 0;
-    if (ts_lang_is_loaded(st, want)) return 1;
+    if (!want)
+        return 0;
+    if (ts_lang_is_loaded(st, want))
+        return 1;
     return ts_buffer_load_language(buf, want);
 }
 
 void ts_buffer_reparse(Buffer *buf) {
-    if (!buf || !buf->ts_internal) return;
+    if (!buf || !buf->ts_internal)
+        return;
     TSState *st = (TSState *)buf->ts_internal;
-    if (!st->parser || !st->lang) return;
-    if (st->parsed_dirty == buf->dirty && st->tree) return;
-    char *src = NULL; size_t len = build_source(buf, &src);
-    if (!src) return;
-    if (st->tree) ts_tree_delete(st->tree);
+    if (!st->parser || !st->lang)
+        return;
+    if (st->parsed_dirty == buf->dirty && st->tree)
+        return;
+    char *src = NULL;
+    size_t len = build_source(buf, &src);
+    if (!src)
+        return;
+    if (st->tree)
+        ts_tree_delete(st->tree);
     st->tree = ts_parser_parse_string(st->parser, NULL, src, (uint32_t)len);
     st->parsed_dirty = buf->dirty;
     free(src);
 }
 
-size_t ts_highlight_line(Buffer *buf, int line_index,
-                         char *dst, size_t dst_cap,
+size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
                          int col_offset, int max_cols) {
     (void)dst_cap;
-    if (!g_ts_enabled || !buf || !buf->ts_internal) return 0;
+    if (!g_ts_enabled || !buf || !buf->ts_internal)
+        return 0;
     TSState *st = (TSState *)buf->ts_internal;
-    if (!st->tree || !st->query) return 0;
+    if (!st->tree || !st->query)
+        return 0;
     /* Compute byte range for this line */
     size_t start = 0;
-    for (int i = 0; i < line_index; i++) start += buf->rows[i].chars.len + 1;
+    for (int i = 0; i < line_index; i++)
+        start += buf->rows[i].chars.len + 1;
     size_t end = start + buf->rows[line_index].chars.len;
 
     TSNode root = ts_tree_root_node(st->tree);
@@ -239,13 +298,18 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
      *  @string, @comment, @variable, @constant, @number, @keyword,
      *  @type, @function, @property, @label, @operator, @delimiter, etc.
      */
-    typedef struct { uint32_t s, e; const char *sgr; } Seg;
-    Seg segs[128]; int sc = 0;
+    typedef struct {
+        uint32_t s, e;
+        const char *sgr;
+    } Seg;
+    Seg segs[128];
+    int sc = 0;
     TSQueryMatch m;
     while (ts_query_cursor_next_match(cur, &m) && sc < 128) {
         for (uint32_t i = 0; i < m.capture_count && sc < 128; i++) {
             TSQueryCapture c = m.captures[i];
-            const char *name; uint32_t nlen;
+            const char *name;
+            uint32_t nlen;
             name = ts_query_capture_name_for_id(st->query, c.index, &nlen);
             const char *sgr = NULL;
 
@@ -278,7 +342,8 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
                 /* type, type.builtin, constructor, module */
                 sgr = COLOR_TYPE;
             } else if (nlen >= 8 && strncmp(name, "function", 8) == 0) {
-                /* covers function, function.method, function.builtin, function.special */
+                /* covers function, function.method, function.builtin,
+                 * function.special */
                 sgr = COLOR_FUNCTION;
             } else if ((nlen >= 8 && strncmp(name, "property", 8) == 0) ||
                        (nlen >= 9 && strncmp(name, "attribute", 9) == 0)) {
@@ -290,7 +355,8 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
                 sgr = COLOR_OPERATOR;
             } else if ((nlen >= 11 && strncmp(name, "punctuation", 11) == 0) ||
                        (nlen >= 9 && strncmp(name, "delimiter", 9) == 0)) {
-                /* punctuation.bracket, punctuation.delimiter, punctuation.special, delimiter */
+                /* punctuation.bracket, punctuation.delimiter,
+                 * punctuation.special, delimiter */
                 sgr = COLOR_PUNCT;
             } else if (nlen >= 4 && strncmp(name, "text", 4) == 0) {
                 /* text.danger, text.warning, text.note */
@@ -310,10 +376,13 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
             }
             uint32_t s = ts_node_start_byte(c.node);
             uint32_t e = ts_node_end_byte(c.node);
-            if (e <= start || s >= end) continue;
-            if (s < start) s = (uint32_t)start;
-            if (e > end) e = (uint32_t)end;
-            segs[sc++] = (Seg){ s, e, sgr };
+            if (e <= start || s >= end)
+                continue;
+            if (s < start)
+                s = (uint32_t)start;
+            if (e > end)
+                e = (uint32_t)end;
+            segs[sc++] = (Seg){s, e, sgr};
         }
     }
     ts_query_cursor_delete(cur);
@@ -322,35 +391,56 @@ size_t ts_highlight_line(Buffer *buf, int line_index,
     const char *line = buf->rows[line_index].render.data;
     int linelen = (int)buf->rows[line_index].render.len;
     int x = col_offset;
-    if (x < 0) x = 0; if (x > linelen) x = linelen;
+    if (x < 0)
+        x = 0;
+    if (x > linelen)
+        x = linelen;
     int rem = max_cols;
     size_t out = 0;
     uint32_t line_start = (uint32_t)start;
     /* sort segs by start */
-    for (int i = 0; i < sc; i++) for (int j = i+1; j < sc; j++) if (segs[j].s < segs[i].s) { Seg t = segs[i]; segs[i]=segs[j]; segs[j]=t; }
+    for (int i = 0; i < sc; i++)
+        for (int j = i + 1; j < sc; j++)
+            if (segs[j].s < segs[i].s) {
+                Seg t = segs[i];
+                segs[i] = segs[j];
+                segs[j] = t;
+            }
     int si = 0;
     uint32_t pos = line_start + (uint32_t)x;
     while (rem > 0 && pos < line_start + (uint32_t)linelen) {
         int colored = 0;
-        while (si < sc && segs[si].e <= pos) si++;
+        while (si < sc && segs[si].e <= pos)
+            si++;
         if (si < sc && segs[si].s <= pos && pos < segs[si].e) {
             /* inside colored seg */
             size_t el = strlen(segs[si].sgr);
-            if (out + el < dst_cap) { memcpy(dst+out, segs[si].sgr, el); out += el; }
-            while (rem > 0 && pos < segs[si].e && pos < line_start + (uint32_t)linelen) {
+            if (out + el < dst_cap) {
+                memcpy(dst + out, segs[si].sgr, el);
+                out += el;
+            }
+            while (rem > 0 && pos < segs[si].e &&
+                   pos < line_start + (uint32_t)linelen) {
                 char ch = line[pos - line_start];
-                if (out + 1 < dst_cap) dst[out++] = ch;
-                pos++; rem--;
+                if (out + 1 < dst_cap)
+                    dst[out++] = ch;
+                pos++;
+                rem--;
             }
             const char *reset = COLOR_RESET;
             size_t rl = strlen(reset);
-            if (out + rl < dst_cap) { memcpy(dst+out, reset, rl); out += rl; }
+            if (out + rl < dst_cap) {
+                memcpy(dst + out, reset, rl);
+                out += rl;
+            }
             colored = 1;
         }
         if (!colored && rem > 0 && pos < line_start + (uint32_t)linelen) {
             char ch = line[pos - line_start];
-            if (out + 1 < dst_cap) dst[out++] = ch;
-            pos++; rem--;
+            if (out + 1 < dst_cap)
+                dst[out++] = ch;
+            pos++;
+            rem--;
         }
     }
     return out;

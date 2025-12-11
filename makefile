@@ -21,7 +21,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJECTS) 	
-	$(CC) -s -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	# echo '@':$@, '^':$^, '<':$<

@@ -2,7 +2,8 @@
 -Wextra
 -std=c23
 -pedantic
--O2
+-O0
+-g
 -I/usr/include
 -Isrc
 -Isrc/ui

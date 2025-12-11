@@ -1,8 +1,8 @@
-#include "hed.h"
 #include "lsp.h"
+#include "hed.h"
 
-#include <sys/types.h>
 #include <sys/select.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 /*
@@ -21,13 +21,13 @@
  */
 
 struct LspServer {
-    char *lang;       /* filetype / language id, e.g. "c", "python" */
-    char *root_uri;   /* workspace root (file:// URI) */
-    pid_t pid;        /* LSP server process id */
-    int to_fd;        /* write end (editor -> server stdin) */
-    int from_fd;      /* read end (server stdout -> editor) */
-    int initialized;  /* 1 after successful initialize/initialized */
-    int next_id;      /* next JSON-RPC id for requests */
+    char *lang;      /* filetype / language id, e.g. "c", "python" */
+    char *root_uri;  /* workspace root (file:// URI) */
+    pid_t pid;       /* LSP server process id */
+    int to_fd;       /* write end (editor -> server stdin) */
+    int from_fd;     /* read end (server stdout -> editor) */
+    int initialized; /* 1 after successful initialize/initialized */
+    int next_id;     /* next JSON-RPC id for requests */
 };
 
 static LspServer *g_servers = NULL;
@@ -104,4 +104,3 @@ void lsp_request_completion(Buffer *buf, int line, int col) {
     /* TODO: send textDocument/completion and show completion menu. */
     ed_set_status_message("LSP completion (stub)");
 }
-

@@ -4,7 +4,7 @@
 /* Recent files tracking - no duplicates, newest first */
 
 typedef struct {
-    char **items;       /* newest at index 0 */
+    char **items; /* newest at index 0 */
     int len;
     int cap;
 } RecentFiles;

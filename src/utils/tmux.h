@@ -39,7 +39,8 @@ int tmux_send_command(const char *cmd);
 
 /* tmux command history helpers (for :tmux_send browsing) */
 void tmux_history_reset_browse(void);
-int tmux_history_browse_up(const char *current_args, int current_len, char *out, int out_cap);
+int tmux_history_browse_up(const char *current_args, int current_len, char *out,
+                           int out_cap);
 int tmux_history_browse_down(char *out, int out_cap, int *restored);
 
 #endif /* TMUX_H */

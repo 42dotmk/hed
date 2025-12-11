@@ -24,11 +24,11 @@ EdError safe_strcpy(char *dst, const char *src, size_t dst_size) {
         /* Truncate: copy what fits and null-terminate */
         memcpy(dst, src, dst_size - 1);
         dst[dst_size - 1] = '\0';
-        return ED_ERR_INVALID_ARG;  /* Signal truncation */
+        return ED_ERR_INVALID_ARG; /* Signal truncation */
     }
 
     /* Safe to copy everything */
-    memcpy(dst, src, src_len + 1);  /* Include null terminator */
+    memcpy(dst, src, src_len + 1); /* Include null terminator */
     return ED_OK;
 }
 
@@ -45,17 +45,17 @@ EdError safe_strcat(char *dst, const char *src, size_t dst_size) {
     }
 
     size_t src_len = strlen(src);
-    size_t available = dst_size - dst_len - 1;  /* Space for null terminator */
+    size_t available = dst_size - dst_len - 1; /* Space for null terminator */
 
     if (src_len > available) {
         /* Truncate: append what fits and null-terminate */
         memcpy(dst + dst_len, src, available);
         dst[dst_size - 1] = '\0';
-        return ED_ERR_INVALID_ARG;  /* Signal truncation */
+        return ED_ERR_INVALID_ARG; /* Signal truncation */
     }
 
     /* Safe to append everything */
-    memcpy(dst + dst_len, src, src_len + 1);  /* Include null terminator */
+    memcpy(dst + dst_len, src, src_len + 1); /* Include null terminator */
     return ED_OK;
 }
 

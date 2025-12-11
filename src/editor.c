@@ -1,14 +1,20 @@
 #include "hed.h"
 #include <dirent.h>
-#include <sys/stat.h>
 #include <limits.h>
+#include <linux/limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 Ed E;
 
 /* --- Command-line (:) file path completion --- */
 static void cmdcomp_clear(void) {
     if (E.cmd_complete.items) {
-        for (int i = 0; i < E.cmd_complete.count; i++) free(E.cmd_complete.items[i]);
+        for (int i = 0; i < E.cmd_complete.count; i++)
+            free(E.cmd_complete.items[i]);
         free(E.cmd_complete.items);
     }
     E.cmd_complete.items = NULL;
@@ -23,10 +29,14 @@ static void cmdcomp_apply_token(const char *replacement) {
     int len = E.command_len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (E.command_buf[i] == ' ') { start = i + 1; break; }
+        if (E.command_buf[i] == ' ') {
+            start = i + 1;
+            break;
+        }
     }
     int rlen = (int)strlen(replacement);
-    if (start + rlen >= (int)sizeof(E.command_buf)) rlen = (int)sizeof(E.command_buf) - 1 - start;
+    if (start + rlen >= (int)sizeof(E.command_buf))
+        rlen = (int)sizeof(E.command_buf) - 1 - start;
     memcpy(E.command_buf + start, replacement, (size_t)rlen);
     E.command_len = start + rlen;
     E.command_buf[E.command_len] = '\0';
@@ -38,19 +48,32 @@ static void cmdcomp_build(void) {
     int len = E.command_len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (E.command_buf[i] == ' ') { start = i + 1; break; }
+        if (E.command_buf[i] == ' ') {
+            start = i + 1;
+            break;
+        }
     }
     char token[PATH_MAX];
-    int tlen = len - start; if (tlen < 0) tlen = 0; if (tlen > (int)sizeof(token) - 1) tlen = (int)sizeof(token) - 1;
-    memcpy(token, E.command_buf + start, (size_t)tlen); token[tlen] = '\0';
+    int tlen = len - start;
+    if (tlen < 0)
+        tlen = 0;
+    if (tlen > (int)sizeof(token) - 1)
+        tlen = (int)sizeof(token) - 1;
+    memcpy(token, E.command_buf + start, (size_t)tlen);
+    token[tlen] = '\0';
     /* Only start completion if token begins with '.', '~', or '/' */
-    if (tlen == 0) return;
+    if (tlen == 0)
+        return;
     char first = token[0];
-    if (!(first == '.' || first == '~' || first == '/')) return;
+    if (!(first == '.' || first == '~' || first == '/'))
+        return;
     char full[PATH_MAX];
     if (token[0] == '~' && home) {
-        if (token[1] == '/' || token[1] == '\0') snprintf(full, sizeof(full), "%s/%s", home, token[1] ? token + 2 - 1 : "");
-        else snprintf(full, sizeof(full), "%s", token); /* unsupported ~user */
+        if (token[1] == '/' || token[1] == '\0')
+            snprintf(full, sizeof(full), "%s/%s", home,
+                     token[1] ? token + 2 - 1 : "");
+        else
+            snprintf(full, sizeof(full), "%s", token); /* unsupported ~user */
     } else {
         snprintf(full, sizeof(full), "%s", token);
     }
@@ -59,39 +82,52 @@ static void cmdcomp_build(void) {
     char pref[PATH_MAX];
     if (slash) {
         size_t blen = (size_t)(slash - full + 1);
-        if (blen >= sizeof(base)) blen = sizeof(base) - 1;
-        memcpy(base, full, blen); base[blen] = '\0';
+        if (blen >= sizeof(base))
+            blen = sizeof(base) - 1;
+        memcpy(base, full, blen);
+        base[blen] = '\0';
         snprintf(pref, sizeof(pref), "%s", slash + 1);
     } else {
-        base[0] = '\0'; snprintf(pref, sizeof(pref), "%s", full);
+        base[0] = '\0';
+        snprintf(pref, sizeof(pref), "%s", full);
     }
     DIR *d = opendir(base[0] ? base : ".");
-    if (!d) return;
+    if (!d)
+        return;
     struct dirent *de;
-    int cap = 0; int count = 0; char **items = NULL;
+    int cap = 0;
+    int count = 0;
+    char **items = NULL;
     while ((de = readdir(d)) != NULL) {
         const char *name = de->d_name;
-        if (name[0] == '.' && pref[0] != '.') continue;
-        if (strncmp(name, pref, strlen(pref)) != 0) continue;
+        if (name[0] == '.' && pref[0] != '.')
+            continue;
+        if (strncmp(name, pref, strlen(pref)) != 0)
+            continue;
         int isdir = 0;
 #ifdef DT_DIR
-        if (de->d_type == DT_DIR) isdir = 1;
+        if (de->d_type == DT_DIR)
+            isdir = 1;
         if (de->d_type == DT_UNKNOWN)
 #endif
         {
             char path[PATH_MAX];
             snprintf(path, sizeof(path), "%s%s", base[0] ? base : "", name);
-            struct stat st; if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) isdir = 1;
+            struct stat st;
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                isdir = 1;
         }
         char cand[PATH_MAX];
         /* Include base path so tokens like "src/" complete to "src/<entry>" */
-        snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name, isdir ? "/" : "");
+        snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name,
+                 isdir ? "/" : "");
         if (count + 1 > cap) {
             cap = cap ? cap * 2 : 16;
-            char **new_items = realloc(items, (size_t)cap * sizeof(char*));
+            char **new_items = realloc(items, (size_t)cap * sizeof(char *));
             if (!new_items) {
                 /* OOM: cleanup and abort completion */
-                for (int i = 0; i < count; i++) free(items[i]);
+                for (int i = 0; i < count; i++)
+                    free(items[i]);
                 free(items);
                 closedir(d);
                 return;
@@ -101,7 +137,8 @@ static void cmdcomp_build(void) {
         char *cand_copy = strdup(cand);
         if (!cand_copy) {
             /* OOM: cleanup and abort completion */
-            for (int i = 0; i < count; i++) free(items[i]);
+            for (int i = 0; i < count; i++)
+                free(items[i]);
             free(items);
             closedir(d);
             return;
@@ -109,7 +146,10 @@ static void cmdcomp_build(void) {
         items[count++] = cand_copy;
     }
     closedir(d);
-    if (count == 0) { free(items); return; }
+    if (count == 0) {
+        free(items);
+        return;
+    }
     E.cmd_complete.items = items;
     E.cmd_complete.count = count;
     E.cmd_complete.index = 0;
@@ -121,29 +161,33 @@ static void cmdcomp_build(void) {
 }
 
 static void cmdcomp_next(void) {
-    if (!E.cmd_complete.active || E.cmd_complete.count == 0) { cmdcomp_build(); return; }
+    if (!E.cmd_complete.active || E.cmd_complete.count == 0) {
+        cmdcomp_build();
+        return;
+    }
     E.cmd_complete.index = (E.cmd_complete.index + 1) % E.cmd_complete.count;
     cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
 }
 
 void ed_change_cursor_shape(void) {
     switch (E.mode) {
-        case MODE_NORMAL:
-            write(STDOUT_FILENO, CURSOR_STYLE_BLOCK, 5);
-            break;
-        case MODE_INSERT:
-            write(STDOUT_FILENO,CURSOR_STYLE_BEAM, 5);
-            break;
-        case MODE_COMMAND:
-        case MODE_VISUAL:
-        case MODE_VISUAL_BLOCK:
-            write(STDOUT_FILENO,CURSOR_STYLE_BLOCK, 5);
-            break;
+    case MODE_NORMAL:
+        write(STDOUT_FILENO, CURSOR_STYLE_BLOCK, 5);
+        break;
+    case MODE_INSERT:
+        write(STDOUT_FILENO, CURSOR_STYLE_BEAM, 5);
+        break;
+    case MODE_COMMAND:
+    case MODE_VISUAL:
+    case MODE_VISUAL_BLOCK:
+        write(STDOUT_FILENO, CURSOR_STYLE_BLOCK, 5);
+        break;
     }
 }
 
 void ed_set_mode(EditorMode new_mode) {
-    if (E.mode == new_mode) return;
+    if (E.mode == new_mode)
+        return;
 
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
@@ -171,24 +215,33 @@ void ed_set_mode(EditorMode new_mode) {
 static int command_tmux_history_nav(int direction) {
     const char *cmd = "tmux_send";
     size_t plen = strlen(cmd);
-    if ((size_t)E.command_len < plen) return 0;
-    if (strncmp(E.command_buf, cmd, plen) != 0) return 0;
-    if ((size_t)E.command_len > plen && E.command_buf[plen] != ' ') return 0;
+    if ((size_t)E.command_len < plen)
+        return 0;
+    if (strncmp(E.command_buf, cmd, plen) != 0)
+        return 0;
+    if ((size_t)E.command_len > plen && E.command_buf[plen] != ' ')
+        return 0;
 
     const char *args = E.command_buf + plen;
-    if (*args == ' ') args++;
+    if (*args == ' ')
+        args++;
     int args_len = E.command_len - (int)(args - E.command_buf);
 
     char candidate[512];
-    int ok = (direction < 0)
-        ? tmux_history_browse_up(args, args_len, candidate, (int)sizeof(candidate))
-        : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
-    if (!ok) return 0;
+    int ok =
+        (direction < 0)
+            ? tmux_history_browse_up(args, args_len, candidate,
+                                     (int)sizeof(candidate))
+            : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
+    if (!ok)
+        return 0;
 
     int n = snprintf(E.command_buf, sizeof(E.command_buf), "tmux_send%s%s",
                      candidate[0] ? " " : "", candidate);
-    if (n < 0) n = 0;
-    if (n >= (int)sizeof(E.command_buf)) n = (int)sizeof(E.command_buf) - 1;
+    if (n < 0)
+        n = 0;
+    if (n >= (int)sizeof(E.command_buf))
+        n = (int)sizeof(E.command_buf) - 1;
     E.command_buf[n] = '\0';
     E.command_len = n;
     return 1;
@@ -197,33 +250,46 @@ int ed_read_key(void) {
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-        if (nread == -1 && errno != EAGAIN) die("read");
+        if (nread == -1 && errno != EAGAIN)
+            die("read");
     }
 
     if (c == '\x1b') {
         char seq[3];
 
-        if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
-        if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[0], 1) != 1)
+            return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1)
+            return '\x1b';
 
         if (seq[0] == '[') {
             if (seq[1] >= '0' && seq[1] <= '9') {
-                if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+                if (read(STDIN_FILENO, &seq[2], 1) != 1)
+                    return '\x1b';
                 if (seq[2] == '~') {
                     switch (seq[1]) {
-                        case '3': return KEY_DELETE;
-                        case '5': return KEY_PAGE_UP;
-                        case '6': return KEY_PAGE_DOWN;
+                    case '3':
+                        return KEY_DELETE;
+                    case '5':
+                        return KEY_PAGE_UP;
+                    case '6':
+                        return KEY_PAGE_DOWN;
                     }
                 }
             } else {
                 switch (seq[1]) {
-                    case 'A': return KEY_ARROW_UP;
-                    case 'B': return KEY_ARROW_DOWN;
-                    case 'C': return KEY_ARROW_RIGHT;
-                    case 'D': return KEY_ARROW_LEFT;
-                    case 'H': return KEY_HOME;
-                    case 'F': return KEY_END;
+                case 'A':
+                    return KEY_ARROW_UP;
+                case 'B':
+                    return KEY_ARROW_DOWN;
+                case 'C':
+                    return KEY_ARROW_RIGHT;
+                case 'D':
+                    return KEY_ARROW_LEFT;
+                case 'H':
+                    return KEY_HOME;
+                case 'F':
+                    return KEY_END;
                 }
             }
         }
@@ -235,24 +301,38 @@ int ed_read_key(void) {
 }
 
 /* Insert a single-byte or a UTF-8 multi-byte sequence as one unit */
-__attribute__((unused))
-static void insert_utf8_or_byte(int first) {
+__attribute__((unused)) static void insert_utf8_or_byte(int first) {
     unsigned char uc = (unsigned char)first;
-    if (uc < 0x80) { buf_insert_char_in(buf_cur(), first); return; }
+    if (uc < 0x80) {
+        buf_insert_char_in(buf_cur(), first);
+        return;
+    }
     int need = 0;
-    if ((uc & 0xE0) == 0xC0) need = 2;
-    else if ((uc & 0xF0) == 0xE0) need = 3;
-    else if ((uc & 0xF8) == 0xF0) need = 4;
-    else { buf_insert_char_in(buf_cur(), first); return; }
-    char bytes[4]; bytes[0] = (char)first; int got = 1;
+    if ((uc & 0xE0) == 0xC0)
+        need = 2;
+    else if ((uc & 0xF0) == 0xE0)
+        need = 3;
+    else if ((uc & 0xF8) == 0xF0)
+        need = 4;
+    else {
+        buf_insert_char_in(buf_cur(), first);
+        return;
+    }
+    char bytes[4];
+    bytes[0] = (char)first;
+    int got = 1;
     while (got < need) {
-        char b; int n = read(STDIN_FILENO, &b, 1);
-        if (n != 1) break;
+        char b;
+        int n = read(STDIN_FILENO, &b, 1);
+        if (n != 1)
+            break;
         unsigned char ub = (unsigned char)b;
         bytes[got++] = b;
-        if ((ub & 0xC0) != 0x80) break; /* must be 10xxxxxx */
+        if ((ub & 0xC0) != 0x80)
+            break; /* must be 10xxxxxx */
     }
-    for (int i = 0; i < got; i++) buf_insert_char_in(buf_cur(), (unsigned char)bytes[i]);
+    for (int i = 0; i < got; i++)
+        buf_insert_char_in(buf_cur(), (unsigned char)bytes[i]);
 }
 
 void ed_move_cursor(int key) {
@@ -274,15 +354,16 @@ void ed_process_command(void) {
     char *cmd_args = NULL;
 
     if (space) {
-        *space = '\0';  /* Split command name and args */
+        *space = '\0'; /* Split command name and args */
         cmd_args = space + 1;
     }
 
     /* Execute command */
-    log_msg(":%s%s%s", cmd_name, cmd_args?" ":"", cmd_args?cmd_args:"");
+    log_msg(":%s%s%s", cmd_name, cmd_args ? " " : "", cmd_args ? cmd_args : "");
     if (!command_execute(cmd_name, cmd_args)) {
         /* Restore space if we modified the buffer */
-        if (space) *space = ' ';
+        if (space)
+            *space = ' ';
         ed_set_status_message("Unknown command: %s", E.command_buf);
     } else {
         /* Successful command: record to history and ':' register */
@@ -303,7 +384,8 @@ void ed_process_command(void) {
     }
 }
 
-/* Mode-specific keypress handlers (refactored for clarity and maintainability) */
+/* Mode-specific keypress handlers (refactored for clarity and maintainability)
+ */
 
 static void handle_command_mode_keypress(int c) {
     if (c == '\r') {
@@ -315,7 +397,8 @@ static void handle_command_mode_keypress(int c) {
         tmux_history_reset_browse();
         cmdcomp_clear();
     } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
-        if (E.command_len > 0) E.command_len--;
+        if (E.command_len > 0)
+            E.command_len--;
         hist_reset_browse(&E.history);
         tmux_history_reset_browse();
         cmdcomp_clear();
@@ -338,7 +421,8 @@ static void handle_command_mode_keypress(int c) {
             cmdcomp_clear();
         } else {
             tmux_history_reset_browse();
-            if (hist_browse_down(&E.history, E.command_buf, (int)sizeof(E.command_buf), &restored)) {
+            if (hist_browse_down(&E.history, E.command_buf,
+                                 (int)sizeof(E.command_buf), &restored)) {
                 E.command_len = (int)strlen(E.command_buf);
             }
             cmdcomp_clear();
@@ -356,61 +440,23 @@ static void handle_command_mode_keypress(int c) {
 }
 
 static void handle_insert_mode_keypress(int c, Buffer *buf) {
-    /* Try keybindings first (e.g., Ctrl+S to save in insert mode) */
-    if (keybind_process(c, E.mode)) {
+    if (!buf)
         return;
-    }
-
-    switch (c) {
-        case '\x1b':
-            ed_set_mode(MODE_NORMAL);
-            {
-                Window *win = window_cur();
-                if (buf && win && win->cursor.x > 0) win->cursor.x--;
-            }
-            break;
-        case '\r':
-            buf_insert_newline_in(buf);
-            break;
-        case '\t': {
-            /* Insert tab character or spaces depending on expand_tab */
-            Window *win = window_cur();
-            if (!buf || !win) break;
-            int tabw = (E.tab_size > 0) ? E.tab_size : TAB_STOP;
-            if (!E.expand_tab) {
-                buf_insert_char_in(buf, '\t');
-            } else {
-                int cx = win->cursor.x;
-                int spaces = tabw - (cx % tabw);
-                for (int i = 0; i < spaces; i++) {
-                    buf_insert_char_in(buf, ' ');
-                }
-            }
-            break;
-        }
-        case KEY_DELETE:
-        case CTRL_KEY('h'):
-            buf_del_char_in(buf);
-            break;
-        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
-        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
-            ed_move_cursor(c);
-            break;
-        default:
-            if (!iscntrl(c)) {
-                buf_insert_char_in(buf, c);
-            }
-            break;
+    if (keybind_process(c, E.mode))
+        return;
+    if (!iscntrl(c)) {
+        buf_insert_char_in(buf, c);
     }
 }
 
 /*
  * Interactive search prompt.
- * Reads a search query from the user and executes the search in the current buffer.
- * Handles Enter (execute), Escape (cancel), and backspace during input.
+ * Reads a search query from the user and executes the search in the current
+ * buffer. Handles Enter (execute), Escape (cancel), and backspace during input.
  */
 static void ed_start_search(Buffer *buf) {
-    if (!PTR_VALID(buf)) return;
+    if (!PTR_VALID(buf))
+        return;
 
     /* Save current mode and enter command mode for visual feedback */
     EditorMode saved_mode = E.mode;
@@ -455,86 +501,24 @@ static void ed_start_search(Buffer *buf) {
     buf_find_in(buf);
 }
 
-static void handle_normal_mode_keypress(int c, Buffer *buf) {
-    if (!PTR_VALID(buf)) return;
-
-    /* Try keybindings first */
-    if (keybind_process(c, E.mode)) {
+void ed_search_prompt(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
         return;
-    }
+    ed_start_search(buf);
+}
 
-    /* Fallback handlers for keys not bound */
-    switch (c) {
-        case 'h': case 'j': case 'k': case 'l':
-        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
-        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
-            ed_move_cursor(c);
-            break;
-        case '/':
-            ed_start_search(buf);
-            break;
-    }
+static void handle_normal_mode_keypress(int c, Buffer *buf) {
+    (void)buf;
+    keybind_process(c, E.mode);
 }
 
 static void handle_visual_mode_keypress(int c, Buffer *buf, int block_mode) {
-    Window *win = window_cur();
-    if (!buf || !win) return;
-
-    if (c == '\x1b') {
-        kb_visual_clear(win);
-        ed_set_mode(MODE_NORMAL);
-        return;
+    (void)buf;
+    (void)block_mode;
+    if (!keybind_process(c, E.mode)) {
+        keybind_process(c, MODE_NORMAL);
     }
-
-    if (c == 'y') {
-        if (kb_visual_yank(buf, win, block_mode)) {
-            kb_visual_clear(win);
-            ed_set_mode(MODE_NORMAL);
-        }
-        return;
-    }
-    if (c == 'd') {
-        kb_visual_delete(buf, win, block_mode);
-        return;
-    }
-    if (c == 'v' && !block_mode) {
-        kb_visual_clear(win);
-        ed_set_mode(MODE_NORMAL);
-        return;
-    }
-    if (c == CTRL_KEY('v')) {
-        if (block_mode) {
-            kb_visual_clear(win);
-            ed_set_mode(MODE_NORMAL);
-        } else {
-            kb_visual_begin(1);
-        }
-        return;
-    }
-
-    /* Movement extends selection */
-    switch (c) {
-        case 'h': case 'j': case 'k': case 'l':
-        case KEY_ARROW_UP: case KEY_ARROW_DOWN:
-        case KEY_ARROW_RIGHT: case KEY_ARROW_LEFT:
-            ed_move_cursor(c);
-            return;
-        case 'i':
-            kb_visual_clear(win);
-            kb_enter_insert_mode();
-            return;
-        case 'a':
-            kb_visual_clear(win);
-            kb_append_mode();
-            return;
-        case ':':
-            kb_visual_clear(win);
-            kb_enter_command_mode();
-            return;
-    }
-
-    /* Allow other normal-mode bindings to fire (they'll clear buffer if unmatched) */
-    keybind_process(c, MODE_NORMAL);
 }
 
 /* Main keypress dispatcher - delegates to mode-specific handlers */
@@ -547,21 +531,21 @@ void ed_process_keypress(void) {
 
     /* Dispatch to appropriate mode handler */
     switch (E.mode) {
-        case MODE_COMMAND:
-            handle_command_mode_keypress(c);
-            break;
-        case MODE_INSERT:
-            handle_insert_mode_keypress(c, buf);
-            break;
-        case MODE_NORMAL:
-            handle_normal_mode_keypress(c, buf);
-            break;
-        case MODE_VISUAL:
-            handle_visual_mode_keypress(c, buf, 0);
-            break;
-        case MODE_VISUAL_BLOCK:
-            handle_visual_mode_keypress(c, buf, 1);
-            break;
+    case MODE_COMMAND:
+        handle_command_mode_keypress(c);
+        break;
+    case MODE_INSERT:
+        handle_insert_mode_keypress(c, buf);
+        break;
+    case MODE_NORMAL:
+        handle_normal_mode_keypress(c, buf);
+        break;
+    case MODE_VISUAL:
+        handle_visual_mode_keypress(c, buf, 0);
+        break;
+    case MODE_VISUAL_BLOCK:
+        handle_visual_mode_keypress(c, buf, 1);
+        break;
     }
 
     /* Fire cursor-move hook if cursor changed position */
@@ -572,7 +556,7 @@ void ed_process_keypress(void) {
         hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
     }
 }
-void ed_init_state(){
+void ed_init_state() {
     E.buffers.data = NULL;
     E.buffers.len = 0;
     E.buffers.cap = 0;
@@ -607,7 +591,8 @@ void ed_init(int create_default_buffer) {
         E.cwd[0] = '\0';
     }
 
-    if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) die("get_window_size");
+    if (get_window_size(&E.screen_rows, &E.screen_cols) == -1)
+        die("get_window_size");
     E.screen_rows -= 2; /* Status bar and message bar */
     qf_init(&E.qf);
     regs_init();

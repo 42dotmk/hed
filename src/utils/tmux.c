@@ -1,6 +1,6 @@
-#include "hed.h"
 #include "tmux.h"
 #include "cmd_util.h"
+#include "hed.h"
 #include <stdarg.h>
 #include <sys/wait.h>
 
@@ -17,7 +17,8 @@ static char tmux_hist_prefix[512];
 static int tmux_hist_prefix_len = 0;
 
 __attribute__((unused)) static void tmux_history_clear(void) {
-    for (int i = 0; i < tmux_history_len; i++) free(tmux_history[i]);
+    for (int i = 0; i < tmux_history_len; i++)
+        free(tmux_history[i]);
     tmux_history_len = 0;
 }
 
@@ -30,15 +31,18 @@ void tmux_history_reset_browse(void) {
 }
 
 static int tmux_hist_prefix_match(const char *entry) {
-    if (!entry) return 0;
+    if (!entry)
+        return 0;
     for (int i = 0; i < tmux_hist_prefix_len; i++) {
-        if (!entry[i] || entry[i] != tmux_hist_prefix[i]) return 0;
+        if (!entry[i] || entry[i] != tmux_hist_prefix[i])
+            return 0;
     }
     return 1;
 }
 
 static void tmux_history_add(const char *cmd) {
-    if (!cmd || !*cmd) return;
+    if (!cmd || !*cmd)
+        return;
     /* Dedup existing entry */
     for (int i = 0; i < tmux_history_len; i++) {
         if (strcmp(tmux_history[i], cmd) == 0) {
@@ -53,16 +57,22 @@ static void tmux_history_add(const char *cmd) {
         free(tmux_history[TMUX_HISTORY_MAX - 1]);
         tmux_history_len--;
     }
-    memmove(&tmux_history[1], &tmux_history[0], (size_t)tmux_history_len * sizeof(char *));
+    memmove(&tmux_history[1], &tmux_history[0],
+            (size_t)tmux_history_len * sizeof(char *));
     tmux_history[0] = strdup(cmd);
-    if (tmux_history[0]) tmux_history_len++;
+    if (tmux_history[0])
+        tmux_history_len++;
     tmux_history_reset_browse();
 }
 
-int tmux_history_browse_up(const char *current_args, int current_len, char *out, int out_cap) {
-    if (!out || out_cap <= 0 || tmux_history_len == 0) return 0;
-    if (!current_args) current_args = "";
-    if (current_len < 0) current_len = 0;
+int tmux_history_browse_up(const char *current_args, int current_len, char *out,
+                           int out_cap) {
+    if (!out || out_cap <= 0 || tmux_history_len == 0)
+        return 0;
+    if (!current_args)
+        current_args = "";
+    if (current_len < 0)
+        current_len = 0;
 
     if (tmux_hist_idx == -1) {
         tmux_hist_saved_len = current_len;
@@ -90,9 +100,12 @@ int tmux_history_browse_up(const char *current_args, int current_len, char *out,
 }
 
 int tmux_history_browse_down(char *out, int out_cap, int *restored) {
-    if (restored) *restored = 0;
-    if (!out || out_cap <= 0 || tmux_history_len == 0) return 0;
-    if (tmux_hist_idx == -1) return 0;
+    if (restored)
+        *restored = 0;
+    if (!out || out_cap <= 0 || tmux_history_len == 0)
+        return 0;
+    if (tmux_hist_idx == -1)
+        return 0;
 
     for (int i = tmux_hist_idx - 1; i >= 0; i--) {
         if (tmux_hist_prefix_match(tmux_history[i])) {
@@ -103,9 +116,11 @@ int tmux_history_browse_down(char *out, int out_cap, int *restored) {
     }
 
     tmux_hist_idx = -1;
-    if (restored) *restored = 1;
+    if (restored)
+        *restored = 1;
     int n = tmux_hist_saved_len;
-    if (n > out_cap - 1) n = out_cap - 1;
+    if (n > out_cap - 1)
+        n = out_cap - 1;
     memcpy(out, tmux_hist_saved, (size_t)n);
     out[n] = '\0';
     return 1;
@@ -118,9 +133,12 @@ static int tmux_systemf(const char *fmt, ...) {
     vsnprintf(cmd, sizeof(cmd), fmt, ap);
     va_end(ap);
     int status = term_cmd_system(cmd);
-    if (status == -1) return -1;
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    if (status == -1)
+        return -1;
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status))
+        return 128 + WTERMSIG(status);
     return status;
 }
 
@@ -132,7 +150,8 @@ int tmux_is_available(void) {
 /* Check whether our cached pane id still refers to an existing pane
  * (in any window of the current session). */
 static int tmux_pane_exists(void) {
-    if (!tmux_pane_id_set || !tmux_pane_id[0]) return 0;
+    if (!tmux_pane_id_set || !tmux_pane_id[0])
+        return 0;
 
     char **lines = NULL;
     int count = 0;
@@ -166,11 +185,12 @@ int tmux_ensure_pane(void) {
         return 1;
     }
 
-    /* Create a new vertical split in the CURRENT window and capture its pane_id.
-     * Use -d so tmux keeps focus in the editor pane. */
+    /* Create a new vertical split in the CURRENT window and capture its
+     * pane_id. Use -d so tmux keeps focus in the editor pane. */
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux split-window -v -d -P -F '#{pane_id}'", &lines, &count)) {
+    if (!term_cmd_run("tmux split-window -v -d -P -F '#{pane_id}'", &lines,
+                      &count)) {
         ed_set_status_message("tmux: failed to create pane");
         return 0;
     }
@@ -188,13 +208,16 @@ int tmux_ensure_pane(void) {
     return 1;
 }
 
-/* Get the current window id into out/outsz. Returns 1 on success, 0 on failure. */
+/* Get the current window id into out/outsz. Returns 1 on success, 0 on failure.
+ */
 static int tmux_get_current_window_id(char *out, size_t outsz) {
-    if (!out || outsz == 0) return 0;
+    if (!out || outsz == 0)
+        return 0;
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux display-message -p '#{window_id}'", &lines, &count)) {
+    if (!term_cmd_run("tmux display-message -p '#{window_id}'", &lines,
+                      &count)) {
         return 0;
     }
     if (count <= 0 || !lines[0] || !lines[0][0]) {
@@ -208,18 +231,22 @@ static int tmux_get_current_window_id(char *out, size_t outsz) {
 }
 
 /* Look up the window id that currently owns pane_id. */
-static int tmux_get_pane_window_id(const char *pane_id, char *out, size_t outsz) {
-    if (!pane_id || !*pane_id || !out || outsz == 0) return 0;
+static int tmux_get_pane_window_id(const char *pane_id, char *out,
+                                   size_t outsz) {
+    if (!pane_id || !*pane_id || !out || outsz == 0)
+        return 0;
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux list-panes -a -F '#{pane_id} #{window_id}'", &lines, &count)) {
+    if (!term_cmd_run("tmux list-panes -a -F '#{pane_id} #{window_id}'", &lines,
+                      &count)) {
         return 0;
     }
 
     int found = 0;
     for (int i = 0; i < count; i++) {
-        if (!lines[i]) continue;
+        if (!lines[i])
+            continue;
         char pid[64] = {0};
         char wid[64] = {0};
         if (sscanf(lines[i], "%63s %63s", pid, wid) == 2) {
@@ -257,18 +284,23 @@ int tmux_toggle_pane(void) {
     }
 
     if (strcmp(cur_wid, pane_wid) == 0) {
-        /* Currently visible in this window -> hide by breaking into its own window. */
+        /* Currently visible in this window -> hide by breaking into its own
+         * window. */
         int status = tmux_systemf("tmux break-pane -dP -s %s", tmux_pane_id);
         if (status != 0) {
-            /* Fallback: if breaking fails, try killing the pane so next toggle recreates it. */
-            int kill_status = tmux_systemf("tmux kill-pane -t %s", tmux_pane_id);
+            /* Fallback: if breaking fails, try killing the pane so next toggle
+             * recreates it. */
+            int kill_status =
+                tmux_systemf("tmux kill-pane -t %s", tmux_pane_id);
             tmux_pane_id_set = 0;
             tmux_pane_id[0] = '\0';
             if (kill_status == 0) {
-                ed_set_status_message("tmux: runner pane closed (break failed: %d)", status);
+                ed_set_status_message(
+                    "tmux: runner pane closed (break failed: %d)", status);
                 return 1;
             }
-            ed_set_status_message("tmux: failed to hide pane %s (status %d)", tmux_pane_id, status);
+            ed_set_status_message("tmux: failed to hide pane %s (status %d)",
+                                  tmux_pane_id, status);
             return 0;
         }
         ed_set_status_message("tmux: hid runner pane");
@@ -321,7 +353,8 @@ int tmux_send_command(const char *cmd) {
     char esc[1024];
     shell_escape_single(cmd, esc, sizeof(esc));
 
-    int status = tmux_systemf("tmux send-keys -t %s %s Enter", tmux_pane_id, esc);
+    int status =
+        tmux_systemf("tmux send-keys -t %s %s Enter", tmux_pane_id, esc);
     if (status != 0) {
         ed_set_status_message("tmux: send-keys failed (status %d)", status);
         return 0;

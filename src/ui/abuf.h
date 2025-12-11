@@ -15,4 +15,3 @@ void ab_append(Abuf *ab, const void *src, int n);
 void ab_append_str(Abuf *ab, const char *s);
 
 #endif /* ABUF_H */
-

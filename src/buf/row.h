@@ -2,8 +2,8 @@
 #define ROW_H
 #include "sizedstr.h"
 typedef struct {
-    SizedStr chars;   /* Original text */
-    SizedStr render;  /* Rendered text (with tabs expanded) */
+    SizedStr chars;  /* Original text */
+    SizedStr render; /* Rendered text (with tabs expanded) */
 } Row;
 
 /* Row operations */

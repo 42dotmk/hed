@@ -4,10 +4,10 @@
 /* Command history structure and API */
 
 typedef struct {
-    char **items;       /* newest at index 0 */
+    char **items; /* newest at index 0 */
     int len;
     int cap;
-    int idx;            /* browsing index; -1 when not browsing */
+    int idx; /* browsing index; -1 when not browsing */
     char saved_line[80];
     int saved_len;
     char prefix[80];
@@ -39,4 +39,3 @@ int hist_len(const CmdHistory *h);
 const char *hist_get(const CmdHistory *h, int idx);
 
 #endif /* HISTORY_H */
-

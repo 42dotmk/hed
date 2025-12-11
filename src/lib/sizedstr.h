@@ -7,7 +7,7 @@
 typedef struct {
     char *data;
     size_t len;
-    size_t cap;  /* capacity for future use */
+    size_t cap; /* capacity for future use */
 } SizedStr;
 
 /* SizedStr helper functions */

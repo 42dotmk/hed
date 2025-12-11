@@ -1,19 +1,17 @@
 #ifndef UNDO_H
 #define UNDO_H
 
-#include <stddef.h>
 #include "editor.h"
+#include <stddef.h>
 
-typedef enum {
-    UREC_INSERT_TEXT = 1,
-    UREC_DELETE_TEXT = 2
-} UndoRecType;
+typedef enum { UREC_INSERT_TEXT = 1, UREC_DELETE_TEXT = 2 } UndoRecType;
 
 typedef struct {
     UndoRecType type;
     int y; /* start position (line) */
     int x; /* start position (column) */
-    /* payload is required for INSERT (text inserted) and DELETE (text deleted) */
+    /* payload is required for INSERT (text inserted) and DELETE (text deleted)
+     */
     SizedStr payload;
     int cy_before, cx_before; /* cursor before operation */
     int cy_after, cx_after;   /* cursor after operation */
@@ -35,10 +33,10 @@ void undo_clear_redo(void);
 void undo_on_mode_change(EditorMode old_mode, EditorMode new_mode);
 
 /* Logging helpers (call around edits). These also clear redo. */
-void undo_push_insert(int y, int x, const char *data, size_t len,
-                      int cy_before, int cx_before, int cy_after, int cx_after);
-void undo_push_delete(int y, int x, const char *data, size_t len,
-                      int cy_before, int cx_before, int cy_after, int cx_after);
+void undo_push_insert(int y, int x, const char *data, size_t len, int cy_before,
+                      int cx_before, int cy_after, int cx_after);
+void undo_push_delete(int y, int x, const char *data, size_t len, int cy_before,
+                      int cx_before, int cy_after, int cx_after);
 
 /* Perform undo/redo. Return 1 if something was done, 0 otherwise. */
 int undo_perform(void);
@@ -48,4 +46,3 @@ int redo_perform(void);
 int undo_is_applying(void);
 
 #endif /* UNDO_H */
-

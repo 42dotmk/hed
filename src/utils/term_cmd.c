@@ -1,12 +1,13 @@
-#include "hed.h"
 #include "term_cmd.h"
+#include "hed.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* Helper: trim trailing newline/carriage return */
 static void trim_eol(char *s) {
-    if (!s) return;
+    if (!s)
+        return;
     size_t n = strlen(s);
     while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) {
         s[--n] = '\0';
@@ -14,9 +15,12 @@ static void trim_eol(char *s) {
 }
 
 int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
-    if (!cmd) return 0;
-    if (out_lines) *out_lines = NULL;
-    if (out_count) *out_count = 0;
+    if (!cmd)
+        return 0;
+    if (out_lines)
+        *out_lines = NULL;
+    if (out_count)
+        *out_count = 0;
 
     /* Disable raw mode for command execution */
     disable_raw_mode();
@@ -40,10 +44,12 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
         /* Grow array if needed */
         if (count + 1 > capacity) {
             capacity = capacity ? capacity * 2 : 8;
-            char **new_lines = realloc(lines, (size_t)capacity * sizeof(char*));
+            char **new_lines =
+                realloc(lines, (size_t)capacity * sizeof(char *));
             if (!new_lines) {
                 /* OOM: cleanup and fail */
-                for (int i = 0; i < count; i++) free(lines[i]);
+                for (int i = 0; i < count; i++)
+                    free(lines[i]);
                 free(lines);
                 pclose(fp);
                 enable_raw_mode();
@@ -56,7 +62,8 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
         char *line_copy = strdup(line_buf);
         if (!line_copy) {
             /* OOM: cleanup and fail */
-            for (int i = 0; i < count; i++) free(lines[i]);
+            for (int i = 0; i < count; i++)
+                free(lines[i]);
             free(lines);
             pclose(fp);
             enable_raw_mode();
@@ -74,40 +81,40 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
         *out_lines = lines;
     } else {
         /* Caller doesn't want output, free it */
-        for (int i = 0; i < count; i++) free(lines[i]);
+        for (int i = 0; i < count; i++)
+            free(lines[i]);
         free(lines);
     }
 
-    if (out_count) *out_count = count;
+    if (out_count)
+        *out_count = count;
     return 1;
 }
 
 int term_cmd_system(const char *cmd) {
-    if (!cmd || !*cmd) return -1;
+    if (!cmd || !*cmd)
+        return -1;
     disable_raw_mode();
     int status = system(cmd);
     enable_raw_mode();
     return status;
 }
 
-int term_cmd_run_interactive(const char *cmd) {
-    if (!cmd) return -1;
+int term_cmd_run_interactive(const char *cmd, BOOL acknowledge) {
+    if (!cmd)
+        return -1;
 
-    /* Disable raw mode for interactive command */
     disable_raw_mode();
-
-    /* Run command via system() - user can interact */
     int status = system(cmd);
-
-    /* Wait for user to acknowledge before returning to editor UI */
-    fprintf(stdout,
-            "\n\n[command finished with status %d] "
-            "Press Enter to return to hed...", status);
-    fflush(stdout);
-    int ch;
-    /* Consume until newline or EOF */
-    while ((ch = getchar()) != '\n' && ch != EOF) {
-        /* discard */
+    if (acknowledge == TRUE) {
+        fprintf(stdout,
+                "\n\n[command finished with status %d] "
+                "Press Enter to return to hed...",
+                status);
+        fflush(stdout);
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF) {
+        }
     }
 
     enable_raw_mode();
@@ -115,7 +122,8 @@ int term_cmd_run_interactive(const char *cmd) {
 }
 
 void term_cmd_free(char **lines, int count) {
-    if (!lines) return;
+    if (!lines)
+        return;
     for (int i = 0; i < count; i++) {
         free(lines[i]);
     }
