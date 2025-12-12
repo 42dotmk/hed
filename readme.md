@@ -44,7 +44,7 @@ Use `-c "<command>"` to run a command at startup (same as typing `:<command>`), 
 Key chord notation uses literal spaces; `<space>ff` means press Space then `f` then `f` in Normal mode.
 
 ## Tree-sitter
-- hed looks for grammars in `ts-langs/` or `$HED_TS_PATH`. Included: c, c-sharp, html, make, python, rust.
+- hed looks for grammars in `$HED_TS_PATH` (defaults to `$XDG_CONFIG_HOME/hed` or `$XDG_HOME/.config/hed`, falling back to `ts-langs/`). Included: c, c-sharp, html, make, python, rust.
 - Install another grammar: `./build/tsi <lang>` (clones `tree-sitter-<lang>`, builds `<lang>.so` into `ts-langs/`, copies queries into `queries/<lang>/`).
 - Commands: `:ts on|off|auto` (auto detects by extension), `:tslang <name>` to force a language, `:tsi <name>` installs via the helper.
 

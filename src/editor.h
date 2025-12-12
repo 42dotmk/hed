@@ -2,6 +2,7 @@
 #define EDITOR_H
 
 #include <limits.h>
+#include <linux/limits.h>
 
 #include "buffer.h"
 #include "history.h"

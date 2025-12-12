@@ -26,6 +26,8 @@ void kb_cursor_top(void);
 void kb_cursor_bottom(void);
 void kb_search_next(void);
 void kb_find_under_cursor(void);
+void kb_search_file_under_cursor(void);
+void kb_open_file_under_cursor(void);
 void kb_undo(void);
 void kb_redo(void);
 void kb_fzf(void);

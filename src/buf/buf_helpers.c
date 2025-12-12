@@ -625,6 +625,148 @@ int buf_get_word_under_cursor(SizedStr *out) {
     return 1;
 }
 
+static int is_path_char(int c) {
+    if (isalnum((unsigned char)c))
+        return 1;
+    switch (c) {
+    case '/':
+    case '.':
+    case '_':
+    case '-':
+    case '~':
+    case '+':
+    case ':':
+    case '\\':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int parse_number_slice(const char *start, size_t len) {
+    char tmp[32];
+    if (!start || len == 0)
+        return 0;
+    if (len >= sizeof(tmp))
+        len = sizeof(tmp) - 1;
+    memcpy(tmp, start, len);
+    tmp[len] = '\0';
+    return atoi(tmp);
+}
+
+static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {
+    if (out_line)
+        *out_line = 0;
+    if (out_col)
+        *out_col = 0;
+    if (!path || !path->data || path->len == 0)
+        return;
+
+    size_t len = path->len;
+    size_t num_end = len;
+
+    /* Look for a trailing :number (column or line). */
+    while (num_end > 0 &&
+           isdigit((unsigned char)path->data[num_end - 1])) {
+        num_end--;
+    }
+    if (num_end == len || num_end == 0)
+        return;
+    if (path->data[num_end - 1] != ':')
+        return;
+
+    size_t last_colon = num_end - 1;
+    int last_num = parse_number_slice(path->data + num_end, len - num_end);
+    size_t path_end = last_colon;
+
+    /* See if we have path:line:col by checking for another :number. */
+    size_t num2_end = last_colon;
+    while (num2_end > 0 &&
+           isdigit((unsigned char)path->data[num2_end - 1])) {
+        num2_end--;
+    }
+    if (num2_end > 0 && path->data[num2_end - 1] == ':' &&
+        num2_end < last_colon) {
+        int line_num =
+            parse_number_slice(path->data + num2_end, last_colon - num2_end);
+        if (out_line)
+            *out_line = line_num;
+        if (out_col)
+            *out_col = last_num;
+        path_end = num2_end - 1;
+    } else {
+        if (out_line)
+            *out_line = last_num;
+    }
+
+    if (path_end < path->len) {
+        path->len = path_end;
+        path->data[path_end] = '\0';
+    }
+}
+
+int buf_get_path_under_cursor(SizedStr *out, int *out_line, int *out_col) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
+        return 0;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        return 0;
+
+    Row *row = &buf->rows[win->cursor.y];
+    if (row->chars.len == 0)
+        return 0;
+
+    if (out_line)
+        *out_line = 0;
+    if (out_col)
+        *out_col = 0;
+
+    int len = (int)row->chars.len;
+    int cx = win->cursor.x;
+    if (cx >= len)
+        cx = len - 1;
+    if (cx < 0)
+        return 0;
+
+    const char *s = row->chars.data;
+    if (!is_path_char(s[cx])) {
+        int left = cx - 1;
+        while (left >= 0 && !is_path_char(s[left])) {
+            left--;
+        }
+        if (left < 0 || !is_path_char(s[left]))
+            return 0;
+        cx = left;
+    }
+
+    int start = cx;
+    int end = cx + 1;
+    while (start > 0 && is_path_char(s[start - 1])) {
+        start--;
+    }
+    while (end < len && is_path_char(s[end])) {
+        end++;
+    }
+    if (end <= start)
+        return 0;
+
+    sstr_free(out);
+    *out = sstr_from(s + start, (size_t)(end - start));
+    if (!out->data || out->len == 0) {
+        sstr_free(out);
+        return 0;
+    }
+
+    strip_path_position(out, out_line, out_col);
+    if (!out->data || out->len == 0) {
+        sstr_free(out);
+        return 0;
+    }
+
+    return 1;
+}
+
 int buf_get_paragraph_under_cursor(SizedStr *out) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();

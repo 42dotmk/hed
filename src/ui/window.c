@@ -1,6 +1,7 @@
-#include "hed.h"
+#include "editor.h"
+#include "safe_string.h"
+#include "wlayout.h"
 
-/* Initialize window system with a single full-screen window. */
 void windows_init(void) {
     E.windows.len = 1;
     E.current_window = 0;

@@ -1,6 +1,7 @@
 #include "cmd_misc.h"
 #include "../hed.h"
 #include "cmd_util.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -452,8 +453,40 @@ void cmd_shell(const char *args) {
         return;
     }
 
+    char cmd_buf[4096];
+    snprintf(cmd_buf, sizeof(cmd_buf), "%s", args);
+
+    BOOL acknowledge = TRUE;
+    const char *flag = "--skipwait";
+    size_t flen = strlen(flag);
+    char *p = cmd_buf;
+    while ((p = strstr(p, flag))) {
+        char before = (p == cmd_buf) ? ' ' : p[-1];
+        char after = p[flen];
+        if ((p == cmd_buf || isspace((unsigned char)before)) &&
+            (after == '\0' || isspace((unsigned char)after))) {
+            acknowledge = FALSE;
+            if (p > cmd_buf && isspace((unsigned char)p[-1]))
+                p--;
+            char *src = p + flen;
+            while (isspace((unsigned char)*src))
+                src++;
+            memmove(p, src, strlen(src) + 1);
+            continue;
+        }
+        p += flen;
+    }
+
+    while (isspace((unsigned char)cmd_buf[0])) {
+        memmove(cmd_buf, cmd_buf + 1, strlen(cmd_buf));
+    }
+    if (cmd_buf[0] == '\0') {
+        ed_set_status_message("Usage: :shell <command>");
+        return;
+    }
+
     /* Run command interactively, handing over the TTY */
-    int status = term_cmd_run_interactive(args);
+    int status = term_cmd_run_interactive(cmd_buf, acknowledge);
 
     if (status == 0) {
         ed_set_status_message("Command completed successfully");
@@ -470,7 +503,7 @@ void cmd_git(const char *args) {
     (void)args;
     /* Run lazygit as a full-screen TUI, like fzf: temporarily leave raw mode.
      */
-    int status = term_cmd_run_interactive("lazygit");
+    int status = term_cmd_run_interactive("lazygit", FALSE);
     if (status == 0) {
         ed_set_status_message("lazygit exited");
     } else if (status == -1) {
@@ -484,7 +517,7 @@ void cmd_git(const char *args) {
 void cmd_reload(const char *args) {
     (void)args;
     /* Rebuild hed via make, then exec the new binary. */
-    int status = term_cmd_run_interactive("make clean && make -j16");
+    int status = term_cmd_run_interactive("make clean && make -j16", TRUE);
     if (status != 0) {
         ed_set_status_message("reload: build failed (status %d)", status);
         return;

@@ -2,6 +2,7 @@
 #define ANSI_H
 
 #include "abuf.h"
+#include <stdio.h>
 
 static inline void ansi_hide_cursor(Abuf *ab) { ab_append(ab, "\x1b[?25l", 6); }
 static inline void ansi_show_cursor(Abuf *ab) { ab_append(ab, "\x1b[?25h", 6); }

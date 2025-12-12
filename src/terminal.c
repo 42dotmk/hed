@@ -1,8 +1,19 @@
+#include "hed.h"
 #include "abuf.h"
 #include "ansi.h"
 #include "bottom_ui.h"
-#include "hed.h"
+#include "buffer.h"
+#include "editor.h"
+#include "hooks.h"
+#include "safe_string.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
 struct termios orig_termios;
 

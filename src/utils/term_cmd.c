@@ -1,5 +1,5 @@
-#include "term_cmd.h"
 #include "hed.h"
+#include "term_cmd.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,11 +21,7 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
         *out_lines = NULL;
     if (out_count)
         *out_count = 0;
-
-    /* Disable raw mode for command execution */
     disable_raw_mode();
-
-    /* Open pipe to command */
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         enable_raw_mode();

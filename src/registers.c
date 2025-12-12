@@ -1,5 +1,5 @@
-#include "hed.h"
-
+#include "editor.h"
+#include "sizedstr.h"
 typedef struct {
     SizedStr unnamed;   /* '"' */
     SizedStr yank0;     /* '0' */

@@ -10,6 +10,7 @@ BUILD_DIR = build
 TARGET = $(BUILD_DIR)/hed
 TSI    = $(BUILD_DIR)/tsi
 SOURCES = $(shell find $(SRC_DIR) -type f -name "*.c")
+HEADERS = $(shell find $(SRC_DIR) -type f -name "*.h")
 OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
 
@@ -41,6 +42,9 @@ strip_build: $(BUILD_DIR) $(TARGET) $(TSI) ts-langs
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+fmt: 
+	clang-format -i $(SOURCES) $(HEADERS)
 
 run: $(TARGET)
 	./$(TARGET)

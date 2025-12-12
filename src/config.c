@@ -1,7 +1,6 @@
-#include "commands/cmd_builtins.h"
 #include "hed.h"
 #include "keybinds_builtins.h"
-#include "safe_string.h"
+#include "cmd_builtins.h"
 
 #define cmd(name, cb, desc) command_register(name, cb, desc)
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
@@ -119,7 +118,7 @@ void nmode_bindings() {
     cmapn(" cf", "fmt");
     cmapn(" qq", "q!");
     cmapn(" rm", "shell make");
-    cmapn(" nn", "shell nnn");
+    cmapn(" nn", "shell --skipwait nnn");
     cmapn(" sd", "rg");
     cmapn(" ss", "ssearch");
     cmapn(" sa", "rgword");
@@ -230,6 +229,8 @@ void nmode_bindings() {
     mapn("dp", buf_delete_paragraph);
     mapn("dw", buf_delete_word_forward);
     mapn("gg", kb_cursor_top);
+    mapn("gf", kb_open_file_under_cursor);
+    mapn("gF", kb_search_file_under_cursor);
     mapn("i", kb_enter_insert_mode);
     mapn("n", kb_search_next);
     mapn("p", kb_paste);

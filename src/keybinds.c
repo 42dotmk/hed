@@ -5,8 +5,9 @@
 
 #define MAX_KEYBINDS 256
 #define KEY_BUFFER_SIZE 16
-#define SEQUENCE_TIMEOUT_MS 1000 /* 1 second timeout for multi-key sequences   \
-                                  */
+#define SEQUENCE_TIMEOUT_MS                                                    \
+    1000 /* 1 second timeout for multi-key sequences                           \
+          */
 
 /* Keybinding entry */
 typedef struct {

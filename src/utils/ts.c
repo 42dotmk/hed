@@ -3,6 +3,7 @@
 #include "hed.h"
 #include "log.h"
 #include <dlfcn.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,12 +70,40 @@ static size_t build_source(Buffer *buf, char **out) {
     return off;
 }
 
+static void ts_default_base(char *out, size_t out_sz) {
+    if (!out || out_sz == 0)
+        return;
+    out[0] = '\0';
+
+    const char *env_base = getenv("HED_TS_PATH");
+    if (env_base && *env_base) {
+        snprintf(out, out_sz, "%s", env_base);
+        return;
+    }
+
+    const char *xdg_config = getenv("XDG_CONFIG_HOME");
+    const char *xdg_home = getenv("XDG_HOME");
+    if (xdg_config && *xdg_config) {
+        snprintf(out, out_sz, "%s/hed", xdg_config);
+        return;
+    }
+    if (!xdg_home || !*xdg_home)
+        xdg_home = getenv("HOME");
+    if (xdg_home && *xdg_home) {
+        snprintf(out, out_sz, "%s/.config/hed", xdg_home);
+        return;
+    }
+
+    snprintf(out, out_sz, "ts-langs");
+}
+
 static int load_lang(TSState *st, const char *lang_name) {
     if (!lang_name || !*lang_name)
         return 0;
-    char path[512];
-    const char *base = getenv("HED_TS_PATH");
-    if (base && *base)
+    char path[PATH_MAX];
+    char base[PATH_MAX];
+    ts_default_base(base, sizeof(base));
+    if (base[0])
         snprintf(path, sizeof(path), "%s/%s.so", base, lang_name);
     else
         snprintf(path, sizeof(path), "ts-langs/%s.so", lang_name);

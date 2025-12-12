@@ -246,6 +246,7 @@ static int command_tmux_history_nav(int direction) {
     E.command_len = n;
     return 1;
 }
+
 int ed_read_key(void) {
     int nread;
     char c;
@@ -300,41 +301,6 @@ int ed_read_key(void) {
     }
 }
 
-/* Insert a single-byte or a UTF-8 multi-byte sequence as one unit */
-__attribute__((unused)) static void insert_utf8_or_byte(int first) {
-    unsigned char uc = (unsigned char)first;
-    if (uc < 0x80) {
-        buf_insert_char_in(buf_cur(), first);
-        return;
-    }
-    int need = 0;
-    if ((uc & 0xE0) == 0xC0)
-        need = 2;
-    else if ((uc & 0xF0) == 0xE0)
-        need = 3;
-    else if ((uc & 0xF8) == 0xF0)
-        need = 4;
-    else {
-        buf_insert_char_in(buf_cur(), first);
-        return;
-    }
-    char bytes[4];
-    bytes[0] = (char)first;
-    int got = 1;
-    while (got < need) {
-        char b;
-        int n = read(STDIN_FILENO, &b, 1);
-        if (n != 1)
-            break;
-        unsigned char ub = (unsigned char)b;
-        bytes[got++] = b;
-        if ((ub & 0xC0) != 0x80)
-            break; /* must be 10xxxxxx */
-    }
-    for (int i = 0; i < got; i++)
-        buf_insert_char_in(buf_cur(), (unsigned char)bytes[i]);
-}
-
 void ed_move_cursor(int key) {
     (void)key;
     buf_move_cursor_key(key);
@@ -361,12 +327,10 @@ void ed_process_command(void) {
     /* Execute command */
     log_msg(":%s%s%s", cmd_name, cmd_args ? " " : "", cmd_args ? cmd_args : "");
     if (!command_execute(cmd_name, cmd_args)) {
-        /* Restore space if we modified the buffer */
         if (space)
             *space = ' ';
         ed_set_status_message("Unknown command: %s", E.command_buf);
     } else {
-        /* Successful command: record to history and ':' register */
         regs_set_cmd(E.command_buf, strlen(E.command_buf));
         hist_add(&E.history, E.command_buf);
     }
@@ -549,6 +513,7 @@ void ed_process_keypress(void) {
     }
 
     /* Fire cursor-move hook if cursor changed position */
+    /* some command may have changed the win and buf, so we need to get them again */
     win = window_cur();
     buf = buf_cur();
     if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {
@@ -583,6 +548,7 @@ void ed_init_state() {
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
 }
+
 void ed_init(int create_default_buffer) {
     ed_init_state();
 

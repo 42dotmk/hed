@@ -1,10 +1,66 @@
 #include "keybinds_builtins.h"
 #include "commands/cmd_builtins.h"
+#include "commands/cmd_util.h"
 #include "hed.h"
+#include <limits.h>
 #include <stdlib.h>
 
 /* Internal buffer row helpers (non-public, defined in buffer.c) */
 void buf_row_del_in(Buffer *buf, int at);
+
+static int is_absolute_path(const char *path) {
+    if (!path || !*path)
+        return 0;
+    if (path[0] == '/' || path[0] == '\\')
+        return 1;
+    if (((path[0] >= 'A' && path[0] <= 'Z') ||
+         (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':')
+        return 1;
+    if (path[0] == '~')
+        return 1;
+    return 0;
+}
+
+static void buf_dirname(const Buffer *buf, char *out, size_t out_sz) {
+    if (!out || out_sz == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!buf || !buf->filename)
+        return;
+
+    const char *slash = strrchr(buf->filename, '/');
+    const char *bslash = strrchr(buf->filename, '\\');
+    if (bslash && (!slash || bslash > slash))
+        slash = bslash;
+    if (!slash)
+        return;
+
+    size_t len = (size_t)(slash - buf->filename);
+    if (len >= out_sz)
+        len = out_sz - 1;
+    memcpy(out, buf->filename, len);
+    out[len] = '\0';
+}
+
+static int join_dir_and_path(char *out, size_t out_sz, const char *dir, const char *path) {
+    if (!out || out_sz == 0)
+        return 0;
+    out[0] = '\0';
+    if (!path || !*path)
+        return 0;
+    if (!dir || !*dir) {
+        int n = snprintf(out, out_sz, "%s", path);
+        return n > 0 && n < (int)out_sz;
+    }
+    size_t dlen = strlen(dir);
+    const char *sep = "";
+    if (dlen > 0 && dir[dlen - 1] != '/' && dir[dlen - 1] != '\\')
+        sep = "/";
+    int n = snprintf(out, out_sz, "%s%s%s", dir, sep, path);
+    return n > 0 && n < (int)out_sz;
+}
 
 /* Visual selection helpers (local to keybinding implementations) */
 static void visual_clear(Window *win) {
@@ -579,7 +635,122 @@ void kb_find_under_cursor(void) {
     sstr_free(&w);
     buf_find_in(buf_cur());
 }
+void kb_search_file_under_cursor(void){
+    SizedStr path = sstr_new();
+    if (!buf_get_path_under_cursor(&path, NULL, NULL) || !path.data ||
+        path.len == 0) {
+        sstr_free(&path);
+        ed_set_status_message("gF: no path under cursor");
+        return;
+    }
 
+    char query[PATH_MAX];
+    size_t copy_len = path.len;
+    if (copy_len >= sizeof(query))
+        copy_len = sizeof(query) - 1;
+    memcpy(query, path.data, copy_len);
+    query[copy_len] = '\0';
+    sstr_free(&path);
+
+    char esc_query[PATH_MAX * 2];
+    shell_escape_single(query, esc_query, sizeof(esc_query));
+
+    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files "
+                                 "|| find . -type f -print)";
+    const char *preview =
+        "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always "
+        "--line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null";
+
+    char fzf_opts[4096];
+    snprintf(fzf_opts, sizeof(fzf_opts),
+             "--select-1 --exit-0 --query %s --preview '%s' "
+             "--preview-window right,60%%,wrap",
+             esc_query, preview);
+
+    char **sel = NULL;
+    int cnt = 0;
+    if (!fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) || cnt <= 0 ||
+        !sel[0] || !sel[0][0]) {
+        fzf_free(sel, cnt);
+        ed_set_status_message("gF: no selection");
+        return;
+    }
+
+    buf_open_or_switch(sel[0]);
+    fzf_free(sel, cnt);
+}
+void kb_open_file_under_cursor(void){
+    SizedStr path = sstr_new();
+    int line = 0, col = 0;
+    if (!buf_get_path_under_cursor(&path, &line, &col) || !path.data ||
+        path.len == 0) {
+        sstr_free(&path);
+        ed_set_status_message("gf: no path under cursor");
+        return;
+    }
+
+    if (path.len >= PATH_MAX) {
+        sstr_free(&path);
+        ed_set_status_message("gf: path too long");
+        return;
+    }
+
+    char expanded[PATH_MAX];
+    str_expand_tilde(path.data, expanded, sizeof(expanded));
+
+    char base[PATH_MAX];
+    base[0] = '\0';
+    buf_dirname(buf_cur(), base, sizeof(base));
+    if (base[0] == '\0') {
+        if (E.cwd[0]) {
+            safe_strcpy(base, E.cwd, sizeof(base));
+        } else {
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd))) {
+                safe_strcpy(base, cwd, sizeof(base));
+            }
+        }
+    }
+
+    char resolved[PATH_MAX];
+    const char *target = expanded;
+    if (!is_absolute_path(expanded) && base[0]) {
+        if (!join_dir_and_path(resolved, sizeof(resolved), base, expanded)) {
+            sstr_free(&path);
+            ed_set_status_message("gf: path too long");
+            return;
+        }
+        target = resolved;
+    }
+
+    sstr_free(&path);
+    FILE *f = fopen(target, "r");
+    if (f) {
+        fclose(f);
+    } else {
+        ed_set_status_message("gf: file does not exist: %s", target);
+        return;
+    }
+    buf_open_or_switch(target);
+
+    if (line > 0 || col > 0) {
+        Buffer *buf = buf_cur();
+        Window *win = window_cur();
+        if (buf && win) {
+            if (line > 0)
+                buf_goto_line(line);
+            if (col > 0 && win->cursor.y < buf->num_rows) {
+                int max = buf->rows[win->cursor.y].chars.len;
+                int cx = col - 1;
+                if (cx < 0)
+                    cx = 0;
+                if (cx > max)
+                    cx = max;
+                win->cursor.x = cx;
+            }
+        }
+    }
+}
 void kb_line_number_toggle(void) { cmd_ln(NULL); }
 /* Undo/Redo */
 void kb_undo(void) {

@@ -2,6 +2,7 @@
 #define VECTOR_H
 
 #include <stddef.h>
+#include <stdlib.h>
 
 /*
  * GENERIC DYNAMIC VECTOR
