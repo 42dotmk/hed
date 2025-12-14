@@ -96,13 +96,13 @@ int term_cmd_system(const char *cmd) {
     return status;
 }
 
-int term_cmd_run_interactive(const char *cmd, BOOL acknowledge) {
+int term_cmd_run_interactive(const char *cmd, bool acknowledge) {
     if (!cmd)
         return -1;
 
     disable_raw_mode();
     int status = system(cmd);
-    if (acknowledge == TRUE) {
+    if (acknowledge) {
         fprintf(stdout,
                 "\n\n[command finished with status %d] "
                 "Press Enter to return to hed...",

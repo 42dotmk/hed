@@ -1,9 +1,9 @@
+#include "hed.h"
 #include "abuf.h"
 #include "ansi.h"
 #include "bottom_ui.h"
 #include "buffer.h"
 #include "editor.h"
-#include "hed.h"
 #include "hooks.h"
 #include "safe_string.h"
 #include <errno.h>

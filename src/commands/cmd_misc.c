@@ -240,6 +240,7 @@ void cmd_repeat(const char *args) {
 }
 
 void cmd_macro_record(const char *args) {
+    (void)args;
     if (macro_is_recording()) {
         char reg = macro_get_recording_register();
         macro_stop_recording();
@@ -523,7 +524,7 @@ void cmd_shell(const char *args) {
     char cmd_buf[4096];
     snprintf(cmd_buf, sizeof(cmd_buf), "%s", args);
 
-    BOOL acknowledge = TRUE;
+    bool acknowledge = true;
     const char *flag = "--skipwait";
     size_t flen = strlen(flag);
     char *p = cmd_buf;
@@ -532,7 +533,7 @@ void cmd_shell(const char *args) {
         char after = p[flen];
         if ((p == cmd_buf || isspace((unsigned char)before)) &&
             (after == '\0' || isspace((unsigned char)after))) {
-            acknowledge = FALSE;
+            acknowledge = false;
             if (p > cmd_buf && isspace((unsigned char)p[-1]))
                 p--;
             char *src = p + flen;
@@ -570,7 +571,7 @@ void cmd_git(const char *args) {
     (void)args;
     /* Run lazygit as a full-screen TUI, like fzf: temporarily leave raw mode.
      */
-    int status = term_cmd_run_interactive("lazygit", FALSE);
+    int status = term_cmd_run_interactive("lazygit", false);
     if (status == 0) {
         ed_set_status_message("lazygit exited");
     } else if (status == -1) {
@@ -584,7 +585,7 @@ void cmd_git(const char *args) {
 void cmd_reload(const char *args) {
     (void)args;
     /* Rebuild hed via make, then exec the new binary. */
-    int status = term_cmd_run_interactive("make clean && make -j16", TRUE);
+    int status = term_cmd_run_interactive("make clean && make -j16", true);
     if (status != 0) {
         ed_set_status_message("reload: build failed (status %d)", status);
         return;

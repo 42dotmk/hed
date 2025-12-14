@@ -147,7 +147,7 @@ void keybind_clear_buffer(void) {
 }
 
 /* Process a key press through the keybinding system */
-int keybind_process(int key, int mode) {
+bool keybind_process(int key, int mode) {
     /* Numeric prefix only applies in normal mode */
     if (mode != MODE_NORMAL) {
         pending_count = 0;
@@ -172,8 +172,8 @@ int keybind_process(int key, int mode) {
                     pending_count = 1000000;
                     log_msg("Warning: numeric prefix capped at 1,000,000");
                 }
-                have_count = TRUE;
-                return TRUE; /* consume digit, wait for next key */
+                have_count = true;
+                return true; 
             }
         }
     }
@@ -239,15 +239,15 @@ int keybind_process(int key, int mode) {
         regs_set_dot(key_buffer, key_buffer_len);
 
         keybind_clear_buffer();
-        return 1;
+        return true;
     }
 
     /* Partial match - wait for more keys */
     if (partial_match) {
-        return 1; /* Consumed the key, waiting for more */
+        return true; /* Consumed the key, waiting for more */
     }
 
     /* No match - clear buffer and return 0 (not handled) */
     keybind_clear_buffer();
-    return 0;
+    return false;
 }

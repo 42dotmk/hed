@@ -46,7 +46,7 @@ void keybind_register_command(int mode, const char *sequence,
  * @param mode Current editor mode
  * @return 1 if keybind was matched and executed, 0 if not matched
  */
-int keybind_process(int key, int mode);
+bool keybind_process(int key, int mode);
 
 /**
  * Clear the current key sequence buffer

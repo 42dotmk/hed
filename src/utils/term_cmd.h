@@ -59,7 +59,7 @@ int term_cmd_system(const char *cmd);
  * Example:
  *   term_cmd_run_interactive("make");
  */
-int term_cmd_run_interactive(const char *cmd, BOOL acknowledge);
+int term_cmd_run_interactive(const char *cmd, bool acknowledge);
 
 /*
  * Free memory allocated by term_cmd_run().

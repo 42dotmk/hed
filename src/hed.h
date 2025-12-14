@@ -17,7 +17,6 @@
 /* Library helpers - must come first for type definitions */
 #include "ansi.h"
 #include "errors.h"
-#include "helpers.h"
 #include "log.h"
 #include "safe_string.h"
 #include "sizedstr.h"
