@@ -108,7 +108,7 @@ static int load_lang(TSState *st, const char *lang_name) {
     else
         snprintf(path, sizeof(path), "ts/%s.so", lang_name);
     void *h = dlopen(path, RTLD_NOW);
-    if (!h){
+    if (!h) {
         log_msg("TS dlopen failed for lang %s: %s", lang_name, dlerror());
         return 0;
     }
@@ -127,14 +127,14 @@ static int load_lang(TSState *st, const char *lang_name) {
 }
 
 static int load_query_path(TSState *st, const char *qpath) {
-    log_msg("loading query from path: %s", qpath); 
-    if (!qpath || !*qpath){
-        log_msg("TS: path is empty"); 
+    log_msg("loading query from path: %s", qpath);
+    if (!qpath || !*qpath) {
+        log_msg("TS: path is empty");
         return 0;
     }
     FILE *fp = fopen(qpath, "r");
-    if (!fp){
-        log_msg("TS File does not exists: %s", qpath); 		
+    if (!fp) {
+        log_msg("TS File does not exists: %s", qpath);
         return 0;
     }
     fseek(fp, 0, SEEK_END);
@@ -163,7 +163,8 @@ static void maybe_load_query(TSState *st, const char *lang) {
     /* Prefer queries alongside the selected grammar base, if present. */
     if (base[0]) {
         char qpath[PATH_MAX];
-        snprintf(qpath, sizeof(qpath), "%s/queries/%s/highlights.scm", base, lang);
+        snprintf(qpath, sizeof(qpath), "%s/queries/%s/highlights.scm", base,
+                 lang);
         if (load_query_path(st, qpath))
             return;
     }
@@ -264,7 +265,7 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "html";
 
         /* HTML */
-        else if (strcmp(ext, "org") == 0  || strcmp(ext, "org_archive") == 0)
+        else if (strcmp(ext, "org") == 0 || strcmp(ext, "org_archive") == 0)
             want = "org";
 
         /* Go */

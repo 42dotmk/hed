@@ -1,7 +1,7 @@
 #include "keybinds.h"
 #include "hed.h"
-#include "safe_string.h"
 #include "registers.h"
+#include "safe_string.h"
 #include <time.h>
 
 #define MAX_KEYBINDS 256

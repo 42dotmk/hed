@@ -557,7 +557,8 @@ void ed_process_keypress(void) {
     }
 
     /* Fire cursor-move hook if cursor changed position */
-    /* some command may have changed the win and buf, so we need to get them again */
+    /* some command may have changed the win and buf, so we need to get them
+     * again */
     win = window_cur();
     buf = buf_cur();
     if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {

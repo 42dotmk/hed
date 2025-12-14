@@ -1,5 +1,5 @@
-#include "hed.h"
 #include "term_cmd.h"
+#include "hed.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

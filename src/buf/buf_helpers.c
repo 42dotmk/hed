@@ -666,8 +666,7 @@ static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {
     size_t num_end = len;
 
     /* Look for a trailing :number (column or line). */
-    while (num_end > 0 &&
-           isdigit((unsigned char)path->data[num_end - 1])) {
+    while (num_end > 0 && isdigit((unsigned char)path->data[num_end - 1])) {
         num_end--;
     }
     if (num_end == len || num_end == 0)
@@ -681,8 +680,7 @@ static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {
 
     /* See if we have path:line:col by checking for another :number. */
     size_t num2_end = last_colon;
-    while (num2_end > 0 &&
-           isdigit((unsigned char)path->data[num2_end - 1])) {
+    while (num2_end > 0 && isdigit((unsigned char)path->data[num2_end - 1])) {
         num2_end--;
     }
     if (num2_end > 0 && path->data[num2_end - 1] == ':' &&

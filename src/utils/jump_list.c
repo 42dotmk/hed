@@ -85,7 +85,7 @@ int jump_list_backward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
     if (jl->current > 0) {
         jl->current--;
         JumpEntry *entry = &jl->entries[jl->current];
-        char * copy = strdup(entry->filepath);
+        char *copy = strdup(entry->filepath);
         *filepath = copy;
         *out_x = entry->cursor_x;
         *out_y = entry->cursor_y;
@@ -108,7 +108,7 @@ int jump_list_forward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
     if (jl->current < jl->len - 1) {
         jl->current++;
         JumpEntry *entry = &jl->entries[jl->current];
-        char * copy = strdup(entry->filepath);
+        char *copy = strdup(entry->filepath);
         *filepath = copy;
         *out_x = entry->cursor_x;
         *out_y = entry->cursor_y;

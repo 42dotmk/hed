@@ -1,10 +1,10 @@
 #include "ctags.h"
 #include "../hed.h"
 #include "log.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 extern Ed E;
 
@@ -61,7 +61,7 @@ static TagEntry *parse_tag_line(const char *line) {
         return NULL;
 
     /* Format: TAG\tFILE\t/PATTERN/;"\tREST */
-    //Split 
+    // Split
     char *tag = strtok(work, "\t");
     char *file = strtok(NULL, "\t");
     char *pattern = strtok(NULL, "\t");
@@ -69,7 +69,7 @@ static TagEntry *parse_tag_line(const char *line) {
         free(work);
         return NULL;
     }
-    //remove the trailing ;" and anything after it
+    // remove the trailing ;" and anything after it
     char *semicolon = strstr(pattern, ";\"");
     if (semicolon) {
         *semicolon = '\0';
@@ -86,7 +86,8 @@ static TagEntry *parse_tag_line(const char *line) {
     entry->file = strdup(file);
     entry->pattern = strdup(pattern);
 
-    log_msg("Parsed tag: %s, file: %s, pattern: %s", entry->tag, entry->file, entry->pattern);
+    log_msg("Parsed tag: %s, file: %s, pattern: %s", entry->tag, entry->file,
+            entry->pattern);
 
     free(work);
 
@@ -189,8 +190,8 @@ TagEntry *find_tag(const char *tag_name) {
     /* We search for lines starting with "tag_name\t" */
     char cmd[2048];
     snprintf(cmd, sizeof(cmd),
-             "rg --no-heading --color=never --max-count=1 '^%s\t' %s",
-             tag_name, tags_path);
+             "rg --no-heading --color=never --max-count=1 '^%s\t' %s", tag_name,
+             tags_path);
 
     /* Run the command */
     char **lines = NULL;
@@ -215,7 +216,8 @@ int goto_tag(const char *tag_name) {
         SizedStr word = sstr_new();
         if (!buf_get_word_under_cursor(&word) || word.len == 0) {
             sstr_free(&word);
-            ed_set_status_message("No tag name provided and no word under cursor");
+            ed_set_status_message(
+                "No tag name provided and no word under cursor");
             return 0;
         }
 
@@ -252,7 +254,8 @@ int goto_tag(const char *tag_name) {
     if (search_and_position(buf, win, entry->pattern)) {
         ed_set_status_message("Found tag: %s in %s", tag_name, entry->file);
     } else {
-        ed_set_status_message("Tag found but pattern not matched: %s", tag_name);
+        ed_set_status_message("Tag found but pattern not matched: %s",
+                              tag_name);
     }
 
     tag_entry_free(entry);

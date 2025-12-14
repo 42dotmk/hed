@@ -1,9 +1,9 @@
 #include "macros.h"
 #include "editor.h"
 #include "registers.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 extern Ed E;
 
@@ -132,9 +132,7 @@ void macro_stop_recording(void) {
     E.macro_recording.register_name = '\0';
 }
 
-int macro_is_recording(void) {
-    return E.macro_recording.recording;
-}
+int macro_is_recording(void) { return E.macro_recording.recording; }
 
 char macro_get_recording_register(void) {
     return E.macro_recording.register_name;
@@ -184,7 +182,8 @@ void macro_record_key(int key) {
     key_to_string_buf(key, key_str, sizeof(key_str));
 
     /* Append to the recording register */
-    regs_append_named(E.macro_recording.register_name, key_str, strlen(key_str));
+    regs_append_named(E.macro_recording.register_name, key_str,
+                      strlen(key_str));
 }
 
 void macro_play(char register_name) {
