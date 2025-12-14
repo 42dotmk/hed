@@ -1,4 +1,5 @@
 #include "hed.h"
+#include "macros.h"
 #include <sys/select.h>
 
 int main(int argc, char *argv[]) {
@@ -102,6 +103,13 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         ed_render_frame();
+
+        /* If there are keys in the macro queue, process them immediately
+         * without waiting for stdin */
+        if (macro_queue_has_keys()) {
+            ed_process_keypress();
+            continue;
+        }
 
         fd_set rfds;
         FD_ZERO(&rfds);

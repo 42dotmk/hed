@@ -35,6 +35,7 @@ $(TSI): ts/ts_lang_install.c
 ts-langs: $(BUILD_DIR)
 	@echo "Tree-sitter source files:"
 	cp -rf ts-langs build/ts-langs
+	cp -rf ts-langs/* ~/.config/hed/ts/
 
 strip_build: $(BUILD_DIR) $(TARGET) $(TSI) ts-langs
 	@# Keep only final binaries in $(BUILD_DIR)

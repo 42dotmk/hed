@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "safe_string.h"
+#include <regex.h>
 
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
@@ -438,12 +439,10 @@ void buf_insert_char_in(Buffer *buf, int c) {
         undo_push_insert(y0, x0, &ch, 1, y0, x0, y0, x0 + 1);
     }
     buf_row_insert_char_in(buf, &buf->rows[y0], x0, c);
+    win->cursor.x = x0 + 1;
 
-    /* Fire hook */
     HookCharEvent event = {buf, y0, x0, c};
     hook_fire_char(HOOK_CHAR_INSERT, &event);
-
-    win->cursor.x = x0 + 1;
 }
 
 void buf_insert_newline_in(Buffer *buf) {
@@ -711,24 +710,61 @@ void buf_find_in(Buffer *buf) {
     int start_y = win ? win->cursor.y : 0;
     int current = start_y;
 
+    int use_regex = E.search_is_regex;
+    regex_t regex;
+    int regex_ready = 0;
+    if (use_regex) {
+        int rc = regcomp(&regex, E.search_query.data, REG_EXTENDED);
+        if (rc != 0) {
+            char errbuf[128];
+            regerror(rc, &regex, errbuf, sizeof(errbuf));
+            ed_set_status_message("Regex error: %s", errbuf);
+            return;
+        }
+        regex_ready = 1;
+    }
+
     for (int i = 0; i < buf->num_rows; i++) {
         current = (start_y + i + 1) % buf->num_rows;
         Row *row = &buf->rows[current];
-        char *match = strstr(row->render.data, E.search_query.data);
+        const char *render = row->render.data;
+        const char *match = NULL;
+        int rx = 0;
+
+        if (regex_ready) {
+            regmatch_t m;
+            if (regexec(&regex, render, 1, &m, 0) == 0 && m.rm_so >= 0) {
+                match = render + m.rm_so;
+                rx = (int)m.rm_so;
+            }
+        } else {
+            char *lit = strstr(render, E.search_query.data);
+            if (lit) {
+                match = lit;
+                rx = (int)(lit - render);
+            }
+        }
+
         if (match) {
             if (win) {
                 win->cursor.y = current;
-                win->cursor.x = buf_row_rx_to_cx(row, match - row->render.data);
+                win->cursor.x = buf_row_rx_to_cx(row, rx);
             }
-            Window *win = window_cur();
-            if (win)
-                win->row_offset = buf->num_rows;
-            ed_set_status_message("Found at line %d", current + 1);
+            Window *cur = window_cur();
+            if (cur)
+                cur->row_offset = buf->num_rows;
+            if (regex_ready)
+                regfree(&regex);
+            ed_set_status_message("Found%s at line %d",
+                                  use_regex ? " (regex)" : "", current + 1);
             return;
         }
     }
 
-    ed_set_status_message("Not found: %s", E.search_query.data);
+    if (regex_ready)
+        regfree(&regex);
+    ed_set_status_message("Not found%s: %s", use_regex ? " (regex)" : "",
+                          E.search_query.data);
 }
 
 /* Reload current buffer's file from disk, discarding unsaved changes */

@@ -18,9 +18,9 @@
  *   - Clone https://github.com/tree-sitter/tree-sitter-<lang>.git
  *     into ./ts/build/<lang>
  *   - Build <lang>.so from parser.c (+ scanner.c if present)
- *   - Copy the .so to ./ts-langs/<lang>.so
+ *   - Copy the .so to ./ts/<lang>.so
  *   - Copy queries/highlights.scm (if present) to
- *       ./queries/<lang>/highlights.scm
+ *       ./ts-langs/queries/<lang>/highlights.scm
  *
  * Run this from the hed repo root so that ts-langs/ and queries/
  * are created in the place hed expects.
@@ -86,14 +86,58 @@ static int copy_file(const char *src, const char *dst) {
     return 0;
 }
 
+void print_usage(const char *prog_name) {
+    fprintf(stderr, "Usage: %s <lang>\n", prog_name);
+    fprintf(stderr, "Example: %s c\n", prog_name);
+}
+void print_help(const char *prog_name) {
+    print_usage(prog_name);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Installs Tree-sitter language parser for <lang>.\n");
+    fprintf(stderr, "Clones the grammar from GitHub, builds the parser,\n");
+    fprintf(stderr, "and installs it into ts-langs/ directory.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  --help       Print this help message\n");
+    fprintf(stderr, "  --url <url>  Specify custom git repository URL\n");
+}
+void parse_args(int argc, char **argv, const char **lang, const char **custom_url) {
+    for (int i = 1; i < argc; i++) {
+        if (i == 1 && argv[i][0] != '-') {
+            *lang = argv[i];
+            continue;
+        }
+        if (strcmp(argv[i], "--help") == 0) {
+            print_help(argv[0]);
+            exit(0);
+        } else if (strcmp(argv[i], "--url") == 0) {
+            if (i + 1 < argc) {
+                *custom_url = argv[i + 1];
+                i++;
+            } else {
+                fprintf(stderr, "--url requires an argument\n");
+                exit(1);
+            }
+        } else {
+            fprintf(stderr, "Unknown argument: %s\n", argv[i]);
+            exit(1);
+        }
+    }
+}
+/* Main function 
+ * argv[1]: language name
+ * Optional arguments:
+ * --help : print usage
+ * --url <url> : specify custom git repository URL
+ */
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <lang>\n", argv[0]);
-        fprintf(stderr, "Example: %s c\n", argv[0]);
-        return 1;
+        print_usage(argv[0]);
     }
+    const char *lang=NULL;  // Default to C language
+    const char *custom_url = NULL;
+    parse_args(argc, argv, &lang, &custom_url);
 
-    const char *lang = argv[1];
     if (!lang[0]) {
         fprintf(stderr, "Invalid language name.\n");
         return 1;
@@ -117,16 +161,19 @@ int main(int argc, char **argv) {
         char cmd[1024];
         int cloned = 0;
 
-        /* First try tree-sitter-grammars org */
-        snprintf(repo_url, sizeof(repo_url),
-                 "https://github.com/tree-sitter-grammars/tree-sitter-%s.git",
-                 lang);
+        if (custom_url) {
+            snprintf(repo_url, sizeof(repo_url), "%s", custom_url);
+        } else {
+            snprintf(repo_url, sizeof(repo_url),
+                     "https://github.com/tree-sitter-grammars/tree-sitter-%s.git",
+                     lang);
+        }
         snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
                  repo_url, build_dir);
         fprintf(stderr, "Cloning %s into %s\n", repo_url, build_dir);
         if (run_cmd(cmd) == 0) {
             cloned = 1;
-        } else {
+        } else if (!custom_url) {
             fprintf(stderr,
                     "First clone attempt failed, trying upstream tree-sitter org...\n");
             /* Fallback: original tree-sitter org */
@@ -219,9 +266,9 @@ int main(int argc, char **argv) {
     char src_q[1024];
     snprintf(src_q, sizeof(src_q), "%s/queries/highlights.scm", build_dir);
     if (file_exists(src_q)) {
-        if (mkdir_if_needed("queries") != 0) return 1;
+        if (mkdir_if_needed("ts-langs/queries") != 0) return 1;
         char dst_q_dir[1024];
-        snprintf(dst_q_dir, sizeof(dst_q_dir), "queries/%s", lang);
+        snprintf(dst_q_dir, sizeof(dst_q_dir), "ts-langs/queries/%s", lang);
         if (mkdir_if_needed(dst_q_dir) != 0) return 1;
 
         char dst_q[1024];
@@ -237,7 +284,7 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "Done. Language '%s' installed.\n", lang);
     fprintf(stderr, "  Shared library: ts-langs/%s.so\n", lang);
-    fprintf(stderr, "  Queries:        queries/%s/highlights.scm (if present)\n", lang);
+    fprintf(stderr, "  Queries:        ts-langs/queries/%s/highlights.scm (if present)\n", lang);
     fprintf(stderr, "Remember to run hed from this directory and use :ts on / :tslang %s\n", lang);
 
     return 0;

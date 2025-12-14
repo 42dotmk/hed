@@ -1,4 +1,5 @@
 #include "hed.h"
+#include "macros.h"
 #include <dirent.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -248,6 +249,12 @@ static int command_tmux_history_nav(int direction) {
 }
 
 int ed_read_key(void) {
+    /* Check if there are keys in the macro queue first */
+    if (macro_queue_has_keys()) {
+        return macro_queue_get_key();
+    }
+
+    /* No macro keys, read from stdin */
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -255,50 +262,82 @@ int ed_read_key(void) {
             die("read");
     }
 
+    int key = 0;
+
     if (c == '\x1b') {
         char seq[3];
 
-        if (read(STDIN_FILENO, &seq[0], 1) != 1)
-            return '\x1b';
-        if (read(STDIN_FILENO, &seq[1], 1) != 1)
-            return '\x1b';
-
-        if (seq[0] == '[') {
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+            key = '\x1b';
+        } else if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+            key = '\x1b';
+        } else if (seq[0] == '[') {
             if (seq[1] >= '0' && seq[1] <= '9') {
-                if (read(STDIN_FILENO, &seq[2], 1) != 1)
-                    return '\x1b';
-                if (seq[2] == '~') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) {
+                    key = '\x1b';
+                } else if (seq[2] == '~') {
                     switch (seq[1]) {
                     case '3':
-                        return KEY_DELETE;
+                        key = KEY_DELETE;
+                        break;
                     case '5':
-                        return KEY_PAGE_UP;
+                        key = KEY_PAGE_UP;
+                        break;
                     case '6':
-                        return KEY_PAGE_DOWN;
+                        key = KEY_PAGE_DOWN;
+                        break;
+                    default:
+                        key = '\x1b';
+                        break;
                     }
+                } else {
+                    key = '\x1b';
                 }
             } else {
                 switch (seq[1]) {
                 case 'A':
-                    return KEY_ARROW_UP;
+                    key = KEY_ARROW_UP;
+                    break;
                 case 'B':
-                    return KEY_ARROW_DOWN;
+                    key = KEY_ARROW_DOWN;
+                    break;
                 case 'C':
-                    return KEY_ARROW_RIGHT;
+                    key = KEY_ARROW_RIGHT;
+                    break;
                 case 'D':
-                    return KEY_ARROW_LEFT;
+                    key = KEY_ARROW_LEFT;
+                    break;
                 case 'H':
-                    return KEY_HOME;
+                    key = KEY_HOME;
+                    break;
                 case 'F':
-                    return KEY_END;
+                    key = KEY_END;
+                    break;
+                default:
+                    key = '\x1b';
+                    break;
                 }
             }
+        } else {
+            key = '\x1b';
         }
-
-        return '\x1b';
     } else {
-        return c;
+        key = c;
     }
+
+    /* Record this key if we're recording a macro */
+    if (macro_is_recording()) {
+        /* Don't record 'q' or '@' in normal mode (macro control commands) */
+        int should_record = 1;
+        if (E.mode == MODE_NORMAL && (key == 'q' || key == '@')) {
+            should_record = 0;
+        }
+        if (should_record) {
+            macro_record_key(key);
+        }
+    }
+
+    return key;
 }
 
 void ed_move_cursor(int key) {
@@ -413,11 +452,6 @@ static void handle_insert_mode_keypress(int c, Buffer *buf) {
     }
 }
 
-/*
- * Interactive search prompt.
- * Reads a search query from the user and executes the search in the current
- * buffer. Handles Enter (execute), Escape (cancel), and backspace during input.
- */
 static void ed_start_search(Buffer *buf) {
     if (!PTR_VALID(buf))
         return;
@@ -426,13 +460,18 @@ static void ed_start_search(Buffer *buf) {
     EditorMode saved_mode = E.mode;
     ed_set_mode(MODE_COMMAND);
     E.command_len = 0;
-    ed_set_status_message("Search: ");
+    E.search_prompt_active = 1;
+    ed_set_status_message("/");
     ed_render_frame();
 
     /* Read search query interactively */
     int search_len = 0;
     char search_buf[80];
+    int use_regex = 1; /* default: regex search */
+    search_buf[0] = '\0';
 
+    ed_set_status_message("/%.*s", search_len, search_buf);
+    ed_render_frame();
     while (1) {
         int k = ed_read_key();
 
@@ -443,24 +482,29 @@ static void ed_start_search(Buffer *buf) {
 
         if (k == '\x1b') {
             /* Cancel search */
+            E.search_prompt_active = 0;
             ed_set_mode(saved_mode);
             return;
         }
 
-        if (k == KEY_DELETE && search_len > 0) {
+        if (k == CTRL_KEY('r')) {
+            use_regex = !use_regex;
+        } else if (k == KEY_DELETE && search_len > 0) {
             search_len--;
         } else if (!iscntrl(k) && k >= 0 && search_len < 79) {
             search_buf[search_len++] = (char)k;
         }
 
         search_buf[search_len] = '\0';
-        ed_set_status_message("Search: %s", search_buf);
+        ed_set_status_message("/%.*s", search_len, search_buf);
         ed_render_frame();
     }
 
     /* Update global search query and find in buffer */
     sstr_free(&E.search_query);
     E.search_query = sstr_from(search_buf, search_len);
+    E.search_is_regex = use_regex;
+    E.search_prompt_active = 0;
     E.mode = saved_mode;
     buf_find_in(buf);
 }
@@ -547,6 +591,8 @@ void ed_init_state() {
     E.cwd[0] = '\0';
     E.clipboard = sstr_new();
     E.search_query = sstr_new();
+    E.search_is_regex = 1;
+    E.search_prompt_active = 0;
 }
 
 void ed_init(int create_default_buffer) {
@@ -570,6 +616,7 @@ void ed_init(int create_default_buffer) {
     hist_init(&E.history);
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
+    macro_init();
 
     /* Ensure at least one editable buffer exists at startup if requested */
     if (create_default_buffer) {

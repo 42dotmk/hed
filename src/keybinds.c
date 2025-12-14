@@ -1,6 +1,7 @@
 #include "keybinds.h"
 #include "hed.h"
 #include "safe_string.h"
+#include "registers.h"
 #include <time.h>
 
 #define MAX_KEYBINDS 256
@@ -234,6 +235,9 @@ int keybind_process(int key, int mode) {
                     keybinds[exact_match].desc);
             }
         }
+        /* Store the executed keybind sequence in the '.' register */
+        regs_set_dot(key_buffer, key_buffer_len);
+
         keybind_clear_buffer();
         return 1;
     }

@@ -4,280 +4,286 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Hed is a minimal vim-like text editor written in C23, featuring modal editing, multiple buffers, window splits, and extensibility through hooks, commands, and keybindings. The project emphasizes simplicity while providing modern features like tree-sitter syntax highlighting, fuzzy finding (fzf), ripgrep integration, and a quickfix list.
+hed is a modal terminal editor written in C23 with Vim-like bindings. It integrates tree-sitter for syntax highlighting, ripgrep for search, fzf for fuzzy finding, and tmux for runner pane support. The codebase emphasizes a small core with explicit C APIs for extensibility through commands, keybindings, and hooks.
 
-## Build System
+## Build Commands
 
-Build the project:
 ```bash
+# Build the project (outputs build/hed and build/tsi)
 make
-```
 
-Run the built binary:
-```bash
-make run
-# or directly:
-./build/hed [file1] [file2] ...
-```
-
-Clean build artifacts:
-```bash
+# Clean build artifacts
 make clean
+
+# Format all source files with clang-format
+make fmt
+
+# Run the editor after building
+make run
 ```
 
-The build system uses `clang` with flags defined in `compile_flags.txt`. Tree-sitter support is enabled via `-DUSE_TREESITTER`.
+The build system:
+- Uses clang with C23 standard (`-std=c23`)
+- Links against `libtree-sitter` dynamically (`-ltree-sitter`)
+- Produces two binaries: `build/hed` (the editor) and `build/tsi` (tree-sitter language installer)
+- Copies tree-sitter grammars from `ts-langs/` during build
 
-## Code Architecture
+## Running hed
 
-### Module Organization
+```bash
+# Open files
+./build/hed [file ...]
 
-The codebase is organized into clear subsystems under `src/`:
+# Execute a command at startup
+./build/hed -c "e other.txt"
+./build/hed -c "q!"
+```
 
-- **buf/** - Buffer and row data structures
-  - `buffer.c/h` - File/document management, supports up to 256 buffers
-  - `row.c/h` - Individual text line representation
-  - `buf_helpers.c/h` - Buffer manipulation utilities
+Logs are written to `.hedlog` in the current directory.
 
-- **ui/** - User interface components
-  - `window.c/h` - Window management (splits, focus, decorations)
-  - `wlayout.c/h` - Layout tree for complex splits and borders
-  - `abuf.c/h` - Append buffer for efficient terminal rendering
-
-- **lib/** - Core utilities
-  - `sizedstr.c/h` - Dynamic string with length tracking
-  - `log.c/h` - Debug logging to `.hedlog`
-  - `ansi.h` - ANSI escape sequences
-  - `strutil.c/h` - String manipulation helpers
-
-- **utils/** - High-level features
-  - `fzf.c/h` - Fuzzy file finder integration
-  - `quickfix.c/h` - Vim-style quickfix list for navigation
-  - `ts.c/h` - Tree-sitter syntax highlighting
-  - `undo.c/h` - Undo/redo system
-  - `history.c/h` - Command history
-  - `recent_files.c/h` - Recently opened files
-  - `jump_list.c/h` - Buffer navigation history (Ctrl-O/Ctrl-I)
-  - `bottom_ui.c/h` - Status and command line rendering
-
-- **Core modules** (top-level src/)
-  - `editor.c/h` - Global editor state (`Ed E`) and main event loop
-  - `terminal.c/h` - Terminal control (raw mode, rendering)
-  - `commands.c/h` - Extensible command system (`:w`, `:q`, etc.)
-  - `keybinds.c/h` - Extensible keybinding system
-  - `hooks.c/h` - Event hook system for extensibility
-  - `registers.c/h` - Clipboard and register management
-  - `config.c` - User configuration (keybinds, commands, hooks)
+## Architecture Overview
 
 ### Core Data Flow
 
-1. **Global State**: The `Ed E` global in `editor.h` holds:
-   - Array of buffers (`Buffer buffers[MAX_BUFFERS]`)
-   - Array of windows (`Window windows[8]`)
-   - Window layout tree (`WLayoutNode *wlayout_root`)
-   - Quickfix list, clipboard, search query, command history, etc.
+1. **Main Loop** (`src/main.c`): Uses `select()` to wait for stdin input, then calls `ed_process_keypress()` to handle keys and `ed_render_frame()` to redraw the screen.
 
-2. **Event Loop** (`main.c`):
-   ```c
-   while (1) {
-       ed_render_frame();     // Render UI
-       ed_process_keypress(); // Handle input
-   }
-   ```
+2. **Editor State** (`src/editor.c`): Global `Ed E` structure contains:
+   - `buffers`: Array of all open buffers
+   - `current_buffer`: Index of active buffer
+   - `mode`: Current editor mode (Normal/Insert/Visual/Command)
+   - Window layout tree and focus tracking
+   - Quickfix list, jump list, search state, registers
 
-3. **Window System**:
-   - Each `Window` references a buffer via `buffer_index`
-   - Windows can be split horizontally/vertically
-   - The `WLayoutNode` tree manages split geometry and decorations
-   - One window is always focused (receives input)
+3. **Buffer System** (`src/buf/`):
+   - `Buffer`: Contains rows, cursor position, filename, filetype, tree-sitter state
+   - `Row`: Line data with both raw chars and rendered display (for tabs/unicode)
+   - `textobj.c`: Text object operations (words, paragraphs, delimiters)
 
-4. **Buffer-Window Relationship**:
-   - Buffers hold file content and are independent of display
-   - Windows are viewports into buffers
-   - Multiple windows can show the same buffer
-   - The focused window's buffer is the "current buffer"
+4. **Command Execution** (`src/commands.c`):
+   - Commands registered via `command_register(name, callback, desc)` in `src/config.c`
+   - User types `:command args` which gets parsed and dispatched to the callback
+   - Command callbacks receive args as a string
 
-5. **Rendering Pipeline**:
-   - `ed_render_frame()` computes layout and builds output in an `Abuf`
-   - Layout tree (`wlayout_compute()`) calculates window positions
-   - Each window renders its portion of the buffer
-   - Status line and command line rendered at bottom
-   - Final `Abuf` flushed to terminal in one write
+5. **Keybinding Dispatch** (`src/keybinds.c`):
+   - Keybinds registered per-mode via `keybind_register(mode, key_sequence, callback)`
+   - Built-in keybind functions in `src/keybinds_builtins.c`
+   - User configuration in `src/config.c` using `mapn/mapi/mapv/mapvb` macros
 
-### Extensibility System
+6. **Hook System** (`src/hooks.c`, `src/hooks.h`):
+   - Events: char insert/delete, line insert/delete, buffer lifecycle, mode change, cursor movement
+   - Callbacks registered with mode and filetype filters
+   - Quickfix preview synchronization implemented via cursor movement hook in `src/user_hooks_quickfix.c`
 
-Three primary extension points defined in `config.c`:
+### Key Subsystems
 
-1. **Commands** (`commands.c/h`):
-   ```c
-   void command_register(const char *name, CommandCallback cb, const char *desc);
-   ```
-   Users define commands in `user_commands_init()`. Examples: `:w`, `:rg`, `:fzf`
+**Tree-sitter Integration** (`src/utils/ts.c`):
+- Grammars loaded dynamically as `.so` files from `$HED_TS_PATH` (defaults to `~/.config/hed/ts` or `ts-langs/`)
+- Each buffer has a `TSState*` in `buf->ts_internal`
+- Parsing triggered when buffer dirty flag changes
+- Highlight queries loaded from `queries/<lang>/highlights.scm`
+- Language auto-detection by file extension in `buf_detect_filetype()`
 
-2. **Keybindings** (`keybinds.c/h`):
-   ```c
-   void keybind_register(int mode, const char *sequence, KeybindCallback cb);
-   void keybind_register_command(int mode, const char *sequence, const char *cmdline);
-   ```
-   Users define bindings in `user_keybinds_init()`. Supports multi-key sequences (`dd`, `gg`) and Ctrl combos (`<C-s>`).
+**Quickfix List** (`src/utils/quickfix.c`):
+- Global `E.quickfix` stores entries with filename:line:col:message
+- Special read-only buffer with filetype "quickfix"
+- Populated by `:rg`, `:ssearch`, `:cadd` commands
+- Cursor movement in any buffer triggers preview update via hook
+- Navigation: `:cnext`, `:cprev`, `:copenidx N`
 
-3. **Hooks** (`hooks.c/h`):
-   Event system for reacting to editor actions:
-   - `HOOK_MODE_CHANGE` - Mode transitions
-   - `HOOK_BUFFER_OPEN/CLOSE/SAVE/SWITCH` - Buffer lifecycle
-   - `HOOK_CHAR_INSERT/DELETE` - Text modifications
-   - `HOOK_LINE_INSERT/DELETE` - Line operations
-   - `HOOK_CURSOR_MOVE` - Cursor movement
+**Window Layout** (`src/ui/wlayout.c`, `src/ui/window.h`):
+- Binary tree structure for splits (horizontal/vertical)
+- Each leaf node is a `Window` with: buffer_index, cursor, row_offset, col_offset, wrap settings
+- Focus moves directionally with `windows_focus_left/right/up/down()`
+- Quickfix window is a special window with `is_quickfix=1`
 
-   Hooks can filter by mode and filetype. Example in `config.c`:
-   ```c
-   hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
-   ```
+**Fuzzy Finding** (`src/utils/fzf.c`):
+- Shell out to `fzf` with optional `bat` preview
+- Used by `:fzf` (file picker), `:recent`, `:c` (command picker), `:rg` (interactive ripgrep)
+- Results parsed and fed to commands (e.g., open files, populate quickfix)
 
-### Special Features
+**Tmux Integration** (`src/utils/tmux.c`):
+- `:tmux_toggle` creates/shows a runner pane in the same tmux window
+- `:tmux_send <cmd>` sends text to that pane
+- Keybind `<space>ts` sends current line
+- Pane identified by hed's PID as target name
 
-- **Quickfix List**: Vim-style error/search results navigation. Commands: `:copen`, `:cnext`, `:cprev`, `:cclear`. Populated by `:rg` or `:shq`.
+**Undo System** (`src/utils/undo.c`):
+- Undo stack per buffer stores snapshots of rows
+- Captures state before modifications via buffer modification hooks
+- Commands `:undo` and `:redo` (also `u` and `Ctrl-r`)
 
-- **FZF Integration**: `:fzf` opens fuzzy file finder. Keybind `<space><space>` in normal mode.
+### Extension Points (src/config.c)
 
-- **Ripgrep Integration**: `:rg <pattern>` searches and populates quickfix list.
+All user-facing customization lives in `src/config.c`:
 
-- **Tree-sitter**: Optional syntax highlighting. Enable with `-DUSE_TREESITTER` in `compile_flags.txt`. Commands: `:ts on|off|auto`, `:tslang <name>`.
+1. **user_commands_init()**: Register commands using `cmd(name, callback, desc)`
+   - Callback signature: `void callback(const char *args)`
+   - Example: `cmd("mycommand", cmd_mycommand, "my custom command");`
 
-- **Window Splits**: `:split` (horizontal), `:vsplit` (vertical), `:wfocus` (cycle), `:wclose` (close current).
+2. **user_keybinds_init()**: Register keybindings using mode-specific macros
+   - `mapn(key, callback)` - Normal mode function keybind
+   - `mapi(key, callback)` - Insert mode function keybind
+   - `mapv(key, callback)` - Visual mode function keybind
+   - `mapvb(key, callback)` - Visual block mode function keybind
+   - `cmapn(key, "command")` - Normal mode command keybind
+   - `cmapv(key, "command")` - Visual mode command keybind
+   - Key sequences like `<space>ff` are literal spaces in strings: `" ff"`
 
-- **Messages Buffer**: Special readonly buffer for logging editor messages (accessible via buffer list).
+3. **user_hooks_init()**: Register hooks for events
+   - Example: `hook_register_mode(HOOK_MODE_CHANGE, on_mode_change_callback);`
+   - Hook types in `src/hooks.h`: char/line insert/delete, buffer lifecycle, mode change, cursor movement
+   - Additional quickfix hooks in `src/user_hooks_quickfix.c`
 
-## Development Patterns
+After modifying `src/config.c`, use `:reload` from within hed to rebuild and restart.
 
-### Adding a New Command
+## Code Style and Patterns
 
-1. Declare callback in `commands.h`:
-   ```c
-   void cmd_mycommand(const char *args);
-   ```
+- **Error Handling**: Functions return `EdError` enum (ED_OK, ED_ERR_*). Check with `if (err != ED_OK)`.
+- **Bounds Checking**: Use `BOUNDS_CHECK(idx, len)` and `PTR_VALID(ptr)` macros from `src/lib/errors.h`
+- **String Safety**: Use `SizedStr` type for length-tracked strings (see `src/lib/sizedstr.h`)
+- **Logging**: Use `log_msg(fmt, ...)` which writes to `.hedlog`. Initialize with `log_init()`.
+- **Status Messages**: Use `ed_set_status_message(fmt, ...)` to show user feedback in status line
+- **Memory Management**: Manual malloc/free. Always null-check allocations.
 
-2. Implement in `commands.c`:
-   ```c
-   void cmd_mycommand(const char *args) {
-       // Implementation
-       ed_set_status_message("Command executed");
-   }
-   ```
+## Common Patterns
 
-3. Register in `config.c` in `user_commands_init()`:
-   ```c
-   command_register("mycommand", cmd_mycommand, "description");
-   ```
-
-### Adding a New Keybinding
-
-In `config.c`, add to `nmode_bindings()` (or `imode_bindings()`, `vmode_bindings()`):
-
-```c
-// Direct callback:
-mapn("x", kb_delete_char);
-
-// Multi-key sequence:
-mapn("dd", kb_delete_line);
-
-// Execute a command:
-cmapn(" fm", "mycommand");
-```
-
-Macros: `mapn` (normal), `mapi` (insert), `mapv` (visual), `cmapn` (command in normal).
-
-### Working with Buffers
-
-Get current buffer:
+**Getting Current Buffer**:
 ```c
 Buffer *buf = buf_cur();
+if (!buf) return;
 ```
 
-Create/open buffer:
+**Executing Commands Programmatically**:
 ```c
-int idx = buf_new("filename.txt");  // Returns buffer index
-Buffer *buf = buf_open_file("path"); // Returns buffer pointer
+command_invoke("split", NULL);
+command_invoke("e", "/path/to/file");
 ```
 
-Switch buffer:
+**Modifying Buffer Content**:
 ```c
-buf_switch(index);
+// Insert character at cursor
+buf_insert_char(buf, c);
+
+// Delete current line
+buf_delete_line(buf, buf->cursor.y);
+
+// Insert new line
+buf_row_insert_in(buf, at_row, text, text_len);
 ```
 
-The current buffer is `E.buffers[E.current_buffer]` but prefer `buf_cur()`.
-
-### Working with Windows
-
-Get current window:
+**Registering a Command**:
 ```c
-Window *win = window_cur();
+// In user_commands_init():
+cmd("mycommand", cmd_mycommand, "description");
+
+// Implement callback:
+void cmd_mycommand(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf) return;
+    // ... use args ...
+    ed_set_status_message("Command executed: %s", args);
+}
 ```
 
-Window contains `buffer_index` pointing to `E.buffers[]`. The focused window is `E.windows[E.current_window]`.
+## Tree-sitter Language Management
 
-Attach buffer to window:
-```c
-win_attach_buf(window_cur(), buf);
-```
+Tree-sitter grammars are stored as shared objects (`.so` files) and loaded dynamically:
 
-### Tree-sitter Integration
-
-Tree-sitter state is per-buffer (`buf->ts_internal`). The `ts.c/h` module handles:
-- Language detection from filetype
-- Incremental parsing
-- Syntax highlighting queries
-
-Languages are loaded from `ts-langs/` directory.
-
-### Logging
-
-Debug logging to `.hedlog`:
-```c
-log_msg("Debug message: %d", value);
-```
-
-View logs:
+**Installing a Language**:
 ```bash
-tail -f .hedlog
+# From hed command line:
+:tsi <lang>
+
+# Or manually with tsi binary:
+./build/tsi <lang>
 ```
 
-Clear logs: `:logclear`
+This clones `tree-sitter-<lang>` from GitHub, builds `<lang>.so`, and copies it to `ts-langs/` along with highlight queries to `queries/<lang>/`.
 
-## Key Design Decisions
+**Language Configuration**:
+- `:ts on|off|auto` - Toggle tree-sitter (auto = detect by extension)
+- `:tslang <name>` - Force language for current buffer
+- File extension mapping in `buf_detect_filetype()` in `src/buf/buffer.c`
 
-- **Single global state** (`Ed E`): Simplifies access patterns, all modules can access editor state
-- **Index-based references**: Windows reference buffers by index, not pointers (allows array reordering)
-- **Immediate mode rendering**: Full screen redrawn each frame, buffered in `Abuf` for efficiency
-- **Modal editing**: Three modes (NORMAL, INSERT, COMMAND) inspired by vim
-- **Extension via registration**: Commands, keybindings, and hooks registered at init time
-- **Raw mode terminal**: Full control via termios and ANSI sequences
-- **No configuration files**: All configuration done in C code (`config.c`)
+Included grammars: c, c-sharp, html, make, python, rust
 
-## Common Development Workflows
+## Testing and Debugging
 
-Testing a change interactively:
-```bash
-make && ./build/hed test.txt
+- **Logs**: `tail -f .hedlog` to watch live logs, `:logclear` to truncate
+- **Valgrind**: Build with debug symbols (already in compile_flags.txt: `-g -O0`)
+- **GDB**: `gdb ./build/hed` then `run [args]`
+
+## File Organization
+
+```
+src/
+├── main.c              # Entry point, main loop
+├── editor.c/h          # Global editor state, core initialization
+├── config.c            # User configuration: commands, keybinds, hooks
+├── commands.c/h        # Command registration and dispatch
+├── keybinds.c/h        # Keybind registration and dispatch
+├── keybinds_builtins.c # Built-in keybind functions
+├── hooks.c/h           # Hook system implementation
+├── user_hooks_quickfix.c # Quickfix preview sync hook
+├── terminal.c/h        # Terminal raw mode, ANSI codes
+├── registers.c/h       # Yank/paste register management
+├── lsp.c/h             # LSP client (if implemented)
+├── buf/
+│   ├── buffer.c/h      # Buffer data structure and operations
+│   ├── row.c/h         # Row (line) data structure
+│   ├── textobj.c/h     # Text object extraction (words, paragraphs, etc.)
+│   └── buf_helpers.c/h # Buffer utility functions
+├── ui/
+│   ├── window.c/h      # Window structure and focus management
+│   ├── wlayout.c/h     # Window layout tree (splits)
+│   └── abuf.c/h        # Append buffer for efficient rendering
+├── utils/
+│   ├── ts.c/h          # Tree-sitter integration
+│   ├── quickfix.c/h    # Quickfix list implementation
+│   ├── fzf.c/h         # Fuzzy finder integration
+│   ├── tmux.c/h        # Tmux runner pane integration
+│   ├── undo.c/h        # Undo/redo system
+│   ├── jump_list.c/h   # Jump list (Ctrl-o/Ctrl-i)
+│   ├── history.c/h     # Command history
+│   ├── recent_files.c/h # Recent files tracking
+│   ├── bottom_ui.c/h   # Status line and command line UI
+│   └── term_cmd.c/h    # Terminal command execution helpers
+├── lib/
+│   ├── log.c/h         # Logging to .hedlog
+│   ├── errors.c/h      # Error codes and macros
+│   ├── sizedstr.c/h    # Length-tracked string type
+│   ├── strutil.c/h     # String manipulation utilities
+│   ├── safe_string.c/h # Safe string operations
+│   ├── file_helpers.c/h # File I/O helpers
+│   └── theme.h         # Color theme definitions
+└── commands/
+    ├── cmd_builtins.h  # Built-in command declarations
+    ├── cmd_buffer.c    # Buffer management commands
+    ├── cmd_search.c/h  # Search-related commands
+    ├── cmd_misc.c      # Miscellaneous commands
+    ├── cmd_util.c/h    # Command utilities
+    ├── commands_buffer.c/h # Additional buffer commands
+    └── commands_ui.c/h # UI-related commands
+
+ts/
+├── ts_lang_install.c   # Tree-sitter language installer source
+└── build/              # Cloned tree-sitter grammar repos (c, python, etc.)
+
+ts-langs/               # Compiled tree-sitter .so files
+queries/                # Tree-sitter highlight queries by language
 ```
 
-Viewing editor logs during development:
-```bash
-# Terminal 1:
-tail -f .hedlog
+## Dependencies
 
-# Terminal 2:
-./build/hed
-```
+Required:
+- `clang` (C23 support)
+- `libtree-sitter` (headers and library)
+- POSIX terminal
 
-Debugging crashes - logs are written before most crashes:
-```bash
-cat .hedlog
-```
-
-## Code Style Notes
-
-- C23 standard with `-Wall -Wextra -pedantic`
-- Include paths configured in `compile_flags.txt` (`-Isrc`, `-Isrc/ui`, etc.)
-- Header files in same directory as implementation (except `hed.h` which includes all)
-- Use `Ed E` for global state, `buf_cur()` for current buffer, `window_cur()` for current window
-- Prefer explicit buffer/window parameters over implicit current buffer/window in functions
+Optional (for full feature set):
+- `ripgrep` - for `:rg`, `:ssearch`, `:rgword`
+- `fzf` - for `:fzf`, `:recent`, `:c` fuzzy pickers
+- `tmux` - for `:tmux_toggle`, `:tmux_send` runner integration
+- `lazygit` - for `:git` command
+- `bat` - for file preview in fzf
+- `nnn` - for directory browsing via `:shell --skipwait nnn`

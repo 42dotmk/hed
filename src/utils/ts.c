@@ -84,13 +84,13 @@ static void ts_default_base(char *out, size_t out_sz) {
     const char *xdg_config = getenv("XDG_CONFIG_HOME");
     const char *xdg_home = getenv("XDG_HOME");
     if (xdg_config && *xdg_config) {
-        snprintf(out, out_sz, "%s/hed", xdg_config);
+        snprintf(out, out_sz, "%s/hed/ts", xdg_config);
         return;
     }
     if (!xdg_home || !*xdg_home)
         xdg_home = getenv("HOME");
     if (xdg_home && *xdg_home) {
-        snprintf(out, out_sz, "%s/.config/hed", xdg_home);
+        snprintf(out, out_sz, "%s/.config/hed/ts", xdg_home);
         return;
     }
 
@@ -106,10 +106,13 @@ static int load_lang(TSState *st, const char *lang_name) {
     if (base[0])
         snprintf(path, sizeof(path), "%s/%s.so", base, lang_name);
     else
-        snprintf(path, sizeof(path), "ts-langs/%s.so", lang_name);
+        snprintf(path, sizeof(path), "ts/%s.so", lang_name);
     void *h = dlopen(path, RTLD_NOW);
-    if (!h)
+    if (!h){
+        log_msg("TS dlopen failed for lang %s: %s", lang_name, dlerror());
         return 0;
+    }
+
     char sym[64];
     snprintf(sym, sizeof(sym), "tree_sitter_%s", lang_name);
     TSLanguage *(*langfn)(void) = (TSLanguage * (*)(void)) dlsym(h, sym);
@@ -123,16 +126,25 @@ static int load_lang(TSState *st, const char *lang_name) {
     return 1;
 }
 
-static void maybe_load_query(TSState *st, const char *lang) {
-    char qpath[512];
-    snprintf(qpath, sizeof(qpath), "queries/%s/highlights.scm", lang);
+static int load_query_path(TSState *st, const char *qpath) {
+    log_msg("loading query from path: %s", qpath); 
+    if (!qpath || !*qpath){
+        log_msg("TS: path is empty"); 
+        return 0;
+    }
     FILE *fp = fopen(qpath, "r");
-    if (!fp)
-        return;
+    if (!fp){
+        log_msg("TS File does not exists: %s", qpath); 		
+        return 0;
+    }
     fseek(fp, 0, SEEK_END);
     long sz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     char *buf = malloc((size_t)sz + 1);
+    if (!buf) {
+        fclose(fp);
+        return 0;
+    }
     fread(buf, 1, (size_t)sz, fp);
     buf[sz] = '\0';
     fclose(fp);
@@ -141,6 +153,25 @@ static void maybe_load_query(TSState *st, const char *lang) {
     st->query =
         ts_query_new(st->lang, buf, (uint32_t)sz, &err_offset, &err_type);
     free(buf);
+    return st->query != NULL;
+}
+
+static void maybe_load_query(TSState *st, const char *lang) {
+    char base[PATH_MAX];
+    ts_default_base(base, sizeof(base));
+
+    /* Prefer queries alongside the selected grammar base, if present. */
+    if (base[0]) {
+        char qpath[PATH_MAX];
+        snprintf(qpath, sizeof(qpath), "%s/queries/%s/highlights.scm", base, lang);
+        if (load_query_path(st, qpath))
+            return;
+    }
+
+    /* Fallback to bundled queries/ directory. */
+    char qpath[PATH_MAX];
+    snprintf(qpath, sizeof(qpath), "queries/%s/highlights.scm", lang);
+    load_query_path(st, qpath);
 }
 
 static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
@@ -231,6 +262,10 @@ int ts_buffer_autoload(Buffer *buf) {
         /* HTML */
         else if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
             want = "html";
+
+        /* HTML */
+        else if (strcmp(ext, "org") == 0  || strcmp(ext, "org_archive") == 0)
+            want = "org";
 
         /* Go */
         else if (strcmp(ext, "go") == 0)

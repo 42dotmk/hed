@@ -3,7 +3,7 @@
 #include "hed.h"
 
 int ui_message_lines_needed(void) {
-    if (E.mode == MODE_COMMAND)
+    if (E.mode == MODE_COMMAND && !E.search_prompt_active)
         return 1;
     const char *s = E.status_msg;
     int cols = E.screen_cols > 0 ? E.screen_cols : 80;
@@ -75,7 +75,7 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
 }
 
 void draw_message_bar(Abuf *ab, const Layout *lo) {
-    if (E.mode == MODE_COMMAND) {
+    if (E.mode == MODE_COMMAND && !E.search_prompt_active) {
         ansi_move(ab, lo->cmd_row, 1);
         ansi_clear_eol(ab);
         ab_append(ab, ":", 1);

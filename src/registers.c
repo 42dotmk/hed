@@ -1,11 +1,14 @@
 #include "editor.h"
 #include "sizedstr.h"
+#include <stdlib.h>
+#include <string.h>
 typedef struct {
     SizedStr unnamed;   /* '"' */
     SizedStr yank0;     /* '0' */
     SizedStr num[9];    /* '1'..'9' */
     SizedStr named[26]; /* 'a'..'z' */
     SizedStr cmd;       /* ':' */
+    SizedStr dot;       /* '.' last executed keybind sequence */
 } Registers;
 
 static Registers R;
@@ -28,6 +31,7 @@ void regs_init(void) {
     for (int i = 0; i < 26; i++)
         R.named[i] = sstr_new();
     R.cmd = sstr_new();
+    R.dot = sstr_new();
 }
 
 void regs_free(void) {
@@ -38,6 +42,7 @@ void regs_free(void) {
     for (int i = 0; i < 26; i++)
         sstr_free(&R.named[i]);
     sstr_free(&R.cmd);
+    sstr_free(&R.dot);
 }
 
 void regs_set_unnamed(const char *data, size_t len) {
@@ -90,8 +95,47 @@ void regs_set_named(char name, const char *data, size_t len) {
     regs_set_unnamed(data, len);
 }
 
+void regs_append_named(char name, const char *data, size_t len) {
+    if (name >= 'A' && name <= 'Z')
+        name = (char)(name - 'A' + 'a');
+    if (name < 'a' || name > 'z')
+        return;
+    if (!data || len == 0)
+        return;
+
+    int idx = name - 'a';
+    SizedStr *reg = &R.named[idx];
+
+    /* Calculate new size */
+    size_t new_len = reg->len + len;
+
+    /* Allocate new buffer */
+    char *new_data = malloc(new_len + 1);
+    if (!new_data)
+        return;
+
+    /* Copy old data */
+    if (reg->data && reg->len > 0) {
+        memcpy(new_data, reg->data, reg->len);
+    }
+
+    /* Append new data */
+    memcpy(new_data + reg->len, data, len);
+    new_data[new_len] = '\0';
+
+    /* Replace register contents */
+    sstr_free(reg);
+    reg->data = new_data;
+    reg->len = new_len;
+    reg->cap = new_len + 1;
+}
+
 void regs_set_cmd(const char *data, size_t len) {
     rs_assign(&R.cmd, data, len);
+}
+
+void regs_set_dot(const char *data, size_t len) {
+    rs_assign(&R.dot, data, len);
 }
 
 const SizedStr *regs_get(char name) {
@@ -107,5 +151,7 @@ const SizedStr *regs_get(char name) {
         return &R.named[name - 'a'];
     if (name == ':')
         return &R.cmd;
+    if (name == '.')
+        return &R.dot;
     return &R.unnamed;
 }

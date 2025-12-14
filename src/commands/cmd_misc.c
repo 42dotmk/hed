@@ -1,5 +1,7 @@
 #include "cmd_misc.h"
 #include "../hed.h"
+#include "../macros.h"
+#include "../registers.h"
 #include "cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -221,6 +223,70 @@ void cmd_redo(const char *args) {
     } else {
         ed_set_status_message("Nothing to redo");
     }
+}
+
+void cmd_repeat(const char *args) {
+    (void)args;
+    /* Get the last executed keybind sequence from '.' register */
+    const SizedStr *dot_reg = regs_get('.');
+    if (!dot_reg || !dot_reg->data || dot_reg->len == 0) {
+        ed_set_status_message("No previous command to repeat");
+        return;
+    }
+
+    /* Replay the sequence through the macro queue */
+    macro_replay_string(dot_reg->data, dot_reg->len);
+}
+
+void cmd_macro_record(const char *args) {
+    if (macro_is_recording()) {
+        char reg = macro_get_recording_register();
+        macro_stop_recording();
+        ed_set_status_message("Stopped recording macro to register '%c'", reg);
+        return;
+    }
+
+    /* Read next key to determine which register */
+    int key = ed_read_key();
+
+    /* Convert to lowercase if needed */
+    if (key >= 'A' && key <= 'Z')
+        key = key - 'A' + 'a';
+
+    /* Check if valid register (a-z) */
+    if (key < 'a' || key > 'z') {
+        ed_set_status_message("Invalid register for macro recording");
+        return;
+    }
+
+    /* Start recording */
+    macro_start_recording((char)key);
+    ed_set_status_message("Recording macro to register '%c'...", (char)key);
+}
+
+void cmd_macro_play(const char *args) {
+    (void)args;
+    /* Read next key to determine which register */
+    int key = ed_read_key();
+
+    /* Handle @@ - replay last macro */
+    if (key == '@') {
+        macro_play_last();
+        return;
+    }
+
+    /* Convert to lowercase if needed */
+    if (key >= 'A' && key <= 'Z')
+        key = key - 'A' + 'a';
+
+    /* Check if valid register (a-z) */
+    if (key < 'a' || key > 'z') {
+        ed_set_status_message("Invalid register for macro playback");
+        return;
+    }
+
+    /* Play the macro */
+    macro_play((char)key);
 }
 
 void cmd_ln(const char *args) {

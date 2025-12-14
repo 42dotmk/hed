@@ -21,10 +21,16 @@ void regs_push_delete(const char *data, size_t len);
 /* Set a named register 'a'..'z' (lowercase only for now) */
 void regs_set_named(char name, const char *data, size_t len);
 
+/* Append to a named register 'a'..'z' */
+void regs_append_named(char name, const char *data, size_t len);
+
 /* Set the last command-line in ':' register */
 void regs_set_cmd(const char *data, size_t len);
 
-/* Get register by name: '"', '0', '1'..'9', 'a'..'z', ':' */
+/* Set the last keybind sequence in '.' register */
+void regs_set_dot(const char *data, size_t len);
+
+/* Get register by name: '"', '0', '1'..'9', 'a'..'z', ':', '.' */
 const SizedStr *regs_get(char name);
 
 #endif /* REGISTERS_H */

@@ -77,6 +77,7 @@ typedef struct {
 
     SizedStr clipboard;
     SizedStr search_query;
+    int search_is_regex; /* 1=regex search, 0=literal */
     int clipboard_is_block;
     Qf qf;
     struct WLayoutNode *wlayout_root;
@@ -96,6 +97,22 @@ typedef struct {
         char prefix[128];
         int active; /* 1 when a completion set is active */
     } cmd_complete;
+
+    /* Macro replay queue - simulates keyboard input */
+    struct {
+        char *buffer;   /* String buffer with readable sequences like "dd<Esc>jj" */
+        int capacity;   /* Allocated capacity */
+        int length;     /* String length */
+        int position;   /* Current read position in buffer */
+    } macro_queue;
+
+    /* Macro recording state */
+    struct {
+        int recording;        /* 1 if currently recording */
+        char register_name;   /* Register being recorded to (a-z) */
+        char last_played;     /* Last register played with @ (for @@) */
+    } macro_recording;
+    int search_prompt_active; /* 1 while interactive / search prompt is open */
 } Ed;
 
 /* Global editor state */

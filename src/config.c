@@ -1,6 +1,7 @@
-#include "hed.h"
-#include "keybinds_builtins.h"
 #include "cmd_builtins.h"
+#include "hed.h"
+#include "hooks.h"
+#include "keybinds_builtins.h"
 
 #define cmd(name, cb, desc) command_register(name, cb, desc)
 #define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
@@ -29,8 +30,77 @@ static void on_mode_change(const HookModeEvent *event) {
     (void)event;
 }
 
+static void on_auto_pair(const HookCharEvent *event);
+static void on_smart_indent(const HookCharEvent *event);
+static void on_insert_char(const HookCharEvent *event) {
+    on_auto_pair(event);
+    on_smart_indent(event);
+}
+
+static void on_auto_pair(const HookCharEvent *event) {
+    switch (event->c) {
+    case '(':
+        buf_insert_char_in(event->buf, ')');
+        window_cur()->cursor.x--;
+        break;
+    case '[':
+        buf_insert_char_in(event->buf, ']');
+        window_cur()->cursor.x--;
+        break;
+    case '<':
+        buf_insert_char_in(event->buf, '>');
+        window_cur()->cursor.x--;
+        break;
+    case '{':
+        buf_insert_char_in(event->buf, '}');
+        window_cur()->cursor.x--;
+        break;
+    case '"':
+        buf_insert_char_in(event->buf, '"');
+        window_cur()->cursor.x--;
+        break;
+    case '\'':
+        buf_insert_char_in(event->buf, '\'');
+        break;
+    case '`':
+        buf_insert_char_in(event->buf, '`');
+        window_cur()->cursor.x--;
+        break;
+        break;
+    default:
+        break;
+    }
+}
+
+static void on_smart_indent(const HookCharEvent *event) {
+    if (event->c == '\n') {
+        Window *win = window_cur();
+        if (!win)
+            return;
+        if (win->cursor.y == 0)
+            return;
+        Buffer *buf = event->buf;
+        if (!buf)
+            return;
+        Row *prev_row = &buf->rows[win->cursor.y - 1];
+        int prev_indent = 0;
+        for (size_t i = 0; i < prev_row->chars.len; i++) {
+            if (prev_row->chars.data[i] == ' ')
+                prev_indent++;
+            else if (prev_row->chars.data[i] == '\t')
+                prev_indent += 4; // assuming tab width of 4
+            else
+                break;
+        }
+        for (int i = 0; i < prev_indent; i++) {
+            buf_insert_char_in(buf, ' ');
+        }
+    }
+}
+
 void user_hooks_init(void) {
     hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
+    hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_insert_char);
 }
 
 void user_commands_init(void) {
@@ -52,6 +122,9 @@ void user_commands_init(void) {
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");
     cmd("redo", cmd_redo, "redo");
+    cmd("repeat", cmd_repeat, "repeat last");
+    cmd("record", cmd_macro_record, "record macro");
+    cmd("play", cmd_macro_play, "play macro");
     cmd("ln", cmd_ln, "line nums");
     cmd("rln", cmd_rln, "rel nums");
     cmd("copen", cmd_copen, "qf open");
@@ -65,6 +138,7 @@ void user_commands_init(void) {
     cmd("ssearch", cmd_ssearch, "search current file");
     cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
     cmd("rg", cmd_rg, "ripgrep");
+    cmd("tag", cmd_tag, "jump to ctags definition");
     cmd("shq", cmd_shq, "shell cmd");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
@@ -123,6 +197,7 @@ void nmode_bindings() {
     cmapn(" ss", "ssearch");
     cmapn(" sa", "rgword");
     cmapn("<C-*>", "rgword");
+    cmapn("gd", "tag");
     cmapn(" tw", "wrap");
     cmapn(" tt", "tmux_toggle");
     cmapn(" tT", "tmux_kill");
@@ -162,6 +237,9 @@ void nmode_bindings() {
     cmapn("o", "new_line");
     cmapn("U", "redo");
     cmapn("u", "undo");
+    cmapn(".", "repeat");
+    cmapn("q", "record");
+    cmapn("@", "play");
     mapn("$", kb_cursor_line_end);
     mapv("$", kb_cursor_line_end);
     mapvb("$", kb_cursor_line_end);
