@@ -102,7 +102,7 @@ int buf_find_by_filename(
         *filename); /* Find buffer index by filename, returns -1 if not found */
 void buf_next(void);
 void buf_prev(void);
-void buf_open_or_switch(const char *filename); /* Open file or switch to it if already open */
+void buf_open_or_switch(const char *filename, bool add_to_jumplist); /* Open file or switch to it if already open */
 void buf_insert_char_in(Buffer *buf, int c);
 void buf_insert_newline_in(Buffer *buf);
 void buf_del_char_in(Buffer *buf);

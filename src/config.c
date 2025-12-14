@@ -138,7 +138,7 @@ void user_commands_init(void) {
     cmd("ssearch", cmd_ssearch, "search current file");
     cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
     cmd("rg", cmd_rg, "ripgrep");
-    cmd("tag", cmd_tag, "jump to ctags definition");
+    cmd("tag", cmd_tag, "jump to tag definition");
     cmd("shq", cmd_shq, "shell cmd");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
@@ -287,6 +287,8 @@ void nmode_bindings() {
     mapn("<<", buf_unindent_line);
     mapn("<C-d>", buf_scroll_half_page_down);
     mapn("<C-v>", kb_visual_block_toggle);
+    mapn(" jf", kb_jump_forward);
+    mapn(" jb", kb_jump_backward);
     mapn("<C-i>", kb_jump_forward);
     mapn("<C-o>", kb_jump_backward);
     mapn("<C-u>", buf_scroll_half_page_up);

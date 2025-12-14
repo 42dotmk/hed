@@ -1,23 +1,11 @@
 #ifndef THEME_H
 #define THEME_H
 
-/*
- * Simple theme configuration for ANSI colors.
- *
- * Values are full SGR escape sequences so you can use
- *  - 8/16-color codes      (e.g. "\x1b[31m")
- *  - 256-color codes       (e.g. "\x1b[38;5;81m")
- *  - truecolor (24-bit)    (e.g. "\x1b[38;2;135;206;250m")
- *
- * Adjust these to match your terminal background/theme.
- */
+
 #define RGBC(r, g, b) "\x1b[38;2;" #r ";" #g ";" #b "m"
 
 #define COLOR_RESET "\x1b[0m"
 
-/* Tree-sitter highlight colors (examples tuned for dark backgrounds)
- * Adjust to taste. You can freely change these to any SGR you like.
- */
 
 /* Palette loosely based on Tokyo Night */
 

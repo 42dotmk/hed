@@ -305,18 +305,7 @@ void cmd_edit(const char *args) {
     char exppath[PATH_MAX];
     str_trim_whitespace(args, trimmed, sizeof(trimmed));
     str_expand_tilde(trimmed, exppath, sizeof(exppath));
-
-    /* Prefer opening a buffer object then attaching to the window */
-    Buffer *nb = NULL;
-    EdError err = buf_open_file(exppath, &nb);
-    if (err == ED_OK || err == ED_ERR_FILE_NOT_FOUND) {
-        /* Success or new file (both OK) */
-        if (nb) {
-            win_attach_buf(window_cur(), nb);
-        }
-    } else {
-        ed_set_status_message("Failed to open: %s", ed_error_string(err));
-    }
+    buf_open_or_switch(exppath, true);
 }
 
 void cmd_cd(const char *args) {

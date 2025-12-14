@@ -102,6 +102,7 @@ COMMANDS_BUFFER_H	src/commands/commands_buffer.h	/^#define COMMANDS_BUFFER_H$/;"
 COMMANDS_H	src/commands.h	/^#define COMMANDS_H$/;"	d
 COMMANDS_INITIAL_CAP	src/editor.h	/^#define COMMANDS_INITIAL_CAP /;"	d
 COMMANDS_UI_H	src/commands/commands_ui.h	/^#define COMMANDS_UI_H$/;"	d
+CTAGS_H	src/utils/ctags.h	/^#define CTAGS_H$/;"	d
 CTRL_KEY	src/editor.h	/^#define CTRL_KEY(/;"	d
 CURSOR_H	src/lib/cursor.h	/^#define CURSOR_H$/;"	d
 CURSOR_OP	src/buf/buf_helpers.c	/^#define CURSOR_OP(/;"	d	file:
@@ -256,6 +257,7 @@ TMUX_HISTORY_MAX	src/utils/tmux.c	/^#define TMUX_HISTORY_MAX /;"	d	file:
 TRUE	src/helpers.h	/^#define TRUE /;"	d
 TSState	src/utils/ts.c	/^} TSState;$/;"	t	typeref:struct:__anon7e5341b40108	file:
 TS_H	src/utils/ts.h	/^#define TS_H$/;"	d
+TagEntry	src/utils/ctags.h	/^} TagEntry;$/;"	t	typeref:struct:__anon4ed077c40108
 TextPos	src/buf/textobj.h	/^typedef struct TextPos {$/;"	s
 TextPos	src/buf/textobj.h	/^} TextPos;$/;"	t	typeref:struct:TextPos
 TextSelection	src/buf/textobj.h	/^typedef struct TextSelection {$/;"	s
@@ -288,6 +290,7 @@ _GNU_SOURCE	src/hed.h	/^#define _GNU_SOURCE$/;"	d
 __anon320d91460108	src/keybinds.c	/^typedef struct {$/;"	s	file:
 __anon43c6aa750103	src/lib/errors.h	/^typedef enum {$/;"	g
 __anon4a89d1450108	src/utils/recent_files.h	/^typedef struct {$/;"	s
+__anon4ed077c40108	src/utils/ctags.h	/^typedef struct {$/;"	s
 __anon52786f960108	src/lib/cursor.h	/^typedef struct {$/;"	s
 __anon5abe60b40103	src/ui/wlayout.h	/^typedef enum {$/;"	g
 __anon5abe60b40208	src/ui/wlayout.h	/^typedef struct {$/;"	s
@@ -513,6 +516,7 @@ cmd_shell	src/commands/cmd_misc.c	/^void cmd_shell(const char *args) {$/;"	f	typ
 cmd_shq	src/commands/cmd_search.c	/^void cmd_shq(const char *args) {$/;"	f	typeref:typename:void
 cmd_split	src/commands/commands_ui.c	/^void cmd_split(const char *args) {$/;"	f	typeref:typename:void
 cmd_ssearch	src/commands/cmd_search.c	/^void cmd_ssearch(const char *args) {$/;"	f	typeref:typename:void
+cmd_tag	src/commands/cmd_misc.c	/^void cmd_tag(const char *args) {$/;"	f	typeref:typename:void
 cmd_tmux_kill	src/commands/cmd_misc.c	/^void cmd_tmux_kill(const char *args) {$/;"	f	typeref:typename:void
 cmd_tmux_send	src/commands/cmd_misc.c	/^void cmd_tmux_send(const char *args) {$/;"	f	typeref:typename:void
 cmd_tmux_toggle	src/commands/cmd_misc.c	/^void cmd_tmux_toggle(const char *args) {$/;"	f	typeref:typename:void
@@ -617,6 +621,7 @@ end	src/buf/textobj.h	/^    TextPos end;    \/* exclusive *\/$/;"	m	struct:TextS
 entries	src/hooks.c	/^    HookEntry entries[MAX_HOOKS_PER_TYPE];$/;"	m	struct:__anon5da425b10208	typeref:typename:HookEntry[]	file:
 entries	src/utils/jump_list.h	/^    JumpEntry *entries;$/;"	m	struct:__anona92e3b690208	typeref:typename:JumpEntry *
 expand_tab	src/editor.h	/^    int expand_tab;     \/* 0=insert '\\t', 1=insert spaces *\/$/;"	m	struct:__anonf14592f90208	typeref:typename:int
+file	src/utils/ctags.h	/^    char *file;     \/* File path *\/$/;"	m	struct:__anon4ed077c40108	typeref:typename:char *
 filename	src/buf/buffer.h	/^    char *filename;$/;"	m	struct:Buffer	typeref:typename:char *
 filename	src/hooks.h	/^    const char *filename;$/;"	m	struct:__anon5da425b60408	typeref:typename:const char *
 filename	src/utils/quickfix.h	/^    char *filename; \/* optional *\/$/;"	m	struct:__anonab014e760108	typeref:typename:char *
@@ -624,6 +629,8 @@ filetype	src/buf/buffer.h	/^    char *filetype;$/;"	m	struct:Buffer	typeref:type
 filetype	src/hooks.c	/^    char *filetype; \/* Filter by filetype, "*" for all *\/$/;"	m	struct:__anon5da425b10108	typeref:typename:char *	file:
 find_enclosing_pair	src/buf/textobj.c	/^static int find_enclosing_pair(Buffer *buf, int line, int col, char open,$/;"	f	typeref:typename:int	file:
 find_parent_and_pos	src/ui/wlayout.c	/^static int find_parent_and_pos(WLayoutNode *n, int leaf_index,$/;"	f	typeref:typename:int	file:
+find_tag	src/utils/ctags.c	/^TagEntry *find_tag(const char *tag_name) {$/;"	f	typeref:typename:TagEntry *
+find_tags_file	src/utils/ctags.c	/^static int find_tags_file(char *out_path, size_t size) {$/;"	f	typeref:typename:int	file:
 fixed_size	src/ui/wlayout.h	/^    int fixed_size; \/* if >0, fixed size along split axis (rows for H, cols for$/;"	m	struct:WLayoutNode	typeref:typename:int
 focus	src/ui/window.h	/^    int focus;        \/* 1 if focused *\/$/;"	m	struct:Window	typeref:typename:int
 focus	src/utils/quickfix.h	/^    int focus;  \/* 0\/1: when focused, keypresses navigate quickfix *\/$/;"	m	struct:__anonab014e760208	typeref:typename:int
@@ -639,6 +646,7 @@ g_servers_len	src/lsp.c	/^static int g_servers_len = 0;$/;"	v	typeref:typename:i
 g_ts_enabled	src/utils/ts.c	/^static int g_ts_enabled = 1;$/;"	v	typeref:typename:int	file:
 get_cursor_position	src/terminal.c	/^int get_cursor_position(int *rows, int *cols) {$/;"	f	typeref:typename:int
 get_window_size	src/terminal.c	/^int get_window_size(int *rows, int *cols) {$/;"	f	typeref:typename:int
+goto_tag	src/utils/ctags.c	/^int goto_tag(const char *tag_name) {$/;"	f	typeref:typename:int
 group_id	src/utils/undo.h	/^    int group_id;             \/* logical action grouping *\/$/;"	m	struct:__anon624302a80208	typeref:typename:int
 group_open	src/utils/undo.c	/^static int group_open = 0;$/;"	v	typeref:typename:int	file:
 gutter_fixed_width	src/ui/window.h	/^    int gutter_fixed_width;$/;"	m	struct:Window	typeref:typename:int
@@ -850,6 +858,7 @@ new_x	src/hooks.h	/^    int new_x;$/;"	m	struct:__anon5da425b60608	typeref:typen
 new_y	src/hooks.h	/^    int new_y;$/;"	m	struct:__anon5da425b60608	typeref:typename:int
 next_id	src/lsp.c	/^    int next_id;     \/* next JSON-RPC id for requests *\/$/;"	m	struct:LspServer	typeref:typename:int	file:
 nmode_bindings	src/config.c	/^void nmode_bindings() {$/;"	f	typeref:typename:void
+normalize_pattern	src/utils/ctags.c	/^static void normalize_pattern(char *pattern) {$/;"	f	typeref:typename:void	file:
 num	src/registers.c	/^    SizedStr num[9];    \/* '1'..'9' *\/$/;"	m	struct:__anon6e2d8d650108	typeref:typename:SizedStr[9]	file:
 num_buffers	src/editor.h	/^#define num_buffers(/;"	d
 num_rows	src/buf/buffer.h	/^    int num_rows;$/;"	m	struct:Buffer	typeref:typename:int
@@ -867,12 +876,14 @@ paragraph_range	src/buf/textobj.c	/^static int paragraph_range(Buffer *buf, int 
 parent	src/ui/wlayout.h	/^    struct WLayoutNode *parent;$/;"	m	struct:WLayoutNode	typeref:struct:WLayoutNode *
 parse_int_default	src/commands/cmd_util.c	/^int parse_int_default(const char *s, int def) {$/;"	f	typeref:typename:int
 parse_number_slice	src/buf/buf_helpers.c	/^static int parse_number_slice(const char *start, size_t len) {$/;"	f	typeref:typename:int	file:
+parse_tag_line	src/utils/ctags.c	/^static TagEntry *parse_tag_line(const char *line) {$/;"	f	typeref:typename:TagEntry *	file:
 parsed_dirty	src/utils/ts.c	/^    int parsed_dirty; \/* last buf->dirty value parsed; -1 = needs parse *\/$/;"	m	struct:__anon7e5341b40108	typeref:typename:int	file:
 parser	src/utils/ts.c	/^    TSParser *parser;$/;"	m	struct:__anon7e5341b40108	typeref:typename:TSParser *	file:
 path_dirname	src/lib/file_helpers.c	/^bool path_dirname(char *filename, SizedStr *out) {$/;"	f	typeref:typename:bool
 path_exists	src/lib/file_helpers.c	/^bool path_exists(const char *path) {$/;"	f	typeref:typename:bool
 path_is_absolute	src/lib/file_helpers.c	/^int path_is_absolute(const char *path) {$/;"	f	typeref:typename:int
 path_join_dir	src/lib/file_helpers.c	/^int path_join_dir(char *out, size_t out_sz, const char *dir, const char *path) {$/;"	f	typeref:typename:int
+pattern	src/utils/ctags.h	/^    char *pattern;  \/* Search pattern\/regex *\/$/;"	m	struct:__anon4ed077c40108	typeref:typename:char *
 payload	src/utils/undo.h	/^    SizedStr payload;$/;"	m	struct:__anon624302a80208	typeref:typename:SizedStr
 pending_count	src/keybinds.c	/^static int pending_count = 0; \/* numeric prefix *\/$/;"	v	typeref:typename:int	file:
 pid	src/lsp.c	/^    pid_t pid;       \/* LSP server process id *\/$/;"	m	struct:LspServer	typeref:typename:pid_t	file:
@@ -968,6 +979,9 @@ saved_line	src/utils/history.h	/^    char saved_line[80];$/;"	m	struct:__anonec3
 screen_cols	src/editor.h	/^    int screen_cols;$/;"	m	struct:__anonf14592f90208	typeref:typename:int
 screen_rows	src/editor.h	/^    int screen_rows;$/;"	m	struct:__anonf14592f90208	typeref:typename:int
 scroll	src/utils/quickfix.h	/^    int scroll; \/* first visible index *\/$/;"	m	struct:__anonab014e760208	typeref:typename:int
+search_and_position	src/utils/ctags.c	/^static int search_and_position(Buffer *buf, Window *win, const char *pattern) {$/;"	f	typeref:typename:int	file:
+search_is_regex	src/editor.h	/^    int search_is_regex; \/* 1=regex search, 0=literal *\/$/;"	m	struct:__anonf14592f90208	typeref:typename:int
+search_prompt_active	src/editor.h	/^    int search_prompt_active; \/* 1 while interactive \/ search prompt is open *\/$/;"	m	struct:__anonf14592f90208	typeref:typename:int
 search_query	src/editor.h	/^    SizedStr search_query;$/;"	m	struct:__anonf14592f90208	typeref:typename:SizedStr
 sel	src/ui/window.h	/^    Selection sel;$/;"	m	struct:Window	typeref:typename:Selection
 sel	src/utils/quickfix.h	/^    int sel;    \/* selected index (0-based) *\/$/;"	m	struct:__anonab014e760208	typeref:typename:int
@@ -998,6 +1012,9 @@ str_expand_tilde	src/lib/strutil.c	/^size_t str_expand_tilde(const char *in, cha
 str_trim_whitespace	src/lib/strutil.c	/^size_t str_trim_whitespace(const char *in, char *out, size_t out_sz) {$/;"	f	typeref:typename:size_t
 strip_path_position	src/buf/buf_helpers.c	/^static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {$/;"	f	typeref:typename:void	file:
 tab_size	src/editor.h	/^    int tab_size;       \/* visual tab size (defaults to TAB_STOP) *\/$/;"	m	struct:__anonf14592f90208	typeref:typename:int
+tag	src/utils/ctags.h	/^    char *tag;      \/* Tag name *\/$/;"	m	struct:__anon4ed077c40108	typeref:typename:char *
+tag_entry_free	src/utils/ctags.c	/^void tag_entry_free(TagEntry *entry) {$/;"	f	typeref:typename:void
+tag_exists	src/utils/ctags.c	/^int tag_exists(const char *tag_name) {$/;"	f	typeref:typename:int
 tee_b	src/ui/wlayout.h	/^    const char *tee_t, *tee_b, *tee_l, *tee_r; \/* tees *\/$/;"	m	struct:__anon5abe60b40208	typeref:typename:const char *
 tee_l	src/ui/wlayout.h	/^    const char *tee_t, *tee_b, *tee_l, *tee_r; \/* tees *\/$/;"	m	struct:__anon5abe60b40208	typeref:typename:const char *
 tee_r	src/ui/wlayout.h	/^    const char *tee_t, *tee_b, *tee_l, *tee_r; \/* tees *\/$/;"	m	struct:__anon5abe60b40208	typeref:typename:const char *

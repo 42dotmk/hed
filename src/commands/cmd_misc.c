@@ -2,6 +2,7 @@
 #include "../hed.h"
 #include "../macros.h"
 #include "../registers.h"
+#include "../utils/ctags.h"
 #include "cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -600,4 +601,9 @@ void cmd_reload(const char *args) {
     perror("execl");
     enable_raw_mode();
     ed_set_status_message("reload: failed to exec %s", exe);
+}
+
+void cmd_tag(const char *args) {
+    /* Jump to tag definition using ctags */
+    goto_tag(args && *args ? args : NULL);
 }

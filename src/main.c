@@ -41,11 +41,7 @@ int main(int argc, char *argv[]) {
     ed_init(file_count == 0);
 
     for (int i = 0; i < file_count; i++) {
-        Buffer *nb = NULL;
-        EdError err = buf_open_file(file_args[i], &nb);
-        if ((err == ED_OK || err == ED_ERR_FILE_NOT_FOUND) && nb) {
-            win_attach_buf(window_cur(), nb);
-        }
+        buf_open_or_switch(file_args[i], true);
     }
 
     free(file_args);

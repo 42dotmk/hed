@@ -11,7 +11,6 @@
  */
 
 #include "cmd_misc.h"
-#include "cmd_ctags.h"
 #include "cmd_search.h"
 #include "commands_buffer.h"
 #include "commands_ui.h"

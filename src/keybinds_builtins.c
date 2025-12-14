@@ -44,7 +44,8 @@ static void buf_dirname(const Buffer *buf, char *out, size_t out_sz) {
     out[len] = '\0';
 }
 
-static int join_dir_and_path(char *out, size_t out_sz, const char *dir, const char *path) {
+static int join_dir_and_path(char *out, size_t out_sz, const char *dir,
+                             const char *path) {
     if (!out || out_sz == 0)
         return 0;
     out[0] = '\0';
@@ -635,7 +636,7 @@ void kb_find_under_cursor(void) {
     sstr_free(&w);
     buf_find_in(buf_cur());
 }
-void kb_search_file_under_cursor(void){
+void kb_search_file_under_cursor(void) {
     SizedStr path = sstr_new();
     if (!buf_get_path_under_cursor(&path, NULL, NULL) || !path.data ||
         path.len == 0) {
@@ -676,10 +677,10 @@ void kb_search_file_under_cursor(void){
         return;
     }
 
-    buf_open_or_switch(sel[0]);
+    buf_open_or_switch(sel[0], true);
     fzf_free(sel, cnt);
 }
-void kb_open_file_under_cursor(void){
+void kb_open_file_under_cursor(void) {
     SizedStr path = sstr_new();
     int line = 0, col = 0;
     if (!buf_get_path_under_cursor(&path, &line, &col) || !path.data ||
@@ -731,7 +732,7 @@ void kb_open_file_under_cursor(void){
         ed_set_status_message("gf: file does not exist: %s", target);
         return;
     }
-    buf_open_or_switch(target);
+    buf_open_or_switch(target, true);
 
     if (line > 0 || col > 0) {
         Buffer *buf = buf_cur();
@@ -771,42 +772,32 @@ void kb_redo(void) {
 
 /* Helper: perform jump in specified direction */
 static void kb_jump(int direction) {
-    int buffer_idx, cursor_x, cursor_y;
+    int cursor_x, cursor_y;
+    char *filename = "\0";
     int success;
-    const char *direction_str;
-    const char *limit_msg;
 
     if (direction < 0) {
         success =
-            jump_list_backward(&E.jump_list, &buffer_idx, &cursor_x, &cursor_y);
-        direction_str = "back";
-        limit_msg = "Already at oldest jump position";
-    } else {
-        success =
-            jump_list_forward(&E.jump_list, &buffer_idx, &cursor_x, &cursor_y);
-        direction_str = "forward";
-        limit_msg = "Already at newest jump position";
-    }
+            jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
 
-    if (success) {
-        /* Switch to the buffer without adding to jump list */
-        if (buffer_idx >= 0 && buffer_idx < (int)E.buffers.len) {
-            E.current_buffer = buffer_idx;
-            Window *win = window_cur();
-            if (win) {
-                win->buffer_index = buffer_idx;
-                win->cursor.x = cursor_x;
-                win->cursor.y = cursor_y;
-            }
-
-            Buffer *buf = buf_cur();
-            ed_set_status_message("Jumped %s to buffer %d: %s", direction_str,
-                                  buffer_idx + 1, buf->title);
+        if (success && filename && filename[0] != '\0') {
+            buf_open_or_switch(filename, false);
+            free(filename);
         } else {
-            ed_set_status_message("Jump target buffer no longer exists");
+            log_msg("At beginning of jump list");
+            return;
         }
     } else {
-        ed_set_status_message("%s", limit_msg);
+        success =
+            jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+
+        if (success && filename && filename[0] != '\0') {
+            buf_open_or_switch(filename, false);
+            free(filename);
+        } else {
+            log_msg("At end of jump list");
+            return;
+        }
     }
 }
 

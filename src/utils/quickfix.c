@@ -520,7 +520,7 @@ static void qf_jump_to_internal(const QfItem *it, int focus_target) {
     if (it->filename && it->filename[0]) {
         /* Reuse existing buffer for this filename if present; otherwise open
          * it. */
-        buf_open_or_switch(it->filename);
+        buf_open_or_switch(it->filename, true);
     }
 
     Buffer *b = buf_cur();

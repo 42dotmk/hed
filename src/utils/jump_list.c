@@ -23,15 +23,15 @@ void jump_list_free(JumpList *jl) {
     jl->current = -1;
 }
 
-void jump_list_add(JumpList *jl, int buffer_index, int cursor_x, int cursor_y) {
+void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y) {
     if (!jl)
         return;
 
     /* Don't add if it's the same as the last entry */
     if (jl->len > 0) {
         JumpEntry *last = &jl->entries[jl->len - 1];
-        if (last->buffer_index == buffer_index && last->cursor_x == cursor_x &&
-            last->cursor_y == cursor_y) {
+        if (strcmp(last->filepath, filepath) == 0 &&
+            last->cursor_x == cursor_x && last->cursor_y == cursor_y) {
             return;
         }
     }
@@ -63,7 +63,7 @@ void jump_list_add(JumpList *jl, int buffer_index, int cursor_x, int cursor_y) {
     }
 
     /* Add new entry */
-    jl->entries[jl->len].buffer_index = buffer_index;
+    jl->entries[jl->len].filepath = strdup(filepath);
     jl->entries[jl->len].cursor_x = cursor_x;
     jl->entries[jl->len].cursor_y = cursor_y;
     jl->len++;
@@ -72,7 +72,7 @@ void jump_list_add(JumpList *jl, int buffer_index, int cursor_x, int cursor_y) {
     jl->current = -1;
 }
 
-int jump_list_backward(JumpList *jl, int *out_buffer, int *out_x, int *out_y) {
+int jump_list_backward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
     if (!jl || jl->len == 0)
         return 0;
 
@@ -85,12 +85,10 @@ int jump_list_backward(JumpList *jl, int *out_buffer, int *out_x, int *out_y) {
     if (jl->current > 0) {
         jl->current--;
         JumpEntry *entry = &jl->entries[jl->current];
-        if (out_buffer)
-            *out_buffer = entry->buffer_index;
-        if (out_x)
-            *out_x = entry->cursor_x;
-        if (out_y)
-            *out_y = entry->cursor_y;
+        char * copy = strdup(entry->filepath);
+        *filepath = copy;
+        *out_x = entry->cursor_x;
+        *out_y = entry->cursor_y;
         return 1;
     }
 
@@ -98,7 +96,7 @@ int jump_list_backward(JumpList *jl, int *out_buffer, int *out_x, int *out_y) {
     return 0;
 }
 
-int jump_list_forward(JumpList *jl, int *out_buffer, int *out_x, int *out_y) {
+int jump_list_forward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
     if (!jl || jl->len == 0)
         return 0;
 
@@ -110,12 +108,10 @@ int jump_list_forward(JumpList *jl, int *out_buffer, int *out_x, int *out_y) {
     if (jl->current < jl->len - 1) {
         jl->current++;
         JumpEntry *entry = &jl->entries[jl->current];
-        if (out_buffer)
-            *out_buffer = entry->buffer_index;
-        if (out_x)
-            *out_x = entry->cursor_x;
-        if (out_y)
-            *out_y = entry->cursor_y;
+        char * copy = strdup(entry->filepath);
+        *filepath = copy;
+        *out_x = entry->cursor_x;
+        *out_y = entry->cursor_y;
         return 1;
     }
 

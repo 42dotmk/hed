@@ -4,7 +4,7 @@
 /* Jump list for buffer navigation (like Vim's jumplist) */
 
 typedef struct {
-    int buffer_index;
+    char* filepath;
     int cursor_x;
     int cursor_y;
 } JumpEntry;
@@ -23,15 +23,15 @@ void jump_list_init(JumpList *jl);
 void jump_list_free(JumpList *jl);
 
 /* Add a new jump entry (buffer switch) */
-void jump_list_add(JumpList *jl, int buffer_index, int cursor_x, int cursor_y);
+void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y);
 
 /* Navigate backward in jump list (Ctrl-O) */
 /* Returns 1 if successful, 0 if at beginning */
-int jump_list_backward(JumpList *jl, int *out_buffer, int *out_x, int *out_y);
+int jump_list_backward(JumpList *jl, char **filepath, int *out_x, int *out_y);
 
 /* Navigate forward in jump list (Ctrl-I) */
 /* Returns 1 if successful, 0 if at end */
-int jump_list_forward(JumpList *jl, int *out_buffer, int *out_x, int *out_y);
+int jump_list_forward(JumpList *jl, char **filepath, int *out_x, int *out_y);
 
 /* Reset navigation state */
 void jump_list_reset_navigation(JumpList *jl);

@@ -152,7 +152,6 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     *out = NULL;
     if (!PTR_VALID(filename))
         return ED_ERR_INVALID_ARG;
-
     int idx;
     EdError err = buf_new(filename, &idx);
     if (err != ED_OK)
@@ -166,6 +165,8 @@ EdError buf_open_file(const char *filename, Buffer **out) {
         *out = buf;
         return ED_OK;
     }
+
+    // Add to jump list
 
     char *line = NULL;
     size_t linecap = 0;
@@ -190,10 +191,11 @@ EdError buf_open_file(const char *filename, Buffer **out) {
         ts_buffer_reparse(buf);
     }
     *out = buf;
+
     return ED_OK;
 }
 
-void buf_open_or_switch(const char *filename) {
+void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
     if (!filename || !*filename) {
         ed_set_status_message("No filename provided");
         return;
@@ -225,6 +227,11 @@ void buf_open_or_switch(const char *filename) {
             ed_set_status_message("Failed to open: %s", ed_error_string(err));
         }
     }
+    if (add_to_jumplist) {
+        Cursor *cursor = &buf_cur()->cursor;
+        char *filename = buf_cur()->filename;
+        jump_list_add(&E.jump_list, filename, cursor->x, cursor->y);
+    }
 }
 
 /* Switch to a buffer by index and return EdError status */
@@ -235,11 +242,6 @@ EdError buf_switch(int index) {
 
     /* Record current position before switching */
     Window *win = window_cur();
-    if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
-                      win->cursor.y);
-    }
-
     E.current_buffer = index;
     if (win)
         win->buffer_index = index;
@@ -258,10 +260,6 @@ void buf_next(void) {
 
     /* Record current position before switching */
     Window *win = window_cur();
-    if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
-                      win->cursor.y);
-    }
 
     E.current_buffer = (E.current_buffer + 1) % E.buffers.len;
     if (win)
@@ -272,6 +270,10 @@ void buf_next(void) {
     HookBufferEvent event = {buf, buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);
 
+    if (win) {
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
+    }
     ed_set_status_message("Buffer %d: %s", E.current_buffer + 1, buf->title);
 }
 
@@ -281,16 +283,16 @@ void buf_prev(void) {
 
     /* Record current position before switching */
     Window *win = window_cur();
-    if (win) {
-        jump_list_add(&E.jump_list, E.current_buffer, win->cursor.x,
-                      win->cursor.y);
-    }
 
     E.current_buffer = (E.current_buffer - 1 + E.buffers.len) % E.buffers.len;
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
 
+    if (win) {
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
+    }
     /* Fire hook */
     HookBufferEvent event = {buf, buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);

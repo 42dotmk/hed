@@ -28,5 +28,6 @@ void cmd_fmt(const char *args);
 void cmd_tmux_toggle(const char *args);
 void cmd_tmux_send(const char *args);
 void cmd_tmux_kill(const char *args);
+void cmd_tag(const char *args);
 
 #endif /* CMD_MISC_H */

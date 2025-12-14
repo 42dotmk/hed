@@ -319,7 +319,7 @@ void cmd_fzf(const char *args) {
         "2>/dev/null' --preview-window right,60%,wrap";
     if (fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 &&
         sel[0] && sel[0][0]) {
-        buf_open_or_switch(sel[0]);
+        buf_open_or_switch(sel[0], true);
     } else {
         ed_set_status_message("fzf: no selection");
     }
@@ -396,7 +396,7 @@ void cmd_recent(const char *args) {
 
     if (fzf_run_opts(cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] &&
         sel[0][0]) {
-        buf_open_or_switch(sel[0]);
+        buf_open_or_switch(sel[0], true);
     } else {
         ed_set_status_message("no selection");
     }
