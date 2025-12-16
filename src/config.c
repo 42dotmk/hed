@@ -168,6 +168,8 @@ void user_commands_init(void) {
     cmd("tslang", cmd_tslang, "tslang <name>");
     cmd("tsi", cmd_tsi, "install ts lang");
     cmd("reload", cmd_reload, "rebuild+restart hed");
+    cmd("modal", cmd_modal_from_current, "convert current window to modal");
+    cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");
 }
 
 void imode_bindings() {
@@ -197,7 +199,6 @@ void nmode_bindings() {
     cmapn(" ss", "ssearch");
     cmapn(" sa", "rgword");
     cmapn("<C-*>", "rgword");
-    cmapn("gd", "tag");
     cmapn(" tw", "wrap");
     cmapn(" tt", "tmux_toggle");
     cmapn(" tT", "tmux_kill");
@@ -232,6 +233,8 @@ void nmode_bindings() {
     cmapn("gn", "cnext");
     cmapn("<C-p>", "cprev");
     cmapn("gp", "cprev");
+    cmapn("gr", "rgword");
+    cmapn("gd", "tag");
     cmapn("<C-r>", "redo");
     cmapn("O", "new_line_above");
     cmapn("o", "new_line");
@@ -309,8 +312,10 @@ void nmode_bindings() {
     mapn("dp", buf_delete_paragraph);
     mapn("dw", buf_delete_word_forward);
     mapn("gg", kb_cursor_top);
+
     mapn("gf", kb_open_file_under_cursor);
     mapn("gF", kb_search_file_under_cursor);
+
     mapn("i", kb_enter_insert_mode);
     mapn("n", kb_search_next);
     mapn("p", kb_paste);

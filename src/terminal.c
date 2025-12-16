@@ -564,6 +564,55 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     }
 }
 
+static void win_draw_modal_border(Abuf *ab, Window *win) {
+    if (!win || !win->is_modal)
+        return;
+
+    /* Draw a simple box border around the modal */
+    int top = win->top;
+    int left = win->left;
+    int height = win->height;
+    int width = win->width;
+
+    /* Top border */
+    ansi_move(ab, top - 1, left - 1);
+    ab_append_str(ab, "┌");
+    for (int i = 0; i < width; i++)
+        ab_append_str(ab, "─");
+    ab_append_str(ab, "┐");
+
+    /* Side borders */
+    for (int y = 0; y < height; y++) {
+        ansi_move(ab, top + y, left - 1);
+        ab_append_str(ab, "│");
+        ansi_move(ab, top + y, left + width);
+        ab_append_str(ab, "│");
+    }
+
+    /* Bottom border */
+    ansi_move(ab, top + height, left - 1);
+    ab_append_str(ab, "└");
+    for (int i = 0; i < width; i++)
+        ab_append_str(ab, "─");
+    ab_append_str(ab, "┘");
+
+    /* Draw title if buffer has a name */
+    Buffer *buf = NULL;
+    if (win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len) {
+        buf = &E.buffers.data[win->buffer_index];
+        if (buf->filename) {
+            /* Draw title in top border */
+            int title_len = strlen(buf->filename);
+            if (title_len > width - 4)
+                title_len = width - 4;
+            ansi_move(ab, top - 1, left + 2);
+            ab_append_str(ab, "[ ");
+            ab_append(ab, buf->filename, title_len);
+            ab_append_str(ab, " ]");
+        }
+    }
+}
+
 void ed_render_frame(void) {
     /* Live resize: get current terminal size and compute base content rows. */
     int term_rows = E.screen_rows + 2; /* fallback if call fails */
@@ -611,6 +660,13 @@ void ed_render_frame(void) {
     }
     draw_status_bar(&ab, &lo);
     draw_message_bar(&ab, &lo);
+
+    /* Draw modal window on top if one is shown */
+    if (E.modal_window && E.modal_window->visible) {
+        ed_draw_rows_win(&ab, E.modal_window);
+        /* Draw border around modal */
+        win_draw_modal_border(&ab, E.modal_window);
+    }
 
     Buffer *buf = NULL;
     if (E.buffers.len > 0 && win->buffer_index >= 0 &&

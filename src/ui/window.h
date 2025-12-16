@@ -23,6 +23,8 @@ typedef struct Window {
     int buffer_index; /* index into E.buffers */
     int focus;        /* 1 if focused */
     int is_quickfix;  /* 1 if this window is a quickfix pane */
+    int is_modal;     /* 1 if this is a modal window */
+    int visible;      /* 1 if visible (for showing/hiding modals) */
     int wrap;         /* 1 if soft-wrap is enabled */
     int row_offset;   /* first visible visual row (wrap-aware) */
     int col_offset;   /* first visible buffer column (render x) */

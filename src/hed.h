@@ -52,6 +52,7 @@
 /* UI */
 #include "abuf.h"
 #include "window.h"
+#include "winmodal.h"
 #include "wlayout.h"
 
 #endif

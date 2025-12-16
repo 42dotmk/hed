@@ -608,3 +608,34 @@ void cmd_tag(const char *args) {
     /* Jump to tag definition using ctags */
     goto_tag(args && *args ? args : NULL);
 }
+void cmd_modal_toggle(const char *args) {}
+
+void cmd_modal_from_current(const char *args) {
+    (void)args;
+
+    /* Convert current window to modal */
+    Window *modal = winmodal_from_current();
+    if (!modal) {
+        ed_set_status_message("Failed to create modal from current window");
+        return;
+    }
+
+    /* Show the modal */
+    winmodal_show(modal);
+    ed_set_status_message("Window converted to modal");
+}
+
+void cmd_modal_to_layout(const char *args) {
+    (void)args;
+
+    /* Check if a modal is shown */
+    Window *modal = winmodal_current();
+    if (!modal) {
+        ed_set_status_message("No modal window is currently shown");
+        return;
+    }
+
+    /* Convert modal back to layout */
+    winmodal_to_layout(modal);
+    ed_set_status_message("Modal converted back to normal window");
+}

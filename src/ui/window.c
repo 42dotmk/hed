@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "safe_string.h"
 #include "wlayout.h"
+#include "winmodal.h"
 
 void windows_init(void) {
     E.windows.len = 1;
@@ -14,6 +15,8 @@ void windows_init(void) {
     E.windows.data[0].buffer_index = E.current_buffer;
     E.windows.data[0].focus = 1;
     E.windows.data[0].is_quickfix = 0;
+    E.windows.data[0].is_modal = 0;
+    E.windows.data[0].visible = 1;
     E.windows.data[0].row_offset = 0;
     E.windows.data[0].col_offset = 0;
     E.windows.data[0].wrap = E.default_wrap;
@@ -27,6 +30,10 @@ void windows_init(void) {
 /* Update geometry for the single main window. (unused) */
 
 Window *window_cur(void) {
+    /* If a modal is shown, it takes priority */
+    if (E.modal_window && E.modal_window->visible)
+        return E.modal_window;
+
     if (E.windows.len == 0)
         return NULL;
     return &E.windows.data[E.current_window];
@@ -247,6 +254,10 @@ void windows_focus_down(void) {
 }
 
 void windows_close_current(void) {
+	if (winmodal_is_shown()){
+		 winmodal_destroy(winmodal_current());
+		return;
+	}
     if (E.windows.len <= 1) {
         ed_set_status_message("only one window");
         return;

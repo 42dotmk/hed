@@ -6,9 +6,7 @@
 
 #define MAX_KEYBINDS 256
 #define KEY_BUFFER_SIZE 16
-#define SEQUENCE_TIMEOUT_MS                                                    \
-    1000 /* 1 second timeout for multi-key sequences                           \
-          */
+#define SEQUENCE_TIMEOUT_MS 1000
 
 /* Keybinding entry */
 typedef struct {
@@ -173,7 +171,7 @@ bool keybind_process(int key, int mode) {
                     log_msg("Warning: numeric prefix capped at 1,000,000");
                 }
                 have_count = true;
-                return true; 
+                return true;
             }
         }
     }

@@ -80,6 +80,7 @@ typedef struct {
     int search_is_regex; /* 1=regex search, 0=literal */
     int clipboard_is_block;
     Qf qf;
+    Window *modal_window; /* Current modal window (NULL if none) */
     struct WLayoutNode *wlayout_root;
     CmdHistory history;
     RecentFiles recent_files;
