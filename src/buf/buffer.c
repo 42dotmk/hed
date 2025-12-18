@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "safe_string.h"
+#include "fold_methods/fold_methods.h"
 #include <regex.h>
 
 /* Internal low-level row helpers (not part of public API) */
@@ -93,6 +94,8 @@ static void buf_init(Buffer *buf) {
     buf->dirty = 0;
     buf->readonly = 0; /* Default: not read-only */
     buf->ts_internal = NULL;
+    fold_list_init(&buf->folds);
+    buf->fold_method = FOLD_METHOD_MANUAL; /* Default: manual folding */
 }
 
 /* Create a new buffer and return EdError status */
@@ -326,6 +329,7 @@ EdError buf_close(int index) {
     free(buf->filename);
     free(buf->title);
     free(buf->filetype);
+    fold_list_free(&buf->folds);
 
     /* Shift buffers down */
     for (int i = index; i < (int)E.buffers.len - 1; i++) {
@@ -369,6 +373,8 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
 
     buf->rows[at].chars = sstr_from(s, len);
     buf->rows[at].render = sstr_new();
+    buf->rows[at].fold_start = false;
+    buf->rows[at].fold_end = false;
     buf_row_update(&buf->rows[at]);
 
     buf->num_rows++;
@@ -785,6 +791,10 @@ void buf_reload(Buffer *buf) {
     /* reset scroll will be handled by window */
     buf->cursor.x = 0;
     buf->cursor.y = 0;
+
+    /* Clear folds */
+    fold_list_free(&buf->folds);
+    fold_list_init(&buf->folds);
 
     /* Detect filetype (update) */
     free(buf->filetype);

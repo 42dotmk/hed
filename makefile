@@ -16,7 +16,7 @@ OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
 .PHONY: all clean run test_args ts-langs strip_build
 
-all: clean strip_build
+all: $(TARGET) $(TSI)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -46,6 +46,10 @@ clean:
 
 fmt: 
 	clang-format -i $(SOURCES) $(HEADERS)
+
+tags:
+	ctags -R --languages=C src
+
 
 run: $(TARGET)
 	./$(TARGET)

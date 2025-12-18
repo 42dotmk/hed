@@ -32,6 +32,28 @@ bool path_dirname(char *filename, SizedStr *out) {
     return true;
 }
 
+void path_dirname_buf(const char *filename, char *out, size_t out_sz) {
+    if (!out || out_sz == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!filename)
+        return;
+
+    const char *slash = strrchr(filename, '/');
+    const char *bslash = strrchr(filename, '\\');
+    if (bslash && (!slash || bslash > slash))
+        slash = bslash;
+    if (!slash)
+        return;
+
+    size_t len = (size_t)(slash - filename);
+    if (len >= out_sz)
+        len = out_sz - 1;
+    memcpy(out, filename, len);
+    out[len] = '\0';
+}
+
 bool path_exists(const char *path) {
     if (!path || !*path)
         return false;

@@ -4,6 +4,7 @@
 #include "bottom_ui.h"
 #include "buffer.h"
 #include "editor.h"
+#include "fold.h"
 #include "hooks.h"
 #include "safe_string.h"
 #include <errno.h>
@@ -415,6 +416,11 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         int target = win->row_offset;
         int y = 0;
         while (y < buf->num_rows) {
+            /* Skip hidden lines */
+            if (fold_is_line_hidden(&buf->folds, y)) {
+                y++;
+                continue;
+            }
             int h = row_visual_height(&buf->rows[y], content_cols, win->wrap);
             if (target < h) {
                 row = y;
@@ -446,8 +452,30 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                     if (filerow != cur)
                         num = abs(filerow - cur);
                 }
-                int n = snprintf(nb, sizeof(nb), "%*d ", gutter, num);
+                /* Line number without trailing space */
+                int n = snprintf(nb, sizeof(nb), "%*d", gutter, num);
                 ab_append(ab, nb, n);
+
+                /* Fold marker after line number */
+                char fold_mark = ' ';
+                if (buf->rows[filerow].fold_start) {
+                    /* Check if fold is collapsed */
+                    int fold_idx = fold_find_at_line(&buf->folds, filerow);
+                    if (fold_idx >= 0 &&
+                        buf->folds.regions[fold_idx].is_collapsed) {
+                        fold_mark = '+'; /* Collapsed fold */
+                    } else if (fold_idx >= 0) {
+                        fold_mark = '-'; /* Expanded fold start */
+                    }
+                } else if (buf->rows[filerow].fold_end) {
+                    /* End of fold */
+                    int fold_idx = fold_find_at_line(&buf->folds, filerow);
+                    if (fold_idx >= 0 &&
+                        !buf->folds.regions[fold_idx].is_collapsed) {
+                        fold_mark = '\\'; /* Fold end marker */
+                    }
+                }
+                ab_append_ch(ab, fold_mark);
             } else {
                 for (int i = 0; i < margin; i++)
                     ab_append_ch(ab, ' ');
@@ -460,11 +488,53 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 ab_append_ch(ab, '~');
             }
         } else {
-            int line_rcols = render_cols_ss(&buf->rows[filerow].render);
-            int start_rx;
-            int len;
+            /* Check if this line has a collapsed fold */
+            bool is_folded = false;
+            if (buf->rows[filerow].fold_start) {
+                int fold_idx = fold_find_at_line(&buf->folds, filerow);
+                if (fold_idx >= 0 &&
+                    buf->folds.regions[fold_idx].is_collapsed) {
+                    is_folded = true;
+                }
+            }
 
-            if (win->wrap) {
+            /* If folded, show fold indicator with first line */
+            if (is_folded) {
+                int fold_idx = fold_find_at_line(&buf->folds, filerow);
+                int fold_lines = buf->folds.regions[fold_idx].end_line -
+                                 buf->folds.regions[fold_idx].start_line + 1;
+
+                /* Show fold count prefix */
+                char fold_prefix[32];
+                snprintf(fold_prefix, sizeof(fold_prefix), "+%d ln: ", fold_lines);
+                ab_append_str(ab, fold_prefix);
+
+                /* Show first line content (trimmed to fit) */
+                Row *first_row = &buf->rows[filerow];
+                int line_rcols = render_cols_ss(&first_row->render);
+                int prefix_len = strlen(fold_prefix);
+                int available_cols = content_cols - prefix_len;
+
+                if (available_cols > 0) {
+                    int start_rx = win->wrap ? 0 : win->col_offset;
+                    int len = line_rcols - start_rx;
+                    if (len > available_cols)
+                        len = available_cols;
+                    if (len > 0 && start_rx < line_rcols) {
+                        for (int i = start_rx; i < start_rx + len; i++) {
+                            if (i >= (int)first_row->render.len)
+                                break;
+                            ab_append_ch(ab, first_row->render.data[i]);
+                        }
+                    }
+                }
+            } else {
+                /* Normal line rendering */
+                int line_rcols = render_cols_ss(&buf->rows[filerow].render);
+                int start_rx;
+                int len;
+
+                if (win->wrap) {
                 start_rx = sub * content_cols;
                 if (start_rx < 0)
                     start_rx = 0;
@@ -542,6 +612,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                     APPEND_SLICE(post_start, post_len);
                 }
 #undef APPEND_SLICE
+                }
             }
         }
 
@@ -556,9 +627,19 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 if (sub >= h) {
                     sub = 0;
                     row++;
+                    /* Skip hidden lines */
+                    while (row < buf->num_rows &&
+                           fold_is_line_hidden(&buf->folds, row)) {
+                        row++;
+                    }
                 }
             } else {
                 row++;
+                /* Skip hidden lines */
+                while (row < buf->num_rows &&
+                       fold_is_line_hidden(&buf->folds, row)) {
+                    row++;
+                }
             }
         }
     }

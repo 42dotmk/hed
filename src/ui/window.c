@@ -9,8 +9,7 @@ void windows_init(void) {
     E.window_layout = 0;
     E.windows.data[0].top = 1;
     E.windows.data[0].left = 1;
-    E.windows.data[0].height =
-        E.screen_rows; /* content rows (set in ed_init) */
+    E.windows.data[0].height = E.screen_rows; /* content rows (set in ed_init) */
     E.windows.data[0].width = E.screen_cols;
     E.windows.data[0].buffer_index = E.current_buffer;
     E.windows.data[0].focus = 1;

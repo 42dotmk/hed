@@ -31,5 +31,10 @@ void cmd_tmux_kill(const char *args);
 void cmd_tag(const char *args);
 void cmd_modal_from_current(const char *args);
 void cmd_modal_to_layout(const char *args);
+void cmd_fold_new(const char *args);
+void cmd_fold_rm(const char *args);
+void cmd_fold_toggle(const char *args);
+void cmd_foldmethod(const char *args);
+void cmd_foldupdate(const char *args);
 
 #endif /* CMD_MISC_H */

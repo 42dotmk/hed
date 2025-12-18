@@ -59,4 +59,15 @@ void kb_visual_begin(int block_mode);
 int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
 int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
 
+void kb_change_word(void); /* Change word (cw): delete to end of word and enter insert mode */
+void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
+void kb_replace_char(void); /* Replace char under cursor with next typed char (r) */
+
+/* Fold operations */
+void kb_fold_toggle(void);    /* za - Toggle fold at cursor */
+void kb_fold_open(void);      /* zo - Open fold at cursor */
+void kb_fold_close(void);     /* zc - Close fold at cursor */
+void kb_fold_open_all(void);  /* zR - Open all folds */
+void kb_fold_close_all(void); /* zM - Close all folds */
+
 #endif /* KEYBINDS_BUILTINS_H */

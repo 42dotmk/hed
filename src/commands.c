@@ -15,8 +15,7 @@ void command_init(void) {
 }
 
 /* Register a command */
-void command_register(const char *name, CommandCallback callback,
-                      const char *desc) {
+void command_register(const char *name, CommandCallback callback,  const char *desc) {
     if (command_count >= MAX_COMMANDS)
         return;
 

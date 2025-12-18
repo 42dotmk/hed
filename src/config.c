@@ -55,18 +55,20 @@ static void on_auto_pair(const HookCharEvent *event) {
         buf_insert_char_in(event->buf, '}');
         window_cur()->cursor.x--;
         break;
-    case '"':
-        buf_insert_char_in(event->buf, '"');
-        window_cur()->cursor.x--;
-        break;
-    case '\'':
-        buf_insert_char_in(event->buf, '\'');
-        break;
-    case '`':
-        buf_insert_char_in(event->buf, '`');
-        window_cur()->cursor.x--;
-        break;
-        break;
+	// TODO: Because we are raising the event again it goes into loop, 
+	// TOOD: we need to figer on how to identify the sender better, and not make hacks
+    // case '"':
+    //     buf_insert_char_in(event->buf, '"');
+    //     window_cur()->cursor.x--;
+    //     break;
+    // case '\'':
+    //     buf_insert_char_in(event->buf, '\'');
+    //     break;
+    // case '`':
+    //     buf_insert_char_in(event->buf, '`');
+    //     window_cur()->cursor.x--;
+    //     break;
+    //     break;
     default:
         break;
     }
@@ -170,6 +172,11 @@ void user_commands_init(void) {
     cmd("reload", cmd_reload, "rebuild+restart hed");
     cmd("modal", cmd_modal_from_current, "convert current window to modal");
     cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");
+    cmd("foldnew", cmd_fold_new, "create fold region");
+    cmd("foldrm", cmd_fold_rm, "remove fold at line");
+    cmd("foldtoggle", cmd_fold_toggle, "toggle fold at line");
+    cmd("foldmethod", cmd_foldmethod, "set fold method");
+    cmd("foldupdate", cmd_foldupdate, "update folds");
 }
 
 void imode_bindings() {
@@ -309,6 +316,7 @@ void nmode_bindings() {
     mapn("di", buf_delete_inside_char);
     mapn("diw", buf_delete_inner_word);
     mapn("ci", buf_change_inside_char);
+    mapn("cw", kb_change_word);
     mapn("dp", buf_delete_paragraph);
     mapn("dw", buf_delete_word_forward);
     mapn("gg", kb_cursor_top);
@@ -319,13 +327,20 @@ void nmode_bindings() {
     mapn("i", kb_enter_insert_mode);
     mapn("n", kb_search_next);
     mapn("p", kb_paste);
+    mapn("r", kb_replace_char);
     mapn("v", kb_visual_toggle);
     mapn("w", buf_cursor_move_word_forward);
     mapn("x", kb_delete_char);
     mapn("yp", buf_yank_paragraph);
     mapn("yw", buf_yank_word);
     mapn("yy", kb_yank_line);
+    mapn("za", kb_fold_toggle);
+    mapn("zc", kb_fold_close);
+    mapn("zM", kb_fold_close_all);
+    mapn("zo", kb_fold_open);
+    mapn("zR", kb_fold_open_all);
     mapn("zz", buf_center_screen);
+    mapn("~", kb_toggle_case);
 }
 void user_keybinds_init(void) {
     nmode_bindings();

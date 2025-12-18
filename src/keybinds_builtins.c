@@ -1,67 +1,15 @@
 #include "keybinds_builtins.h"
 #include "commands/cmd_builtins.h"
 #include "commands/cmd_util.h"
+#include "file_helpers.h"
+#include "fold.h"
 #include "hed.h"
+#include "strutil.h"
 #include <limits.h>
 #include <stdlib.h>
 
 /* Internal buffer row helpers (non-public, defined in buffer.c) */
 void buf_row_del_in(Buffer *buf, int at);
-
-static int is_absolute_path(const char *path) {
-    if (!path || !*path)
-        return 0;
-    if (path[0] == '/' || path[0] == '\\')
-        return 1;
-    if (((path[0] >= 'A' && path[0] <= 'Z') ||
-         (path[0] >= 'a' && path[0] <= 'z')) &&
-        path[1] == ':')
-        return 1;
-    if (path[0] == '~')
-        return 1;
-    return 0;
-}
-
-static void buf_dirname(const Buffer *buf, char *out, size_t out_sz) {
-    if (!out || out_sz == 0) {
-        return;
-    }
-    out[0] = '\0';
-    if (!buf || !buf->filename)
-        return;
-
-    const char *slash = strrchr(buf->filename, '/');
-    const char *bslash = strrchr(buf->filename, '\\');
-    if (bslash && (!slash || bslash > slash))
-        slash = bslash;
-    if (!slash)
-        return;
-
-    size_t len = (size_t)(slash - buf->filename);
-    if (len >= out_sz)
-        len = out_sz - 1;
-    memcpy(out, buf->filename, len);
-    out[len] = '\0';
-}
-
-static int join_dir_and_path(char *out, size_t out_sz, const char *dir,
-                             const char *path) {
-    if (!out || out_sz == 0)
-        return 0;
-    out[0] = '\0';
-    if (!path || !*path)
-        return 0;
-    if (!dir || !*dir) {
-        int n = snprintf(out, out_sz, "%s", path);
-        return n > 0 && n < (int)out_sz;
-    }
-    size_t dlen = strlen(dir);
-    const char *sep = "";
-    if (dlen > 0 && dir[dlen - 1] != '/' && dir[dlen - 1] != '\\')
-        sep = "/";
-    int n = snprintf(out, out_sz, "%s%s%s", dir, sep, path);
-    return n > 0 && n < (int)out_sz;
-}
 
 /* Visual selection helpers (local to keybinding implementations) */
 static void visual_clear(Window *win) {
@@ -701,7 +649,7 @@ void kb_open_file_under_cursor(void) {
 
     char base[PATH_MAX];
     base[0] = '\0';
-    buf_dirname(buf_cur(), base, sizeof(base));
+    path_dirname_buf(buf_cur()->filename, base, sizeof(base));
     if (base[0] == '\0') {
         if (E.cwd[0]) {
             safe_strcpy(base, E.cwd, sizeof(base));
@@ -715,8 +663,8 @@ void kb_open_file_under_cursor(void) {
 
     char resolved[PATH_MAX];
     const char *target = expanded;
-    if (!is_absolute_path(expanded) && base[0]) {
-        if (!join_dir_and_path(resolved, sizeof(resolved), base, expanded)) {
+    if (!path_is_absolute(expanded) && base[0]) {
+        if (!path_join_dir(resolved, sizeof(resolved), base, expanded)) {
             sstr_free(&path);
             ed_set_status_message("gf: path too long");
             return;
@@ -828,4 +776,162 @@ void kb_tmux_send_line(void) {
 
     free(cmd);
     sstr_free(&para);
+}
+
+/* Change word: delete to end of word and enter insert mode */
+void kb_change_word(void) {
+    buf_delete_word_forward();
+    ed_set_mode(MODE_INSERT);
+}
+
+/* Toggle case of character under cursor and move right */
+void kb_toggle_case(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
+    if (win->cursor.y >= buf->num_rows)
+        return;
+
+    Row *row = &buf->rows[win->cursor.y];
+    if (win->cursor.x >= (int)row->chars.len)
+        return;
+
+    char old_char = row->chars.data[win->cursor.x];
+    char new_char = char_toggle_case(old_char);
+
+    if (new_char != old_char) {
+        row->chars.data[win->cursor.x] = new_char;
+        buf_row_update(row);
+        buf->dirty++;
+    }
+
+    /* Move cursor right (Vim behavior) */
+    if (win->cursor.x < (int)row->chars.len - 1)
+        win->cursor.x++;
+}
+
+/* Replace character under cursor with next typed char (stay in normal mode) */
+void kb_replace_char(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
+    if (win->cursor.y >= buf->num_rows)
+        return;
+
+    Row *row = &buf->rows[win->cursor.y];
+    if (win->cursor.x >= (int)row->chars.len)
+        return;
+
+    ed_set_status_message("r: char?");
+    int c = ed_read_key();
+
+    /* Cancel on ESC */
+    if (c == '\x1b') {
+        ed_set_status_message("");
+        return;
+    }
+
+    /* Don't allow newline replacement */
+    if (c == '\r' || c == '\n') {
+        ed_set_status_message("Cannot replace with newline");
+        return;
+    }
+
+    row->chars.data[win->cursor.x] = (char)c;
+    buf_row_update(row);
+    buf->dirty++;
+    ed_set_status_message("");
+}
+
+/* Fold keybindings */
+
+/* za - Toggle fold at cursor */
+void kb_fold_toggle(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+
+    int line = win->cursor.y;
+    if (fold_toggle_at_line(&buf->folds, line)) {
+        int idx = fold_find_at_line(&buf->folds, line);
+        if (idx >= 0) {
+            bool collapsed = buf->folds.regions[idx].is_collapsed;
+            ed_set_status_message("Fold %s", collapsed ? "closed" : "opened");
+        }
+    } else {
+        ed_set_status_message("No fold at cursor");
+    }
+}
+
+/* zo - Open fold at cursor */
+void kb_fold_open(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+
+    int line = win->cursor.y;
+    if (fold_expand_at_line(&buf->folds, line)) {
+        ed_set_status_message("Fold opened");
+    } else {
+        ed_set_status_message("No fold at cursor");
+    }
+}
+
+/* zc - Close fold at cursor */
+void kb_fold_close(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+
+    int line = win->cursor.y;
+    if (fold_collapse_at_line(&buf->folds, line)) {
+        ed_set_status_message("Fold closed");
+    } else {
+        ed_set_status_message("No fold at cursor");
+    }
+}
+
+/* zR - Open all folds */
+void kb_fold_open_all(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+
+    int count = 0;
+    for (int i = 0; i < buf->folds.count; i++) {
+        if (buf->folds.regions[i].is_collapsed) {
+            buf->folds.regions[i].is_collapsed = false;
+            count++;
+        }
+    }
+    ed_set_status_message("Opened %d fold%s", count, count == 1 ? "" : "s");
+}
+
+/* zM - Close all folds */
+void kb_fold_close_all(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+
+    int count = 0;
+    for (int i = 0; i < buf->folds.count; i++) {
+        if (!buf->folds.regions[i].is_collapsed) {
+            buf->folds.regions[i].is_collapsed = true;
+            count++;
+        }
+    }
+    ed_set_status_message("Closed %d fold%s", count, count == 1 ? "" : "s");
 }

@@ -33,4 +33,13 @@ void utf8_slice_by_columns(const char *str, size_t byte_len, int start_col,
                            int num_cols, int *out_byte_start,
                            int *out_byte_len);
 
+/* Toggle case of a single character (a->A, A->a, others unchanged) */
+static inline char char_toggle_case(char c) {
+    if (c >= 'a' && c <= 'z')
+        return c - 'a' + 'A';
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A' + 'a';
+    return c;
+}
+
 #endif

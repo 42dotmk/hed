@@ -3,6 +3,8 @@
 #include "../macros.h"
 #include "../registers.h"
 #include "../utils/ctags.h"
+#include "../utils/fold.h"
+#include "../fold_methods/fold_methods.h"
 #include "cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -605,10 +607,10 @@ void cmd_reload(const char *args) {
 }
 
 void cmd_tag(const char *args) {
-    /* Jump to tag definition using ctags */
+    (void)args;
     goto_tag(args && *args ? args : NULL);
+	buf_center_screen();
 }
-void cmd_modal_toggle(const char *args) {}
 
 void cmd_modal_from_current(const char *args) {
     (void)args;
@@ -638,4 +640,212 @@ void cmd_modal_to_layout(const char *args) {
     /* Convert modal back to layout */
     winmodal_to_layout(modal);
     ed_set_status_message("Modal converted back to normal window");
+}
+
+/* Create a new fold region: :foldnew <start> <end> */
+void cmd_fold_new(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf) {
+        ed_set_status_message("foldnew: no buffer");
+        return;
+    }
+
+    if (!args || !*args) {
+        ed_set_status_message("foldnew: usage: foldnew <start> <end>");
+        return;
+    }
+
+    int start_line = 0, end_line = 0;
+    if (sscanf(args, "%d %d", &start_line, &end_line) != 2) {
+        ed_set_status_message("foldnew: usage: foldnew <start> <end>");
+        return;
+    }
+
+    /* Convert from 1-indexed to 0-indexed */
+    start_line--;
+    end_line--;
+
+    if (start_line < 0 || start_line >= buf->num_rows) {
+        ed_set_status_message("foldnew: start line out of range");
+        return;
+    }
+
+    if (end_line < start_line || end_line >= buf->num_rows) {
+        ed_set_status_message("foldnew: end line out of range");
+        return;
+    }
+
+    /* Mark the rows */
+    buf->rows[start_line].fold_start = true;
+    buf->rows[end_line].fold_end = true;
+
+    /* Add fold region */
+    fold_add_region(&buf->folds, start_line, end_line);
+
+    ed_set_status_message("Fold created: lines %d-%d", start_line + 1,
+                          end_line + 1);
+}
+
+/* Remove fold at line: :foldrm <line> */
+void cmd_fold_rm(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf) {
+        ed_set_status_message("foldrm: no buffer");
+        return;
+    }
+
+    if (!args || !*args) {
+        ed_set_status_message("foldrm: usage: foldrm <line>");
+        return;
+    }
+
+    int line = atoi(args);
+    if (line <= 0) {
+        ed_set_status_message("foldrm: invalid line number");
+        return;
+    }
+
+    /* Convert from 1-indexed to 0-indexed */
+    line--;
+
+    if (line < 0 || line >= buf->num_rows) {
+        ed_set_status_message("foldrm: line out of range");
+        return;
+    }
+
+    /* Find fold at this line */
+    int idx = fold_find_at_line(&buf->folds, line);
+    if (idx == -1) {
+        ed_set_status_message("foldrm: no fold at line %d", line + 1);
+        return;
+    }
+
+    /* Clear fold markers on the rows */
+    FoldRegion *region = &buf->folds.regions[idx];
+    if (region->start_line >= 0 && region->start_line < buf->num_rows) {
+        buf->rows[region->start_line].fold_start = false;
+    }
+    if (region->end_line >= 0 && region->end_line < buf->num_rows) {
+        buf->rows[region->end_line].fold_end = false;
+    }
+
+    /* Remove the fold region */
+    fold_remove_region(&buf->folds, idx);
+
+    ed_set_status_message("Fold removed at line %d", line + 1);
+}
+
+/* Toggle fold at line: :foldtoggle <line> */
+void cmd_fold_toggle(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf) {
+        ed_set_status_message("foldtoggle: no buffer");
+        return;
+    }
+
+    int line = -1;
+    if (args && *args) {
+        line = atoi(args);
+        if (line <= 0) {
+            ed_set_status_message("foldtoggle: invalid line number");
+            return;
+        }
+        line--; /* Convert to 0-indexed */
+    } else {
+        /* Use cursor line if no argument */
+        Window *win = window_cur();
+        if (!win) {
+            ed_set_status_message("foldtoggle: no window");
+            return;
+        }
+        line = win->cursor.y;
+    }
+
+    if (line < 0 || line >= buf->num_rows) {
+        ed_set_status_message("foldtoggle: line out of range");
+        return;
+    }
+
+    /* Toggle the fold */
+    if (fold_toggle_at_line(&buf->folds, line)) {
+        int idx = fold_find_at_line(&buf->folds, line);
+        if (idx >= 0) {
+            bool collapsed = buf->folds.regions[idx].is_collapsed;
+            ed_set_status_message("Fold %s at line %d",
+                                  collapsed ? "collapsed" : "expanded",
+                                  line + 1);
+        }
+    } else {
+        ed_set_status_message("foldtoggle: no fold at line %d", line + 1);
+    }
+}
+
+void cmd_foldmethod(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf) {
+        ed_set_status_message("foldmethod: no buffer");
+        return;
+    }
+
+    if (!args || !*args) {
+        /* Show current fold method */
+        const char *method_name = "unknown";
+        switch (buf->fold_method) {
+        case FOLD_METHOD_MANUAL:
+            method_name = "manual";
+            break;
+        case FOLD_METHOD_BRACKET:
+            method_name = "bracket";
+            break;
+        case FOLD_METHOD_INDENT:
+            method_name = "indent";
+            break;
+        }
+        ed_set_status_message("foldmethod=%s", method_name);
+        return;
+    }
+
+    /* Parse the method name */
+    FoldMethod new_method = FOLD_METHOD_MANUAL;
+    if (strcmp(args, "manual") == 0) {
+        new_method = FOLD_METHOD_MANUAL;
+    } else if (strcmp(args, "bracket") == 0) {
+        new_method = FOLD_METHOD_BRACKET;
+    } else if (strcmp(args, "indent") == 0) {
+        new_method = FOLD_METHOD_INDENT;
+    } else {
+        ed_set_status_message("foldmethod: unknown method '%s' (manual, bracket, indent)", args);
+        return;
+    }
+
+    /* Set the method and apply it */
+    buf->fold_method = new_method;
+    fold_apply_method(buf, new_method);
+    ed_set_status_message("foldmethod=%s", args);
+}
+
+void cmd_foldupdate(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    if (!buf) {
+        ed_set_status_message("foldupdate: no buffer");
+        return;
+    }
+
+    /* Reapply the current fold method */
+    fold_apply_method(buf, buf->fold_method);
+
+    const char *method_name = "manual";
+    switch (buf->fold_method) {
+    case FOLD_METHOD_MANUAL:
+        method_name = "manual";
+        break;
+    case FOLD_METHOD_BRACKET:
+        method_name = "bracket";
+        break;
+    case FOLD_METHOD_INDENT:
+        method_name = "indent";
+        break;
+    }
+    ed_set_status_message("Folds updated using %s method", method_name);
 }
