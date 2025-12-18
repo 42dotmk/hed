@@ -8,6 +8,7 @@
 
 #include "commands_buffer.h"
 #include "../hed.h"
+#include "../lib/file_helpers.h"
 #include "cmd_util.h"
 #include "fzf.h"
 #include <errno.h>
@@ -271,7 +272,7 @@ void cmd_write(const char *args) {
             buf->title = strdup(exppath);
             /* update filetype */
             free(buf->filetype);
-            buf->filetype = buf_detect_filetype(exppath);
+            buf->filetype = path_detect_filetype(exppath);
         }
     }
     EdError err = buf_save_in(buf);

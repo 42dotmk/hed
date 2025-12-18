@@ -58,8 +58,6 @@ void buf_delete_line_in(Buffer *buf);
 void buf_yank_line_in(Buffer *buf);
 void buf_paste_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
-/* Filetype detection */
-char *buf_detect_filetype(const char *filename);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);
 #endif

@@ -51,41 +51,6 @@ void ed_set_mode(EditorMode new_mode) {
     hook_fire_mode(HOOK_MODE_CHANGE, &event);
 }
 
-static int command_tmux_history_nav(int direction) {
-    const char *cmd = "tmux_send";
-    size_t plen = strlen(cmd);
-    if ((size_t)E.command_len < plen)
-        return 0;
-    if (strncmp(E.command_buf, cmd, plen) != 0)
-        return 0;
-    if ((size_t)E.command_len > plen && E.command_buf[plen] != ' ')
-        return 0;
-
-    const char *args = E.command_buf + plen;
-    if (*args == ' ')
-        args++;
-    int args_len = E.command_len - (int)(args - E.command_buf);
-
-    char candidate[512];
-    int ok =
-        (direction < 0)
-            ? tmux_history_browse_up(args, args_len, candidate,
-                                     (int)sizeof(candidate))
-            : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
-    if (!ok)
-        return 0;
-
-    int n = snprintf(E.command_buf, sizeof(E.command_buf), "tmux_send%s%s",
-                     candidate[0] ? " " : "", candidate);
-    if (n < 0)
-        n = 0;
-    if (n >= (int)sizeof(E.command_buf))
-        n = (int)sizeof(E.command_buf) - 1;
-    E.command_buf[n] = '\0';
-    E.command_len = n;
-    return 1;
-}
-
 int ed_read_key(void) {
     /* Check if there are keys in the macro queue first */
     if (macro_queue_has_keys()) {
@@ -186,58 +151,6 @@ void ed_move_cursor(int key) {
 /* Mode-specific keypress handlers (refactored for clarity and maintainability)
  */
 
-static void handle_command_mode_keypress(int c) {
-    if (c == '\r') {
-        ed_process_command();
-    } else if (c == '\x1b') {
-        E.mode = MODE_NORMAL;
-        E.command_len = 0;
-        hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
-        cmdcomp_clear();
-    } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
-        if (E.command_len > 0)
-            E.command_len--;
-        hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
-        cmdcomp_clear();
-    } else if (c == KEY_ARROW_UP) {
-        if (command_tmux_history_nav(-1)) {
-            cmdcomp_clear();
-        } else {
-            tmux_history_reset_browse();
-            if (hist_browse_up(&E.history, E.command_buf, E.command_len,
-                               E.command_buf, (int)sizeof(E.command_buf))) {
-                E.command_len = (int)strlen(E.command_buf);
-            } else {
-                ed_set_status_message("No history match");
-            }
-            cmdcomp_clear();
-        }
-    } else if (c == KEY_ARROW_DOWN) {
-        int restored = 0;
-        if (command_tmux_history_nav(1)) {
-            cmdcomp_clear();
-        } else {
-            tmux_history_reset_browse();
-            if (hist_browse_down(&E.history, E.command_buf,
-                                 (int)sizeof(E.command_buf), &restored)) {
-                E.command_len = (int)strlen(E.command_buf);
-            }
-            cmdcomp_clear();
-        }
-    } else if (c == '\t') {
-        cmdcomp_next();
-    } else if (!iscntrl(c) && c < 128) {
-        if (E.command_len < (int)sizeof(E.command_buf) - 1) {
-            E.command_buf[E.command_len++] = c;
-        }
-        hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
-        cmdcomp_clear();
-    }
-}
-
 static void handle_insert_mode_keypress(int c, Buffer *buf) {
     if (!buf)
         return;
@@ -336,7 +249,7 @@ void ed_process_keypress(void) {
     /* Dispatch to appropriate mode handler */
     switch (E.mode) {
     case MODE_COMMAND:
-        handle_command_mode_keypress(c);
+        command_mode_handle_keypress(c);
         break;
     case MODE_INSERT:
         handle_insert_mode_keypress(c, buf);

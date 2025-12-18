@@ -4,10 +4,10 @@
 #include "keybinds_builtins.h"
 
 #define cmd(name, cb, desc) command_register(name, cb, desc)
-#define mapn(x, y) keybind_register(MODE_NORMAL, x, y)
-#define mapv(x, y) keybind_register(MODE_VISUAL, x, y)
-#define mapi(x, y) keybind_register(MODE_INSERT, x, y)
-#define mapvb(x, y) keybind_register(MODE_VISUAL_BLOCK, x, y)
+#define mapn(x, y, d) keybind_register(MODE_NORMAL, x, y, d)
+#define mapv(x, y, d) keybind_register(MODE_VISUAL, x, y, d)
+#define mapi(x, y, d) keybind_register(MODE_INSERT, x, y, d)
+#define mapvb(x, y, d) keybind_register(MODE_VISUAL_BLOCK, x, y, d)
 #define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y)
 #define cmapv(x, y) keybind_register_command(MODE_VISUAL, x, y)
 
@@ -118,6 +118,7 @@ void user_commands_init(void) {
     cmd("bd", cmd_buffer_delete, "delete buf");
     cmd("e", cmd_edit, "edit file");
     cmd("c", cmd_cpick, "pick cmd");
+    cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
     cmd("history", cmd_history, "cmd hist");
     cmd("reg", cmd_registers, "registers");
@@ -180,15 +181,15 @@ void user_commands_init(void) {
 }
 
 void imode_bindings() {
-    mapi("<Esc>", kb_insert_escape);
-    mapi("<CR>", kb_insert_newline);
-    mapi("<Tab>", kb_insert_tab);
-    mapi("<BS>", kb_insert_backspace);
-    mapi("<C-h>", kb_insert_backspace);
-    mapi("<Up>", kb_move_up);
-    mapi("<Down>", kb_move_down);
-    mapi("<Left>", kb_move_left);
-    mapi("<Right>", kb_move_right);
+    mapi("<Esc>", kb_insert_escape, "exit insert");
+    mapi("<CR>", kb_insert_newline, "new line");
+    mapi("<Tab>", kb_insert_tab, "insert tab");
+    mapi("<BS>", kb_insert_backspace, "backspace");
+    mapi("<C-h>", kb_insert_backspace, "backspace");
+    mapi("<Up>", kb_move_up, "move up");
+    mapi("<Down>", kb_move_down, "move down");
+    mapi("<Left>", kb_move_left, "move left");
+    mapi("<Right>", kb_move_right, "move right");
 }
 void nmode_bindings() {
     cmapn("  ", "fzf");
@@ -198,6 +199,8 @@ void nmode_bindings() {
     cmapn(" fn", "new");
     cmapn(" fr", "recent");
     cmapn(" fs", "w");
+	cmapn(" fc", "c");
+	cmapn(" fm", "keybinds");
     cmapn(" cf", "fmt");
     cmapn(" qq", "q!");
     cmapn(" rm", "shell make");
@@ -219,20 +222,20 @@ void nmode_bindings() {
     cmapn(" wj", "wj");
     cmapn(" wk", "wk");
     cmapn(" wl", "wl");
-    mapn("h", kb_move_left);
-    mapn("j", kb_move_down);
-    mapn("k", kb_move_up);
-    mapn("l", kb_move_right);
-    mapn("<Left>", kb_move_left);
-    mapn("<Down>", kb_move_down);
-    mapn("<Up>", kb_move_up);
-    mapn("<Right>", kb_move_right);
-    mapn("/", kb_search_prompt);
-    mapn(" ts", kb_tmux_send_line);
-    mapn(" dl", kb_del_right);
-    mapn(" d1", kb_del_left);
-    mapn(" dj", kb_del_down);
-    mapn(" dk", kb_del_up);
+    mapn("h", kb_move_left, "left");
+    mapn("j", kb_move_down, "down");
+    mapn("k", kb_move_up, "up");
+    mapn("l", kb_move_right, "right");
+    mapn("<Left>", kb_move_left, "left");
+    mapn("<Down>", kb_move_down, "down");
+    mapn("<Up>", kb_move_up, "up");
+    mapn("<Right>", kb_move_right, "right");
+    mapn("/", kb_search_prompt, "search");
+    mapn(" ts", kb_tmux_send_line, "send to tmux");
+    mapn(" dl", kb_del_right, "del win right");
+    mapn(" d1", kb_del_left, "del win left");
+    mapn(" dj", kb_del_down, "del win down");
+    mapn(" dk", kb_del_up, "del win up");
     cmapn(" rr", "reload");
 
     cmapn(" tq", "ctoggle");
@@ -250,97 +253,97 @@ void nmode_bindings() {
     cmapn(".", "repeat");
     cmapn("q", "record");
     cmapn("@", "play");
-    mapn("$", kb_cursor_line_end);
-    mapv("$", kb_cursor_line_end);
-    mapvb("$", kb_cursor_line_end);
-    mapn("%", buf_find_matching_bracket);
-    mapv("%", buf_find_matching_bracket);
-    mapvb("%", buf_find_matching_bracket);
-    mapn("*", kb_find_under_cursor);
-    mapn("<C-*>", kb_find_under_cursor);
-    mapn("0", kb_cursor_line_start);
-    mapv("0", kb_cursor_line_start);
-    mapvb("0", kb_cursor_line_start);
-    mapv("h", kb_move_left);
-    mapv("j", kb_move_down);
-    mapv("k", kb_move_up);
-    mapv("l", kb_move_right);
-    mapv("<Left>", kb_move_left);
-    mapv("<Down>", kb_move_down);
-    mapv("<Up>", kb_move_up);
-    mapv("<Right>", kb_move_right);
-    mapvb("h", kb_move_left);
-    mapvb("j", kb_move_down);
-    mapvb("k", kb_move_up);
-    mapvb("l", kb_move_right);
-    mapvb("<Left>", kb_move_left);
-    mapvb("<Down>", kb_move_down);
-    mapvb("<Up>", kb_move_up);
-    mapvb("<Right>", kb_move_right);
-    mapv("y", kb_visual_yank_selection);
-    mapvb("y", kb_visual_yank_selection);
-    mapv("d", kb_visual_delete_selection);
-    mapvb("d", kb_visual_delete_selection);
-    mapv("v", kb_visual_escape);
-    mapvb("v", kb_visual_escape);
-    mapv("<C-v>", kb_visual_toggle_block_mode);
-    mapvb("<C-v>", kb_visual_toggle_block_mode);
-    mapv("<Esc>", kb_visual_escape);
-    mapvb("<Esc>", kb_visual_escape);
-    mapv("i", kb_visual_enter_insert_mode);
-    mapvb("i", kb_visual_enter_insert_mode);
-    mapv("a", kb_visual_enter_append_mode);
-    mapvb("a", kb_visual_enter_append_mode);
-    mapv(":", kb_visual_enter_command_mode);
-    mapvb(":", kb_visual_enter_command_mode);
-    mapn(":", kb_enter_command_mode);
-    mapn("<<", buf_unindent_line);
-    mapn("<C-d>", buf_scroll_half_page_down);
-    mapn("<C-v>", kb_visual_block_toggle);
-    mapn(" jf", kb_jump_forward);
-    mapn(" jb", kb_jump_backward);
-    mapn("<C-i>", kb_jump_forward);
-    mapn("<C-o>", kb_jump_backward);
-    mapn("<C-u>", buf_scroll_half_page_up);
-    mapn(">>", buf_indent_line);
-    mapn("A", kb_end_append);
-    mapn("G", kb_cursor_bottom);
-    mapn("I", kb_start_insert);
-    mapn("J", buf_join_lines);
-    mapn("a", kb_append_mode);
-    mapn("b", buf_cursor_move_word_backward);
-    mapn("cc", buf_toggle_comment);
-    mapn("da", buf_delete_around_char);
-    mapn("db", buf_delete_word_backward);
-    mapn("dd", kb_delete_line);
-    mapn("di", buf_delete_inside_char);
-    mapn("diw", buf_delete_inner_word);
-    mapn("ci", buf_change_inside_char);
-    mapn("cw", kb_change_word);
-    mapn("dp", buf_delete_paragraph);
-    mapn("dw", buf_delete_word_forward);
-    mapn("gg", kb_cursor_top);
+    mapn("$", kb_cursor_line_end, "line end");
+    mapv("$", kb_cursor_line_end, "line end");
+    mapvb("$", kb_cursor_line_end, "line end");
+    mapn("%", buf_find_matching_bracket, "match bracket");
+    mapv("%", buf_find_matching_bracket, "match bracket");
+    mapvb("%", buf_find_matching_bracket, "match bracket");
+    mapn("*", kb_find_under_cursor, "find word");
+    mapn("<C-*>", kb_find_under_cursor, "find word");
+    mapn("0", kb_cursor_line_start, "line start");
+    mapv("0", kb_cursor_line_start, "line start");
+    mapvb("0", kb_cursor_line_start, "line start");
+    mapv("h", kb_move_left, "left");
+    mapv("j", kb_move_down, "down");
+    mapv("k", kb_move_up, "up");
+    mapv("l", kb_move_right, "right");
+    mapv("<Left>", kb_move_left, "left");
+    mapv("<Down>", kb_move_down, "down");
+    mapv("<Up>", kb_move_up, "up");
+    mapv("<Right>", kb_move_right, "right");
+    mapvb("h", kb_move_left, "left");
+    mapvb("j", kb_move_down, "down");
+    mapvb("k", kb_move_up, "up");
+    mapvb("l", kb_move_right, "right");
+    mapvb("<Left>", kb_move_left, "left");
+    mapvb("<Down>", kb_move_down, "down");
+    mapvb("<Up>", kb_move_up, "up");
+    mapvb("<Right>", kb_move_right, "right");
+    mapv("y", kb_visual_yank_selection, "yank");
+    mapvb("y", kb_visual_yank_selection, "yank");
+    mapv("d", kb_visual_delete_selection, "delete");
+    mapvb("d", kb_visual_delete_selection, "delete");
+    mapv("v", kb_visual_escape, "exit visual");
+    mapvb("v", kb_visual_escape, "exit visual");
+    mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
+    mapvb("<C-v>", kb_visual_toggle_block_mode, "block mode");
+    mapv("<Esc>", kb_visual_escape, "exit visual");
+    mapvb("<Esc>", kb_visual_escape, "exit visual");
+    mapv("i", kb_visual_enter_insert_mode, "insert");
+    mapvb("i", kb_visual_enter_insert_mode, "insert");
+    mapv("a", kb_visual_enter_append_mode, "append");
+    mapvb("a", kb_visual_enter_append_mode, "append");
+    mapv(":", kb_visual_enter_command_mode, "command");
+    mapvb(":", kb_visual_enter_command_mode, "command");
+    mapn(":", kb_enter_command_mode, "command");
+    mapn("<<", buf_unindent_line, "unindent");
+    mapn("<C-d>", buf_scroll_half_page_down, "scroll down");
+    mapn("<C-v>", kb_visual_block_toggle, "visual block");
+    mapn(" jf", kb_jump_forward, "jump forward");
+    mapn(" jb", kb_jump_backward, "jump back");
+    mapn("<C-i>", kb_jump_forward, "jump forward");
+    mapn("<C-o>", kb_jump_backward, "jump back");
+    mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
+    mapn(">>", buf_indent_line, "indent");
+    mapn("A", kb_end_append, "append eol");
+    mapn("G", kb_cursor_bottom, "goto bottom");
+    mapn("I", kb_start_insert, "insert bol");
+    mapn("J", buf_join_lines, "join lines");
+    mapn("a", kb_append_mode, "append");
+    mapn("b", buf_cursor_move_word_backward, "word back");
+    mapn("cc", buf_toggle_comment, "toggle comment");
+    mapn("da", buf_delete_around_char, "del around");
+    mapn("db", buf_delete_word_backward, "del word back");
+    mapn("dd", kb_delete_line, "del line");
+    mapn("di", buf_delete_inside_char, "del inside");
+    mapn("diw", buf_delete_inner_word, "del word");
+    mapn("ci", buf_change_inside_char, "chg inside");
+    mapn("cw", kb_change_word, "chg word");
+    mapn("dp", buf_delete_paragraph, "del para");
+    mapn("dw", buf_delete_word_forward, "del word fwd");
+    mapn("gg", kb_cursor_top, "goto top");
 
-    mapn("gf", kb_open_file_under_cursor);
-    mapn("gF", kb_search_file_under_cursor);
+    mapn("gf", kb_open_file_under_cursor, "open file");
+    mapn("gF", kb_search_file_under_cursor, "search file");
 
-    mapn("i", kb_enter_insert_mode);
-    mapn("n", kb_search_next);
-    mapn("p", kb_paste);
-    mapn("r", kb_replace_char);
-    mapn("v", kb_visual_toggle);
-    mapn("w", buf_cursor_move_word_forward);
-    mapn("x", kb_delete_char);
-    mapn("yp", buf_yank_paragraph);
-    mapn("yw", buf_yank_word);
-    mapn("yy", kb_yank_line);
-    mapn("za", kb_fold_toggle);
-    mapn("zc", kb_fold_close);
-    mapn("zM", kb_fold_close_all);
-    mapn("zo", kb_fold_open);
-    mapn("zR", kb_fold_open_all);
-    mapn("zz", buf_center_screen);
-    mapn("~", kb_toggle_case);
+    mapn("i", kb_enter_insert_mode, "insert");
+    mapn("n", kb_search_next, "next match");
+    mapn("p", kb_paste, "paste");
+    mapn("r", kb_replace_char, "replace char");
+    mapn("v", kb_visual_toggle, "visual");
+    mapn("w", buf_cursor_move_word_forward, "word fwd");
+    mapn("x", kb_delete_char, "del char");
+    mapn("yp", buf_yank_paragraph, "yank para");
+    mapn("yw", buf_yank_word, "yank word");
+    mapn("yy", kb_yank_line, "yank line");
+    mapn("za", kb_fold_toggle, "fold toggle");
+    mapn("zc", kb_fold_close, "fold close");
+    mapn("zM", kb_fold_close_all, "close all folds");
+    mapn("zo", kb_fold_open, "fold open");
+    mapn("zR", kb_fold_open_all, "open all folds");
+    mapn("zz", buf_center_screen, "center screen");
+    mapn("~", kb_toggle_case, "toggle case");
 }
 void user_keybinds_init(void) {
     nmode_bindings();

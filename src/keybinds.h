@@ -21,13 +21,15 @@ void keybind_init(void);
  *                 - Multi-key: "dd", "gg", "yy"
  *                 - Ctrl combo: "<C-s>", "<C-w>", "<C-q>"
  * @param callback Function to call when keybind is triggered
+ * @param desc     Short description of what this keybind does
  *
  * Examples:
- *   keybind_register(MODE_NORMAL, "x", delete_char);
- *   keybind_register(MODE_NORMAL, "dd", delete_line);
- *   keybind_register(MODE_NORMAL, "<C-s>", save_file);
+ *   keybind_register(MODE_NORMAL, "x", delete_char, "del char");
+ *   keybind_register(MODE_NORMAL, "dd", delete_line, "del line");
+ *   keybind_register(MODE_NORMAL, "<C-s>", save_file, "save");
  */
-void keybind_register(int mode, const char *sequence, KeybindCallback callback);
+void keybind_register(int mode, const char *sequence, KeybindCallback callback,
+                      const char *desc);
 
 /**
  * Register a keybinding that invokes a command (like typing :<name> <args>)
@@ -53,6 +55,17 @@ bool keybind_process(int key, int mode);
  * Called when mode changes or timeout occurs
  */
 void keybind_clear_buffer(void);
+
+/**
+ * Get the total number of registered keybindings
+ */
+int keybind_get_count(void);
+
+/**
+ * Get keybinding info at the given index
+ * Returns 1 if successful, 0 if index out of bounds
+ */
+int keybind_get_at(int index, const char **sequence, const char **desc, int *mode);
 
 /**
  * User keybindings initialization (implemented in user_hooks.c / config.c)

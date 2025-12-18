@@ -1,6 +1,7 @@
 #include "hed.h"
 #include "safe_string.h"
 #include "fold_methods/fold_methods.h"
+#include "lib/file_helpers.h"
 #include <regex.h>
 
 /* Internal low-level row helpers (not part of public API) */
@@ -26,56 +27,6 @@ int buf_find_by_filename(const char *filename) {
         }
     }
     return -1;
-}
-
-char *buf_detect_filetype(const char *filename) {
-    if (!filename)
-        return strdup("txt");
-
-    const char *ext = strrchr(filename, '.');
-    if (!ext || ext == filename)
-        return strdup("txt");
-
-    ext++; /* Skip the dot */
-
-    /* Common filetypes */
-    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
-        return strdup("c");
-    if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
-        strcmp(ext, "cxx") == 0)
-        return strdup("cpp");
-    if (strcmp(ext, "hpp") == 0 || strcmp(ext, "hh") == 0 ||
-        strcmp(ext, "hxx") == 0)
-        return strdup("cpp");
-    if (strcmp(ext, "py") == 0)
-        return strdup("python");
-    if (strcmp(ext, "js") == 0)
-        return strdup("javascript");
-    if (strcmp(ext, "ts") == 0)
-        return strdup("typescript");
-    if (strcmp(ext, "java") == 0)
-        return strdup("java");
-    if (strcmp(ext, "rs") == 0)
-        return strdup("rust");
-    if (strcmp(ext, "go") == 0)
-        return strdup("go");
-    if (strcmp(ext, "sh") == 0)
-        return strdup("shell");
-    if (strcmp(ext, "md") == 0)
-        return strdup("markdown");
-    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
-        return strdup("html");
-    if (strcmp(ext, "css") == 0)
-        return strdup("css");
-    if (strcmp(ext, "json") == 0)
-        return strdup("json");
-    if (strcmp(ext, "xml") == 0)
-        return strdup("xml");
-    if (strcmp(ext, "txt") == 0)
-        return strdup("txt");
-
-    /* Default: use the extension as-is */
-    return strdup(ext);
 }
 
 /* Initialize a Buffer struct in-place with default values */
@@ -135,7 +86,7 @@ EdError buf_new(const char *filename, int *out_idx) {
         }
     }
 
-    buf->filetype = buf_detect_filetype(filename);
+    buf->filetype = path_detect_filetype(filename);
     if (!buf->filetype) {
         /* OOM on filetype allocation - cleanup and fail */
         free(buf->title);
@@ -798,7 +749,7 @@ void buf_reload(Buffer *buf) {
 
     /* Detect filetype (update) */
     free(buf->filetype);
-    buf->filetype = buf_detect_filetype(buf->filename);
+    buf->filetype = path_detect_filetype(buf->filename);
 
     FILE *fp = fopen(buf->filename, "r");
     if (!fp) {

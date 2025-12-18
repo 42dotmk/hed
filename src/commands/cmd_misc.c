@@ -4,7 +4,9 @@
 #include "../registers.h"
 #include "../utils/ctags.h"
 #include "../utils/fold.h"
+#include "../utils/fzf.h"
 #include "../fold_methods/fold_methods.h"
+#include "../keybinds.h"
 #include "cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -82,24 +84,99 @@ static char *unescape_string(const char *in) {
 
 void cmd_list_commands(const char *args) {
     (void)args;
-    char msg[256] = "";
-    int off = 0;
+    /* Build printf list with command\tdesc lines for fzf */
+    char pipebuf[8192];
+    size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
+
     for (int i = 0; i < command_count; i++) {
         const char *nm = commands[i].name ? commands[i].name : "";
         const char *ds = commands[i].desc ? commands[i].desc : "";
-        int wrote = snprintf(msg + off, (int)sizeof(msg) - off,
-                             i == 0 ? "%s: %s" : " | %s: %s", nm, ds);
-        if (wrote < 0)
+        char en[256], ed[512];
+        shell_escape_single(nm, en, sizeof(en));
+        shell_escape_single(ds, ed, sizeof(ed));
+
+        size_t need = strlen(en) + 1 + strlen(ed) + 1;
+        if (off + need + 4 >= sizeof(pipebuf))
             break;
-        off += wrote;
-        if (off >= (int)sizeof(msg) - 1) {
-            off = (int)sizeof(msg) - 1;
-            break;
-        }
+
+        memcpy(pipebuf + off, en, strlen(en));
+        off += strlen(en);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, ed, strlen(ed));
+        off += strlen(ed);
+        pipebuf[off++] = ' ';
     }
-    if (off == 0)
-        snprintf(msg, sizeof(msg), "No commands");
-    ed_set_status_message("%s", msg);
+    pipebuf[off] = '\0';
+
+    const char *fzf_opts = "--delimiter '\t'";
+    char **sel = NULL;
+    int cnt = 0;
+    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        ed_set_status_message("commands: canceled");
+        fzf_free(sel, cnt);
+        return;
+    }
+
+    fzf_free(sel, cnt);
+    ed_set_status_message("commands: %d total", command_count);
+}
+
+void cmd_list_keybinds(const char *args) {
+    (void)args;
+    /* Build printf list with sequence\tdesc lines for fzf */
+    char pipebuf[16384];
+    size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
+
+    int count = keybind_get_count();
+    for (int i = 0; i < count; i++) {
+        const char *sequence = NULL;
+        const char *desc = NULL;
+        int mode = 0;
+
+        if (!keybind_get_at(i, &sequence, &desc, &mode))
+            continue;
+
+        /* Add mode prefix */
+        char display[256];
+        const char *mode_prefix = "";
+        if (mode == MODE_NORMAL) mode_prefix = "[N] ";
+        else if (mode == MODE_INSERT) mode_prefix = "[I] ";
+        else if (mode == MODE_VISUAL) mode_prefix = "[V] ";
+        else if (mode == MODE_VISUAL_BLOCK) mode_prefix = "[VB] ";
+        else if (mode == MODE_COMMAND) mode_prefix = "[C] ";
+
+        snprintf(display, sizeof(display), "%s%s", mode_prefix, sequence ? sequence : "");
+
+        char es[512], ed[512];
+        shell_escape_single(display, es, sizeof(es));
+        shell_escape_single(desc ? desc : "", ed, sizeof(ed));
+
+        size_t need = strlen(es) + 1 + strlen(ed) + 1;
+        if (off + need + 4 >= sizeof(pipebuf))
+            break;
+
+        memcpy(pipebuf + off, es, strlen(es));
+        off += strlen(es);
+        pipebuf[off++] = ' ';
+        memcpy(pipebuf + off, ed, strlen(ed));
+        off += strlen(ed);
+        pipebuf[off++] = ' ';
+    }
+    pipebuf[off] = '\0';
+
+    const char *fzf_opts = "--delimiter '\t'";
+    char **sel = NULL;
+    int cnt = 0;
+    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        ed_set_status_message("keybinds: canceled");
+        fzf_free(sel, cnt);
+        return;
+    }
+
+    fzf_free(sel, cnt);
+    ed_set_status_message("keybinds: %d total", count);
 }
 
 void cmd_echo(const char *args) {

@@ -89,7 +89,7 @@ void keybind_init(void) {
 
 /* Register a keybinding */
 void keybind_register(int mode, const char *sequence,
-                      KeybindCallback callback) {
+                      KeybindCallback callback, const char *desc) {
     if (keybind_count >= MAX_KEYBINDS) {
         return;
     }
@@ -98,7 +98,7 @@ void keybind_register(int mode, const char *sequence,
     keybinds[keybind_count].callback = callback;
     keybinds[keybind_count].mode = mode;
     keybinds[keybind_count].command_callback = NULL;
-    keybinds[keybind_count].desc = NULL;
+    keybinds[keybind_count].desc = desc ? strdup(desc) : NULL;
     keybind_count++;
 }
 
@@ -142,6 +142,26 @@ void keybind_clear_buffer(void) {
     key_buffer[0] = '\0';
     pending_count = 0;
     have_count = 0;
+}
+
+/* Get the total number of registered keybindings */
+int keybind_get_count(void) {
+    return keybind_count;
+}
+
+/* Get keybinding info at the given index */
+int keybind_get_at(int index, const char **sequence, const char **desc, int *mode) {
+    if (index < 0 || index >= keybind_count)
+        return 0;
+
+    if (sequence)
+        *sequence = keybinds[index].sequence;
+    if (desc)
+        *desc = keybinds[index].desc;
+    if (mode)
+        *mode = keybinds[index].mode;
+
+    return 1;
 }
 
 /* Process a key press through the keybinding system */

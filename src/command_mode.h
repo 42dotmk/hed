@@ -2,6 +2,14 @@
 #define COMMAND_MODE_H
 
 /* Command-line mode processing and completion */
+
+/**
+ * Handle keypress in command mode.
+ * Processes input for command-line editing, history navigation,
+ * and command execution.
+ */
+void command_mode_handle_keypress(int c);
+
 /**
  * Process and execute the current command in the command buffer.
  * Parses the command name and arguments, executes the command,

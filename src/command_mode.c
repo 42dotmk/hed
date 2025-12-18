@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "command_mode.h"
+#include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -8,6 +9,43 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* --- Command-line (:) mode handling --- */
+
+static int command_tmux_history_nav(int direction) {
+    const char *cmd = "tmux_send";
+    size_t plen = strlen(cmd);
+    if ((size_t)E.command_len < plen)
+        return 0;
+    if (strncmp(E.command_buf, cmd, plen) != 0)
+        return 0;
+    if ((size_t)E.command_len > plen && E.command_buf[plen] != ' ')
+        return 0;
+
+    const char *args = E.command_buf + plen;
+    if (*args == ' ')
+        args++;
+    int args_len = E.command_len - (int)(args - E.command_buf);
+
+    char candidate[512];
+    int ok =
+        (direction < 0)
+            ? tmux_history_browse_up(args, args_len, candidate,
+                                     (int)sizeof(candidate))
+            : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
+    if (!ok)
+        return 0;
+
+    int n = snprintf(E.command_buf, sizeof(E.command_buf), "tmux_send%s%s",
+                     candidate[0] ? " " : "", candidate);
+    if (n < 0)
+        n = 0;
+    if (n >= (int)sizeof(E.command_buf))
+        n = (int)sizeof(E.command_buf) - 1;
+    E.command_buf[n] = '\0';
+    E.command_len = n;
+    return 1;
+}
 
 /* --- Command-line (:) file path completion --- */
 
@@ -167,6 +205,58 @@ void cmdcomp_next(void) {
     }
     E.cmd_complete.index = (E.cmd_complete.index + 1) % E.cmd_complete.count;
     cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
+}
+
+void command_mode_handle_keypress(int c) {
+    if (c == '\r') {
+        ed_process_command();
+    } else if (c == '\x1b') {
+        E.mode = MODE_NORMAL;
+        E.command_len = 0;
+        hist_reset_browse(&E.history);
+        tmux_history_reset_browse();
+        cmdcomp_clear();
+    } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
+        if (E.command_len > 0)
+            E.command_len--;
+        hist_reset_browse(&E.history);
+        tmux_history_reset_browse();
+        cmdcomp_clear();
+    } else if (c == KEY_ARROW_UP) {
+        if (command_tmux_history_nav(-1)) {
+            cmdcomp_clear();
+        } else {
+            tmux_history_reset_browse();
+            if (hist_browse_up(&E.history, E.command_buf, E.command_len,
+                               E.command_buf, (int)sizeof(E.command_buf))) {
+                E.command_len = (int)strlen(E.command_buf);
+            } else {
+                ed_set_status_message("No history match");
+            }
+            cmdcomp_clear();
+        }
+    } else if (c == KEY_ARROW_DOWN) {
+        int restored = 0;
+        if (command_tmux_history_nav(1)) {
+            cmdcomp_clear();
+        } else {
+            tmux_history_reset_browse();
+            if (hist_browse_down(&E.history, E.command_buf,
+                                 (int)sizeof(E.command_buf), &restored)) {
+                E.command_len = (int)strlen(E.command_buf);
+            }
+            cmdcomp_clear();
+        }
+    } else if (c == '\t') {
+        cmdcomp_next();
+    } else if (!iscntrl(c) && c < 128) {
+        if (E.command_len < (int)sizeof(E.command_buf) - 1) {
+            E.command_buf[E.command_len++] = c;
+        }
+        hist_reset_browse(&E.history);
+        tmux_history_reset_browse();
+        cmdcomp_clear();
+    }
 }
 
 void ed_process_command(void) {

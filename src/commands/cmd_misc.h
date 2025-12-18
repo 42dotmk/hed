@@ -2,6 +2,7 @@
 #define CMD_MISC_H
 
 void cmd_list_commands(const char *args);
+void cmd_list_keybinds(const char *args);
 void cmd_echo(const char *args);
 void cmd_history(const char *args);
 void cmd_registers(const char *args);
