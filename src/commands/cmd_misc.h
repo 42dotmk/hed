@@ -37,5 +37,6 @@ void cmd_fold_rm(const char *args);
 void cmd_fold_toggle(const char *args);
 void cmd_foldmethod(const char *args);
 void cmd_foldupdate(const char *args);
+void cmd_buf_refresh(const char *args);
 
 #endif /* CMD_MISC_H */

@@ -925,6 +925,50 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
     }
 }
 
+/*
+ * Selection-based operations - unified interface for delete/yank/change
+ */
+
+void buf_delete_selection(TextSelection *sel) {
+    if (!sel)
+        return;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    /* Special case: whole-line deletion (dd command)
+     * Detected when end=(start.line+1, 0) and start.col=0 */
+    if (sel->end.line == sel->start.line + 1 && sel->end.col == 0 &&
+        sel->start.col == 0) {
+        /* Use existing line deletion logic which properly handles row removal */
+        buf_delete_line_in(buf);
+        return;
+    }
+
+    /* Normal range deletion */
+    buf_delete_range(sel->start.line, sel->start.col, sel->end.line,
+                     sel->end.col);
+
+    /* Update cursor to the position specified by the textobject */
+    win->cursor.y = sel->cursor.line;
+    win->cursor.x = sel->cursor.col;
+}
+
+void buf_yank_selection(TextSelection *sel) {
+    if (!sel)
+        return;
+
+    buf_yank_range(sel->start.line, sel->start.col, sel->end.line,
+                   sel->end.col);
+    ed_set_status_message("Yanked");
+}
+
+void buf_change_selection(TextSelection *sel) {
+    buf_delete_selection(sel);
+    ed_set_mode(MODE_INSERT);
+}
+
 void buf_yank_word(void) {
     int sx = 0, ex = 0;
     if (!buf_get_word_range(&sx, &ex))
@@ -995,6 +1039,115 @@ void buf_delete_paragraph(void) {
     win->cursor.y = sel.start.line;
     win->cursor.x = sel.start.col;
     ed_set_status_message("deleted paragraph");
+}
+
+/*
+ * Change commands - delete and enter insert mode
+ */
+
+void buf_change_word_forward(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+}
+
+void buf_change_word_backward(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_to_word_start(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+}
+
+void buf_change_inner_word(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+}
+
+void buf_change_line(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+}
+
+void buf_change_paragraph(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+}
+
+void buf_change_around_char(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    ed_set_status_message("ca: enter target character");
+    ed_render_frame();
+    int c = ed_read_key();
+
+    char open, close;
+    if (c == '(' || c == ')')
+        open = '(', close = ')';
+    else if (c == '{' || c == '}')
+        open = '{', close = '}';
+    else if (c == '[' || c == ']')
+        open = '[', close = ']';
+    else if (c == '<' || c == '>')
+        open = '<', close = '>';
+    else if (c == '"')
+        open = close = '"';
+    else if (c == '\'')
+        open = close = '\'';
+    else if (c == '`')
+        open = close = '`';
+    else {
+        ed_set_status_message("ca: invalid delimiter");
+        return;
+    }
+
+    TextSelection sel;
+    if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
+                                1, &sel)) {
+        ed_set_status_message("ca: no enclosing pair");
+        return;
+    }
+
+    buf_change_selection(&sel);
 }
 
 void buf_move_cursor_key(int key) {
@@ -1382,26 +1535,25 @@ void buf_change_inside_char(void) {
     ed_set_status_message("ci: target?");
     int t = ed_read_key();
 
+    TextSelection sel;
+
     /* Word / paragraph / line text-objects */
     if (t == 'w') {
-        buf_delete_inner_word();
-        ed_set_mode(MODE_INSERT);
+        if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
+            return;
+        buf_change_selection(&sel);
         return;
     }
     if (t == 'p') {
-        buf_delete_paragraph();
-        ed_set_mode(MODE_INSERT);
+        if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
+            return;
+        buf_change_selection(&sel);
         return;
     }
     if (t == 'd') {
-        if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
             return;
-        Row *row = &buf->rows[win->cursor.y];
-        int len = (int)row->chars.len;
-        if (len > 0) {
-            buf_delete_range(win->cursor.y, 0, win->cursor.y, len);
-        }
-        ed_set_mode(MODE_INSERT);
+        buf_change_selection(&sel);
         ed_set_status_message("changed line contents");
         return;
     }
@@ -1412,7 +1564,6 @@ void buf_change_inside_char(void) {
         ed_set_status_message("ci: unsupported target");
         return;
     }
-    TextSelection sel;
     if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
                                0, &sel)) {
         ed_set_status_message("ci: no enclosing pair");
@@ -1423,9 +1574,6 @@ void buf_change_inside_char(void) {
         ed_set_status_message("ci: empty");
         return;
     }
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_mode(MODE_INSERT);
+    buf_change_selection(&sel);
     ed_set_status_message("Changed inside %c", (open == close) ? open : close);
 }

@@ -16,10 +16,12 @@ static void kb_del_up() { kb_del_win('k'); }
 static void kb_del_down() { kb_del_win('j'); }
 static void kb_del_left() { kb_del_win('h'); }
 static void kb_del_right() { kb_del_win('l'); }
+
 static void kb_end_append(void) {
     kb_cursor_line_end();
     kb_append_mode();
 }
+
 static void kb_start_insert(void) {
     kb_cursor_line_start();
     kb_enter_insert_mode();
@@ -31,7 +33,9 @@ static void on_mode_change(const HookModeEvent *event) {
 }
 
 static void on_auto_pair(const HookCharEvent *event);
+
 static void on_smart_indent(const HookCharEvent *event);
+
 static void on_insert_char(const HookCharEvent *event) {
     on_auto_pair(event);
     on_smart_indent(event);
@@ -114,6 +118,7 @@ void user_commands_init(void) {
     cmd("bn", cmd_buffer_next, "next buf");
     cmd("bp", cmd_buffer_prev, "prev buf");
     cmd("ls", cmd_buffer_list, "list bufs");
+	cmd("refresh", cmd_buf_refresh, "refresh contents");
     cmd("b", cmd_buffer_switch, "switch buf");
     cmd("bd", cmd_buffer_delete, "delete buf");
     cmd("e", cmd_edit, "edit file");

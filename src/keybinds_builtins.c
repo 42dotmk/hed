@@ -427,10 +427,13 @@ void kb_visual_block_toggle(void) {
 
 /* Normal mode - text operations */
 void kb_delete_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
+    ASSERT_EDIT(buf, win);
+
+    TextSelection sel;
+    if (!textobj_line_with_newline(buf, win->cursor.y, win->cursor.x, &sel))
         return;
-    buf_delete_line_in(buf);
+
+    buf_delete_selection(&sel);
 }
 
 void kb_yank_line(void) {
@@ -449,37 +452,13 @@ void kb_paste(void) {
 }
 
 void kb_delete_char(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-    if (buf->readonly) {
-        ed_set_status_message("Buffer is read-only");
-        return;
-    }
-    if (win->cursor.y >= buf->num_rows)
+    ASSERT_EDIT(buf, win);
+
+    TextSelection sel;
+    if (!textobj_char_at_cursor(buf, win->cursor.y, win->cursor.x, &sel))
         return;
 
-    Row *row = &buf->rows[win->cursor.y];
-    int cx = win->cursor.x;
-    if (cx >= (int)row->chars.len)
-        return;
-
-    int y = win->cursor.y;
-    char deleted_char = row->chars.data[cx];
-    if (!undo_is_applying()) {
-        undo_begin_group();
-        undo_push_delete(y, cx, &deleted_char, 1, y, cx, y, cx);
-        undo_commit_group();
-    }
-    /* Delete the character under the cursor, not before it */
-    sstr_delete_char(&row->chars, cx);
-    buf_row_update(row);
-    buf->dirty++;
-
-    /* Fire hook */
-    HookCharEvent event = {buf, y, cx, deleted_char};
-    hook_fire_char(HOOK_CHAR_DELETE, &event);
+    buf_delete_selection(&sel);
 }
 
 void kb_insert_newline(void) {
@@ -781,8 +760,7 @@ void kb_tmux_send_line(void) {
 
 /* Change word: delete to end of word and enter insert mode */
 void kb_change_word(void) {
-    buf_delete_word_forward();
-    ed_set_mode(MODE_INSERT);
+    buf_change_word_forward();
 }
 
 /* Toggle case of character under cursor and move right */

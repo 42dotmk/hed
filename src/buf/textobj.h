@@ -38,4 +38,9 @@ int textobj_to_paragraph_start(Buffer *buf, int line, int col,
                                TextSelection *sel);
 int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel);
 
+/* New textobjects for character and line deletion */
+int textobj_char_at_cursor(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_line_with_newline(Buffer *buf, int line, int col,
+                               TextSelection *sel);
+
 #endif /* TEXTOBJ_H */

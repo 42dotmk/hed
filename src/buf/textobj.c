@@ -526,3 +526,59 @@ int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel) {
     TextPos cursor = {y, x};
     return set_selection(sel, (TextPos){sy, 0}, (TextPos){ey, end_len}, cursor);
 }
+
+/*
+ * textobj_char_at_cursor - Select single character at cursor (for 'x' command)
+ *
+ * Selects the character under the cursor, handling UTF-8 multibyte characters
+ * correctly. Returns 0 if cursor is at end of line (nothing to delete).
+ */
+int textobj_char_at_cursor(Buffer *buf, int line, int col, TextSelection *sel) {
+    int y = clamp_line(buf, line);
+    if (y < 0)
+        return 0;
+    Row *row = &buf->rows[y];
+    int x = clamp_col(row, col);
+
+    /* Nothing to delete if at or past end of line */
+    if (x >= (int)row->chars.len)
+        return 0;
+
+    /* Handle UTF-8: select full codepoint */
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int end_x = utf8_next_cp(s, len, x);
+
+    /* Cursor stays at current position */
+    TextPos cursor = {y, x};
+    return set_selection(sel, (TextPos){y, x}, (TextPos){y, end_x}, cursor);
+}
+
+/*
+ * textobj_line_with_newline - Select entire line including newline (for 'dd'
+ * command)
+ *
+ * Returns a selection that signals deletion of the entire row from the buffer.
+ * Uses the special pattern: start=(y,0), end=(y+1,0) to indicate whole-line
+ * deletion. For the last line, selects just the line content without newline.
+ */
+int textobj_line_with_newline(Buffer *buf, int line, int col,
+                               TextSelection *sel) {
+    int y = clamp_line(buf, line);
+    if (y < 0)
+        return 0;
+
+    /* Cursor moves to start of line after deletion */
+    TextPos cursor = {y, 0};
+
+    if (y + 1 < buf->num_rows) {
+        /* Not the last line - delete includes newline
+         * Signal whole-line deletion with end=(y+1, 0) */
+        return set_selection(sel, (TextPos){y, 0}, (TextPos){y + 1, 0}, cursor);
+    } else {
+        /* Last line - delete contents only (no newline to delete) */
+        Row *row = &buf->rows[y];
+        return set_selection(sel, (TextPos){y, 0},
+                             (TextPos){y, (int)row->chars.len}, cursor);
+    }
+}
