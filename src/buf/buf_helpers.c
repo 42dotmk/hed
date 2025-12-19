@@ -183,33 +183,12 @@ void buf_cursor_move_word_forward(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
-    cur_sync_from_window(buf, win);
-    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
-        cur_sync_to_window(buf, win);
-        return;
-    }
 
-    Row *row = &buf->rows[buf->cursor.y];
-
-    /* Skip current word */
-    while (buf->cursor.x < (int)row->chars.len &&
-           !isspace(row->chars.data[buf->cursor.x])) {
-        buf->cursor.x++;
+    TextSelection sel;
+    if (textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.end.line;
+        win->cursor.x = sel.end.col;
     }
-
-    /* Skip whitespace */
-    while (buf->cursor.x < (int)row->chars.len &&
-           isspace(row->chars.data[buf->cursor.x])) {
-        buf->cursor.x++;
-    }
-
-    /* If at end of line, move to next line */
-    if (buf->cursor.x >= (int)row->chars.len &&
-        buf->cursor.y < buf->num_rows - 1) {
-        buf->cursor.y++;
-        buf->cursor.x = 0;
-    }
-    cur_sync_to_window(buf, win);
 }
 
 void buf_cursor_move_word_backward(void) {
@@ -217,33 +196,12 @@ void buf_cursor_move_word_backward(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
-    cur_sync_from_window(buf, win);
 
-    /* If at start of line, go to end of previous line */
-    if (buf->cursor.x == 0) {
-        if (buf->cursor.y > 0) {
-            buf->cursor.y--;
-            if (BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
-                buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
-            }
-        }
-        cur_sync_to_window(buf, win);
-        return;
+    TextSelection sel;
+    if (textobj_to_word_start(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.start.line;
+        win->cursor.x = sel.start.col;
     }
-
-    Row *row = &buf->rows[buf->cursor.y];
-    buf->cursor.x--;
-
-    /* Skip whitespace */
-    while (buf->cursor.x > 0 && isspace(row->chars.data[buf->cursor.x])) {
-        buf->cursor.x--;
-    }
-
-    /* Skip word */
-    while (buf->cursor.x > 0 && !isspace(row->chars.data[buf->cursor.x - 1])) {
-        buf->cursor.x--;
-    }
-    cur_sync_to_window(buf, win);
 }
 
 /*** Screen positioning helpers ***/

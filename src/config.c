@@ -200,6 +200,7 @@ void nmode_bindings() {
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");
     cmapn(" bd", "bd");
+    cmapn(" br", "refresh");
     cmapn(" ff", "fzf");
     cmapn(" fn", "new");
     cmapn(" fr", "recent");
@@ -209,6 +210,8 @@ void nmode_bindings() {
     cmapn(" cf", "fmt");
     cmapn(" qq", "q!");
     cmapn(" rm", "shell make");
+    cmapn(" mm", "shell make");
+    cmapn(" mt", "shell make test");
     cmapn(" nn", "shell --skipwait nnn");
     cmapn(" sd", "rg");
     cmapn(" ss", "ssearch");

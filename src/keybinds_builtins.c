@@ -504,10 +504,16 @@ void kb_search_prompt(void) { ed_search_prompt(); }
 
 /* Normal mode - cursor movement */
 void kb_cursor_line_start(void) {
+    Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!win)
+    if (!buf || !win)
         return;
-    win->cursor.x = 0;
+
+    TextSelection sel;
+    if (textobj_to_line_start(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.start.line;
+        win->cursor.x = sel.start.col;
+    }
 }
 
 void kb_cursor_line_end(void) {
@@ -515,8 +521,11 @@ void kb_cursor_line_end(void) {
     Window *win = window_cur();
     if (!buf || !win)
         return;
-    if (win->cursor.y < buf->num_rows) {
-        win->cursor.x = buf->rows[win->cursor.y].chars.len;
+
+    TextSelection sel;
+    if (textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.end.line;
+        win->cursor.x = sel.end.col;
     }
 }
 
