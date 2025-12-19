@@ -11,6 +11,12 @@
 void command_mode_handle_keypress(int c);
 
 /**
+ * Start interactive search prompt.
+ * Enters a special command-line mode for entering search queries.
+ */
+void ed_search_prompt(void);
+
+/**
  * Process and execute the current command in the command buffer.
  * Parses the command name and arguments, executes the command,
  * and handles mode transitions.

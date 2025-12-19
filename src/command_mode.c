@@ -207,6 +207,70 @@ void cmdcomp_next(void) {
     cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
 }
 
+static void ed_start_search(Buffer *buf) {
+    if (!PTR_VALID(buf))
+        return;
+
+    /* Save current mode and enter command mode for visual feedback */
+    EditorMode saved_mode = E.mode;
+    ed_set_mode(MODE_COMMAND);
+    E.command_len = 0;
+    E.search_prompt_active = 1;
+    ed_set_status_message("/");
+    ed_render_frame();
+
+    /* Read search query interactively */
+    int search_len = 0;
+    char search_buf[80];
+    int use_regex = 1; /* default: regex search */
+    search_buf[0] = '\0';
+
+    ed_set_status_message("/%.*s", search_len, search_buf);
+    ed_render_frame();
+    while (1) {
+        int k = ed_read_key();
+
+        if (k == '\r') {
+            /* Execute search */
+            break;
+        }
+
+        if (k == '\x1b') {
+            /* Cancel search */
+            E.search_prompt_active = 0;
+            ed_set_mode(saved_mode);
+            return;
+        }
+
+        if (k == CTRL_KEY('r')) {
+            use_regex = !use_regex;
+        } else if (k == KEY_DELETE && search_len > 0) {
+            search_len--;
+        } else if (!iscntrl(k) && k >= 0 && search_len < 79) {
+            search_buf[search_len++] = (char)k;
+        }
+
+        search_buf[search_len] = '\0';
+        ed_set_status_message("/%.*s", search_len, search_buf);
+        ed_render_frame();
+    }
+
+    /* Update global search query and find in buffer */
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(search_buf, search_len);
+    E.search_is_regex = use_regex;
+    E.search_prompt_active = 0;
+    E.mode = saved_mode;
+    buf_find_in(buf);
+}
+
+void ed_search_prompt(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+    ed_start_search(buf);
+}
+
 void command_mode_handle_keypress(int c) {
     if (c == '\r') {
         ed_process_command();

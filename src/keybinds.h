@@ -68,6 +68,14 @@ int keybind_get_count(void);
 int keybind_get_at(int index, const char **sequence, const char **desc, int *mode);
 
 /**
+ * Get and consume the pending numeric count
+ * Used by commands that need to read additional keys after the command key
+ * (e.g., @ for macro playback reads a register name after)
+ * Returns the count (defaults to 1 if no count was entered)
+ */
+int keybind_get_and_clear_pending_count(void);
+
+/**
  * User keybindings initialization (implemented in user_hooks.c / config.c)
  * This is where users define their custom keybindings
  */

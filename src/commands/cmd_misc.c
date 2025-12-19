@@ -347,12 +347,17 @@ void cmd_macro_record(const char *args) {
 
 void cmd_macro_play(const char *args) {
     (void)args;
+    /* Get numeric count before reading the register key */
+    int count = keybind_get_and_clear_pending_count();
+
     /* Read next key to determine which register */
     int key = ed_read_key();
 
     /* Handle @@ - replay last macro */
     if (key == '@') {
-        macro_play_last();
+        for (int i = 0; i < count; i++) {
+            macro_play_last();
+        }
         return;
     }
 
@@ -366,8 +371,10 @@ void cmd_macro_play(const char *args) {
         return;
     }
 
-    /* Play the macro */
-    macro_play((char)key);
+    /* Play the macro count times */
+    for (int i = 0; i < count; i++) {
+        macro_play((char)key);
+    }
 }
 
 void cmd_ln(const char *args) {
@@ -482,7 +489,11 @@ void cmd_fmt(const char *args) {
     buf_reload(buf);
     ed_set_status_message("fmt: formatted (%s)", buf->filename);
 }
-
+void cmd_buf_refresh(const char* args){
+	(void)args;
+	Buffer *buf=buf_cur();
+	buf_reload(buf);
+}
 void cmd_ts(const char *args) {
     if (!args || !*args) {
         ed_set_status_message("ts: %s", ts_is_enabled() ? "on" : "off");
@@ -664,7 +675,7 @@ void cmd_git(const char *args) {
 void cmd_reload(const char *args) {
     (void)args;
     /* Rebuild hed via make, then exec the new binary. */
-    int status = term_cmd_run_interactive("make clean && make -j16", true);
+    int status = term_cmd_run_interactive("make -j16", true);
     if (status != 0) {
         ed_set_status_message("reload: build failed (status %d)", status);
         return;

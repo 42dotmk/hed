@@ -161,8 +161,8 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         /* Switch to existing buffer and reload it */
         EdError err = buf_switch(found);
         if (err == ED_OK) {
-            buf_reload(buf_cur());
-            ed_set_status_message("Switched to: %s (reloaded)", filename);
+            buf_cur();
+            ed_set_status_message("Switched to: %s", filename);
         } else {
             ed_set_status_message("Failed to switch: %s", ed_error_string(err));
         }
@@ -196,10 +196,13 @@ EdError buf_switch(int index) {
 
     /* Record current position before switching */
     Window *win = window_cur();
-    E.current_buffer = index;
-    if (win)
-        win->buffer_index = index;
     Buffer *buf = buf_cur();
+    E.current_buffer = index;
+    if (win){
+        win->buffer_index = index;
+		win->cursor.x = buf->cursor.x;
+		win->cursor.y = buf->cursor.y;
+	}
 
     /* Fire hook */
     HookBufferEvent event = {buf, buf->filename};

@@ -1,6 +1,7 @@
 #include "keybinds_builtins.h"
 #include "commands/cmd_builtins.h"
 #include "commands/cmd_util.h"
+#include "command_mode.h"
 #include "file_helpers.h"
 #include "fold.h"
 #include "hed.h"

@@ -119,14 +119,6 @@ typedef struct {
 /* Global editor state */
 extern Ed E;
 
-/* Convenience macros for accessing vectors */
-#define buf_at(i) (&E.buffers.data[i])
-#define win_at(i) (&E.windows.data[i])
-#define num_buffers() (E.buffers.len)
-#define num_windows() (E.windows.len)
-
-/* Editor operations */
-
 /* Input handling */
 int ed_read_key(void);
 void ed_process_keypress(void);
@@ -135,7 +127,6 @@ void ed_process_command(void);
 
 void ed_set_mode(EditorMode new_mode);
 void ed_set_status_message(const char *fmt, ...);
-void ed_search_prompt(void);
 
 void ed_init(int create_default_buffer);
 void ed_change_cursor_shape(void);

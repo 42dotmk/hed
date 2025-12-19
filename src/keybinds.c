@@ -164,6 +164,16 @@ int keybind_get_at(int index, const char **sequence, const char **desc, int *mod
     return 1;
 }
 
+/* Get and consume the pending numeric count (for commands that read additional keys) */
+int keybind_get_and_clear_pending_count(void) {
+    int count = have_count ? pending_count : 1;
+    if (count < 1)
+        count = 1;
+    pending_count = 0;
+    have_count = 0;
+    return count;
+}
+
 /* Process a key press through the keybinding system */
 bool keybind_process(int key, int mode) {
     /* Numeric prefix only applies in normal mode */
@@ -246,11 +256,17 @@ bool keybind_process(int key, int mode) {
         if (keybinds[exact_match].callback) {
             for (int r = 0; r < repeat; r++) {
                 keybinds[exact_match].callback();
+                /* If callback consumed the count, stop repeating */
+                if (!have_count)
+                    break;
             }
         } else if (keybinds[exact_match].command_callback) {
             for (int r = 0; r < repeat; r++) {
                 keybinds[exact_match].command_callback(
                     keybinds[exact_match].desc);
+                /* If callback consumed the count, stop repeating */
+                if (!have_count)
+                    break;
             }
         }
         /* Store the executed keybind sequence in the '.' register */
