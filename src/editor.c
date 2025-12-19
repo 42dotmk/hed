@@ -35,7 +35,6 @@ void ed_set_mode(EditorMode new_mode) {
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
 
-    /* Clear visual selection when leaving a visual mode */
     if ((old_mode == MODE_VISUAL || old_mode == MODE_VISUAL_BLOCK) &&
         !(new_mode == MODE_VISUAL || new_mode == MODE_VISUAL_BLOCK)) {
         Window *win = window_cur();
@@ -49,15 +48,15 @@ void ed_set_mode(EditorMode new_mode) {
 
     HookModeEvent event = {old_mode, new_mode};
     hook_fire_mode(HOOK_MODE_CHANGE, &event);
+
 }
 
 int ed_read_key(void) {
-    /* Check if there are keys in the macro queue first */
+
     if (macro_queue_has_keys()) {
         return macro_queue_get_key();
     }
 
-    /* No macro keys, read from stdin */
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -128,9 +127,7 @@ int ed_read_key(void) {
         key = c;
     }
 
-    /* Record this key if we're recording a macro */
     if (macro_is_recording()) {
-        /* Don't record 'q' or '@' in normal mode (macro control commands) */
         int should_record = 1;
         if (E.mode == MODE_NORMAL && (key == 'q' || key == '@')) {
             should_record = 0;

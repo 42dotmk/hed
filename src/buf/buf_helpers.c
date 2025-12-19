@@ -1100,7 +1100,7 @@ void buf_change_around_char(void) {
 
     TextSelection sel;
     if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                                1, &sel)) {
+                                true, &sel)) {
         ed_set_status_message("ca: no enclosing pair");
         return;
     }
@@ -1421,7 +1421,7 @@ void buf_delete_around_char(void) {
         return;
     TextSelection sel;
     if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               1, &sel)) {
+                               true, &sel)) {
         ed_set_status_message("da: no enclosing pair");
         return;
     }
@@ -1469,7 +1469,7 @@ void buf_delete_inside_char(void) {
     }
     TextSelection sel;
     if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               0, &sel)) {
+                               false, &sel)) {
         ed_set_status_message("di: no enclosing pair");
         return;
     }

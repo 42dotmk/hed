@@ -102,6 +102,17 @@ static int is_word_cp(const char *s, int len, int idx) {
     return is_word_byte((unsigned char)s[idx]);
 }
 
+static int column_in_word(const Row *row, int col) {
+    if (!row || row->chars.len == 0)
+        return 0;
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    if (col < 0 || col >= len)
+        return 0;
+    int idx = utf8_cp_start(s, len, col);
+    return is_word_cp(s, len, idx);
+}
+
 static int word_range_at(const Row *row, int col, int *sx, int *ex) {
     if (!row || row->chars.len == 0 || !sx || !ex)
         return 0;
@@ -125,6 +136,11 @@ static int word_range_at(const Row *row, int col, int *sx, int *ex) {
     }
 
     int sx_local = i;
+    int prev = utf8_prev_cp(s, len, sx_local);
+    while (prev >= 0 && is_word_cp(s, len, prev)) {
+        sx_local = prev;
+        prev = utf8_prev_cp(s, len, prev);
+    }
     int ex_local = utf8_next_cp(s, len, i);
     while (ex_local < len && is_word_cp(s, len, ex_local)) {
         ex_local = utf8_next_cp(s, len, ex_local);
@@ -135,6 +151,34 @@ static int word_range_at(const Row *row, int col, int *sx, int *ex) {
     *sx = sx_local;
     *ex = ex_local;
     return 1;
+}
+
+static int word_start_at_or_after(const Row *row, int col) {
+    if (!row || row->chars.len == 0)
+        return -1;
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int idx = col;
+    if (idx < 0)
+        idx = 0;
+    if (idx >= len)
+        return -1;
+    idx = utf8_cp_start(s, len, idx);
+    if (!is_word_cp(s, len, idx)) {
+        idx = utf8_next_cp(s, len, idx);
+        while (idx < len && !is_word_cp(s, len, idx)) {
+            idx = utf8_next_cp(s, len, idx);
+        }
+        if (idx >= len)
+            return -1;
+    }
+    while (1) {
+        int prev = utf8_prev_cp(s, len, idx);
+        if (prev < 0 || !is_word_cp(s, len, prev))
+            break;
+        idx = prev;
+    }
+    return idx;
 }
 
 static int paragraph_range(Buffer *buf, int line, int *out_sy, int *out_ey) {
@@ -264,8 +308,15 @@ static int find_enclosing_pair(Buffer *buf, int line, int col, char open,
                         bx = x;
                         found_open = 1;
                         break;
-                    } else
+                    } else {
                         depth--;
+                        if (depth == 0) {
+                            by = y;
+                            bx = x;
+                            found_open = 1;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -358,10 +409,10 @@ int textobj_line(Buffer *buf, int line, int col, TextSelection *sel) {
     int y = clamp_line(buf, line);
     if (y < 0)
         return 0;
+    (void)col;
     Row *row = &buf->rows[y];
-    int x = clamp_col(row, col);
     int len = (int)row->chars.len;
-    TextPos cursor = {y, x};
+    TextPos cursor = {y, 0};
     return set_selection(sel, (TextPos){y, 0}, (TextPos){y, len}, cursor);
 }
 
@@ -378,16 +429,23 @@ int textobj_brackets(Buffer *buf, int line, int col, TextSelection *sel) {
         probe = (int)row->chars.len - 1;
 
     char open = 0, close = 0;
-    if (!map_delim(row->chars.data[probe], &open, &close) && probe > 0) {
-        map_delim(row->chars.data[probe - 1], &open, &close);
+    if (map_delim(row->chars.data[probe], &open, &close) ||
+        (probe > 0 && map_delim(row->chars.data[probe - 1], &open, &close))) {
+        return brackets_select(buf, y, x, open, close, 0, sel);
     }
-    if (!open || !close)
-        return 0;
-    return brackets_select(buf, y, x, open, close, 0, sel);
+
+    static const char pairs[][2] = {{'(', ')'}, {'[', ']'}, {'{', '}'},
+                                    {'<', '>'}, {'"', '"'}, {'\'', '\''},
+                                    {'`', '`'}};
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        if (brackets_select(buf, y, x, pairs[i][0], pairs[i][1], 0, sel))
+            return 1;
+    }
+    return 0;
 }
 
 int textobj_brackets_with(Buffer *buf, int line, int col, char open, char close,
-                          int include_delims, TextSelection *sel) {
+                          bool include_delims, TextSelection *sel) {
     if (!open || !close)
         return 0;
     return brackets_select(buf, line, col, open, close, include_delims, sel);
@@ -400,7 +458,13 @@ int textobj_to_word_end(Buffer *buf, int line, int col, TextSelection *sel) {
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
     int sx = 0, ex = 0;
-    if (!word_range_at(row, x, &sx, &ex))
+    int range_col = x;
+    if (!column_in_word(row, x)) {
+        range_col = word_start_at_or_after(row, x);
+        if (range_col < 0)
+            return 0;
+    }
+    if (!word_range_at(row, range_col, &sx, &ex))
         return 0;
     int start_col = x;
     if (start_col < sx)
@@ -426,7 +490,7 @@ int textobj_to_word_start(Buffer *buf, int line, int col, TextSelection *sel) {
         end_col = sx;
     if (end_col > ex)
         end_col = ex;
-    TextPos cursor = {y, x};
+    TextPos cursor = {y, sx};
     return set_selection(sel, (TextPos){y, sx}, (TextPos){y, end_col}, cursor);
 }
 
@@ -439,7 +503,7 @@ int textobj_to_line_end(Buffer *buf, int line, int col, TextSelection *sel) {
     int len = (int)row->chars.len;
     if (x > len)
         x = len;
-    TextPos cursor = {y, x};
+    TextPos cursor = {y, len};
     return set_selection(sel, (TextPos){y, x}, (TextPos){y, len}, cursor);
 }
 
@@ -449,8 +513,11 @@ int textobj_to_line_start(Buffer *buf, int line, int col, TextSelection *sel) {
         return 0;
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
-    TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){y, 0}, (TextPos){y, x}, cursor);
+    int end_col = x;
+    if (end_col < (int)row->chars.len)
+        end_col++;
+    TextPos cursor = {y, 0};
+    return set_selection(sel, (TextPos){y, 0}, (TextPos){y, end_col}, cursor);
 }
 
 int textobj_to_file_end(Buffer *buf, int line, int col, TextSelection *sel) {
@@ -477,8 +544,11 @@ int textobj_to_file_start(Buffer *buf, int line, int col, TextSelection *sel) {
         return 0;
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
-    TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){0, 0}, (TextPos){y, x}, cursor);
+    int end_col = x;
+    if (end_col < (int)row->chars.len)
+        end_col++;
+    TextPos cursor = {0, 0};
+    return set_selection(sel, (TextPos){0, 0}, (TextPos){y, end_col}, cursor);
 }
 
 int textobj_to_paragraph_end(Buffer *buf, int line, int col,
@@ -563,10 +633,11 @@ int textobj_char_at_cursor(Buffer *buf, int line, int col, TextSelection *sel) {
  * deletion. For the last line, selects just the line content without newline.
  */
 int textobj_line_with_newline(Buffer *buf, int line, int col,
-                               TextSelection *sel) {
+                              TextSelection *sel) {
     int y = clamp_line(buf, line);
     if (y < 0)
         return 0;
+    (void)col;
 
     /* Cursor moves to start of line after deletion */
     TextPos cursor = {y, 0};
