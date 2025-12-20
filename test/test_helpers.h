@@ -21,9 +21,9 @@ char *format_marked_string(const char *text, TextPos initial,
                            TextPos cursor);
 Buffer *create_test_buffer(const char *text);
 void free_test_buffer(Buffer *buf);
-void run_textobj_case(const char *marked_text,
-                             int (*textobj_fn)(Buffer *, int, int,
-                                               TextSelection *));
+void run_textobj_case(
+        int (*textobj_fn)(Buffer *, int, int, TextSelection *), 
+        const char *marked_text);
 
 
 int textobj_curly_outer(Buffer *buf, int line, int col,

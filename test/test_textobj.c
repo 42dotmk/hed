@@ -1,111 +1,84 @@
+#include "../src/buf/textobj.h"
 #include "test_helpers.h"
 #include "unity/unity.h"
-#include "../src/buf/textobj.h"
+
+#define totc(fn, ...)                                                          \
+    do {                                                                       \
+        const char *cases[] = {__VA_ARGS__};                                   \
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {        \
+            run_textobj_case(fn, cases[i]);                                    \
+        }                                                                      \
+    } while (0)
 
 void setUp(void) {}
 void tearDown(void) {}
 
 void test_textobj_word(void) {
-    run_textobj_case("hello [wo^$rld] there",
-                     textobj_word);
-
-    run_textobj_case("hello [worl^$d] there",
-                     textobj_word);
-
-    run_textobj_case("hello [^$a] there",
-                     textobj_word);
+    totc(textobj_word, 
+		 "hello [wo^$rld] there", 
+		 "hello [worl^$d] there",
+         "hello [^$a] there");
 }
 
 void test_textobj_to_word_end(void) {
-    run_textobj_case("hello^ [worl$d] there",
-                     textobj_to_word_end);
-
-    run_textobj_case("hello wo[^rl$d] there",
-                     textobj_to_word_end);
+    totc(textobj_to_word_end, 
+		"hello^ [worl$d] there", //when at a non word char it should find the next word and jump to its end
+		"hello wo[^rl$d] there",
+		"hello [^worl$d] there",
+		"hell^o [worl$d] there", //when on an end of the previous word, it should find the next word and jump there. 
+		"hello worl^d\n[secon$d] line"); //when cursor is at the end of the line and word end
 }
 
 void test_textobj_to_word_start(void) {
-    run_textobj_case("hello [$world]^ there",
-                     textobj_to_word_start);
+    totc(textobj_to_word_start, 
+			"hello [$world]^ there",
+			"hello [$world ^]there",
+            "hello [$wor^l]d there",
 
-    run_textobj_case("hello [$wor]^ld there",
-                     textobj_to_word_start);
+			// when cursor is on the beggining of next line it should pass 
+			// to the end of previous like to the beggining of the last word
+			"hello world [$there]\n^second line"); 
 }
 
 void test_textobj_char_at_cursor(void) {
-    run_textobj_case("hello [^$w]orld",
-                     textobj_char_at_cursor);
-
-    run_textobj_case("[^$h]ello world",
-                     textobj_char_at_cursor);
+    totc(textobj_char_at_cursor, "hello [^$w]orld", "[^$h]ello world");
 }
 
 void test_textobj_line(void) {
-    run_textobj_case("[^$hello world]", textobj_line);
-
-    run_textobj_case("[hello worl$^d]", textobj_line);
-
-    run_textobj_case(
-                     "[^$hello world]\nsecond line", textobj_line);
+    totc(textobj_line, "[^$hello world]", "[hello worl$^d]",
+         "[^$hello world]\nsecond line");
 }
 
 void test_textobj_line_with_newline(void) {
-    run_textobj_case(
-                     "[he^$llo world\n]second line", textobj_line_with_newline);
-
-    run_textobj_case("[$hello worl^d]",
-                     textobj_line_with_newline);
+    totc(textobj_line_with_newline, "[he^$llo world\n]second line",
+         "[$hello worl^d]");
 }
 
 void test_textobj_line_boundaries(void) {
-    run_textobj_case("alpha [^beta$]",
-                     textobj_to_line_end);
-
-    run_textobj_case("alpha beta[^$]",
-                     textobj_to_line_end);
-
-    run_textobj_case("[$alpha ^b]eta",
-                     textobj_to_line_start);
-
-    run_textobj_case("[^$a]lpha beta",
-                     textobj_to_line_start);
+    totc(textobj_to_line_end, 
+		"alpha [^beta$]", "alpha beta[^$]");
+	totc(textobj_to_line_start,
+        "[$alpha ^b]eta", "[^$a]lpha beta");
 }
 
 void test_textobj_file_boundaries(void) {
-    run_textobj_case(
-                     "fir[^$st line\nsecond line\nthird line]",
-                     textobj_to_file_end);
-
-    run_textobj_case(
-                     "[$first line\nsec^o]nd line", textobj_to_file_start);
+    totc(textobj_to_file_end, "fir[^$st line\nsecond line\nthird line]");
+    totc(textobj_to_file_start, "[$first line\nsec^o]nd line");
 }
 
 void test_textobj_brackets_cases(void) {
-    run_textobj_case("call([^$foo bar])",
-                     textobj_brackets);
-
-    run_textobj_case("array([foo ba^$r])",
-                     textobj_brackets);
-
-    run_textobj_case("{[bar ^$baz]}",
-                     textobj_curly_inner);
-
-    run_textobj_case("[{foo ^$bar}]",
-                     textobj_curly_outer);
+    totc(textobj_brackets, "call([^$foo bar])", "array([foo bar^$])");
+    totc(textobj_curly_inner, "{[bar ^$baz]}");
+    totc(textobj_curly_outer, "[{foo ^$bar}]");
 }
 
 void test_textobj_paragraphs(void) {
-    run_textobj_case(
-                     "para1 [^$line1\npara1 line2]\n\npara2 line1\npara2 line2",
-                     textobj_to_paragraph_end);
-
-    run_textobj_case(
-                     "[para1 line1\npara1 ]^$line2\n\npara2 line1\npara2 line2",
-                     textobj_to_paragraph_start);
-
-    run_textobj_case(
-                     "[para1 line1\npara1 ^$line2]\n\npara2 line1\npara2 line2",
-                     textobj_paragraph);
+    totc(textobj_to_paragraph_end,
+         "para1 [^$line1\npara1 line2]\n\npara2 line1\npara2 line2");
+    totc(textobj_to_paragraph_start,
+         "[para1 line1\npara1 ]^$line2\n\npara2 line1\npara2 line2");
+    totc(textobj_paragraph,
+         "[para1 line1\npara1 ^$line2]\n\npara2 line1\npara2 line2");
 }
 
 int main(void) {

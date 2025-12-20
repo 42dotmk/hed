@@ -79,8 +79,7 @@ TestData *parse_test_string(const char *marked_text) {
 
     if (!found_initial || !found_expected || !found_start || !found_end) {
         fprintf(stderr, "Error: Missing markers in test string\n");
-        fprintf(stderr,
-                "  Found: ^ = %d, $ = %d, [ = %d, ] = %d\n",
+        fprintf(stderr, "  Found: ^ = %d, $ = %d, [ = %d, ] = %d\n",
                 found_initial, found_expected, found_start, found_end);
         goto fail;
     }
@@ -123,9 +122,8 @@ static int textpos_to_offset(const char *text, TextPos pos, size_t *out_idx) {
     return 0;
 }
 
-char *format_marked_string(const char *text, TextPos initial,
-                           TextPos sel_start, TextPos sel_end,
-                           TextPos cursor) {
+char *format_marked_string(const char *text, TextPos initial, TextPos sel_start,
+                           TextPos sel_end, TextPos cursor) {
     if (!text)
         return NULL;
     size_t start_idx = 0, end_idx = 0, cursor_idx = 0, initial_idx = 0;
@@ -219,22 +217,19 @@ void free_test_buffer(Buffer *buf) {
     free(buf);
 }
 /* Convenience wrappers for bracket tests */
-int textobj_curly_inner(Buffer *buf, int line, int col,
-                               TextSelection *sel) {
+int textobj_curly_inner(Buffer *buf, int line, int col, TextSelection *sel) {
     return textobj_brackets_with(buf, line, col, '{', '}', false, sel);
 }
 
-int textobj_curly_outer(Buffer *buf, int line, int col,
-                               TextSelection *sel) {
+int textobj_curly_outer(Buffer *buf, int line, int col, TextSelection *sel) {
     return textobj_brackets_with(buf, line, col, '{', '}', true, sel);
 }
 
 /*
  * Test helper - run a textobject function and validate results
  */
-void run_textobj_case(const char *marked_text,
-                             int (*textobj_fn)(Buffer *, int, int,
-                                               TextSelection *)) {
+void run_textobj_case(int (*textobj_fn)(Buffer *, int, int, TextSelection *),
+                      const char *marked_text) {
     char message[256];
 
     TestData *data = parse_test_string(marked_text);
@@ -247,7 +242,8 @@ void run_textobj_case(const char *marked_text,
 
     TextSelection sel = (TextSelection){0};
     int result = textobj_fn(buf, data->initial.line, data->initial.col, &sel);
-    snprintf(message, sizeof(message), "textobject function returned 0 (no match)");
+    snprintf(message, sizeof(message),
+             "textobject function returned 0 (no match)");
     TEST_ASSERT_TRUE_MESSAGE(result, message);
 
     char *expected_str =

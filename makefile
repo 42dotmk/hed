@@ -18,6 +18,9 @@ OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
 all: $(TARGET) $(TSI)
 
+test:
+	cd test && make test
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 

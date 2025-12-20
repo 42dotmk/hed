@@ -1523,7 +1523,7 @@ void buf_change_inside_char(void) {
         return;
     }
     if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               0, &sel)) {
+                               false, &sel)) {
         ed_set_status_message("ci: no enclosing pair");
         return;
     }
