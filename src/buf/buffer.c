@@ -1,7 +1,9 @@
+#include "buf_helpers.h"
 #include "hed.h"
 #include "safe_string.h"
 #include "fold_methods/fold_methods.h"
 #include "lib/file_helpers.h"
+#include <assert.h>
 #include <regex.h>
 
 /* Internal low-level row helpers (not part of public API) */
@@ -534,12 +536,7 @@ void buf_delete_line_in(Buffer *buf) {
     win->cursor.x = 0;
 }
 void buf_yank_line_in(Buffer *buf) {
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
-
+    WIN(win)
     sstr_free(&E.clipboard);
     E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
                             buf->rows[win->cursor.y].chars.len);

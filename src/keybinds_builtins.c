@@ -1,11 +1,13 @@
 #include "keybinds_builtins.h"
-#include "commands/cmd_builtins.h"
-#include "commands/cmd_util.h"
+#include "cmd_misc.h"
 #include "command_mode.h"
+#include "commands/cmd_util.h"
 #include "file_helpers.h"
 #include "fold.h"
 #include "hed.h"
 #include "strutil.h"
+#include "buf_helpers.h"
+#include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
 
@@ -15,8 +17,8 @@ void buf_row_del_in(Buffer *buf, int at);
 /* Visual selection helpers (local to keybinding implementations) */
 static void visual_clear(Window *win) {
     if (!win)
-        return;
-    win->sel.type = SEL_NONE;
+        return; 
+    win->sel.type = SEL_NONE;       
 }
 
 Selection kb_make_selection(Window *win, Buffer *buf,
@@ -54,12 +56,7 @@ Selection kb_make_selection(Window *win, Buffer *buf,
 }
 
 static void visual_begin(int block) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-    if (win->cursor.y < 0 || win->cursor.y >= buf->num_rows)
-        return;
+    BUFWIN(buf, win)
     win->sel.type = block ? SEL_BLOCK : SEL_CHAR;
     win->sel.anchor_y = win->cursor.y;
     win->sel.anchor_x = win->cursor.x;
@@ -321,10 +318,7 @@ int kb_visual_delete(Buffer *buf, Window *win, int block_mode) {
 static int kb_visual_is_block_mode(void) { return E.mode == MODE_VISUAL_BLOCK; }
 
 void kb_visual_yank_selection(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
+    BUFWIN(buf, win)
     if (kb_visual_yank(buf, win, kb_visual_is_block_mode())) {
         kb_visual_clear(win);
         ed_set_mode(MODE_NORMAL);
@@ -332,17 +326,12 @@ void kb_visual_yank_selection(void) {
 }
 
 void kb_visual_delete_selection(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
+    BUFWIN(buf, win)
     kb_visual_delete(buf, win, kb_visual_is_block_mode());
 }
 
 void kb_visual_escape(void) {
-    Window *win = window_cur();
-    if (!win)
-        return;
+    BUFWIN(buf, win)
     kb_visual_clear(win);
     ed_set_mode(MODE_NORMAL);
 }
@@ -356,23 +345,20 @@ void kb_visual_toggle_block_mode(void) {
 }
 
 void kb_visual_enter_insert_mode(void) {
-    Window *win = window_cur();
-    if (win)
-        kb_visual_clear(win);
+    BUFWIN(buf, win)
+    kb_visual_clear(win);
     kb_enter_insert_mode();
 }
 
 void kb_visual_enter_append_mode(void) {
-    Window *win = window_cur();
-    if (win)
-        kb_visual_clear(win);
+    BUFWIN(buf, win)
+    kb_visual_clear(win);
     kb_append_mode();
 }
 
 void kb_visual_enter_command_mode(void) {
-    Window *win = window_cur();
-    if (win)
-        kb_visual_clear(win);
+    BUFWIN(buf, win)
+    kb_visual_clear(win);
     kb_enter_command_mode();
 }
 
@@ -382,11 +368,7 @@ void kb_visual_enter_command_mode(void) {
 void kb_enter_insert_mode(void) { ed_set_mode(MODE_INSERT); }
 
 void kb_append_mode(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-
+    BUFWIN(buf, win)
     ed_set_mode(MODE_INSERT);
     if (win->cursor.y < buf->num_rows) {
         Row *row = &buf->rows[win->cursor.y];
@@ -402,9 +384,7 @@ void kb_enter_command_mode(void) {
 }
 
 void kb_visual_toggle(void) {
-    Window *win = window_cur();
-    if (!win)
-        return;
+    BUFWIN(buf, win)
     if (E.mode == MODE_VISUAL && win->sel.type == SEL_CHAR) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
@@ -414,9 +394,7 @@ void kb_visual_toggle(void) {
 }
 
 void kb_visual_block_toggle(void) {
-    Window *win = window_cur();
-    if (!win)
-        return;
+	BUFWIN(buf, win)
     if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_BLOCK) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
@@ -437,23 +415,18 @@ void kb_delete_line(void) {
 }
 
 void kb_yank_line(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+	BUFWIN(buf, win)
     buf_yank_line_in(buf);
     ed_set_status_message("Yanked");
 }
 
 void kb_paste(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+	BUFWIN(buf, win)
     buf_paste_in(buf);
 }
 
 void kb_delete_char(void) {
     ASSERT_EDIT(buf, win);
-
     TextSelection sel;
     if (!textobj_char_at_cursor(buf, win->cursor.y, win->cursor.x, &sel))
         return;
@@ -462,17 +435,12 @@ void kb_delete_char(void) {
 }
 
 void kb_insert_newline(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+    BUFWIN(buf, win);
     buf_insert_newline_in(buf);
 }
 
 void kb_insert_tab(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
+    BUFWIN(buf, win)
     int tabw = (E.tab_size > 0) ? E.tab_size : TAB_STOP;
     if (!E.expand_tab) {
         buf_insert_char_in(buf, '\t');
@@ -486,15 +454,12 @@ void kb_insert_tab(void) {
 }
 
 void kb_insert_backspace(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+    BUFWIN(buf, win)
     buf_del_char_in(buf);
 }
 
 void kb_insert_escape(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
+    BUFWIN(buf, win)
     ed_set_mode(MODE_NORMAL);
     if (buf && win && win->cursor.x > 0)
         win->cursor.x--;
@@ -504,11 +469,7 @@ void kb_search_prompt(void) { ed_search_prompt(); }
 
 /* Normal mode - cursor movement */
 void kb_cursor_line_start(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-
+    BUFWIN(buf, win)
     TextSelection sel;
     if (textobj_to_line_start(buf, win->cursor.y, win->cursor.x, &sel)) {
         win->cursor.y = sel.start.line;
@@ -517,11 +478,7 @@ void kb_cursor_line_start(void) {
 }
 
 void kb_cursor_line_end(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-
+    BUFWIN(buf, win)
     TextSelection sel;
     if (textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel)) {
         win->cursor.y = sel.end.line;
@@ -530,18 +487,13 @@ void kb_cursor_line_end(void) {
 }
 
 void kb_cursor_top(void) {
-    Window *win = window_cur();
-    if (!win)
-        return;
+    BUFWIN(buf, win)
     win->cursor.y = 0;
     win->cursor.x = 0;
 }
 
 void kb_cursor_bottom(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
+    BUFWIN(buf, win)
     win->cursor.y = buf->num_rows - 1;
     if (win->cursor.y < 0)
         win->cursor.y = 0;
@@ -768,9 +720,7 @@ void kb_tmux_send_line(void) {
 }
 
 /* Change word: delete to end of word and enter insert mode */
-void kb_change_word(void) {
-    buf_change_word_forward();
-}
+void kb_change_word(void) { buf_change_word_forward(); }
 
 /* Toggle case of character under cursor and move right */
 void kb_toggle_case(void) {

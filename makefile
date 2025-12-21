@@ -14,12 +14,12 @@ HEADERS = $(shell find $(SRC_DIR) -type f -name "*.h")
 OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
 
-.PHONY: all clean run test_args ts-langs strip_build
+.PHONY: all clean run test test_args ts-langs strip_build
 
 all: $(TARGET) $(TSI)
 
 test:
-	cd test && make test
+	$(MAKE) -C test test
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

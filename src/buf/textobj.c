@@ -633,7 +633,8 @@ int textobj_to_line_end(Buffer *buf, int line, int col, TextSelection *sel) {
     int len = (int)row->chars.len;
     if (x > len)
         x = len;
-    TextPos cursor = {y, len};
+    int cursor_col = (len > 0) ? (len - 1) : 0;
+    TextPos cursor = {y, cursor_col};
     return set_selection(sel, (TextPos){y, x}, (TextPos){y, len}, cursor);
 }
 
@@ -661,7 +662,8 @@ int textobj_to_file_end(Buffer *buf, int line, int col, TextSelection *sel) {
     int last_y = buf->num_rows - 1;
     Row *last = &buf->rows[last_y];
     int last_len = (int)last->chars.len;
-    TextPos cursor = {y, x};
+    int cursor_col = (last_len > 0) ? (last_len - 1) : 0;
+    TextPos cursor = {last_y, cursor_col};
     return set_selection(sel, (TextPos){y, x}, (TextPos){last_y, last_len},
                          cursor);
 }
@@ -692,9 +694,17 @@ int textobj_to_paragraph_end(Buffer *buf, int line, int col,
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
     Row *end_row = &buf->rows[ey];
-    int end_len = (int)end_row->chars.len;
-    TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){y, x}, (TextPos){ey, end_len}, cursor);
+    int end_line = ey;
+    int end_col = (int)end_row->chars.len;
+    int cursor_col = (end_col > 0) ? (end_col - 1) : 0;
+    if (ey + 1 < buf->num_rows && is_blank_row(&buf->rows[ey + 1])) {
+        end_line = ey + 1;
+        end_col = 0;
+        cursor_col = (int)end_row->chars.len;
+    }
+    TextPos cursor = {ey, cursor_col};
+    return set_selection(sel, (TextPos){y, x}, (TextPos){end_line, end_col},
+                         cursor);
 }
 
 int textobj_to_paragraph_start(Buffer *buf, int line, int col,
@@ -708,8 +718,11 @@ int textobj_to_paragraph_start(Buffer *buf, int line, int col,
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
     (void)ey; /* ey unused but computed for symmetry */
-    TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){sy, 0}, (TextPos){y, x}, cursor);
+    int end_col = x;
+    if (end_col < (int)row->chars.len)
+        end_col++;
+    TextPos cursor = {sy, 0};
+    return set_selection(sel, (TextPos){sy, 0}, (TextPos){y, end_col}, cursor);
 }
 
 int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel) {
@@ -719,12 +732,19 @@ int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel) {
     int sy = 0, ey = 0;
     if (!paragraph_range(buf, y, &sy, &ey))
         return 0;
-    Row *row = &buf->rows[y];
-    int x = clamp_col(row, col);
+    (void)col;
     Row *end_row = &buf->rows[ey];
-    int end_len = (int)end_row->chars.len;
-    TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){sy, 0}, (TextPos){ey, end_len}, cursor);
+    int end_line = ey;
+    int end_col = (int)end_row->chars.len;
+    int cursor_col = (end_col > 0) ? (end_col - 1) : 0;
+    if (ey + 1 < buf->num_rows && is_blank_row(&buf->rows[ey + 1])) {
+        end_line = ey + 1;
+        end_col = 0;
+        cursor_col = (int)end_row->chars.len;
+    }
+    TextPos cursor = {ey, cursor_col};
+    return set_selection(sel, (TextPos){sy, 0}, (TextPos){end_line, end_col},
+                         cursor);
 }
 
 /*
