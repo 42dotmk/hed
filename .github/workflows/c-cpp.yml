@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: install-dependencies
-      run: apt install libtree-sitter-dev
+      run: sudo apt install libtree-sitter-dev
     - name: build
       run: make
     - name: test
