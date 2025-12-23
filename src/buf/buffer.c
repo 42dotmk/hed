@@ -398,14 +398,6 @@ void buf_insert_char_in(Buffer *buf, int c) {
     }
     int y0 = win->cursor.y;
     int x0 = win->cursor.x;
-    if (!undo_is_applying()) {
-        if (E.mode == MODE_INSERT)
-            undo_open_insert_group();
-        else
-            undo_begin_group();
-        char ch = (char)c;
-        undo_push_insert(y0, x0, &ch, 1, y0, x0, y0, x0 + 1);
-    }
     buf_row_insert_char_in(buf, &buf->rows[y0], x0, c);
     win->cursor.x = x0 + 1;
 
@@ -423,14 +415,6 @@ void buf_insert_newline_in(Buffer *buf) {
     }
     int y0 = win->cursor.y;
     int x0 = win->cursor.x;
-    if (!undo_is_applying()) {
-        if (E.mode == MODE_INSERT)
-            undo_open_insert_group();
-        else
-            undo_begin_group();
-        const char nl = '\n';
-        undo_push_insert(y0, x0, &nl, 1, y0, x0, y0 + 1, 0);
-    }
     if (x0 == 0) {
         buf_row_insert_in(buf, win->cursor.y, "", 0);
     } else {
@@ -467,11 +451,6 @@ void buf_del_char_in(Buffer *buf) {
     if (x > 0) {
         int deleted_char =
             (x - 1 < (int)row->chars.len) ? row->chars.data[x - 1] : 0;
-        if (!undo_is_applying()) {
-            char ch = (char)deleted_char;
-            undo_begin_group();
-            undo_push_delete(y, x - 1, &ch, 1, y, x, y, x - 1);
-        }
         buf_row_del_char_in(buf, row, x - 1);
 
         /* Fire hook */
@@ -481,11 +460,6 @@ void buf_del_char_in(Buffer *buf) {
         win->cursor.x = x - 1;
     } else {
         int prev_len = buf->rows[y - 1].chars.len;
-        if (!undo_is_applying()) {
-            const char nl = '\n';
-            undo_begin_group();
-            undo_push_delete(y - 1, prev_len, &nl, 1, y, x, y - 1, prev_len);
-        }
         win->cursor.x = prev_len;
         buf_row_append_in(buf, &buf->rows[y - 1], &row->chars);
         buf_row_del_in(buf, y);
@@ -518,16 +492,6 @@ void buf_delete_line_in(Buffer *buf) {
                            buf->rows[win->cursor.y].chars.data,
                            buf->rows[win->cursor.y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
-
-    if (!undo_is_applying()) {
-        int y0 = win->cursor.y;
-        SizedStr cap = sstr_new();
-        sstr_append(&cap, buf->rows[y0].chars.data, buf->rows[y0].chars.len);
-        sstr_append_char(&cap, '\n');
-        undo_begin_group();
-        undo_push_delete(y0, 0, cap.data, cap.len, y0, 0, y0, 0);
-        sstr_free(&cap);
-    }
 
     buf_row_del_in(buf, win->cursor.y);
     if (buf->num_rows == 0) {
@@ -563,8 +527,6 @@ void buf_paste_in(Buffer *buf) {
 
     /* Block paste: insert column slice into successive lines */
     if (E.clipboard_is_block) {
-        if (!undo_is_applying())
-            undo_begin_group();
         int cx = win->cursor.x;
         /* Split clipboard into lines */
         const char *data = E.clipboard.data;
@@ -587,11 +549,6 @@ void buf_paste_in(Buffer *buf) {
                     icx = 0;
                 if (icx > (int)r->chars.len)
                     icx = (int)r->chars.len;
-                if (!undo_is_applying()) {
-                    undo_push_insert(row, icx, data + start, seglen,
-                                     win->cursor.y, win->cursor.x, row,
-                                     icx + (int)seglen);
-                }
                 for (size_t k = 0; k < seglen; k++) {
                     buf_row_insert_char_in(buf, r, icx + (int)k,
                                            data[start + k]);
@@ -600,8 +557,6 @@ void buf_paste_in(Buffer *buf) {
                 start = i + 1;
             }
         }
-        if (!undo_is_applying())
-            undo_commit_group();
         /* Place cursor at end of first inserted segment */
         win->cursor.x =
             cx + (int)(E.clipboard.len ? (strcspn(E.clipboard.data, "\n")) : 0);
@@ -610,13 +565,6 @@ void buf_paste_in(Buffer *buf) {
 
     /* Character-wise paste: insert into current line */
     if (!strchr(E.clipboard.data, '\n')) {
-        if (!undo_is_applying()) {
-            undo_begin_group();
-            undo_push_insert(win->cursor.y, win->cursor.x, E.clipboard.data,
-                             E.clipboard.len, win->cursor.y, win->cursor.x,
-                             win->cursor.y,
-                             win->cursor.x + (int)E.clipboard.len);
-        }
         if (win->cursor.y >= buf->num_rows) {
             buf_row_insert_in(buf, buf->num_rows, "", 0);
         }
@@ -630,19 +578,11 @@ void buf_paste_in(Buffer *buf) {
             buf_row_insert_char_in(buf, r, cx + (int)k, E.clipboard.data[k]);
         }
         win->cursor.x = cx + (int)E.clipboard.len;
-        if (!undo_is_applying())
-            undo_commit_group();
         return;
     }
 
     /* Line-wise paste: insert lines below current */
-    int at =
-        (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
-    if (!undo_is_applying()) {
-        undo_begin_group();
-        undo_push_insert(at, 0, E.clipboard.data, E.clipboard.len,
-                         win->cursor.y, win->cursor.x, at, 0);
-    }
+    int at = (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
     size_t start = 0;
     size_t len = E.clipboard.len;
     int insert_row = at;
@@ -657,8 +597,6 @@ void buf_paste_in(Buffer *buf) {
     }
     win->cursor.y = insert_row - 1;
     win->cursor.x = 0;
-    if (!undo_is_applying())
-        undo_commit_group();
 }
 
 /*** Search ***/

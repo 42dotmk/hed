@@ -292,37 +292,20 @@ void buf_join_lines(void) {
     int need_space = (current->chars.len > 0 &&
                       current->chars.data[current->chars.len - 1] != ' ');
 
-    int started_group = 0;
-    if (!undo_is_applying()) {
-        undo_begin_group();
-        started_group = 1;
-    }
-
     /* Optional space insertion at end of current line */
     if (need_space) {
         char space = ' ';
         int cx_ins = (int)current->chars.len;
-        if (!undo_is_applying()) {
-            undo_push_insert(y, cx_ins, &space, 1, y, cx_before, y, cx_before);
-        }
         sstr_append_char(&current->chars, ' ');
         buf_row_update(current);
     }
 
     /* Delete logical newline between current and next line (merge lines) */
     int cx_nl = (int)current->chars.len;
-    if (!undo_is_applying()) {
-        const char nl = '\n';
-        undo_push_delete(y, cx_nl, &nl, 1, y, cx_before, y, cx_before);
-    }
     /* Append next line's text and remove the next row */
     buf_row_append_in(buf, current, &next->chars);
     buf_row_del_in(buf, y + 1);
     buf->dirty++;
-
-    if (started_group && !undo_is_applying()) {
-        undo_commit_group();
-    }
 }
 
 void buf_duplicate_line(void) {
@@ -383,17 +366,6 @@ void buf_indent_line(void) {
     int y = win->cursor.y;
     int cx_before = win->cursor.x;
 
-    if (!undo_is_applying()) {
-        char spaces[TAB_STOP];
-        for (int i = 0; i < TAB_STOP; i++)
-            spaces[i] = ' ';
-        int cx_after = cx_before + TAB_STOP;
-        undo_begin_group();
-        undo_push_insert(y, 0, spaces, (size_t)TAB_STOP, y, cx_before, y,
-                         cx_after);
-        undo_commit_group();
-    }
-
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
         sstr_insert_char(&row->chars, 0, ' ');
@@ -429,19 +401,6 @@ void buf_unindent_line(void) {
 
     int y = win->cursor.y;
     int cx_before = win->cursor.x;
-
-    if (spaces_to_remove > 0 && !undo_is_applying()) {
-        char removed[8];
-        for (int i = 0; i < spaces_to_remove && i < (int)sizeof(removed); i++)
-            removed[i] = ' ';
-        int cx_after = cx_before - spaces_to_remove;
-        if (cx_after < 0)
-            cx_after = 0;
-        undo_begin_group();
-        undo_push_delete(y, 0, removed, (size_t)spaces_to_remove, y, cx_before,
-                         y, cx_after);
-        undo_commit_group();
-    }
 
     for (int i = 0; i < spaces_to_remove; i++) {
         sstr_delete_char(&row->chars, 0);
@@ -497,16 +456,8 @@ void buf_toggle_comment(void) {
         }
     }
 
-    if (!undo_is_applying()) {
-        undo_begin_group();
-    }
-
     if (is_commented) {
         /* Remove comment */
-        if (!undo_is_applying()) {
-            undo_push_delete(y, 0, comment, (size_t)comment_len, y,
-                             win->cursor.x, y, win->cursor.x - comment_len);
-        }
         for (int i = 0; i < comment_len; i++) {
             sstr_delete_char(&row->chars, 0);
         }
@@ -514,11 +465,6 @@ void buf_toggle_comment(void) {
         if (win->cursor.x < 0)
             win->cursor.x = 0;
     } else {
-        /* Add comment */
-        if (!undo_is_applying()) {
-            undo_push_insert(y, 0, comment, (size_t)comment_len, y,
-                             win->cursor.x, y, win->cursor.x + comment_len);
-        }
         for (int i = comment_len - 1; i >= 0; i--) {
             sstr_insert_char(&row->chars, 0, comment[i]);
         }
@@ -527,10 +473,6 @@ void buf_toggle_comment(void) {
 
     buf_row_update(row);
     buf->dirty++;
-
-    if (!undo_is_applying()) {
-        undo_commit_group();
-    }
 }
 
 /*** Navigation helpers ***/
@@ -827,16 +769,7 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         return;
     /* Capture to clipboard first */
     buf_yank_range(sy, sx, ey, ex);
-    /* Record undo as a single, self-contained group so that a
-     * single undo restores exactly this deleted region. */
-    if (!undo_is_applying()) {
-        int cy_before = win->cursor.y;
-        int cx_before = win->cursor.x;
-        undo_begin_group();
-        undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len, cy_before,
-                         cx_before, sy, sx);
-        undo_commit_group();
-    }
+
     /* Perform deletion on the buffer */
     if (sy == ey) {
         if (sy < 0 || sy >= buf->num_rows)

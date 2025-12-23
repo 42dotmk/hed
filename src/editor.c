@@ -44,8 +44,6 @@ void ed_set_mode(EditorMode new_mode) {
     }
 
     keybind_clear_buffer();
-    undo_on_mode_change(old_mode, new_mode);
-
     HookModeEvent event = {old_mode, new_mode};
     hook_fire_mode(HOOK_MODE_CHANGE, &event);
 
@@ -254,8 +252,6 @@ void ed_init(int create_default_buffer) {
     E.screen_rows -= 2; /* Status bar and message bar */
     qf_init(&E.qf);
     regs_init();
-    undo_init();
-    undo_set_cap(4 * 1024 * 1024);
     hook_init();
     command_init();
     keybind_init();

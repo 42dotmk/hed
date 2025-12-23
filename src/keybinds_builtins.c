@@ -225,12 +225,6 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
         int sy, sx, ey, ex_excl;
         if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
-        if (!undo_is_applying()) {
-            undo_begin_group();
-            undo_push_delete(sy, sx, E.clipboard.data, E.clipboard.len,
-                             win->cursor.y, win->cursor.x, sy, sx);
-            undo_commit_group();
-        }
         Row *start = &buf->rows[sy];
         int start_len = (int)start->chars.len;
         if (sx > start_len)
@@ -267,11 +261,6 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
         int sy, ey, start_rx, end_rx_excl;
         if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
             return 0;
-        int made_group = 0;
-        if (!undo_is_applying()) {
-            undo_begin_group();
-            made_group = 1;
-        }
         for (int y = sy; y <= ey; y++) {
             Row *r = &buf->rows[y];
             int cx0 = buf_row_rx_to_cx(r, start_rx);
@@ -284,18 +273,9 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
                 cx1 = (int)r->chars.len;
             if (cx0 == cx1)
                 continue;
-            if (!undo_is_applying()) {
-                SizedStr seg =
-                    sstr_from(r->chars.data + cx0, (size_t)(cx1 - cx0));
-                undo_push_delete(y, cx0, seg.data, seg.len, win->cursor.y,
-                                 win->cursor.x, y, cx0);
-                sstr_free(&seg);
-            }
             sstr_delete_range(&r->chars, cx0, cx1);
             buf_row_update(r);
         }
-        if (made_group && !undo_is_applying())
-            undo_commit_group();
         buf->dirty++;
         win->cursor.y = sy;
         Row *r = &buf->rows[win->cursor.y];
