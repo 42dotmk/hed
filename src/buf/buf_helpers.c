@@ -288,21 +288,15 @@ void buf_join_lines(void) {
     if (!PTR_VALID(current) || !PTR_VALID(next))
         return;
 
-    int cx_before = win->cursor.x;
     int need_space = (current->chars.len > 0 &&
                       current->chars.data[current->chars.len - 1] != ' ');
 
     /* Optional space insertion at end of current line */
     if (need_space) {
-        char space = ' ';
-        int cx_ins = (int)current->chars.len;
         sstr_append_char(&current->chars, ' ');
         buf_row_update(current);
     }
 
-    /* Delete logical newline between current and next line (merge lines) */
-    int cx_nl = (int)current->chars.len;
-    /* Append next line's text and remove the next row */
     buf_row_append_in(buf, current, &next->chars);
     buf_row_del_in(buf, y + 1);
     buf->dirty++;
@@ -363,9 +357,6 @@ void buf_indent_line(void) {
 
     Row *row = &buf->rows[win->cursor.y];
 
-    int y = win->cursor.y;
-    int cx_before = win->cursor.x;
-
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
         sstr_insert_char(&row->chars, 0, ' ');
@@ -398,9 +389,6 @@ void buf_unindent_line(void) {
             break;
         }
     }
-
-    int y = win->cursor.y;
-    int cx_before = win->cursor.x;
 
     for (int i = 0; i < spaces_to_remove; i++) {
         sstr_delete_char(&row->chars, 0);

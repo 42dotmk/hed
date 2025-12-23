@@ -2,12 +2,12 @@
 -Wextra
 -std=c23
 -pedantic
--O0
--g
 -I/usr/include
 -Isrc
--Isrc/ui
 -Isrc/buf
--Isrc/lib
--Isrc/utils
 -Isrc/commands
+-Isrc/fold_methods
+-Isrc/lib
+-Isrc/ui
+-Isrc/utils
+
