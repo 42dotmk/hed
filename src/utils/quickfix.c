@@ -166,9 +166,9 @@ static void qf_sync_buffer(Qf *qf) {
     buf->num_rows = 0;
 
     /* Rebuild from items */
-    int sel = (qf->sel >= 0 && qf->sel < qf->len) ? qf->sel : -1;
-    for (int i = 0; i < qf->len; i++) {
-        const QfItem *it = &qf->items[i];
+    int sel = (qf->sel >= 0 && qf->sel < (int)qf->items.len) ? qf->sel : -1;
+    for (int i = 0; i < (int)qf->items.len; i++) {
+        const QfItem *it = &qf->items.data[i];
         char line[512];
         int l;
         if (it->filename && it->filename[0]) {
@@ -211,29 +211,20 @@ void qf_init(Qf *qf) {
     qf->height = 8;
     qf->sel = 0;
     qf->scroll = 0;
-    qf->items = NULL;
-    qf->len = 0;
-    qf->cap = 0;
+    qf->items.data = NULL;
+    qf->items.len = 0;
+    qf->items.cap = 0;
 }
 
 void qf_free(Qf *qf) {
     if (!qf)
         return;
-    for (int i = 0; i < qf->len; i++)
-        qf_item_free(&qf->items[i]);
-    free(qf->items);
-    qf->items = NULL;
-    qf->len = qf->cap = 0;
-}
-
-static void qf_reserve(Qf *qf, int need) {
-    if (qf->cap >= need)
-        return;
-    int ncap = qf->cap ? qf->cap * 2 : 32;
-    if (ncap < need)
-        ncap = need;
-    qf->items = realloc(qf->items, (size_t)ncap * sizeof(QfItem));
-    qf->cap = ncap;
+    for (size_t i = 0; i < qf->items.len; i++)
+        qf_item_free(&qf->items.data[i]);
+    free(qf->items.data);
+    qf->items.data = NULL;
+    qf->items.len = 0;
+    qf->items.cap = 0;
 }
 
 void qf_open(Qf *qf, int height) {
@@ -293,8 +284,8 @@ void qf_open(Qf *qf, int height) {
 
     qf->open = 1;
     qf->focus = 0;
-    if (qf->sel >= qf->len)
-        qf->sel = qf->len ? qf->len - 1 : 0;
+    if (qf->sel >= (int)qf->items.len)
+        qf->sel = qf->items.len ? (int)qf->items.len - 1 : 0;
     qf_update_window_view(qf);
 }
 
@@ -349,9 +340,9 @@ void qf_blur(Qf *qf) {
 void qf_clear(Qf *qf) {
     if (!qf)
         return;
-    for (int i = 0; i < qf->len; i++)
-        qf_item_free(&qf->items[i]);
-    qf->len = 0;
+    for (size_t i = 0; i < qf->items.len; i++)
+        qf_item_free(&qf->items.data[i]);
+    qf->items.len = 0;
     qf->sel = 0;
     qf->scroll = 0;
     if (qf->open)
@@ -361,25 +352,26 @@ void qf_clear(Qf *qf) {
 int qf_add(Qf *qf, const char *filename, int line, int col, const char *text) {
     if (!qf)
         return -1;
-    qf_reserve(qf, qf->len + 1);
-    QfItem *it = &qf->items[qf->len++];
+    if (!vec_reserve_typed(&qf->items, qf->items.len + 1, sizeof(QfItem)))
+        return -1;
+    QfItem *it = &qf->items.data[qf->items.len++];
     it->text = text ? strdup(text) : strdup("");
     it->filename = filename ? strdup(filename) : NULL;
     it->line = line;
     it->col = col;
     if (qf->open)
         qf_sync_buffer(qf);
-    return qf->len - 1;
+    return (int)qf->items.len - 1;
 }
 
 void qf_move(Qf *qf, int delta) {
-    if (!qf || qf->len == 0)
+    if (!qf || qf->items.len == 0)
         return;
     int ns = qf->sel + delta;
     if (ns < 0)
         ns = 0;
-    if (ns >= qf->len)
-        ns = qf->len - 1;
+    if (ns >= (int)qf->items.len)
+        ns = (int)qf->items.len - 1;
     qf->sel = ns;
     qf_update_window_view(qf);
 }
@@ -549,23 +541,23 @@ static void qf_jump_to_internal(const QfItem *it, int focus_target) {
 }
 
 void qf_open_selected(Qf *qf) {
-    if (!qf || qf->len == 0)
+    if (!qf || qf->items.len == 0)
         return;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items[qf->sel], 1);
+    qf_jump_to_internal(&qf->items.data[qf->sel], 1);
 }
 
 void qf_preview_selected(Qf *qf) {
-    if (!qf || qf->len == 0)
+    if (!qf || qf->items.len == 0)
         return;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items[qf->sel], 0);
+    qf_jump_to_internal(&qf->items.data[qf->sel], 0);
 }
 
 void qf_open_idx(Qf *qf, int idx) {
-    if (!qf || idx < 0 || idx >= qf->len)
+    if (!qf || idx < 0 || idx >= (int)qf->items.len)
         return;
     qf->sel = idx;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items[idx], 1);
+    qf_jump_to_internal(&qf->items.data[idx], 1);
 }

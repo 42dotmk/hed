@@ -178,9 +178,9 @@ void cmd_ssearch(const char *args) {
     }
     fzf_free(sel, cnt);
 
-    if (E.qf.len > 0) {
+    if (E.qf.items.len > 0) {
         qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("ssearch: %d item(s)", E.qf.len);
+        ed_set_status_message("ssearch: %zu item(s)", E.qf.items.len);
     } else {
         ed_set_status_message("ssearch: no parsed selections");
     }
@@ -298,9 +298,9 @@ void cmd_rg(const char *args) {
     }
     fzf_free(sel, cnt);
 
-    if (E.qf.len > 0) {
+    if (E.qf.items.len > 0) {
         qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("rg: %d items", E.qf.len);
+        ed_set_status_message("rg: %zu items", E.qf.items.len);
     } else {
         ed_set_status_message("rg: no parsed selections");
     }

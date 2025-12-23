@@ -10,15 +10,16 @@ typedef struct {
     int col;        /* 1-based, optional (0 if unknown) */
 } QfItem;
 
+#include "vector.h"
+VEC_DEFINE(QfItemVec, QfItem);
+
 typedef struct {
     int open;   /* 0/1 */
     int focus;  /* 0/1: when focused, keypresses navigate quickfix */
     int height; /* number of lines used for the pane */
     int sel;    /* selected index (0-based) */
     int scroll; /* first visible index */
-    QfItem *items;
-    int len;
-    int cap;
+    QfItemVec items;
 } Qf;
 
 /* Quickfix buffer helpers

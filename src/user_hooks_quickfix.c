@@ -9,14 +9,14 @@ static void quickfix_cursor_hook(const HookCursorEvent *event) {
     if (!buf->filetype || strcmp(buf->filetype, "quickfix") != 0)
         return;
 
-    if (E.qf.len <= 0)
+    if (E.qf.items.len == 0)
         return;
 
     int row = event->new_y;
     if (row < 0)
         row = 0;
-    if (row >= E.qf.len)
-        row = E.qf.len - 1;
+    if (row >= (int)E.qf.items.len)
+        row = (int)E.qf.items.len - 1;
 
     E.qf.sel = row;
     /* Keep the quickfix view and '*' marker in sync with selection. */

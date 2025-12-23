@@ -9,10 +9,11 @@ typedef struct {
     int cursor_y;
 } JumpEntry;
 
+#include "vector.h"
+VEC_DEFINE(JumpEntryVec, JumpEntry);
+
 typedef struct {
-    JumpEntry *entries;
-    int len;
-    int cap;
+    JumpEntryVec entries;
     int current; /* Current position in the list (-1 if not navigating) */
 } JumpList;
 

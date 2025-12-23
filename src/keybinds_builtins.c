@@ -7,6 +7,7 @@
 #include "hed.h"
 #include "strutil.h"
 #include "buf_helpers.h"
+#include "dired.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -425,6 +426,18 @@ void kb_paste(void) {
     buf_paste_in(buf);
 }
 
+void kb_dired_enter(void) {
+    dired_handle_enter();
+}
+
+void kb_dired_parent(void) {
+    dired_handle_parent();
+}
+
+void kb_dired_home(void) {
+    dired_handle_home();
+}
+
 void kb_delete_char(void) {
     ASSERT_EDIT(buf, win);
     TextSelection sel;
@@ -644,19 +657,11 @@ void kb_open_file_under_cursor(void) {
 void kb_line_number_toggle(void) { cmd_ln(NULL); }
 /* Undo/Redo */
 void kb_undo(void) {
-    if (undo_perform()) {
-        ed_set_status_message("Undid");
-    } else {
-        ed_set_status_message("Nothing to undo");
-    }
+    ed_set_status_message("Undo disabled");
 }
 
 void kb_redo(void) {
-    if (redo_perform()) {
-        ed_set_status_message("Redid");
-    } else {
-        ed_set_status_message("Nothing to redo");
-    }
+    ed_set_status_message("Redo disabled");
 }
 
 /* Helper: perform jump in specified direction */

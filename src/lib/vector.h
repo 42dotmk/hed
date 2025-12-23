@@ -135,4 +135,22 @@ static inline int vec_ensure_cap(Vector *vec) {
 #define vec_reserve(vec, type, capacity)                                       \
     vec_reserve_internal((Vector *)(vec), (capacity))
 
+/* Find first element matching predicate. Predicate can use __elem pointer. */
+#define vec_find(vec, type, predicate, out_index)                              \
+    __extension__ ({                                                           \
+        type *__result = NULL;                                                 \
+        size_t __idx = 0;                                                      \
+        for (; __idx < (vec)->len; __idx++) {                                  \
+            type *__elem = &((vec)->data[__idx]);                              \
+            if (predicate) {                                                   \
+                __result = __elem;                                             \
+                break;                                                         \
+            }                                                                  \
+        }                                                                      \
+        if ((out_index) != NULL) {                                             \
+            *(out_index) = __result ? __idx : (size_t)-1;                      \
+        }                                                                      \
+        __result;                                                              \
+    })
+
 #endif /* VECTOR_H */

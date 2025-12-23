@@ -3,10 +3,11 @@
 
 /* Command history structure and API */
 
+#include "vector.h"
+VEC_DEFINE(CmdHistoryItems, char *);
+
 typedef struct {
-    char **items; /* newest at index 0 */
-    int len;
-    int cap;
+    CmdHistoryItems items; /* newest at index 0 */
     int idx; /* browsing index; -1 when not browsing */
     char saved_line[80];
     int saved_len;

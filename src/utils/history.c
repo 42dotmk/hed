@@ -22,48 +22,37 @@ static char *hist_path(void) {
 static void hist_clear_items(CmdHistory *h) {
     if (!h)
         return;
-    for (int i = 0; i < h->len; i++)
-        free(h->items[i]);
-    free(h->items);
-    h->items = NULL;
-    h->len = 0;
-    h->cap = 0;
+    for (size_t i = 0; i < h->items.len; i++)
+        free(h->items.data[i]);
+    free(h->items.data);
+    h->items.data = NULL;
+    h->items.len = 0;
+    h->items.cap = 0;
 }
 
 static void hist_insert_front(CmdHistory *h, const char *line) {
     if (!line || !*line)
         return;
-    if (h->len + 1 > h->cap) {
-        int ncap = h->cap == 0 ? 64 : h->cap * 2;
-        char **n = realloc(h->items, ncap * sizeof(char *));
-        if (!n)
-            return;
-        h->items = n;
-        h->cap = ncap;
-    }
-    memmove(&h->items[1], &h->items[0], sizeof(char *) * h->len);
-    h->items[0] = strdup(line);
-    h->len++;
-    if (h->len > CMD_HISTORY_MAX) {
-        free(h->items[CMD_HISTORY_MAX]);
-        h->len = CMD_HISTORY_MAX;
+    if (!vec_reserve_typed(&h->items, h->items.len + 1, sizeof(char *)))
+        return;
+    memmove(&h->items.data[1], &h->items.data[0],
+            sizeof(char *) * h->items.len);
+    h->items.data[0] = strdup(line);
+    h->items.len++;
+    if (h->items.len > CMD_HISTORY_MAX) {
+        free(h->items.data[CMD_HISTORY_MAX]);
+        h->items.len = CMD_HISTORY_MAX;
     }
 }
 
 static void hist_append(CmdHistory *h, const char *line) {
     if (!line || !*line)
         return;
-    if (h->len >= CMD_HISTORY_MAX)
+    if ((int)h->items.len >= CMD_HISTORY_MAX)
         return;
-    if (h->len + 1 > h->cap) {
-        int ncap = h->cap == 0 ? 64 : h->cap * 2;
-        char **n = realloc(h->items, ncap * sizeof(char *));
-        if (!n)
-            return;
-        h->items = n;
-        h->cap = ncap;
-    }
-    h->items[h->len++] = strdup(line);
+    if (!vec_reserve_typed(&h->items, h->items.len + 1, sizeof(char *)))
+        return;
+    h->items.data[h->items.len++] = strdup(line);
 }
 
 static void hist_prepend_to_file(const char *line) {
@@ -144,9 +133,9 @@ static void hist_prepend_to_file(const char *line) {
 void hist_init(CmdHistory *h) {
     if (!h)
         return;
-    h->items = NULL;
-    h->len = 0;
-    h->cap = 0;
+    h->items.data = NULL;
+    h->items.len = 0;
+    h->items.cap = 0;
     h->idx = -1;
     h->saved_len = 0;
     h->prefix_len = 0;
@@ -169,7 +158,7 @@ void hist_init(CmdHistory *h) {
             r--;
         line[r] = '\0';
         hist_append(h, line);
-        if (h->len >= CMD_HISTORY_MAX)
+        if ((int)h->items.len >= CMD_HISTORY_MAX)
             break;
     }
     free(line);
@@ -208,7 +197,7 @@ static int hist_prefix_match(const char *entry, const char *pre, int plen) {
 
 int hist_browse_up(CmdHistory *h, const char *current_input, int current_len,
                    char *out, int out_cap) {
-    if (!h || h->len == 0 || out_cap <= 0)
+    if (!h || h->items.len == 0 || out_cap <= 0)
         return 0;
     if (h->idx == -1) {
         h->saved_len = current_len;
@@ -223,8 +212,8 @@ int hist_browse_up(CmdHistory *h, const char *current_input, int current_len,
         h->prefix[h->prefix_len] = '\0';
     }
     int start = (h->idx == -1) ? 0 : h->idx + 1;
-    for (int i = start; i < h->len; i++) {
-        const char *s = h->items[i];
+    for (int i = start; i < (int)h->items.len; i++) {
+        const char *s = h->items.data[i];
         if (hist_prefix_match(s, h->prefix, h->prefix_len)) {
             h->idx = i;
             int n = (int)strlen(s);
@@ -241,12 +230,12 @@ int hist_browse_up(CmdHistory *h, const char *current_input, int current_len,
 int hist_browse_down(CmdHistory *h, char *out, int out_cap, int *restored) {
     if (restored)
         *restored = 0;
-    if (!h || h->len == 0 || out_cap <= 0)
+    if (!h || h->items.len == 0 || out_cap <= 0)
         return 0;
     if (h->idx == -1)
         return 0;
     for (int i = h->idx - 1; i >= 0; i--) {
-        const char *s = h->items[i];
+        const char *s = h->items.data[i];
         if (hist_prefix_match(s, h->prefix, h->prefix_len)) {
             h->idx = i;
             int n = (int)strlen(s);
@@ -269,9 +258,9 @@ int hist_browse_down(CmdHistory *h, char *out, int out_cap, int *restored) {
     return 1;
 }
 
-int hist_len(const CmdHistory *h) { return h ? h->len : 0; }
+int hist_len(const CmdHistory *h) { return h ? (int)h->items.len : 0; }
 const char *hist_get(const CmdHistory *h, int idx) {
-    if (!h || idx < 0 || idx >= h->len)
+    if (!h || idx < 0 || idx >= (int)h->items.len)
         return NULL;
-    return h->items[idx];
+    return h->items.data[idx];
 }

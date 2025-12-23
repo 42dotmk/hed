@@ -156,6 +156,10 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         ed_set_status_message("No filename provided");
         return;
     }
+    if (path_is_dir(filename)) {
+        dired_open(filename);
+        return;
+    }
 
     /* Check if buffer already exists */
     int found = buf_find_by_filename(filename);

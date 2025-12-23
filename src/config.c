@@ -107,6 +107,7 @@ static void on_smart_indent(const HookCharEvent *event) {
 void user_hooks_init(void) {
     hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
     hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_insert_char);
+    dired_hooks_init();
 }
 
 void user_commands_init(void) {
@@ -213,6 +214,7 @@ void nmode_bindings() {
     cmapn(" mm", "shell make");
     cmapn(" mt", "shell make test");
     cmapn(" nn", "shell --skipwait nnn");
+    cmapn(" dd", "e .");
     cmapn(" sd", "rg");
     cmapn(" ss", "ssearch");
     cmapn(" sa", "rgword");
@@ -239,6 +241,9 @@ void nmode_bindings() {
     mapn("<Up>", kb_move_up, "up");
     mapn("<Right>", kb_move_right, "right");
     mapn("/", kb_search_prompt, "search");
+    mapn("-", kb_dired_parent, "dired parent");
+    mapn("~", kb_dired_home, "dired home");
+    mapn("<CR>", kb_dired_enter, "dired open");
     mapn(" ts", kb_tmux_send_line, "send to tmux");
     mapn(" dl", kb_del_right, "del win right");
     mapn(" d1", kb_del_left, "del win left");

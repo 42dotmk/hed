@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 int path_is_absolute(const char *path) {
     if (!path || !*path)
         return 0;
@@ -63,6 +64,15 @@ bool path_exists(const char *path) {
         return true;
     }
     return false;
+}
+
+bool path_is_dir(const char *path) {
+    if (!path || !*path)
+        return false;
+    struct stat st;
+    if (stat(path, &st) == -1)
+        return false;
+    return S_ISDIR(st.st_mode);
 }
 
 int path_join_dir(char *out, size_t out_sz, const char *dir, const char *path) {

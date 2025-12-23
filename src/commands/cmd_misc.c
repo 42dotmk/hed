@@ -289,20 +289,12 @@ void cmd_put(const char *args) {
 
 void cmd_undo(const char *args) {
     (void)args;
-    if (undo_perform()) {
-        ed_set_status_message("Undid");
-    } else {
-        ed_set_status_message("Nothing to undo");
-    }
+    ed_set_status_message("Undo disabled");
 }
 
 void cmd_redo(const char *args) {
     (void)args;
-    if (redo_perform()) {
-        ed_set_status_message("Redid");
-    } else {
-        ed_set_status_message("Nothing to redo");
-    }
+    ed_set_status_message("Redo disabled");
 }
 
 void cmd_repeat(const char *args) {

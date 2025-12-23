@@ -7,19 +7,19 @@
 void jump_list_init(JumpList *jl) {
     if (!jl)
         return;
-    jl->entries = NULL;
-    jl->len = 0;
-    jl->cap = 0;
+    jl->entries.data = NULL;
+    jl->entries.len = 0;
+    jl->entries.cap = 0;
     jl->current = -1;
 }
 
 void jump_list_free(JumpList *jl) {
     if (!jl)
         return;
-    free(jl->entries);
-    jl->entries = NULL;
-    jl->len = 0;
-    jl->cap = 0;
+    free(jl->entries.data);
+    jl->entries.data = NULL;
+    jl->entries.len = 0;
+    jl->entries.cap = 0;
     jl->current = -1;
 }
 
@@ -28,8 +28,8 @@ void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y) {
         return;
 
     /* Don't add if it's the same as the last entry */
-    if (jl->len > 0) {
-        JumpEntry *last = &jl->entries[jl->len - 1];
+    if (jl->entries.len > 0) {
+        JumpEntry *last = &jl->entries.data[jl->entries.len - 1];
         if (strcmp(last->filepath, filepath) == 0 &&
             last->cursor_x == cursor_x && last->cursor_y == cursor_y) {
             return;
@@ -38,53 +38,45 @@ void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y) {
 
     /* If we're navigating (current != -1), truncate everything after current
      * position */
-    if (jl->current != -1 && jl->current < jl->len - 1) {
-        jl->len = jl->current + 1;
-    }
-
-    /* Ensure capacity */
-    if (jl->len + 1 > jl->cap) {
-        int new_cap = jl->cap == 0 ? 32 : jl->cap * 2;
-        if (new_cap > JUMP_LIST_MAX)
-            new_cap = JUMP_LIST_MAX;
-        JumpEntry *new_entries =
-            realloc(jl->entries, new_cap * sizeof(JumpEntry));
-        if (!new_entries)
-            return;
-        jl->entries = new_entries;
-        jl->cap = new_cap;
+    if (jl->current != -1 && jl->current < (int)jl->entries.len - 1) {
+        jl->entries.len = (size_t)(jl->current + 1);
     }
 
     /* If at max capacity, shift everything down (remove oldest) */
-    if (jl->len >= JUMP_LIST_MAX) {
-        memmove(&jl->entries[0], &jl->entries[1],
+    if (jl->entries.len >= JUMP_LIST_MAX) {
+        memmove(&jl->entries.data[0], &jl->entries.data[1],
                 (JUMP_LIST_MAX - 1) * sizeof(JumpEntry));
-        jl->len = JUMP_LIST_MAX - 1;
+        jl->entries.len = JUMP_LIST_MAX - 1;
     }
 
+    /* Ensure capacity for new entry */
+    if (!vec_reserve_typed(&jl->entries, jl->entries.len + 1,
+                           sizeof(JumpEntry)))
+        return;
+
     /* Add new entry */
-    jl->entries[jl->len].filepath = strdup(filepath);
-    jl->entries[jl->len].cursor_x = cursor_x;
-    jl->entries[jl->len].cursor_y = cursor_y;
-    jl->len++;
+    JumpEntry *slot = &jl->entries.data[jl->entries.len++];
+    slot->filepath = strdup(filepath);
+    slot->cursor_x = cursor_x;
+    slot->cursor_y = cursor_y;
 
     /* Reset navigation state */
     jl->current = -1;
 }
 
 int jump_list_backward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
-    if (!jl || jl->len == 0)
+    if (!jl || jl->entries.len == 0)
         return 0;
 
     /* Initialize current position if not navigating */
     if (jl->current == -1) {
-        jl->current = jl->len - 1;
+        jl->current = (int)jl->entries.len - 1;
     }
 
     /* Try to move backward */
     if (jl->current > 0) {
         jl->current--;
-        JumpEntry *entry = &jl->entries[jl->current];
+        JumpEntry *entry = &jl->entries.data[jl->current];
         char *copy = strdup(entry->filepath);
         *filepath = copy;
         *out_x = entry->cursor_x;
@@ -97,7 +89,7 @@ int jump_list_backward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
 }
 
 int jump_list_forward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
-    if (!jl || jl->len == 0)
+    if (!jl || jl->entries.len == 0)
         return 0;
 
     /* Can only move forward if we're navigating */
@@ -105,9 +97,9 @@ int jump_list_forward(JumpList *jl, char **filepath, int *out_x, int *out_y) {
         return 0;
 
     /* Try to move forward */
-    if (jl->current < jl->len - 1) {
+    if (jl->current < (int)jl->entries.len - 1) {
         jl->current++;
-        JumpEntry *entry = &jl->entries[jl->current];
+        JumpEntry *entry = &jl->entries.data[jl->current];
         char *copy = strdup(entry->filepath);
         *filepath = copy;
         *out_x = entry->cursor_x;

@@ -22,34 +22,23 @@ static char *recent_files_path(void) {
 static void recent_files_clear_items(RecentFiles *rf) {
     if (!rf)
         return;
-    for (int i = 0; i < rf->len; i++)
-        free(rf->items[i]);
-    free(rf->items);
-    rf->items = NULL;
-    rf->len = 0;
-    rf->cap = 0;
-}
-
-/* Remove item at index, shifting remaining items */
-static void recent_files_remove_at(RecentFiles *rf, int idx) {
-    if (!rf || idx < 0 || idx >= rf->len)
-        return;
-    free(rf->items[idx]);
-    /* Shift remaining items down */
-    for (int i = idx; i < rf->len - 1; i++) {
-        rf->items[i] = rf->items[i + 1];
-    }
-    rf->len--;
+    for (size_t i = 0; i < rf->items.len; i++)
+        free(rf->items.data[i]);
+    free(rf->items.data);
+    rf->items.data = NULL;
+    rf->items.len = 0;
+    rf->items.cap = 0;
 }
 
 /* Drop any duplicate paths, keeping the first occurrence (newest). */
 static void recent_files_dedup(RecentFiles *rf) {
     if (!rf)
         return;
-    for (int i = 0; i < rf->len; i++) {
-        for (int j = i + 1; j < rf->len;) {
-            if (strcmp(rf->items[i], rf->items[j]) == 0) {
-                recent_files_remove_at(rf, j);
+    for (int i = 0; i < (int)rf->items.len; i++) {
+        for (int j = i + 1; j < (int)rf->items.len;) {
+            if (strcmp(rf->items.data[i], rf->items.data[j]) == 0) {
+                free(rf->items.data[j]);
+                vec_remove(&rf->items, char *, j);
             } else {
                 j++;
             }
@@ -62,25 +51,17 @@ static void recent_files_insert_front(RecentFiles *rf, const char *filepath) {
     if (!filepath || !*filepath)
         return;
 
-    /* Ensure capacity */
-    if (rf->len + 1 > rf->cap) {
-        int ncap = rf->cap == 0 ? 64 : rf->cap * 2;
-        char **n = realloc(rf->items, ncap * sizeof(char *));
-        if (!n)
-            return;
-        rf->items = n;
-        rf->cap = ncap;
-    }
-
-    /* Shift all items down */
-    memmove(&rf->items[1], &rf->items[0], sizeof(char *) * rf->len);
-    rf->items[0] = strdup(filepath);
-    rf->len++;
+    if (!vec_reserve_typed(&rf->items, rf->items.len + 1, sizeof(char *)))
+        return;
+    memmove(&rf->items.data[1], &rf->items.data[0],
+            sizeof(char *) * rf->items.len);
+    rf->items.data[0] = strdup(filepath);
+    rf->items.len++;
 
     /* Enforce max limit */
-    if (rf->len > RECENT_FILES_MAX) {
-        free(rf->items[RECENT_FILES_MAX]);
-        rf->len = RECENT_FILES_MAX;
+    if (rf->items.len > RECENT_FILES_MAX) {
+        free(rf->items.data[RECENT_FILES_MAX]);
+        rf->items.len = RECENT_FILES_MAX;
     }
 }
 
@@ -88,19 +69,13 @@ static void recent_files_insert_front(RecentFiles *rf, const char *filepath) {
 static void recent_files_append(RecentFiles *rf, const char *filepath) {
     if (!filepath || !*filepath)
         return;
-    if (rf->len >= RECENT_FILES_MAX)
+    if ((int)rf->items.len >= RECENT_FILES_MAX)
         return;
 
-    if (rf->len + 1 > rf->cap) {
-        int ncap = rf->cap == 0 ? 64 : rf->cap * 2;
-        char **n = realloc(rf->items, ncap * sizeof(char *));
-        if (!n)
-            return;
-        rf->items = n;
-        rf->cap = ncap;
-    }
+    if (!vec_reserve_typed(&rf->items, rf->items.len + 1, sizeof(char *)))
+        return;
 
-    rf->items[rf->len++] = strdup(filepath);
+    rf->items.data[rf->items.len++] = strdup(filepath);
 }
 
 /* Save entire list to file */
@@ -126,8 +101,8 @@ static void recent_files_save(const RecentFiles *rf) {
     }
 
     /* Write all items, newest first */
-    for (int i = 0; i < rf->len; i++) {
-        fprintf(fp, "%s\n", rf->items[i]);
+    for (size_t i = 0; i < rf->items.len; i++) {
+        fprintf(fp, "%s\n", rf->items.data[i]);
     }
 
     fclose(fp);
@@ -144,9 +119,9 @@ void recent_files_init(RecentFiles *rf) {
     if (!rf)
         return;
 
-    rf->items = NULL;
-    rf->len = 0;
-    rf->cap = 0;
+    rf->items.data = NULL;
+    rf->items.len = 0;
+    rf->items.cap = 0;
 
     char *path = recent_files_path();
     if (!path)
@@ -172,7 +147,7 @@ void recent_files_init(RecentFiles *rf) {
             recent_files_append(rf, line);
         }
 
-        if (rf->len >= RECENT_FILES_MAX)
+        if ((int)rf->items.len >= RECENT_FILES_MAX)
             break;
     }
 
@@ -191,9 +166,10 @@ void recent_files_add(RecentFiles *rf, const char *filepath) {
         return;
 
     /* Check if file already exists in list and remove it */
-    for (int i = 0; i < rf->len; i++) {
-        if (strcmp(rf->items[i], filepath) == 0) {
-            recent_files_remove_at(rf, i);
+    for (int i = 0; i < (int)rf->items.len; i++) {
+        if (strcmp(rf->items.data[i], filepath) == 0) {
+            free(rf->items.data[i]);
+            vec_remove(&rf->items, char *, i);
             break;
         }
     }
@@ -206,9 +182,11 @@ void recent_files_add(RecentFiles *rf, const char *filepath) {
 }
 
 const char *recent_files_get(const RecentFiles *rf, int idx) {
-    if (!rf || idx < 0 || idx >= rf->len)
+    if (!rf || idx < 0 || idx >= (int)rf->items.len)
         return NULL;
-    return rf->items[idx];
+    return rf->items.data[idx];
 }
 
-int recent_files_len(const RecentFiles *rf) { return rf ? rf->len : 0; }
+int recent_files_len(const RecentFiles *rf) {
+    return rf ? (int)rf->items.len : 0;
+}

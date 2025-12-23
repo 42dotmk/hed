@@ -160,7 +160,7 @@ void cmd_cadd(const char *args) {
 
 void cmd_cnext(const char *args) {
     (void)args;
-    if (E.qf.len == 0) {
+    if (E.qf.items.len == 0) {
         ed_set_status_message("Quickfix empty");
         return;
     }
@@ -170,7 +170,7 @@ void cmd_cnext(const char *args) {
 
 void cmd_cprev(const char *args) {
     (void)args;
-    if (E.qf.len == 0) {
+    if (E.qf.items.len == 0) {
         ed_set_status_message("Quickfix empty");
         return;
     }
@@ -182,7 +182,7 @@ void cmd_copenidx(const char *args) {
     int idx = parse_int_default(args, 1);
     if (idx <= 0)
         idx = 1;
-    if (idx > E.qf.len)
-        idx = E.qf.len;
+    if (idx > (int)E.qf.items.len)
+        idx = (int)E.qf.items.len;
     qf_open_idx(&E.qf, idx - 1);
 }
