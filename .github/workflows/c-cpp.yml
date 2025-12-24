@@ -1,0 +1,28 @@
+name: hed-build-release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: install-dependencies
+      run: sudo apt install libtree-sitter-dev
+    - name: build
+      run: make
+    - name: test
+      run: make test
+    - name: save-artifacts
+  
+      uses: actions/upload-artifact@v6.0.0
+      with:
+        name: hed
+        path: ./build/*
+        include-hidden-files: true
+          
