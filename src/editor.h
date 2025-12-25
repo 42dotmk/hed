@@ -18,11 +18,6 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define CMD_HISTORY_MAX 1000
 
-/* Initial capacities for growable vectors */
-#define BUFFERS_INITIAL_CAP 8
-#define WINDOWS_INITIAL_CAP 4
-#define COMMANDS_INITIAL_CAP 64
-
 /* Special key codes */
 #define KEY_DELETE 127
 #define KEY_PAGE_UP 1000
@@ -58,10 +53,10 @@ VEC_DEFINE(WindowVec, Window);
 typedef struct {
     EditorMode mode;
     BufferVec buffers; /* Growable buffer array */
-    int current_buffer;
-    /* Windows */
     WindowVec windows; /* Growable window array */
+    int current_buffer;
     int current_window;
+
     int window_layout; /* 0=single, 1=vertical split, 2=horizontal split */
     int screen_rows;
     int screen_cols;

@@ -209,15 +209,7 @@ void ed_process_keypress(void) {
 
 
 void ed_init_state() {
-    E.buffers.data = NULL;
-    E.buffers.len = 0;
-    E.buffers.cap = 0;
-    vec_reserve_typed(&E.buffers, BUFFERS_INITIAL_CAP, sizeof(Buffer));
     E.current_buffer = 0;
-    E.windows.data = NULL;
-    E.windows.len = 0;
-    E.windows.cap = 0;
-    vec_reserve_typed(&E.windows, WINDOWS_INITIAL_CAP, sizeof(Window));
     E.modal_window = NULL;
     E.render_x = 0;
     E.screen_rows = 0;
@@ -240,9 +232,10 @@ void ed_init_state() {
 }
 
 void ed_init(int create_default_buffer) {
+    log_msg("Initializing editor state");
     ed_init_state();
+    log_msg("Editor state initialized");
 
-    /* Initialize editor working directory to process CWD at startup. */
     if (!getcwd(E.cwd, sizeof(E.cwd))) {
         E.cwd[0] = '\0';
     }

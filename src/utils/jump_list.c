@@ -5,21 +5,15 @@
 #endif
 
 void jump_list_init(JumpList *jl) {
-    if (!jl)
-        return;
-    jl->entries.data = NULL;
-    jl->entries.len = 0;
-    jl->entries.cap = 0;
+    if (!jl) return;
+	jl->entries = (JumpEntryVec){0};
     jl->current = -1;
 }
 
 void jump_list_free(JumpList *jl) {
-    if (!jl)
-        return;
+    if (!jl) return;
     free(jl->entries.data);
-    jl->entries.data = NULL;
-    jl->entries.len = 0;
-    jl->entries.cap = 0;
+	jl->entries = (JumpEntryVec){0};
     jl->current = -1;
 }
 
@@ -42,23 +36,19 @@ void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y) {
         jl->entries.len = (size_t)(jl->current + 1);
     }
 
-    /* If at max capacity, shift everything down (remove oldest) */
+    /* If at max capacity, remove oldest entry */
     if (jl->entries.len >= JUMP_LIST_MAX) {
-        memmove(&jl->entries.data[0], &jl->entries.data[1],
-                (JUMP_LIST_MAX - 1) * sizeof(JumpEntry));
-        jl->entries.len = JUMP_LIST_MAX - 1;
+        JumpEntry oldest = vec_pop_start_typed(&jl->entries, JumpEntry);
+        free(oldest.filepath);
     }
 
-    /* Ensure capacity for new entry */
-    if (!vec_reserve_typed(&jl->entries, jl->entries.len + 1,
-                           sizeof(JumpEntry)))
-        return;
-
-    /* Add new entry */
-    JumpEntry *slot = &jl->entries.data[jl->entries.len++];
-    slot->filepath = strdup(filepath);
-    slot->cursor_x = cursor_x;
-    slot->cursor_y = cursor_y;
+    /* Add new entry using vec_push_typed */
+    JumpEntry new_entry = {
+        .filepath = strdup(filepath),
+        .cursor_x = cursor_x,
+        .cursor_y = cursor_y
+    };
+    vec_push_typed(&jl->entries, JumpEntry, new_entry);
 
     /* Reset navigation state */
     jl->current = -1;

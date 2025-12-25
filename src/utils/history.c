@@ -33,15 +33,14 @@ static void hist_clear_items(CmdHistory *h) {
 static void hist_insert_front(CmdHistory *h, const char *line) {
     if (!line || !*line)
         return;
-    if (!vec_reserve_typed(&h->items, h->items.len + 1, sizeof(char *)))
-        return;
-    memmove(&h->items.data[1], &h->items.data[0],
-            sizeof(char *) * h->items.len);
-    h->items.data[0] = strdup(line);
-    h->items.len++;
+
+    char *line_copy = strdup(line);
+    vec_push_start_typed(&h->items, char *, line_copy);
+
+    /* Enforce max limit */
     if (h->items.len > CMD_HISTORY_MAX) {
-        free(h->items.data[CMD_HISTORY_MAX]);
-        h->items.len = CMD_HISTORY_MAX;
+        char *oldest = vec_pop_typed(&h->items, char *);
+        free(oldest);
     }
 }
 
@@ -50,9 +49,9 @@ static void hist_append(CmdHistory *h, const char *line) {
         return;
     if ((int)h->items.len >= CMD_HISTORY_MAX)
         return;
-    if (!vec_reserve_typed(&h->items, h->items.len + 1, sizeof(char *)))
-        return;
-    h->items.data[h->items.len++] = strdup(line);
+
+    char *line_copy = strdup(line);
+    vec_push_typed(&h->items, char *, line_copy);
 }
 
 static void hist_prepend_to_file(const char *line) {
