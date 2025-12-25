@@ -2,6 +2,7 @@
 #include "../hed.h"
 #include "cmd_util.h"
 #include "fzf.h"
+#include "../utils/sed.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,25 +66,12 @@ void cmd_cpick(const char *args) {
 }
 
 void cmd_ssearch(const char *args) {
-    (void)args;
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("ssearch: no buffer");
-        return;
-    }
-    if (!buf->filename || !*buf->filename) {
-        ed_set_status_message("ssearch: file has no name");
-        return;
-    }
-
-    /* Save file to ensure on-disk content matches buffer */
+	BUF(buf)
     EdError err = buf_save_in(buf);
     if (err != ED_OK) {
         ed_set_status_message("Warning: save failed: %s", ed_error_string(err));
-        /* Continue anyway - user might want to search unsaved content */
     }
 
-    /* Build fzf options with ripgrep reload bound to query changes */
     char esc_query[8];
     snprintf(esc_query, sizeof(esc_query), "''");
     const char *rg_base =
@@ -466,5 +454,19 @@ void cmd_shq(const char *args) {
         ed_set_status_message("shq: %d line(s)", added);
     } else {
         ed_set_status_message("shq: no output");
+    }
+}
+
+void cmd_sed(const char *args) {
+	BUF(buf)
+    if (!args || !*args) {
+        ed_set_status_message("Usage: :sed <expression>");
+        return;
+    }
+
+    EdError err = sed_apply_to_buffer(buf, args);
+    if (err != ED_OK) {
+        /* Error message already set by sed_apply_to_buffer */
+        return;
     }
 }

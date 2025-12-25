@@ -221,6 +221,7 @@ void user_commands_init(void) {
     cmd("rg", cmd_rg, "ripgrep");
     cmd("tag", cmd_tag, "jump to tag definition");
     cmd("shq", cmd_shq, "shell cmd");
+    cmd("sed", cmd_sed, "apply sed expression to buffer");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
     cmd("fzf", cmd_fzf, "pick a file(s)");
