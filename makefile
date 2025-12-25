@@ -35,6 +35,14 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 $(TSI): ts/ts_lang_install.c
 	$(CC) -std=c23 -Wall -Wextra -O2 -I/usr/include -o $@ $<
 
+publish: 
+	@echo "Publishing hed and tsi to /usr/local/bin/"
+	$(MAKE) install
+
+install: $(TARGET) $(TSI)
+	cp $(TARGET) /usr/local/bin/hed
+	cp $(TSI) /usr/local/bin/tsi
+
 ts-langs: $(BUILD_DIR)
 	@echo "Tree-sitter source files:"
 	cp -rf ts-langs build/ts-langs
