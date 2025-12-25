@@ -6,7 +6,7 @@
 #include "assert.h"
 
 void windows_init(void) {
-    vec_push(&E.windows, Window, (Window){0});
+    vec_push_typed(&E.windows, Window, (Window){0});
     E.current_window = 0;
     E.window_layout = 0;
     E.windows.data[0].top = 1;
@@ -56,11 +56,11 @@ void win_attach_buf(Window *win, Buffer *buf) {
     }
 }
 
-void windows_split_vertical(void) { 
+void windows_split_vertical(void) {
     WIN(win)
     int prev_idx = E.current_window;
     int new_idx = E.windows.len;
-    vec_push(&E.windows, Window, *win);
+    vec_push_typed(&E.windows, Window, *win);
 
     E.windows.data[prev_idx].focus = 0;
     E.windows.data[new_idx].focus = 1;
@@ -90,8 +90,8 @@ void windows_split_horizontal(void) {
     WIN(win)
     int prev_idx = E.current_window;
     int new_idx = E.windows.len;
-    
-    vec_push(&E.windows, Window, *win);
+
+    vec_push_typed(&E.windows, Window, *win);
     E.windows.data[prev_idx].focus = 0;
     E.windows.data[new_idx].focus = 1;
     E.windows.data[new_idx].sel.type = SEL_NONE;
