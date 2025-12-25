@@ -2,6 +2,7 @@
 #include "cmd_misc.h"
 #include "command_mode.h"
 #include "commands/cmd_util.h"
+#include "commands_ui.h"
 #include "file_helpers.h"
 #include "fold.h"
 #include "hed.h"
@@ -858,3 +859,38 @@ void kb_fold_close_all(void) {
     }
     ed_set_status_message("Closed %d fold%s", count, count == 1 ? "" : "s");
 }
+
+void kb_del_win(char direction);
+void kb_del_up() { kb_del_win('k'); }
+void kb_del_down() { kb_del_win('j'); }
+void kb_del_left() { kb_del_win('h'); }
+void kb_del_right() { kb_del_win('l'); }
+
+void kb_end_append(void) {
+    kb_cursor_line_end();
+    kb_append_mode();
+}
+
+void kb_start_insert(void) {
+    kb_cursor_line_start();
+    kb_enter_insert_mode();
+}
+
+void kb_del_win(char direction) {
+    switch (direction) {
+    case 'h':
+        windows_focus_left();
+        break;
+    case 'j':
+        windows_focus_down();
+        break;
+    case 'k':
+        windows_focus_up();
+        break;
+    case 'l':
+        windows_focus_right();
+        break;
+    }
+    cmd_wclose(NULL);
+}
+

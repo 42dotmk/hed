@@ -268,7 +268,6 @@ static void compute_node(WLayoutNode *node, int top, int left, int height,
         }
         return;
     }
-
     int sep = node->decor.thickness > 0 ? node->decor.thickness : 1;
     int sumw = 0;
     for (int i = 0; i < node->nchildren; i++)

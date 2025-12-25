@@ -1,0 +1,66 @@
+#include "hook_builtins.h"
+#include "hed.h"
+
+void hook_change_cursor_shape(const HookModeEvent *event) {
+    ed_change_cursor_shape();
+    (void)event;
+}
+
+
+void hook_auto_pair(const HookCharEvent *event) {
+    WIN(win);
+    switch (event->c) {
+    case '(':
+        buf_insert_char_in(event->buf, ')');
+        win->cursor.x--;
+        break;
+    case '[':
+        buf_insert_char_in(event->buf, ']');
+        win->cursor.x--;
+        break;
+    case '<':
+        buf_insert_char_in(event->buf, '>');
+        win->cursor.x--;
+        break;
+    case '{':
+        buf_insert_char_in(event->buf, '}');
+        win->cursor.x--;
+        break;
+	// TODO: Because we are raising the event again it goes into loop, 
+	// TOOD: we need to figer on how to identify the sender better, and not make hacks
+    // case '"':
+    //     buf_insert_char_in(event->buf, '"');
+    //     win->cursor.x--;
+    //     break;
+    // case '\'':
+    //     buf_insert_char_in(event->buf, '\'');
+    //     break;
+    // case '`':
+    //     buf_insert_char_in(event->buf, '`');
+    //     win->cursor.x--;
+    //     break;
+    default:
+        break;
+    }
+}
+
+void hook_smart_indent(const HookCharEvent *event) {
+    WIN(win)
+    if (event->c == '\n') {
+        Buffer *buf = event->buf;
+        if (!buf) return;
+        Row *prev_row = &buf->rows[win->cursor.y - 1];
+        int prev_indent = 0;
+        for (size_t i = 0; i < prev_row->chars.len; i++) {
+            if (prev_row->chars.data[i] == ' ')
+                prev_indent++;
+            else if (prev_row->chars.data[i] == '\t')
+                prev_indent += 4; // assuming tab width of 4
+            else
+                break;
+        }
+        for (int i = 0; i < prev_indent; i++) {
+            buf_insert_char_in(buf, ' ');
+        }
+    }
+}

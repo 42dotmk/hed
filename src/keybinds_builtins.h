@@ -73,4 +73,13 @@ void kb_fold_close(void);     /* zc - Close fold at cursor */
 void kb_fold_open_all(void);  /* zR - Open all folds */
 void kb_fold_close_all(void); /* zM - Close all folds */
 
+void kb_del_win(char direction);
+void kb_del_up(); 
+void kb_del_down();
+void kb_del_left();
+void kb_del_right();
+
+void kb_start_insert(void);
+void kb_end_append(void);
+
 #endif /* KEYBINDS_BUILTINS_H */
