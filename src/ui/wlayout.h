@@ -37,13 +37,11 @@ typedef struct WLayoutNode {
     WSplitDir dir;
     WDecor decor;
     int nchildren;
-    struct WLayoutNode **child; /* length nchildren when dir != WL_SINGLE */
-    int *weight;                /* per-child weight for size distribution */
-    int leaf_index; /* index into E.windows when dir==WL_SINGLE; else -1 */
+    struct WLayoutNode **child; 
+    int *weight;                
+    int leaf_index; 
     int leaf_kind;  /* reserved for future use */
-    int fixed_size; /* if >0, fixed size along split axis (rows for H, cols for
-                       V) */
-    /* Cached computed rectangle (outer, including borders) */
+    int fixed_size; 
     int top, left, height, width;
 } WLayoutNode;
 
@@ -51,11 +49,7 @@ typedef struct WLayoutNode {
 WLayoutNode *wlayout_init_root(int leaf_index);
 void wlayout_free(WLayoutNode *node);
 
-/* Mutations */
-/* Transform a leaf into a split with the existing leaf and a new leaf index. */
 void wlayout_split_leaf(WLayoutNode *leaf, WSplitDir dir, int new_leaf_index);
-/* Close a leaf by index; returns new root in case the root was
- * removed/collapsed. */
 WLayoutNode *wlayout_close_leaf(WLayoutNode *root, int leaf_index);
 /* After removing a window at closed_idx and shifting the E.windows array left,
  * update remaining leaf indices (> closed_idx). */
@@ -64,8 +58,7 @@ void wlayout_reindex_after_close(WLayoutNode *node, int closed_idx);
 WLayoutNode *wlayout_find_leaf_by_index(WLayoutNode *node, int leaf_index);
 
 /* Layout computation and rendering */
-void wlayout_compute(WLayoutNode *root, int top, int left, int height,
-                     int width);
+void wlayout_compute(WLayoutNode *root, int top, int left, int height, int width);
 void wlayout_draw_decorations(Abuf *ab, const WLayoutNode *root);
 
 /* Utilities for global decoration control */
@@ -74,7 +67,4 @@ void wlayout_set_thickness_all(WLayoutNode *root, int thickness);
 
 /* Adjust weight of the split containing the given leaf index by delta. */
 int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta);
-
-/* Terminal pane support removed */
-
 #endif /* WLAYOUT_H */

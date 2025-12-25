@@ -352,13 +352,24 @@ void qf_clear(Qf *qf) {
 int qf_add(Qf *qf, const char *filename, int line, int col, const char *text) {
     if (!qf)
         return -1;
-    if (!vec_reserve_typed(&qf->items, qf->items.len + 1, sizeof(QfItem)))
+
+    size_t old_len = qf->items.len;
+    QfItem item = {
+        .text = text ? strdup(text) : strdup(""),
+        .filename = filename ? strdup(filename) : NULL,
+        .line = line,
+        .col = col
+    };
+    vec_push_typed(&qf->items, QfItem, item);
+
+    /* Check if push succeeded */
+    if (qf->items.len == old_len) {
+        /* Push failed - clean up allocated memory */
+        free(item.text);
+        free(item.filename);
         return -1;
-    QfItem *it = &qf->items.data[qf->items.len++];
-    it->text = text ? strdup(text) : strdup("");
-    it->filename = filename ? strdup(filename) : NULL;
-    it->line = line;
-    it->col = col;
+    }
+
     if (qf->open)
         qf_sync_buffer(qf);
     return (int)qf->items.len - 1;

@@ -2,9 +2,11 @@
 #include "safe_string.h"
 #include "wlayout.h"
 #include "winmodal.h"
+#include "buf_helpers.h"
+#include "assert.h"
 
 void windows_init(void) {
-    E.windows.len = 1;
+    vec_push(&E.windows, Window, (Window){0});
     E.current_window = 0;
     E.window_layout = 0;
     E.windows.data[0].top = 1;
@@ -54,40 +56,29 @@ void win_attach_buf(Window *win, Buffer *buf) {
     }
 }
 
-void windows_split_vertical(void) {
-    /* Ensure capacity for new window */
-    if (!vec_reserve_typed(&E.windows, E.windows.len + 1, sizeof(Window))) {
-        ed_set_status_message("out of memory");
-        return;
-    }
-    Window *cur = window_cur();
-    if (!PTR_VALID(cur))
-        return;
+void windows_split_vertical(void) { 
+    WIN(win)
     int prev_idx = E.current_window;
     int new_idx = E.windows.len;
-    E.windows.data[new_idx] = *cur; /* copy state */
+    vec_push(&E.windows, Window, *win);
+
+    E.windows.data[prev_idx].focus = 0;
     E.windows.data[new_idx].focus = 1;
     E.windows.data[new_idx].sel.type = SEL_NONE;
-    cur->focus = 0;
-    E.windows.len++;
     E.current_window = new_idx;
-    E.current_buffer = E.windows.data[new_idx].buffer_index;
+    E.current_buffer = vec_get(&E.windows, Window, new_idx)->buffer_index;
+
     if (!E.wlayout_root) {
-        /* Fallback: create a root with one leaf and split */
         E.wlayout_root = wlayout_init_root(0);
     }
     WLayoutNode *leaf = wlayout_find_leaf_by_index(
         E.wlayout_root, new_idx == 0 ? 0 : E.current_window - 1);
     if (!leaf) {
-        /* Try current index */
         leaf = wlayout_find_leaf_by_index(E.wlayout_root, E.current_window);
     }
     if (!leaf) {
-        /* As a fallback, split root if single */
         leaf = E.wlayout_root;
     }
-    /* Split the leaf containing the previously focused window; place new window
-     * to the right */
     WLayoutNode *base_leaf =
         wlayout_find_leaf_by_index(E.wlayout_root, prev_idx);
     if (!base_leaf)
@@ -96,26 +87,20 @@ void windows_split_vertical(void) {
 }
 
 void windows_split_horizontal(void) {
-    /* Ensure capacity for new window */
-    if (!vec_reserve_typed(&E.windows, E.windows.len + 1, sizeof(Window))) {
-        ed_set_status_message("out of memory");
-        return;
-    }
-    Window *cur = window_cur();
-    if (!PTR_VALID(cur))
-        return;
+    WIN(win)
     int prev_idx = E.current_window;
     int new_idx = E.windows.len;
-    E.windows.data[new_idx] = *cur; /* copy state */
+    
+    vec_push(&E.windows, Window, *win);
+    E.windows.data[prev_idx].focus = 0;
     E.windows.data[new_idx].focus = 1;
     E.windows.data[new_idx].sel.type = SEL_NONE;
-    cur->focus = 0;
-    E.windows.len++;
     E.current_window = new_idx;
     E.current_buffer = E.windows.data[new_idx].buffer_index;
     if (!E.wlayout_root) {
         E.wlayout_root = wlayout_init_root(0);
     }
+
     WLayoutNode *base_leaf =
         wlayout_find_leaf_by_index(E.wlayout_root, prev_idx);
     if (!base_leaf)

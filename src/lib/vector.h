@@ -10,20 +10,36 @@
  *
  * A type-safe growable array that automatically resizes.
  *
- * Usage:
- *   typedef struct { int x; } Item;
- *   VEC_DEFINE(ItemVec, Item);  // Defines ItemVec type
+ * Two vector types are available:
  *
- *   ItemVec vec = vec_new(Item);  // Create empty vector
- *   vec_push(&vec, Item, item);   // Add element
- *   Item *it = vec_get(&vec, Item, index);  // Access element
- *   vec_free(&vec, Item);  // Free memory
+ * 1. Generic Vector (for ad-hoc usage):
+ *    Vector vec = vec_new(int);
+ *    vec_push(&vec, int, value);
+ *    int val = vec_pop(&vec, int);
+ *    vec_free(&vec, int);
+ *
+ * 2. Typed Vector (for struct members, recommended):
+ *    VEC_DEFINE(IntVec, int);
+ *    IntVec vec = {0};
+ *    vec_push_typed(&vec, int, value);
+ *    int val = vec_pop_typed(&vec, int);
+ *    free(vec.data);
+ *
+ * Available operations (both types):
+ *   - vec_push[_typed] - Add element to end
+ *   - vec_pop[_typed] - Remove and return last element
+ *   - vec_push_start[_typed] - Add element to beginning
+ *   - vec_pop_start[_typed] - Remove and return first element
+ *   - vec_get, vec_get_safe - Access elements
+ *   - vec_remove - Remove element at index
+ *   - vec_find - Find element matching predicate
  *
  * Benefits:
  *   - No fixed limits
  *   - Automatic growth (doubles capacity when full)
  *   - Type-safe macros
  *   - Efficient memory usage
+ *   - Stack and queue operations (push/pop from both ends)
  */
 
 /* Generic vector structure */
@@ -34,7 +50,6 @@ typedef struct {
     size_t elem_size; /* Size of each element */
 } Vector;
 
-/* Define a typed vector */
 #define VEC_DEFINE(name, type)                                                 \
     typedef struct {                                                           \
         type *data;                                                            \
@@ -71,6 +86,7 @@ static inline int vec_reserve_typed(void *vec_ptr, size_t new_cap,
         return 1;
 
     void *new_data = realloc(vec->data, new_cap * elem_size);
+
     if (!new_data)
         return 0; /* OOM */
 
@@ -80,7 +96,7 @@ static inline int vec_reserve_typed(void *vec_ptr, size_t new_cap,
 }
 
 /* Reserve capacity (internal helper for untyped Vector) */
-static inline int vec_reserve_internal(Vector *vec, size_t new_cap) {
+static inline int __vec_reserve(Vector *vec, size_t new_cap) {
     if (!vec || new_cap <= vec->cap)
         return 1;
 
@@ -99,7 +115,7 @@ static inline int vec_ensure_cap(Vector *vec) {
         return 1;
 
     size_t new_cap = vec->cap == 0 ? 8 : vec->cap * 2;
-    return vec_reserve_internal(vec, new_cap);
+    return __vec_reserve(vec, new_cap);
 }
 
 /* Push an element (grows if needed) */
@@ -109,6 +125,89 @@ static inline int vec_ensure_cap(Vector *vec) {
             break;                                                             \
         ((type *)(vec)->data)[(vec)->len++] = (value);                         \
     } while (0)
+
+/* Pop and return the last element (returns default-initialized value if empty) */
+#define vec_pop(vec, type)                                                     \
+    __extension__ ({                                                           \
+        type __result = {0};                                                   \
+        if ((vec)->len > 0) {                                                  \
+            __result = ((type *)(vec)->data)[--(vec)->len];                    \
+        }                                                                      \
+        __result;                                                              \
+    })
+
+/* Push an element at the beginning (shifts all elements right) */
+#define vec_push_start(vec, type, value)                                       \
+    do {                                                                       \
+        if (!vec_ensure_cap((Vector *)(vec)))                                  \
+            break;                                                             \
+        for (size_t _i = (vec)->len; _i > 0; _i--) {                           \
+            ((type *)(vec)->data)[_i] = ((type *)(vec)->data)[_i - 1];         \
+        }                                                                      \
+        ((type *)(vec)->data)[0] = (value);                                    \
+        (vec)->len++;                                                          \
+    } while (0)
+
+/* Pop and return the first element (shifts remaining elements left) */
+#define vec_pop_start(vec, type)                                               \
+    __extension__ ({                                                           \
+        type __result = {0};                                                   \
+        if ((vec)->len > 0) {                                                  \
+            __result = ((type *)(vec)->data)[0];                               \
+            for (size_t _i = 0; _i < (vec)->len - 1; _i++) {                   \
+                ((type *)(vec)->data)[_i] = ((type *)(vec)->data)[_i + 1];     \
+            }                                                                  \
+            (vec)->len--;                                                      \
+        }                                                                      \
+        __result;                                                              \
+    })
+
+/* Typed vector helpers (for VEC_DEFINE'd types like BufferVec, QfItemVec) */
+/* These use vec_reserve_typed instead of vec_ensure_cap */
+
+/* Push element to typed vector (use for VEC_DEFINE'd types) */
+#define vec_push_typed(vec, type, value)                                       \
+    do {                                                                       \
+        if (!vec_reserve_typed((vec), (vec)->len + 1, sizeof(type)))           \
+            break;                                                             \
+        (vec)->data[(vec)->len++] = (value);                                   \
+    } while (0)
+
+/* Pop from typed vector */
+#define vec_pop_typed(vec, type)                                               \
+    __extension__ ({                                                           \
+        type __result = {0};                                                   \
+        if ((vec)->len > 0) {                                                  \
+            __result = (vec)->data[--(vec)->len];                              \
+        }                                                                      \
+        __result;                                                              \
+    })
+
+/* Push element to beginning of typed vector */
+#define vec_push_start_typed(vec, type, value)                                 \
+    do {                                                                       \
+        if (!vec_reserve_typed((vec), (vec)->len + 1, sizeof(type)))           \
+            break;                                                             \
+        for (size_t _i = (vec)->len; _i > 0; _i--) {                           \
+            (vec)->data[_i] = (vec)->data[_i - 1];                             \
+        }                                                                      \
+        (vec)->data[0] = (value);                                              \
+        (vec)->len++;                                                          \
+    } while (0)
+
+/* Pop from beginning of typed vector */
+#define vec_pop_start_typed(vec, type)                                         \
+    __extension__ ({                                                           \
+        type __result = {0};                                                   \
+        if ((vec)->len > 0) {                                                  \
+            __result = (vec)->data[0];                                         \
+            for (size_t _i = 0; _i < (vec)->len - 1; _i++) {                   \
+                (vec)->data[_i] = (vec)->data[_i + 1];                         \
+            }                                                                  \
+            (vec)->len--;                                                      \
+        }                                                                      \
+        __result;                                                              \
+    })
 
 /* Get element at index (no bounds checking) */
 #define vec_get(vec, type, index) (&((type *)(vec)->data)[index])
@@ -133,7 +232,7 @@ static inline int vec_ensure_cap(Vector *vec) {
 
 /* Reserve specific capacity */
 #define vec_reserve(vec, type, capacity)                                       \
-    vec_reserve_internal((Vector *)(vec), (capacity))
+    __vec_reserve((Vector *)(vec), (capacity))
 
 /* Find first element matching predicate. Predicate can use __elem pointer. */
 #define vec_find(vec, type, predicate, out_index)                              \

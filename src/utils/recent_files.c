@@ -51,17 +51,13 @@ static void recent_files_insert_front(RecentFiles *rf, const char *filepath) {
     if (!filepath || !*filepath)
         return;
 
-    if (!vec_reserve_typed(&rf->items, rf->items.len + 1, sizeof(char *)))
-        return;
-    memmove(&rf->items.data[1], &rf->items.data[0],
-            sizeof(char *) * rf->items.len);
-    rf->items.data[0] = strdup(filepath);
-    rf->items.len++;
+    char *path_copy = strdup(filepath);
+    vec_push_start_typed(&rf->items, char *, path_copy);
 
     /* Enforce max limit */
     if (rf->items.len > RECENT_FILES_MAX) {
-        free(rf->items.data[RECENT_FILES_MAX]);
-        rf->items.len = RECENT_FILES_MAX;
+        char *oldest = vec_pop_typed(&rf->items, char *);
+        free(oldest);
     }
 }
 
@@ -72,10 +68,8 @@ static void recent_files_append(RecentFiles *rf, const char *filepath) {
     if ((int)rf->items.len >= RECENT_FILES_MAX)
         return;
 
-    if (!vec_reserve_typed(&rf->items, rf->items.len + 1, sizeof(char *)))
-        return;
-
-    rf->items.data[rf->items.len++] = strdup(filepath);
+    char *path_copy = strdup(filepath);
+    vec_push_typed(&rf->items, char *, path_copy);
 }
 
 /* Save entire list to file */

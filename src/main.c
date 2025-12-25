@@ -36,19 +36,26 @@ int main(int argc, char *argv[]) {
 
     log_init(".hedlog");
     atexit(log_close);
-    log_msg("hed start argc=%d", argc);
+    log_msg("=== HED START argc=%d ===", argc);
+    log_msg("Before enable_raw_mode");
     enable_raw_mode();
+    log_msg("Before ed_init, file_count=%d", file_count);
     ed_init(file_count == 0);
+    log_msg("After ed_init, buffers.len=%zu, windows.len=%zu", E.buffers.len, E.windows.len);
 
     for (int i = 0; i < file_count; i++) {
+        log_msg("Opening file %d: %s", i, file_args[i]);
         buf_open_or_switch(file_args[i], true);
+        log_msg("After opening file %d, buffers.len=%zu", i, E.buffers.len);
     }
 
     free(file_args);
 
     /* If no buffers ended up being created (e.g., all opens failed), ensure one
      * exists. */
+    log_msg("Checking buffer count: %zu", E.buffers.len);
     if (E.buffers.len == 0) {
+        log_msg("Creating empty buffer");
         int empty_idx = -1;
         if (buf_new(NULL, &empty_idx) == ED_OK) {
             E.current_buffer = empty_idx;
@@ -56,6 +63,7 @@ int main(int argc, char *argv[]) {
             if (win)
                 win->buffer_index = empty_idx;
         }
+        log_msg("After empty buffer creation");
     }
 
     /* Focus the most recently opened buffer */

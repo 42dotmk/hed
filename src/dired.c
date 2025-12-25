@@ -38,13 +38,17 @@ static DiredState *dired_state_find(Buffer *buf, size_t *out_idx) {
 static DiredState *dired_state_create(Buffer *buf, const char *dir) {
     if (!buf || !dir)
         return NULL;
-    if (!vec_reserve_typed(&dired_states, dired_states.len + 1,
-                           sizeof(DiredState)))
-        return NULL;
+
+    size_t old_len = dired_states.len;
     DiredState st = {.buf = buf};
     dired_copy(st.origin, sizeof(st.origin), dir);
     dired_copy(st.cwd, sizeof(st.cwd), dir);
-    dired_states.data[dired_states.len++] = st;
+    vec_push_typed(&dired_states, DiredState, st);
+
+    /* Check if push succeeded */
+    if (dired_states.len == old_len)
+        return NULL;
+
     return &dired_states.data[dired_states.len - 1];
 }
 
