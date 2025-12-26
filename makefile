@@ -25,12 +25,12 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJECTS) 	
-	$(CC) -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS) -g -O0
+	$(CC) -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	# echo '@':$@, '^':$^, '<':$<
 	@mkdir -p $(dir $@)
-	$(CC) -g -O0 $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TSI): ts/ts_lang_install.c
 	$(CC) -std=c23 -Wall -Wextra -O2 -I/usr/include -o $@ $<

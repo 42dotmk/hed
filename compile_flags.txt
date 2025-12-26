@@ -1,3 +1,4 @@
+-O2
 -Wall
 -Wextra
 -std=c23
@@ -10,4 +11,7 @@
 -Isrc/lib
 -Isrc/ui
 -Isrc/utils
+
+
+
 
