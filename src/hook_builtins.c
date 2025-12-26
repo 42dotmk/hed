@@ -9,36 +9,34 @@ void hook_change_cursor_shape(const HookModeEvent *event) {
 
 void hook_auto_pair(const HookCharEvent *event) {
     BUFWIN(buf, win);
+	char inserted = 0;
     switch (event->c) {
     case '(':
-        buf_insert_char_in(buf, ')');
-        win->cursor.x--;
+        inserted = ')';
         break;
     case '[':
-        buf_insert_char_in(buf, ']');
-        win->cursor.x--;
+        inserted = ']';
         break;
     case '<':
-        buf_insert_char_in(buf, '>');
-        win->cursor.x--;
+        inserted = '>';
         break;
     case '{':
-        buf_insert_char_in(buf, '}');
-        win->cursor.x--;
+        inserted = '}';
         break;
     case '"':
-         buf_insert_char_in(event->buf, '"');
-         win->cursor.x--;
+         inserted = '"';
          break;
     case '\'':
-         buf_insert_char_in(event->buf, '\'');
-         break;
+         inserted = '\'';
     case '`':
-        buf_insert_char_in(event->buf, '`');
-        win->cursor.x--;
+        inserted = '`';
         break;
     default:
         break;
+    }
+    if (inserted) {
+        buf_insert_char_in(buf, inserted);
+        win->cursor.x--;
     }
 }
 
