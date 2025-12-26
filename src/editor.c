@@ -223,9 +223,7 @@ void ed_init_state() {
     E.default_wrap = 0;
     E.expand_tab = 0;
     E.tab_size = TAB_STOP;
-    E.clipboard_is_block = 0;
     E.cwd[0] = '\0';
-    E.clipboard = sstr_new();
     E.search_query = sstr_new();
     E.search_is_regex = 1;
     E.search_prompt_active = 0;

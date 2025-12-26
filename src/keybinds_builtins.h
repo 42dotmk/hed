@@ -20,10 +20,14 @@ void kb_delete_line(void);
 void kb_yank_line(void);
 void kb_paste(void);
 void kb_delete_char(void);
-void kb_cursor_line_start(void);
-void kb_cursor_line_end(void);
-void kb_cursor_top(void);
-void kb_cursor_bottom(void);
+
+/* Operator functions (wait for text object input) */
+void kb_operator_delete(void);
+void kb_operator_change(void);
+void kb_operator_yank(void);
+void kb_operator_move(int key);    /* Move cursor via text object (fallback) */
+void kb_operator_select(void);     /* Visual select via text object (v + motion) */
+/* Note: cursor movements now handled by text object system */
 void kb_search_next(void);
 void kb_find_under_cursor(void);
 void kb_search_file_under_cursor(void);
@@ -62,7 +66,7 @@ void kb_visual_begin(int block_mode);
 int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
 int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
 
-void kb_change_word(void); /* Change word (cw): delete to end of word and enter insert mode */
+/* Note: kb_change_word removed - now handled by operator + text object system */
 void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
 void kb_replace_char(void); /* Replace char under cursor with next typed char (r) */
 

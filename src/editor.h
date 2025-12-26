@@ -71,10 +71,8 @@ typedef struct {
     char command_buf[128];
     int command_len;
 
-    SizedStr clipboard;
     SizedStr search_query;
     int search_is_regex; /* 1=regex search, 0=literal */
-    int clipboard_is_block;
     Qf qf;
     Window *modal_window; /* Current modal window (NULL if none) */
     struct WLayoutNode *wlayout_root;

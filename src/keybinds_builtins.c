@@ -156,56 +156,32 @@ static int visual_yank(Buffer *buf, Window *win, int block_mode) {
         block_mode = 1;
     if (win->sel.type == SEL_VISUAL_BLOCK)
         block_mode = 1;
-    SizedStr clip = sstr_new();
+
+    /* Convert visual selection to TextSelection */
+    TextSelection sel;
     if (!block_mode) {
         int sy, sx, ey, ex_excl;
-        if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl)) {
-            sstr_free(&clip);
+        if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
-        }
-        for (int y = sy; y <= ey; y++) {
-            Row *r = &buf->rows[y];
-            int start = (y == sy) ? sx : 0;
-            int end_excl = (y == ey) ? ex_excl : (int)r->chars.len;
-            if (start < 0)
-                start = 0;
-            if (end_excl < start)
-                end_excl = start;
-            if (end_excl > (int)r->chars.len)
-                end_excl = (int)r->chars.len;
-            sstr_append(&clip, r->chars.data + start,
-                        (size_t)(end_excl - start));
-            if (y != ey)
-                sstr_append_char(&clip, '\n');
-        }
+        sel = textsel_make_range(sy, sx, ey, ex_excl, SEL_VISUAL);
     } else {
         int sy, ey, start_rx, end_rx_excl;
-        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl)) {
-            sstr_free(&clip);
+        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
             return 0;
-        }
-        for (int y = sy; y <= ey; y++) {
-            Row *r = &buf->rows[y];
-            int cx0 = buf_row_rx_to_cx(r, start_rx);
-            int cx1 = buf_row_rx_to_cx(r, end_rx_excl);
-            if (cx0 < 0)
-                cx0 = 0;
-            if (cx1 < cx0)
-                cx1 = cx0;
-            if (cx1 > (int)r->chars.len)
-                cx1 = (int)r->chars.len;
-            sstr_append(&clip, r->chars.data + cx0, (size_t)(cx1 - cx0));
-            if (y != ey)
-                sstr_append_char(&clip, '\n');
-        }
+        /* For block mode, convert render columns to character columns */
+        Row *first_row = &buf->rows[sy];
+        int sx = buf_row_rx_to_cx(first_row, start_rx);
+        int ex = buf_row_rx_to_cx(first_row, end_rx_excl);
+        sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL_BLOCK);
     }
-    sstr_free(&E.clipboard);
-    E.clipboard = clip;
-    E.clipboard_is_block = block_mode ? 1 : 0;
-    regs_set_yank_block(E.clipboard.data, E.clipboard.len,
-                        E.clipboard_is_block);
-    ed_set_status_message("Yanked");
-    return 1;
+
+    /* Use new yank API */
+    EdError err = yank_selection(&sel);
+    if (err == ED_OK) {
+        ed_set_status_message("Yanked");
+        return 1;
+    }
+    return 0;
 }
 
 static int visual_delete(Buffer *buf, Window *win, int block_mode) {
@@ -404,7 +380,222 @@ void kb_yank_line(void) {
 
 void kb_paste(void) {
 	BUFWIN(buf, win)
-    buf_paste_in(buf);
+    paste_from_register(buf, '"', true);
+}
+
+/* ========================================================================
+ * Operator Functions (blocking text object composition)
+ * ======================================================================== */
+
+/* Helper: build text object key sequence from one or two keys */
+static void build_textobj_key(char *buf, size_t size, int key1, int key2) {
+    if (key2 == 0) {
+        snprintf(buf, size, "%c", key1);
+    } else {
+        snprintf(buf, size, "%c%c", key1, key2);
+    }
+}
+
+/* Delete operator - waits for text object input */
+void kb_operator_delete(void) {
+    BUFWIN(buf, win)
+
+    ed_set_status_message("-- DELETE --");
+    ed_render_frame();
+
+    int key = ed_read_key();
+
+    /* Cancel on escape */
+    if (key == CTRL_KEY('[') || key == '\x1b') {
+        ed_set_status_message("");
+        return;
+    }
+
+    /* Special case: dd (delete line) */
+    if (key == 'd') {
+        kb_delete_line();
+        ed_set_status_message("Deleted line");
+        return;
+    }
+
+    /* Try single-key text object first */
+    char textobj_key[16];
+    TextSelection sel;
+
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        buf_delete_selection(&sel);
+        ed_set_status_message("Deleted");
+        return;
+    }
+
+    /* Try two-key text object (e.g., 'i' + 'w' = "iw") */
+    int key2 = ed_read_key();
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        buf_delete_selection(&sel);
+        ed_set_status_message("Deleted");
+        return;
+    }
+
+    ed_set_status_message("Unknown text object");
+}
+
+/* Change operator - waits for text object input */
+void kb_operator_change(void) {
+    BUFWIN(buf, win)
+
+    ed_set_status_message("-- CHANGE --");
+    ed_render_frame();
+
+    int key = ed_read_key();
+
+    if (key == CTRL_KEY('[') || key == '\x1b') {
+        ed_set_status_message("");
+        return;
+    }
+
+    /* Special case: cc (change line) */
+    if (key == 'c') {
+        buf_change_line();
+        ed_set_status_message("");
+        return;
+    }
+
+    char textobj_key[16];
+    TextSelection sel;
+
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        buf_change_selection(&sel);
+        ed_set_status_message("");
+        return;
+    }
+
+    int key2 = ed_read_key();
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        buf_change_selection(&sel);
+        ed_set_status_message("");
+        return;
+    }
+
+    ed_set_status_message("Unknown text object");
+}
+
+/* Yank operator - waits for text object input */
+void kb_operator_yank(void) {
+    BUFWIN(buf, win)
+
+    ed_set_status_message("-- YANK --");
+    ed_render_frame();
+
+    int key = ed_read_key();
+
+    if (key == CTRL_KEY('[') || key == '\x1b') {
+        ed_set_status_message("");
+        return;
+    }
+
+    /* Special case: yy (yank line) */
+    if (key == 'y') {
+        kb_yank_line();
+        ed_set_status_message("Yanked line");
+        return;
+    }
+
+    char textobj_key[16];
+    TextSelection sel;
+
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        yank_selection(&sel);
+        ed_set_status_message("Yanked");
+        return;
+    }
+
+    int key2 = ed_read_key();
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        yank_selection(&sel);
+        ed_set_status_message("Yanked");
+        return;
+    }
+
+    ed_set_status_message("Unknown text object");
+}
+
+/* Move operator - moves cursor to text object position (fallback for unmapped keys) */
+void kb_operator_move(int key) {
+    BUFWIN(buf, win)
+
+    /* Try single-key text object */
+    char textobj_key[16];
+    TextSelection sel;
+
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        /* Move cursor to the text object's cursor position */
+        win->cursor.y = sel.cursor.line;
+        win->cursor.x = sel.cursor.col;
+        return;
+    }
+
+    /* Not a text object - do nothing (key not handled) */
+}
+
+/* Select operator - creates visual selection via text object (v + motion) */
+void kb_operator_select(void) {
+    BUFWIN(buf, win)
+
+    /* Enter visual mode and set anchor */
+    win->sel.type = SEL_VISUAL;
+    win->sel.anchor_y = win->cursor.y;
+    win->sel.anchor_x = win->cursor.x;
+    win->sel.anchor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    ed_set_mode(MODE_VISUAL);
+
+    ed_set_status_message("-- VISUAL --");
+    ed_render_frame();
+
+    int key = ed_read_key();
+
+    if (key == CTRL_KEY('[') || key == '\x1b') {
+        /* Cancel visual mode */
+        win->sel.type = SEL_NONE;
+        ed_set_mode(MODE_NORMAL);
+        ed_set_status_message("");
+        return;
+    }
+
+    /* Try single-key text object */
+    char textobj_key[16];
+    TextSelection sel;
+
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        /* Move cursor to end of selection and stay in visual mode */
+        win->cursor.y = sel.end.line;
+        win->cursor.x = sel.end.col;
+        ed_set_status_message("-- VISUAL --");
+        return;
+    }
+
+    /* Try two-key text object */
+    int key2 = ed_read_key();
+    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
+    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        /* Move cursor to end of selection and stay in visual mode */
+        win->cursor.y = sel.end.line;
+        win->cursor.x = sel.end.col;
+        ed_set_status_message("-- VISUAL --");
+        return;
+    }
+
+    /* Unknown text object - cancel visual mode */
+    win->sel.type = SEL_NONE;
+    ed_set_mode(MODE_NORMAL);
+    ed_set_status_message("Unknown text object");
 }
 
 void kb_dired_enter(void) {
@@ -462,38 +653,6 @@ void kb_insert_escape(void) {
 void kb_search_prompt(void) { ed_search_prompt(); }
 
 /* Normal mode - cursor movement */
-void kb_cursor_line_start(void) {
-    BUFWIN(buf, win)
-    TextSelection sel;
-    if (textobj_to_line_start(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.start.line;
-        win->cursor.x = sel.start.col;
-    }
-}
-
-void kb_cursor_line_end(void) {
-    BUFWIN(buf, win)
-    TextSelection sel;
-    if (textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.end.line;
-        win->cursor.x = sel.end.col;
-    }
-}
-
-void kb_cursor_top(void) {
-    BUFWIN(buf, win)
-    win->cursor.y = 0;
-    win->cursor.x = 0;
-}
-
-void kb_cursor_bottom(void) {
-    BUFWIN(buf, win)
-    win->cursor.y = buf->num_rows - 1;
-    if (win->cursor.y < 0)
-        win->cursor.y = 0;
-    win->cursor.x = 0;
-}
-
 void kb_move_left(void) { ed_move_cursor(KEY_ARROW_LEFT); }
 void kb_move_right(void) { ed_move_cursor(KEY_ARROW_RIGHT); }
 void kb_move_up(void) { ed_move_cursor(KEY_ARROW_UP); }
@@ -705,9 +864,6 @@ void kb_tmux_send_line(void) {
     sstr_free(&para);
 }
 
-/* Change word: delete to end of word and enter insert mode */
-void kb_change_word(void) { buf_change_word_forward(); }
-
 /* Toggle case of character under cursor and move right */
 void kb_toggle_case(void) {
     Buffer *buf = buf_cur();
@@ -741,17 +897,7 @@ void kb_toggle_case(void) {
 
 /* Replace character under cursor with next typed char (stay in normal mode) */
 void kb_replace_char(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-    if (buf->readonly) {
-        ed_set_status_message("Buffer is read-only");
-        return;
-    }
-    if (win->cursor.y >= buf->num_rows)
-        return;
-
+	ASSERT_EDIT(buf, win)
     Row *row = &buf->rows[win->cursor.y];
     if (win->cursor.x >= (int)row->chars.len)
         return;
@@ -781,11 +927,7 @@ void kb_replace_char(void) {
 
 /* za - Toggle fold at cursor */
 void kb_fold_toggle(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-
+	BUFWIN(buf, win)
     int line = win->cursor.y;
     if (fold_toggle_at_line(&buf->folds, line)) {
         int idx = fold_find_at_line(&buf->folds, line);
@@ -798,12 +940,8 @@ void kb_fold_toggle(void) {
     }
 }
 
-/* zo - Open fold at cursor */
 void kb_fold_open(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
+	BUFWIN(buf, win);
 
     int line = win->cursor.y;
     if (fold_expand_at_line(&buf->folds, line)) {
@@ -813,13 +951,8 @@ void kb_fold_open(void) {
     }
 }
 
-/* zc - Close fold at cursor */
 void kb_fold_close(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-
+	BUFWIN(buf, win);
     int line = win->cursor.y;
     if (fold_collapse_at_line(&buf->folds, line)) {
         ed_set_status_message("Fold closed");
@@ -828,7 +961,6 @@ void kb_fold_close(void) {
     }
 }
 
-/* zR - Open all folds */
 void kb_fold_open_all(void) {
     Buffer *buf = buf_cur();
     if (!buf)
@@ -844,7 +976,6 @@ void kb_fold_open_all(void) {
     ed_set_status_message("Opened %d fold%s", count, count == 1 ? "" : "s");
 }
 
-/* zM - Close all folds */
 void kb_fold_close_all(void) {
     Buffer *buf = buf_cur();
     if (!buf)
@@ -867,12 +998,24 @@ void kb_del_left() { kb_del_win('h'); }
 void kb_del_right() { kb_del_win('l'); }
 
 void kb_end_append(void) {
-    kb_cursor_line_end();
+    /* Move to end of line using text object, then enter append mode */
+    BUFWIN(buf, win)
+    TextSelection sel;
+    if (textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.end.line;
+        win->cursor.x = sel.end.col;
+    }
     kb_append_mode();
 }
 
 void kb_start_insert(void) {
-    kb_cursor_line_start();
+    /* Move to start of line using text object, then enter insert mode */
+    BUFWIN(buf, win)
+    TextSelection sel;
+    if (textobj_to_line_start(buf, win->cursor.y, win->cursor.x, &sel)) {
+        win->cursor.y = sel.start.line;
+        win->cursor.x = sel.start.col;
+    }
     kb_enter_insert_mode();
 }
 

@@ -167,41 +167,6 @@ void buf_cursor_move_bottom(void) {
     });
 }
 
-void buf_cursor_move_line_start(void) {
-    CURSOR_OP({ buf->cursor.x = 0; });
-}
-
-void buf_cursor_move_line_end(void) {
-    CURSOR_OP({
-        if (BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
-            buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
-        }
-    });
-}
-
-void buf_cursor_move_word_forward(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    TextSelection sel;
-    if (textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.end.line;
-        win->cursor.x = sel.end.col;
-    }
-}
-
-void buf_cursor_move_word_backward(void) {
-	BUFWIN(buf, win);
-
-    TextSelection sel;
-    if (textobj_to_word_start(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.start.line;
-        win->cursor.x = sel.start.col;
-    }
-}
-
 /*** Screen positioning helpers ***/
 
 void buf_center_screen(void) {
@@ -300,25 +265,13 @@ void buf_join_lines(void) {
 }
 
 void buf_duplicate_line(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
-    /* Implement as yank + paste so undo works naturally */
+	BUF(buf)
     buf_yank_line_in(buf);
-    buf_paste_in(buf);
+    paste_from_register(buf, '"', true);
 }
 
 void buf_move_line_up(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || win->cursor.y == 0 ||
-        buf->num_rows < 2)
-        return;
-
-    /* Swap with previous line */
+	BUFWIN(buf, win);
     Row temp = buf->rows[win->cursor.y];
     buf->rows[win->cursor.y] = buf->rows[win->cursor.y - 1];
     buf->rows[win->cursor.y - 1] = temp;
@@ -326,13 +279,7 @@ void buf_move_line_up(void) {
 }
 
 void buf_move_line_down(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) ||
-        win->cursor.y >= buf->num_rows - 1)
-        return;
-
-    /* Swap with next line */
+	BUFWIN(buf, win)
     Row temp = buf->rows[win->cursor.y];
     buf->rows[win->cursor.y] = buf->rows[win->cursor.y + 1];
     buf->rows[win->cursor.y + 1] = temp;
@@ -708,43 +655,6 @@ int buf_get_paragraph_range(int *start_y, int *end_y) {
     return 1;
 }
 
-static void buf_yank_range(int sy, int sx, int ey, int ex) {
-    Buffer *buf = buf_cur();
-    if (!PTR_VALID(buf))
-        return;
-    sstr_free(&E.clipboard);
-    E.clipboard = sstr_new();
-    if (sy == ey) {
-        if (sy >= 0 && sy < buf->num_rows) {
-            Row *r = &buf->rows[sy];
-            if (sx < 0)
-                sx = 0;
-            if (ex > (int)r->chars.len)
-                ex = (int)r->chars.len;
-            if (ex > sx)
-                sstr_append(&E.clipboard, r->chars.data + sx,
-                            (size_t)(ex - sx));
-        }
-    } else {
-        for (int y = sy; y <= ey; y++) {
-            Row *r = &buf->rows[y];
-            int lx = (y == sy) ? sx : 0;
-            int rx = (y == ey) ? ex : (int)r->chars.len;
-            if (lx < 0)
-                lx = 0;
-            if (rx > (int)r->chars.len)
-                rx = (int)r->chars.len;
-            if (rx > lx)
-                sstr_append(&E.clipboard, r->chars.data + lx,
-                            (size_t)(rx - lx));
-            if (y != ey)
-                sstr_append_char(&E.clipboard, '\n');
-        }
-    }
-    /* Update registers: yank '0' and unnamed */
-    regs_set_yank(E.clipboard.data, E.clipboard.len);
-}
-
 static void buf_delete_range(int sy, int sx, int ey, int ex) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
@@ -753,7 +663,8 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
     if (sy > ey || (sy == ey && sx >= ex))
         return;
     /* Capture to clipboard first */
-    buf_yank_range(sy, sx, ey, ex);
+    TextSelection sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL);
+    yank_selection(&sel);
 
     /* Perform deletion on the buffer */
     if (sy == ey) {
@@ -834,9 +745,7 @@ void buf_delete_selection(TextSelection *sel) {
 void buf_yank_selection(TextSelection *sel) {
     if (!sel)
         return;
-
-    buf_yank_range(sel->start.line, sel->start.col, sel->end.line,
-                   sel->end.col);
+    yank_selection(sel);
     ed_set_status_message("Yanked");
 }
 
@@ -845,120 +754,9 @@ void buf_change_selection(TextSelection *sel) {
     ed_set_mode(MODE_INSERT);
 }
 
-void buf_yank_word(void) {
-    int sx = 0, ex = 0;
-    if (!buf_get_word_range(&sx, &ex))
-        return;
-    int y = window_cur()->cursor.y;
-    buf_yank_range(y, sx, y, ex);
-    ed_set_status_message("yanked word");
-}
-
-void buf_delete_inner_word(void) {
-    int sx = 0, ex = 0;
-    if (!buf_get_word_range(&sx, &ex))
-        return;
-    int y = window_cur()->cursor.y;
-    buf_delete_range(y, sx, y, ex);
-    ed_set_status_message("deleted inner word");
-}
-
-void buf_delete_word_forward(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    TextSelection sel;
-    if (!textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_status_message("deleted word forward");
-}
-
-void buf_delete_word_backward(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    TextSelection sel;
-    if (!textobj_to_word_start(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_status_message("deleted word backward");
-}
-
-void buf_yank_paragraph(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-    buf_yank_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    ed_set_status_message("yanked paragraph");
-}
-
-void buf_delete_paragraph(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_status_message("deleted paragraph");
-}
-
 /*
  * Change commands - delete and enter insert mode
  */
-
-void buf_change_word_forward(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    TextSelection sel;
-    if (!textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_change_selection(&sel);
-}
-
-void buf_change_word_backward(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    TextSelection sel;
-    if (!textobj_to_word_start(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_change_selection(&sel);
-}
-
-void buf_change_inner_word(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    TextSelection sel;
-    if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_change_selection(&sel);
-}
 
 void buf_change_line(void) {
     Buffer *buf = buf_cur();
@@ -973,58 +771,6 @@ void buf_change_line(void) {
     buf_change_selection(&sel);
 }
 
-void buf_change_paragraph(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_change_selection(&sel);
-}
-
-void buf_change_around_char(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    ed_set_status_message("ca: enter target character");
-    ed_render_frame();
-    int c = ed_read_key();
-
-    char open, close;
-    if (c == '(' || c == ')')
-        open = '(', close = ')';
-    else if (c == '{' || c == '}')
-        open = '{', close = '}';
-    else if (c == '[' || c == ']')
-        open = '[', close = ']';
-    else if (c == '<' || c == '>')
-        open = '<', close = '>';
-    else if (c == '"')
-        open = close = '"';
-    else if (c == '\'')
-        open = close = '\'';
-    else if (c == '`')
-        open = close = '`';
-    else {
-        ed_set_status_message("ca: invalid delimiter");
-        return;
-    }
-
-    TextSelection sel;
-    if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                                true, &sel)) {
-        ed_set_status_message("ca: no enclosing pair");
-        return;
-    }
-
-    buf_change_selection(&sel);
-}
 
 void buf_move_cursor_key(int key) {
 	BUFWIN(buf, win);
@@ -1320,131 +1066,6 @@ static int map_delim_key(int t, char *open, char *close) {
     }
 }
 
-void buf_delete_around_char(void) {
-	BUFWIN(buf, win);
-    ed_set_status_message("da: target?");
-    int t = ed_read_key();
-    char open = 0, close = 0;
-    if (!map_delim_key(t, &open, &close)) {
-        ed_set_status_message("da: unsupported target");
-        return;
-    }
-    TextSelection sel;
-    if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               true, &sel)) {
-        ed_set_status_message("da: no enclosing pair");
-        return;
-    }
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_status_message("Deleted around %c", (open == close) ? open : close);
-}
-
-void buf_delete_inside_char(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    ed_set_status_message("di: target?");
-    int t = ed_read_key();
-
-    /* Word / paragraph / line text-objects */
-    if (t == 'w') {
-        buf_delete_inner_word();
-        return;
-    }
-    if (t == 'p') {
-        buf_delete_paragraph();
-        return;
-    }
-    if (t == 'd') {
-        if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-            return;
-        Row *row = &buf->rows[win->cursor.y];
-        int len = (int)row->chars.len;
-        if (len <= 0)
-            return;
-        buf_delete_range(win->cursor.y, 0, win->cursor.y, len);
-        ed_set_status_message("deleted line contents");
-        return;
-    }
-
-    /* Bracket / quote text-objects */
-    char open = 0, close = 0;
-    if (!map_delim_key(t, &open, &close)) {
-        ed_set_status_message("di: unsupported target");
-        return;
-    }
-    TextSelection sel;
-    if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               false, &sel)) {
-        ed_set_status_message("di: no enclosing pair");
-        return;
-    }
-    if (sel.end.line < sel.start.line ||
-        (sel.end.line == sel.start.line && sel.end.col <= sel.start.col)) {
-        ed_set_status_message("di: empty");
-        return;
-    }
-    buf_delete_range(sel.start.line, sel.start.col, sel.end.line, sel.end.col);
-    win->cursor.y = sel.start.line;
-    win->cursor.x = sel.start.col;
-    ed_set_status_message("Deleted inside %c", (open == close) ? open : close);
-}
-
-void buf_change_inside_char(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
-    ed_set_status_message("ci: target?");
-    int t = ed_read_key();
-
-    TextSelection sel;
-
-    /* Word / paragraph / line text-objects */
-    if (t == 'w') {
-        if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
-            return;
-        buf_change_selection(&sel);
-        return;
-    }
-    if (t == 'p') {
-        if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-            return;
-        buf_change_selection(&sel);
-        return;
-    }
-    if (t == 'd') {
-        if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
-            return;
-        buf_change_selection(&sel);
-        ed_set_status_message("changed line contents");
-        return;
-    }
-
-    /* Bracket / quote text-objects */
-    char open = 0, close = 0;
-    if (!map_delim_key(t, &open, &close)) {
-        ed_set_status_message("ci: unsupported target");
-        return;
-    }
-    if (!textobj_brackets_with(buf, win->cursor.y, win->cursor.x, open, close,
-                               false, &sel)) {
-        ed_set_status_message("ci: no enclosing pair");
-        return;
-    }
-    if (sel.end.line < sel.start.line ||
-        (sel.end.line == sel.start.line && sel.end.col <= sel.start.col)) {
-        ed_set_status_message("ci: empty");
-        return;
-    }
-    buf_change_selection(&sel);
-    ed_set_status_message("Changed inside %c", (open == close) ? open : close);
-}
 
 /* Yank data insertion */
 

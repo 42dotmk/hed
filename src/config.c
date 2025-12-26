@@ -51,14 +51,7 @@ void normal_mode_bindings() {
     cmapn(" wj", "wj");
     cmapn(" wk", "wk");
     cmapn(" wl", "wl");
-    mapn("h", kb_move_left, "left");
-    mapn("j", kb_move_down, "down");
-    mapn("k", kb_move_up, "up");
-    mapn("l", kb_move_right, "right");
-    mapn("<Left>", kb_move_left, "left");
-    mapn("<Down>", kb_move_down, "down");
-    mapn("<Up>", kb_move_up, "up");
-    mapn("<Right>", kb_move_right, "right");
+    /* h/j/k/l and arrow keys now handled by text object fallback */
     mapn("/", kb_search_prompt, "search");
     mapn("-", kb_dired_parent, "dired parent");
     mapn("~", kb_dired_home, "dired home");
@@ -85,17 +78,12 @@ void normal_mode_bindings() {
     cmapn(".", "repeat");
     cmapn("q", "record");
     cmapn("@", "play");
-    mapn("$", kb_cursor_line_end, "line end");
-    mapv("$", kb_cursor_line_end, "line end");
-    mapvb("$", kb_cursor_line_end, "line end");
+    /* $, 0, w, b, e movements now handled by text object fallback */
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
     mapvb("%", buf_find_matching_bracket, "match bracket");
     mapn("*", kb_find_under_cursor, "find word");
     mapn("<C-*>", kb_find_under_cursor, "find word");
-    mapn("0", kb_cursor_line_start, "line start");
-    mapv("0", kb_cursor_line_start, "line start");
-    mapvb("0", kb_cursor_line_start, "line start");
     mapv("h", kb_move_left, "left");
     mapv("j", kb_move_down, "down");
     mapv("k", kb_move_up, "up");
@@ -139,22 +127,21 @@ void normal_mode_bindings() {
     mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
     mapn(">>", buf_indent_line, "indent");
     mapn("A", kb_end_append, "append eol");
-    mapn("G", kb_cursor_bottom, "goto bottom");
     mapn("I", kb_start_insert, "insert bol");
     mapn("J", buf_join_lines, "join lines");
     mapn("a", kb_append_mode, "append");
-    mapn("b", buf_cursor_move_word_backward, "word back");
-    mapn("cc", buf_toggle_comment, "toggle comment");
-    mapn("da", buf_delete_around_char, "del around");
-    mapn("db", buf_delete_word_backward, "del word back");
+
+    /* Operator keybindings - wait for text object input */
+    mapn("d", kb_operator_delete, "delete operator");
+    mapn("c", kb_operator_change, "change operator");
+    mapn("y", kb_operator_yank, "yank operator");
+    mapn("v", kb_operator_select, "visual select with motion");
+
+    /* Special cases: operator on same key acts on line */
     mapn("dd", kb_delete_line, "del line");
-    mapn("di", buf_delete_inside_char, "del inside");
-    mapn("diw", buf_delete_inner_word, "del word");
-    mapn("ci", buf_change_inside_char, "chg inside");
-    mapn("cw", kb_change_word, "chg word");
-    mapn("dp", buf_delete_paragraph, "del para");
-    mapn("dw", buf_delete_word_forward, "del word fwd");
-    mapn("gg", kb_cursor_top, "goto top");
+    /* Note: cc conflicts with comment toggle - moved comment to gc */
+    /* Note: G, gg now handled by text object fallback */
+    mapn("gc", buf_toggle_comment, "toggle comment");
 
     mapn("gf", kb_open_file_under_cursor, "open file");
     mapn("gF", kb_search_file_under_cursor, "search file");
@@ -163,11 +150,7 @@ void normal_mode_bindings() {
     mapn("n", kb_search_next, "next match");
     mapn("p", kb_paste, "paste");
     mapn("r", kb_replace_char, "replace char");
-    mapn("v", kb_visual_toggle, "visual");
-    mapn("w", buf_cursor_move_word_forward, "word fwd");
     mapn("x", kb_delete_char, "del char");
-    mapn("yp", buf_yank_paragraph, "yank para");
-    mapn("yw", buf_yank_word, "yank word");
     mapn("yy", kb_yank_line, "yank line");
     mapn("za", kb_fold_toggle, "fold toggle");
     mapn("zc", kb_fold_close, "fold close");
@@ -182,6 +165,39 @@ void user_keybinds_init(void) {
     normal_mode_bindings();
     insert_mode_bindings();
 }
+
+void user_textobj_init(void) {
+    log_msg("Initializing user text objects");
+
+    /* Basic movement text objects (hjkl and arrows) */
+    textobj_register("h", textobj_char_left, "char left");
+    textobj_register("j", textobj_line_down, "line down");
+    textobj_register("k", textobj_line_up, "line up");
+    textobj_register("l", textobj_char_right, "char right");
+
+    /* Motion text objects (single char) */
+    textobj_register("w", textobj_to_word_end, "word forward");
+    textobj_register("b", textobj_to_word_start, "word backward");
+    textobj_register("e", textobj_to_word_end, "word end");
+    textobj_register("$", textobj_to_line_end, "end of line");
+    textobj_register("0", textobj_to_line_start, "beginning of line");
+    textobj_register("G", textobj_to_file_end, "end of file");
+    textobj_register("gg", textobj_to_file_start, "start of file");
+
+    /* Inner text objects (two char: i + object) */
+    textobj_register("iw", textobj_word, "inner word");
+    textobj_register("ip", textobj_paragraph, "inner paragraph");
+    textobj_register("i(", textobj_brackets, "inner parentheses");
+    textobj_register("i)", textobj_brackets, "inner parentheses");
+    textobj_register("ib", textobj_brackets, "inner brackets");
+    /* Note: braces, square brackets, quotes require textobj_brackets_with wrapper */
+
+    /* Around text objects (two char: a + object) */
+    textobj_register("aw", textobj_word, "around word");
+    textobj_register("ap", textobj_paragraph, "around paragraph");
+    /* Note: More around objects will be added when textobj_brackets_with wrappers are ready */
+}
+
 void user_commands_init(void) {
     cmd("q", cmd_quit, "quit");
     cmd("q!", cmd_quit_force, "quit!");

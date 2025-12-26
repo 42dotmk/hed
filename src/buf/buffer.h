@@ -56,7 +56,6 @@ void buf_insert_newline_in(Buffer *buf);
 void buf_del_char_in(Buffer *buf);
 void buf_delete_line_in(Buffer *buf);
 void buf_yank_line_in(Buffer *buf);
-void buf_paste_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);

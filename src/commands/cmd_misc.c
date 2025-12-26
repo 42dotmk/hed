@@ -281,10 +281,8 @@ void cmd_put(const char *args) {
     Buffer *buf = buf_cur();
     if (!buf)
         return;
-    /* Use the same paste machinery as normal-mode 'p' so undo works */
-    sstr_free(&E.clipboard);
-    E.clipboard = sstr_from(s->data, s->len);
-    buf_paste_in(buf);
+    /* Paste from the specified register */
+    paste_from_register(buf, reg, true);
 }
 
 void cmd_undo(const char *args) {

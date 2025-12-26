@@ -75,11 +75,54 @@ int keybind_get_at(int index, const char **sequence, const char **desc, int *mod
  */
 int keybind_get_and_clear_pending_count(void);
 
+/* Text Object System */
+
+/* Forward declarations */
+struct Buffer;
+struct TextSelection;
+
+/**
+ * Text object callback signature
+ * @param buf  Buffer to operate on
+ * @param line Cursor line position
+ * @param col  Cursor column position
+ * @param sel  Output TextSelection to fill
+ * @return 1 if successful, 0 if text object not found or invalid
+ */
+typedef int (*TextObjFunc)(struct Buffer *buf, int line, int col,
+                           struct TextSelection *sel);
+
+/**
+ * Register a text object keybinding
+ * @param keys Key sequence (e.g., "w", "iw", "aw", "$")
+ * @param func Callback that creates TextSelection
+ * @param desc Description of the text object
+ */
+void textobj_register(const char *keys, TextObjFunc func, const char *desc);
+
+/**
+ * Lookup and invoke a text object by key sequence
+ * @param keys Key sequence to look up
+ * @param buf  Buffer to operate on
+ * @param line Cursor line position
+ * @param col  Cursor column position
+ * @param sel  Output TextSelection to fill
+ * @return 1 if text object found and executed successfully, 0 otherwise
+ */
+int textobj_lookup(const char *keys, struct Buffer *buf, int line, int col,
+                   struct TextSelection *sel);
+
 /**
  * User keybindings initialization (implemented in user_hooks.c / config.c)
  * This is where users define their custom keybindings
  */
 void user_keybinds_init(void);
+
+/**
+ * User text object initialization (implemented in config.c)
+ * This is where users register text objects for operator composition
+ */
+void user_textobj_init(void);
 
 /* Built-in keybinding callbacks live in keybinds_builtins.h */
 #endif // KEYBINDS_H

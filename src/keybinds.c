@@ -2,6 +2,8 @@
 #include "hed.h"
 #include "registers.h"
 #include "safe_string.h"
+#include "textobj.h"
+#include "keybinds_builtins.h"
 #include <time.h>
 
 #define MAX_KEYBINDS 256
@@ -85,6 +87,7 @@ void keybind_init(void) {
     key_buffer[0] = '\0';
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
     user_keybinds_init();
+    user_textobj_init();
 }
 
 /* Register a keybinding */
@@ -281,7 +284,69 @@ bool keybind_process(int key, int mode) {
         return true; /* Consumed the key, waiting for more */
     }
 
-    /* No match - clear buffer and return 0 (not handled) */
+    /* No match - try text object movement fallback in normal mode */
+    if (mode == MODE_NORMAL && key_buffer_len == 1) {
+        /* Single unmapped key in normal mode - try as text object movement */
+        int fallback_key = key_buffer[0];
+        keybind_clear_buffer();
+        kb_operator_move(fallback_key);
+        return true; /* Handled by fallback */
+    }
+
+    /* No match and no fallback - clear buffer and return 0 (not handled) */
     keybind_clear_buffer();
     return false;
+}
+
+/* ========================================================================
+ * Text Object System
+ * ======================================================================== */
+
+#define MAX_TEXTOBJ_BINDS 128
+
+/* Text object keybinding structure */
+typedef struct {
+    char keys[16];          /* Key sequence (e.g., "w", "iw", "aw") */
+    TextObjFunc func;       /* Callback that fills TextSelection */
+    char desc[128];         /* Description */
+} TextObjKeybind;
+
+/* Global text object storage */
+static TextObjKeybind textobj_map[MAX_TEXTOBJ_BINDS];
+static int textobj_count = 0;
+
+/* Register a text object */
+void textobj_register(const char *keys, TextObjFunc func, const char *desc) {
+    if (textobj_count >= MAX_TEXTOBJ_BINDS) {
+        log_msg("Warning: textobj registry full");
+        return;
+    }
+
+    TextObjKeybind *kb = &textobj_map[textobj_count++];
+    strncpy(kb->keys, keys, sizeof(kb->keys) - 1);
+    kb->keys[sizeof(kb->keys) - 1] = '\0';
+    kb->func = func;
+    if (desc) {
+        strncpy(kb->desc, desc, sizeof(kb->desc) - 1);
+        kb->desc[sizeof(kb->desc) - 1] = '\0';
+    } else {
+        kb->desc[0] = '\0';
+    }
+
+    log_msg("Registered text object: %s - %s", keys, desc ? desc : "");
+}
+
+/* Lookup and invoke a text object by key sequence */
+int textobj_lookup(const char *keys, Buffer *buf, int line, int col,
+                   TextSelection *sel) {
+    if (!keys || !buf || !sel) {
+        return 0;
+    }
+
+    for (int i = 0; i < textobj_count; i++) {
+        if (strcmp(textobj_map[i].keys, keys) == 0) {
+            return textobj_map[i].func(buf, line, col, sel);
+        }
+    }
+    return 0; /* Not found */
 }

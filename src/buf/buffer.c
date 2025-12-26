@@ -475,11 +475,6 @@ void buf_delete_line_in(Buffer *buf) {
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
         return;
 
-    /* Save to clipboard */
-    sstr_free(&E.clipboard);
-    E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
-                            buf->rows[win->cursor.y].chars.len);
-    E.clipboard_is_block = 0;
     /* Update registers: numbered delete and unnamed */
     regs_push_delete(buf->rows[win->cursor.y].chars.data,
                      buf->rows[win->cursor.y].chars.len);
@@ -502,98 +497,10 @@ void buf_delete_line_in(Buffer *buf) {
 }
 void buf_yank_line_in(Buffer *buf) {
     WIN(win)
-    sstr_free(&E.clipboard);
-    E.clipboard = sstr_from(buf->rows[win->cursor.y].chars.data,
-                            buf->rows[win->cursor.y].chars.len);
-    E.clipboard_is_block = 0;
-    /* Update registers: yank '0' and unnamed */
-    regs_set_yank(buf->rows[win->cursor.y].chars.data,
-                  buf->rows[win->cursor.y].chars.len);
-}
-
-void buf_paste_in(Buffer *buf) {
-    Window *win = window_cur();
-    if (!buf || !win)
+    TextSelection sel;
+    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
         return;
-    if (buf->readonly) {
-        ed_set_status_message("Buffer is read-only");
-        return;
-    }
-    if (E.clipboard.len == 0)
-        return;
-
-    /* Block paste: insert column slice into successive lines */
-    if (E.clipboard_is_block) {
-        int cx = win->cursor.x;
-        /* Split clipboard into lines */
-        const char *data = E.clipboard.data;
-        size_t len = E.clipboard.len;
-        int line_idx = 0;
-        size_t start = 0;
-        for (size_t i = 0; i <= len; i++) {
-            if (i == len || data[i] == '\n') {
-                size_t seglen = i - start;
-                int row = win->cursor.y + line_idx;
-                if (row >= buf->num_rows) {
-                    /* pad with empty lines if needed */
-                    while (buf->num_rows <= row) {
-                        buf_row_insert_in(buf, buf->num_rows, "", 0);
-                    }
-                }
-                Row *r = &buf->rows[row];
-                int icx = cx;
-                if (icx < 0)
-                    icx = 0;
-                if (icx > (int)r->chars.len)
-                    icx = (int)r->chars.len;
-                for (size_t k = 0; k < seglen; k++) {
-                    buf_row_insert_char_in(buf, r, icx + (int)k,
-                                           data[start + k]);
-                }
-                line_idx++;
-                start = i + 1;
-            }
-        }
-        /* Place cursor at end of first inserted segment */
-        win->cursor.x =
-            cx + (int)(E.clipboard.len ? (strcspn(E.clipboard.data, "\n")) : 0);
-        return;
-    }
-
-    /* Character-wise paste: insert into current line */
-    if (!strchr(E.clipboard.data, '\n')) {
-        if (win->cursor.y >= buf->num_rows) {
-            buf_row_insert_in(buf, buf->num_rows, "", 0);
-        }
-        Row *r = &buf->rows[win->cursor.y];
-        int cx = win->cursor.x;
-        if (cx < 0)
-            cx = 0;
-        if (cx > (int)r->chars.len)
-            cx = (int)r->chars.len;
-        for (size_t k = 0; k < E.clipboard.len; k++) {
-            buf_row_insert_char_in(buf, r, cx + (int)k, E.clipboard.data[k]);
-        }
-        win->cursor.x = cx + (int)E.clipboard.len;
-        return;
-    }
-
-    /* Line-wise paste: insert lines below current */
-    int at = (win->cursor.y < buf->num_rows) ? (win->cursor.y + 1) : buf->num_rows;
-    size_t start = 0;
-    size_t len = E.clipboard.len;
-    int insert_row = at;
-    for (size_t i = 0; i <= len; i++) {
-        if (i == len || E.clipboard.data[i] == '\n') {
-            size_t seglen = i - start;
-            buf_row_insert_in(buf, insert_row, E.clipboard.data + start,
-                              seglen);
-            insert_row++;
-            start = i + 1;
-        }
-    }
-    win->cursor.y = insert_row - 1;
-    win->cursor.x = 0;
+    yank_selection(&sel);
 }
 
 /*** Search ***/

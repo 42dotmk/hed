@@ -803,3 +803,143 @@ int textobj_line_with_newline(Buffer *buf, int line, int col,
                              (TextPos){y, (int)row->chars.len}, cursor);
     }
 }
+
+/*
+ * textsel_make_range - Create a TextSelection from explicit coordinates
+ *
+ * Helper function to create a TextSelection from explicit start/end positions.
+ * Useful for converting old range-based APIs to the TextSelection format.
+ */
+TextSelection textsel_make_range(int sy, int sx, int ey, int ex, SelectionType type) {
+    TextSelection sel = {
+        .start = {.line = sy, .col = sx},
+        .end = {.line = ey, .col = ex},
+        .cursor = {.line = sy, .col = sx},
+        .type = type
+    };
+    return sel;
+}
+
+/* ========================================================================
+ * Basic Movement Text Objects (h/j/k/l)
+ * ======================================================================== */
+
+/**
+ * Move cursor one character to the right (l, <Right>)
+ */
+int textobj_char_right(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+
+    Row *row = &buf->rows[line];
+    int new_col = col + 1;
+
+    /* If at end of line, move to start of next line */
+    if (new_col >= (int)row->chars.len) {
+        if (line + 1 < buf->num_rows) {
+            sel->cursor.line = line + 1;
+            sel->cursor.col = 0;
+        } else {
+            /* At end of file, stay put */
+            sel->cursor.line = line;
+            sel->cursor.col = col;
+        }
+    } else {
+        sel->cursor.line = line;
+        sel->cursor.col = new_col;
+    }
+
+    sel->start = sel->cursor;
+    sel->end = sel->cursor;
+    sel->type = SEL_NONE;
+    return 1;
+}
+
+/**
+ * Move cursor one character to the left (h, <Left>)
+ */
+int textobj_char_left(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+
+    int new_col = col - 1;
+
+    /* If at start of line, move to end of previous line */
+    if (new_col < 0) {
+        if (line > 0) {
+            Row *prev_row = &buf->rows[line - 1];
+            sel->cursor.line = line - 1;
+            sel->cursor.col = prev_row->chars.len;
+        } else {
+            /* At start of file, stay put */
+            sel->cursor.line = line;
+            sel->cursor.col = col;
+        }
+    } else {
+        sel->cursor.line = line;
+        sel->cursor.col = new_col;
+    }
+
+    sel->start = sel->cursor;
+    sel->end = sel->cursor;
+    sel->type = SEL_NONE;
+    return 1;
+}
+
+/**
+ * Move cursor one line down (j, <Down>)
+ */
+int textobj_line_down(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+
+    int new_line = line + 1;
+
+    /* Clamp to last line */
+    if (new_line >= buf->num_rows) {
+        new_line = buf->num_rows - 1;
+    }
+
+    /* Keep column position, clamping to line length */
+    Row *new_row = &buf->rows[new_line];
+    int new_col = col;
+    if (new_col > (int)new_row->chars.len) {
+        new_col = new_row->chars.len;
+    }
+
+    sel->cursor.line = new_line;
+    sel->cursor.col = new_col;
+    sel->start = sel->cursor;
+    sel->end = sel->cursor;
+    sel->type = SEL_NONE;
+    return 1;
+}
+
+/**
+ * Move cursor one line up (k, <Up>)
+ */
+int textobj_line_up(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+
+    int new_line = line - 1;
+
+    /* Clamp to first line */
+    if (new_line < 0) {
+        new_line = 0;
+    }
+
+    /* Keep column position, clamping to line length */
+    Row *new_row = &buf->rows[new_line];
+    int new_col = col;
+    if (new_col > (int)new_row->chars.len) {
+        new_col = new_row->chars.len;
+    }
+
+    sel->cursor.line = new_line;
+    sel->cursor.col = new_col;
+    sel->start = sel->cursor;
+    sel->end = sel->cursor;
+    sel->type = SEL_NONE;
+    return 1;
+}

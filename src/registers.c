@@ -47,24 +47,12 @@ void regs_free(void) {
 
 void regs_set_unnamed(const char *data, size_t len) {
     rs_assign(&R.unnamed, data, len);
-    /* Keep editor clipboard in sync */
-    sstr_free(&E.clipboard);
-    if (data && len)
-        E.clipboard = sstr_from(data, len);
-    else
-        E.clipboard = sstr_new();
-    E.clipboard_is_block = 0;
 }
 
 void regs_set_yank_block(const char *data, size_t len, int is_block) {
     rs_assign(&R.yank0, data, len);
     rs_assign(&R.unnamed, data, len);
-    sstr_free(&E.clipboard);
-    if (data && len)
-        E.clipboard = sstr_from(data, len);
-    else
-        E.clipboard = sstr_new();
-    E.clipboard_is_block = is_block ? 1 : 0;
+    (void)is_block; // TODO: Store block flag in register metadata
 }
 
 void regs_set_yank(const char *data, size_t len) {

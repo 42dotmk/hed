@@ -23,11 +23,13 @@ void hook_auto_pair(const HookCharEvent *event) {
     case '{':
         inserted = '}';
         break;
+
     case '"':
          inserted = '"';
          break;
     case '\'':
          inserted = '\'';
+		 break;
     case '`':
         inserted = '`';
         break;
