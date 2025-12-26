@@ -153,7 +153,7 @@ static void handle_insert_mode_keypress(int c) {
         return;
     if (!iscntrl(c)) {
         buf_insert_char_in(buf, c);
-	    HookCharEvent event = {buf, y0, x0, c};
+	    HookCharEvent event = {buf, win->cursor.x, win->cursor.y, c};
 	    hook_fire_char(HOOK_CHAR_INSERT, &event);
     }
 }
@@ -163,9 +163,8 @@ static void handle_normal_mode_keypress(int c, Buffer *buf) {
     keybind_process(c, E.mode);
 }
 
-static void handle_visual_mode_keypress(int c, Buffer *buf, int block_mode) {
+static void handle_visual_mode_keypress(int c, Buffer *buf) {
     (void)buf;
-    (void)block_mode;
     if (!keybind_process(c, E.mode)) {
         keybind_process(c, MODE_NORMAL);
     }
@@ -191,10 +190,9 @@ void ed_process_keypress(void) {
         handle_normal_mode_keypress(c, buf);
         break;
     case MODE_VISUAL:
-        handle_visual_mode_keypress(c, buf, 0);
-        break;
+    case MODE_VISUAL_LINE:
     case MODE_VISUAL_BLOCK:
-        handle_visual_mode_keypress(c, buf, 1);
+        handle_visual_mode_keypress(c, buf);
         break;
     }
 
