@@ -4,7 +4,12 @@
 #include "buffer.h"
 
 /* Unified selection description for yanks/deletes */
-typedef enum { SEL_NONE = 0, SEL_CHAR, SEL_LINE, SEL_BLOCK } SelectionType;
+typedef enum {
+    SEL_NONE = 0,        /* No selection */
+    SEL_VISUAL,          /* Character-wise (visual mode) */
+    SEL_VISUAL_LINE,     /* Line-wise (yy, dd, etc.) */
+    SEL_VISUAL_BLOCK     /* Block/column-wise (visual block mode) */
+} SelectionType;
 
 typedef struct {
     SelectionType type;

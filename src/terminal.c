@@ -315,12 +315,12 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
                            int row, int *start_rx, int *end_rx) {
     if (!buf || !win || win->sel.type == SEL_NONE)
         return 0;
-    if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK))
+    if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK || E.mode == MODE_VISUAL_LINE))
         return 0;
     if (!BOUNDS_CHECK(row, buf->num_rows))
         return 0;
 
-    if (win->sel.type == SEL_BLOCK || E.mode == MODE_VISUAL_BLOCK) {
+    if (win->sel.type == SEL_VISUAL_BLOCK || E.mode == MODE_VISUAL_BLOCK) {
         int sy = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y
                                                    : win->cursor.y;
         int ey = win->sel.anchor_y > win->cursor.y ? win->sel.anchor_y

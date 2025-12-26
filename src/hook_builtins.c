@@ -8,37 +8,35 @@ void hook_change_cursor_shape(const HookModeEvent *event) {
 
 
 void hook_auto_pair(const HookCharEvent *event) {
-    WIN(win);
+    BUFWIN(buf, win);
     switch (event->c) {
     case '(':
-        buf_insert_char_in(event->buf, ')');
+        buf_insert_char_in(buf, ')');
         win->cursor.x--;
         break;
     case '[':
-        buf_insert_char_in(event->buf, ']');
+        buf_insert_char_in(buf, ']');
         win->cursor.x--;
         break;
     case '<':
-        buf_insert_char_in(event->buf, '>');
+        buf_insert_char_in(buf, '>');
         win->cursor.x--;
         break;
     case '{':
-        buf_insert_char_in(event->buf, '}');
+        buf_insert_char_in(buf, '}');
         win->cursor.x--;
         break;
-	// TODO: Because we are raising the event again it goes into loop, 
-	// TOOD: we need to figer on how to identify the sender better, and not make hacks
-    // case '"':
-    //     buf_insert_char_in(event->buf, '"');
-    //     win->cursor.x--;
-    //     break;
-    // case '\'':
-    //     buf_insert_char_in(event->buf, '\'');
-    //     break;
-    // case '`':
-    //     buf_insert_char_in(event->buf, '`');
-    //     win->cursor.x--;
-    //     break;
+    case '"':
+         buf_insert_char_in(event->buf, '"');
+         win->cursor.x--;
+         break;
+    case '\'':
+         buf_insert_char_in(event->buf, '\'');
+         break;
+    case '`':
+        buf_insert_char_in(event->buf, '`');
+        win->cursor.x--;
+        break;
     default:
         break;
     }

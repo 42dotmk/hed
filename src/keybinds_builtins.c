@@ -33,12 +33,12 @@ Selection kb_make_selection(Window *win, Buffer *buf,
     } else if (win->sel.type != SEL_NONE) {
         s = win->sel;
     }
-    if (s.type == SEL_CHAR) {
+    if (s.type == SEL_VISUAL) {
         s.anchor_y = win->sel.anchor_y;
         s.anchor_x = win->sel.anchor_x;
         s.cursor_y = win->cursor.y;
         s.cursor_x = win->cursor.x;
-    } else if (s.type == SEL_BLOCK) {
+    } else if (s.type == SEL_VISUAL_BLOCK) {
         s.anchor_y = win->sel.anchor_y;
         s.cursor_y = win->cursor.y;
         s.anchor_rx = win->sel.anchor_rx;
@@ -50,7 +50,7 @@ Selection kb_make_selection(Window *win, Buffer *buf,
             s.block_start_rx = s.block_end_rx;
             s.block_end_rx = t;
         }
-    } else if (s.type == SEL_LINE) {
+    } else if (s.type == SEL_VISUAL_LINE) {
         s.anchor_y = win->cursor.y;
         s.cursor_y = win->cursor.y;
     }
@@ -59,7 +59,7 @@ Selection kb_make_selection(Window *win, Buffer *buf,
 
 static void visual_begin(int block) {
     BUFWIN(buf, win)
-    win->sel.type = block ? SEL_BLOCK : SEL_CHAR;
+    win->sel.type = block ? SEL_VISUAL_BLOCK : SEL_VISUAL;
     win->sel.anchor_y = win->cursor.y;
     win->sel.anchor_x = win->cursor.x;
     win->sel.anchor_rx =
@@ -71,7 +71,7 @@ static void visual_begin(int block) {
 
 static int visual_char_range(Buffer *buf, Window *win, int *sy, int *sx,
                              int *ey, int *ex_excl) {
-    if (!buf || !win || win->sel.type != SEL_CHAR)
+    if (!buf || !win || win->sel.type != SEL_VISUAL)
         return 0;
     if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
         !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
@@ -108,7 +108,7 @@ static int visual_char_range(Buffer *buf, Window *win, int *sy, int *sx,
 
 static int visual_block_range(Buffer *buf, Window *win, int *sy, int *ey,
                               int *start_rx, int *end_rx_excl) {
-    if (!buf || !win || win->sel.type != SEL_BLOCK)
+    if (!buf || !win || win->sel.type != SEL_VISUAL_BLOCK)
         return 0;
     if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
         !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
@@ -154,7 +154,7 @@ static int visual_yank(Buffer *buf, Window *win, int block_mode) {
         return 0;
     if (block_mode != 0)
         block_mode = 1;
-    if (win->sel.type == SEL_BLOCK)
+    if (win->sel.type == SEL_VISUAL_BLOCK)
         block_mode = 1;
     SizedStr clip = sstr_new();
     if (!block_mode) {
@@ -217,7 +217,7 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
     }
     if (block_mode != 0)
         block_mode = 1;
-    if (win->sel.type == SEL_BLOCK)
+    if (win->sel.type == SEL_VISUAL_BLOCK)
         block_mode = 1;
     if (!visual_yank(buf, win, block_mode))
         return 0;
@@ -367,7 +367,7 @@ void kb_enter_command_mode(void) {
 
 void kb_visual_toggle(void) {
     BUFWIN(buf, win)
-    if (E.mode == MODE_VISUAL && win->sel.type == SEL_CHAR) {
+    if (E.mode == MODE_VISUAL && win->sel.type == SEL_VISUAL) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
         return;
@@ -377,7 +377,7 @@ void kb_visual_toggle(void) {
 
 void kb_visual_block_toggle(void) {
 	BUFWIN(buf, win)
-    if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_BLOCK) {
+    if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_VISUAL_BLOCK) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
         return;

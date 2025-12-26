@@ -2,6 +2,7 @@
 #define TEXTOBJ_H
 
 #include "buffer.h"
+#include "../ui/window.h"
 
 /* Simple position (line, column), both 0-indexed and byte-based. */
 typedef struct TextPos {
@@ -11,9 +12,10 @@ typedef struct TextPos {
 
 /* A generic selection with inclusive start, exclusive end, plus cursor. */
 typedef struct TextSelection {
-    TextPos start;  /* inclusive */
-    TextPos end;    /* exclusive */
-    TextPos cursor; /* cursor location (clamped) */
+    TextPos start;        /* inclusive */
+    TextPos end;          /* exclusive */
+    TextPos cursor;       /* cursor location (clamped) */
+    SelectionType type;   /* selection type for yank/paste */
 } TextSelection;
 
 /* Text-object helpers. All return 1 on success, 0 on failure. */

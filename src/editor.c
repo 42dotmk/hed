@@ -22,6 +22,7 @@ void ed_change_cursor_shape(void) {
         break;
     case MODE_COMMAND:
     case MODE_VISUAL:
+	case MODE_VISUAL_LINE:
     case MODE_VISUAL_BLOCK:
         write(STDOUT_FILENO, CURSOR_STYLE_BLOCK, 5);
         break;
@@ -146,13 +147,14 @@ void ed_move_cursor(int key) {
 /* Mode-specific keypress handlers (refactored for clarity and maintainability)
  */
 
-static void handle_insert_mode_keypress(int c, Buffer *buf) {
-    if (!buf)
-        return;
+static void handle_insert_mode_keypress(int c) {
+	BUFWIN(buf, win);
     if (keybind_process(c, E.mode))
         return;
     if (!iscntrl(c)) {
         buf_insert_char_in(buf, c);
+	    HookCharEvent event = {buf, y0, x0, c};
+	    hook_fire_char(HOOK_CHAR_INSERT, &event);
     }
 }
 
@@ -183,7 +185,7 @@ void ed_process_keypress(void) {
         command_mode_handle_keypress(c);
         break;
     case MODE_INSERT:
-        handle_insert_mode_keypress(c, buf);
+        handle_insert_mode_keypress(c);
         break;
     case MODE_NORMAL:
         handle_normal_mode_keypress(c, buf);

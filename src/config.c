@@ -207,7 +207,7 @@ void user_commands_init(void) {
     cmd("record", cmd_macro_record, "record macro");
     cmd("play", cmd_macro_play, "play macro");
     cmd("ln", cmd_ln, "line nums");
-    cmd("rln", cmd_rln, "rel nums");
+    cmd("rln", cmd_rln, "relative numbers");
     cmd("copen", cmd_copen, "qf open");
     cmd("cclose", cmd_cclose, "qf close");
     cmd("ctoggle", cmd_ctoggle, "qf toggle");

@@ -400,9 +400,6 @@ void buf_insert_char_in(Buffer *buf, int c) {
     int x0 = win->cursor.x;
     buf_row_insert_char_in(buf, &buf->rows[y0], x0, c);
     win->cursor.x = x0 + 1;
-
-    HookCharEvent event = {buf, y0, x0, c};
-    hook_fire_char(HOOK_CHAR_INSERT, &event);
 }
 
 void buf_insert_newline_in(Buffer *buf) {

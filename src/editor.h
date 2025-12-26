@@ -42,6 +42,7 @@ typedef enum {
     MODE_INSERT,
     MODE_COMMAND,
     MODE_VISUAL,
+    MODE_VISUAL_LINE,
     MODE_VISUAL_BLOCK
 } EditorMode;
 
