@@ -571,8 +571,7 @@ int textobj_to_word_end(Buffer *buf, int line, int col, TextSelection *sel) {
         start_col = sx;
     }
 
-    int cursor_col =
-        utf8_prev_cp(row->chars.data, (int)row->chars.len, ex);
+    int cursor_col = utf8_prev_cp(row->chars.data, (int)row->chars.len, ex);
     if (cursor_col < 0)
         cursor_col = start_col;
     TextPos cursor = {target_line, cursor_col};
@@ -783,7 +782,7 @@ int textobj_char_at_cursor(Buffer *buf, int line, int col, TextSelection *sel) {
  * deletion. For the last line, selects just the line content without newline.
  */
 int textobj_line_with_newline(Buffer *buf, int line, int col,
-                               TextSelection *sel) {
+                              TextSelection *sel) {
     int y = clamp_line(buf, line);
     if (y < 0)
         return 0;
@@ -810,13 +809,12 @@ int textobj_line_with_newline(Buffer *buf, int line, int col,
  * Helper function to create a TextSelection from explicit start/end positions.
  * Useful for converting old range-based APIs to the TextSelection format.
  */
-TextSelection textsel_make_range(int sy, int sx, int ey, int ex, SelectionType type) {
-    TextSelection sel = {
-        .start = {.line = sy, .col = sx},
-        .end = {.line = ey, .col = ex},
-        .cursor = {.line = sy, .col = sx},
-        .type = type
-    };
+TextSelection textsel_make_range(int sy, int sx, int ey, int ex,
+                                 SelectionType type) {
+    TextSelection sel = {.start = {.line = sy, .col = sx},
+                         .end = {.line = ey, .col = ex},
+                         .cursor = {.line = sy, .col = sx},
+                         .type = type};
     return sel;
 }
 

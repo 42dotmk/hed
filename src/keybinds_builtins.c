@@ -556,6 +556,10 @@ void kb_dired_home(void) {
     dired_handle_home();
 }
 
+void kb_dired_chdir(void) {
+    dired_handle_chdir();
+}
+
 void kb_delete_char(void) {
     ASSERT_EDIT(buf, win);
     TextSelection sel;

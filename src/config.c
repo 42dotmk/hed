@@ -16,6 +16,7 @@ void insert_mode_bindings() {
     mapi("<Left>", kb_move_left, "move left");
     mapi("<Right>", kb_move_right, "move right");
 }
+
 void normal_mode_bindings() {
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");
@@ -55,6 +56,7 @@ void normal_mode_bindings() {
     mapn("/", kb_search_prompt, "search");
     mapn("-", kb_dired_parent, "dired parent");
     mapn("~", kb_dired_home, "dired home");
+    mapn("cd", kb_dired_chdir, "dired chdir");
     mapn("<CR>", kb_dired_enter, "dired open");
     mapn(" ts", kb_tmux_send_line, "send to tmux");
     mapn(" dl", kb_del_right, "del win right");

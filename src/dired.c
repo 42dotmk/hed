@@ -292,6 +292,26 @@ int dired_handle_home(void) {
     return 1;
 }
 
+int dired_handle_chdir(void) {
+    DiredState *st = dired_state_from_current();
+    if (!st)
+        return 0;
+    if (!st->cwd[0])
+        return 1;
+
+    if (chdir(st->cwd) == 0) {
+        if (getcwd(E.cwd, sizeof(E.cwd))) {
+            ed_set_status_message("cd: %s", E.cwd);
+        } else {
+            E.cwd[0] = '\0';
+            ed_set_status_message("cd: ok");
+        }
+    } else {
+        ed_set_status_message("cd: %s", strerror(errno));
+    }
+    return 1;
+}
+
 static void dired_on_buffer_close(const HookBufferEvent *event) {
     if (!event || !event->buf)
         return;

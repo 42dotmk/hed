@@ -50,6 +50,7 @@ void kb_insert_escape(void);
 void kb_dired_enter(void);
 void kb_dired_parent(void);
 void kb_dired_home(void);
+void kb_dired_chdir(void);
 
 void kb_visual_yank_selection(void);
 void kb_visual_delete_selection(void);

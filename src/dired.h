@@ -7,6 +7,7 @@ void dired_open(const char *path);
 int dired_handle_enter(void);
 int dired_handle_parent(void);
 int dired_handle_home(void);
+int dired_handle_chdir(void);
 void dired_hooks_init(void);
 
 #endif
