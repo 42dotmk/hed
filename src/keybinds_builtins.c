@@ -131,24 +131,6 @@ static int visual_block_range(Buffer *buf, Window *win, int *sy, int *ey,
     return 1;
 }
 
-static void sstr_delete_range(SizedStr *s, int start, int end_excl) {
-    if (!s || !s->data)
-        return;
-    if (start < 0)
-        start = 0;
-    if (end_excl < start)
-        end_excl = start;
-    if (end_excl > (int)s->len)
-        end_excl = (int)s->len;
-    if (start > (int)s->len)
-        start = (int)s->len;
-    int rem = (int)s->len - end_excl;
-    memmove(s->data + start, s->data + end_excl, (size_t)rem);
-    s->len -= (end_excl - start);
-    if (s->data)
-        s->data[s->len] = '\0';
-}
-
 static int visual_yank(Buffer *buf, Window *win, int block_mode) {
     if (!buf || !win || win->sel.type == SEL_NONE)
         return 0;
@@ -195,69 +177,33 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
         block_mode = 1;
     if (win->sel.type == SEL_VISUAL_BLOCK)
         block_mode = 1;
-    if (!visual_yank(buf, win, block_mode))
-        return 0;
 
+    /* Convert visual selection to TextSelection */
+    TextSelection sel;
     if (!block_mode) {
         int sy, sx, ey, ex_excl;
         if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
-        Row *start = &buf->rows[sy];
-        int start_len = (int)start->chars.len;
-        if (sx > start_len)
-            sx = start_len;
-
-        if (sy == ey) {
-            int end_ex = ex_excl;
-            if (end_ex > start_len)
-                end_ex = start_len;
-            sstr_delete_range(&start->chars, sx, end_ex);
-            buf_row_update(start);
-        } else {
-            Row *end = &buf->rows[ey];
-            int end_ex = ex_excl;
-            if (end_ex > (int)end->chars.len)
-                end_ex = (int)end->chars.len;
-            SizedStr tail = sstr_from(end->chars.data + end_ex,
-                                      end->chars.len - (size_t)end_ex);
-            start->chars.len = (size_t)sx;
-            if (start->chars.data)
-                start->chars.data[sx] = '\0';
-            sstr_append(&start->chars, tail.data, tail.len);
-            sstr_free(&tail);
-            buf_row_update(start);
-            /* Remove intermediate rows including end row */
-            for (int y = ey; y > sy; y--) {
-                buf_row_del_in(buf, y);
-            }
-        }
-        buf->dirty++;
-        win->cursor.y = sy;
-        win->cursor.x = sx;
+        sel = textsel_make_range(sy, sx, ey, ex_excl, SEL_VISUAL);
     } else {
         int sy, ey, start_rx, end_rx_excl;
         if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
             return 0;
-        for (int y = sy; y <= ey; y++) {
-            Row *r = &buf->rows[y];
-            int cx0 = buf_row_rx_to_cx(r, start_rx);
-            int cx1 = buf_row_rx_to_cx(r, end_rx_excl);
-            if (cx0 < 0)
-                cx0 = 0;
-            if (cx1 < cx0)
-                cx1 = cx0;
-            if (cx1 > (int)r->chars.len)
-                cx1 = (int)r->chars.len;
-            if (cx0 == cx1)
-                continue;
-            sstr_delete_range(&r->chars, cx0, cx1);
-            buf_row_update(r);
-        }
-        buf->dirty++;
-        win->cursor.y = sy;
-        Row *r = &buf->rows[win->cursor.y];
-        win->cursor.x = buf_row_rx_to_cx(r, start_rx);
+        /* For block mode, convert render columns to character columns */
+        Row *first_row = &buf->rows[sy];
+        int sx = buf_row_rx_to_cx(first_row, start_rx);
+        int ex = buf_row_rx_to_cx(first_row, end_rx_excl);
+        sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL_BLOCK);
     }
+
+    /* Yank first (to clipboard) */
+    EdError err = yank_selection(&sel);
+    if (err != ED_OK)
+        return 0;
+
+    /* Delete the selection */
+    buf_delete_selection(&sel);
+
     visual_clear(win);
     ed_set_mode(MODE_NORMAL);
     return 1;
