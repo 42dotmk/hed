@@ -53,6 +53,7 @@
 #include "fzf.h"
 #include "history.h"
 #include "jump_list.h"
+#include "lsp.h"
 #include "quickfix.h"
 #include "recent_files.h"
 #include "term_cmd.h"

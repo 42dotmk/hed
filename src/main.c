@@ -120,12 +120,18 @@ int main(int argc, char *argv[]) {
         FD_SET(STDIN_FILENO, &rfds);
         int maxfd = STDIN_FILENO;
 
+        /* Add LSP file descriptors to select set */
+        lsp_fill_fdset(&rfds, &maxfd);
+
         int rc = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (rc == -1) {
             if (errno == EINTR)
                 continue;
             die("select");
         }
+
+        /* Handle LSP messages */
+        lsp_handle_readable(&rfds);
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             ed_process_keypress();

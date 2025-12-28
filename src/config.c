@@ -3,6 +3,7 @@
 #include "cmd_builtins.h"
 #include "keybinds_builtins.h"
 #include "hook_builtins.h"
+#include "lsp_hooks.h"
 
 
 void insert_mode_bindings() {
@@ -275,6 +276,11 @@ void user_commands_init(void) {
     cmd("foldtoggle", cmd_fold_toggle, "toggle fold at line");
     cmd("foldmethod", cmd_foldmethod, "set fold method");
     cmd("foldupdate", cmd_foldupdate, "update folds");
+    cmd("lsp_start", cmd_lsp_start, "start LSP server");
+    cmd("lsp_stop", cmd_lsp_stop, "stop LSP server");
+    cmd("lsp_hover", cmd_lsp_hover, "LSP hover info");
+    cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
+    cmd("lsp_completion", cmd_lsp_completion, "LSP completion");
 }
 
 void user_hooks_init(void) {
@@ -282,5 +288,6 @@ void user_hooks_init(void) {
     hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", hook_smart_indent);
     hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", hook_auto_pair);
     dired_hooks_init();
+    lsp_hooks_init();
 }
 

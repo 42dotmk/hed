@@ -36,4 +36,8 @@ void lsp_request_hover(Buffer *buf, int line, int col);
 void lsp_request_definition(Buffer *buf, int line, int col);
 void lsp_request_completion(Buffer *buf, int line, int col);
 
+/* Command interface for starting/stopping LSP servers */
+int lsp_cmd_start(const char *lang, const char *cmd, const char *root_uri);
+int lsp_cmd_stop(const char *lang);
+
 #endif /* LSP_H */
