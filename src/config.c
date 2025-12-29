@@ -81,6 +81,11 @@ void normal_mode_bindings() {
     cmapn(".", "repeat");
     cmapn("q", "record");
     cmapn("@", "play");
+    cmapn("ZQ", "q!");
+    cmapn("ZZ", "wq"); // not quite the same as in neovim
+                       // ZZ in neovim writes to disk only if changes are made
+                       // whereas :wq always writes to disk
+
     /* $, 0, w, b, e movements now handled by text object fallback */
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
