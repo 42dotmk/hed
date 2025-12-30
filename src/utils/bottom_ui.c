@@ -58,7 +58,7 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
     Window *cwin = window_cur();
     int rlen =
         snprintf(rstatus, sizeof(rstatus), "%d:%d ",
-                 cwin ? cwin->cursor.y + 1 : 1, cwin ? cwin->cursor.x + 1 : 1);
+                 cwin ? buf->cursor.y + 1 : 1, cwin ? buf->cursor.x + 1 : 1);
     if (len > lo->term_cols)
         len = lo->term_cols;
     ansi_move(ab, lo->status_row, 1);

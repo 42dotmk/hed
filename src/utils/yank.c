@@ -191,11 +191,11 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
 
     /* Character-wise paste (no newlines) */
     if (!strchr(reg->data, '\n')) {
-        if (win->cursor.y >= buf->num_rows) {
+        if (buf->cursor.y >= buf->num_rows) {
             buf_row_insert_in(buf, buf->num_rows, "", 0);
         }
-        Row *r = &buf->rows[win->cursor.y];
-        int cx = win->cursor.x;
+        Row *r = &buf->rows[buf->cursor.y];
+        int cx = buf->cursor.x;
         if (after && cx < (int)r->chars.len) {
             cx++;
         }
@@ -205,12 +205,12 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
         for (size_t k = 0; k < reg->len; k++) {
             buf_row_insert_char_in(buf, r, cx + (int)k, reg->data[k]);
         }
-        win->cursor.x = cx + (int)reg->len;
+        buf->cursor.x = cx + (int)reg->len;
         return ED_OK;
     }
 
     /* Line-wise paste */
-    int at = win->cursor.y;
+    int at = buf->cursor.y;
     if (after) {
         at = (at < buf->num_rows) ? (at + 1) : buf->num_rows;
     }
@@ -226,8 +226,8 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
             start = i + 1;
         }
     }
-    win->cursor.y = insert_row - 1;
-    win->cursor.x = 0;
+    buf->cursor.y = insert_row - 1;
+    buf->cursor.x = 0;
 
     return ED_OK;
 }

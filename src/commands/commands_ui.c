@@ -108,8 +108,8 @@ static void cadd_current(const char *msg) {
     Buffer *b = buf_cur();
     Window *win = window_cur();
     const char *fn = b && b->filename ? b->filename : NULL;
-    int line = (b && win) ? win->cursor.y + 1 : 1;
-    int col = (b && win) ? win->cursor.x + 1 : 1;
+    int line = (b && win) ? b->cursor.y + 1 : 1;
+    int col = (b && win) ? b->cursor.x + 1 : 1;
     qf_add(&E.qf, fn, line, col, msg ? msg : "");
 }
 

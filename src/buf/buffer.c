@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "buf_helpers.h"
 #include "hed.h"
 #include "safe_string.h"
@@ -39,6 +40,7 @@ static void buf_init(Buffer *buf) {
     buf->num_rows = 0;
     buf->cursor.x = 0;
     buf->cursor.y = 0;
+    buf->cursors = (CursorVec){0}; /* Initialize empty cursor vector */
     buf->filename = NULL;
     buf->title = strdup("[No Name]");
     if (!buf->title)
@@ -206,8 +208,8 @@ EdError buf_switch(int index) {
     E.current_buffer = index;
     if (win){
         win->buffer_index = index;
-		win->cursor.x = buf->cursor.x;
-		win->cursor.y = buf->cursor.y;
+		buf->cursor.x = buf->cursor.x;
+		buf->cursor.y = buf->cursor.y;
 	}
 
     /* Fire hook */
@@ -234,8 +236,8 @@ void buf_next(void) {
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);
 
     if (win) {
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
-                      win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, buf->cursor.x,
+                      buf->cursor.y);
     }
     ed_set_status_message("Buffer %d: %s", E.current_buffer + 1, buf->title);
 }
@@ -253,8 +255,8 @@ void buf_prev(void) {
     Buffer *buf = buf_cur();
 
     if (win) {
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
-                      win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, buf->cursor.x,
+                      buf->cursor.y);
     }
     /* Fire hook */
     HookBufferEvent event = {buf, buf->filename};
@@ -393,13 +395,14 @@ void buf_insert_char_in(Buffer *buf, int c) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (win->cursor.y == buf->num_rows) {
+    if (buf->cursor.y == buf->num_rows) {
         buf_row_insert_in(buf, buf->num_rows, "", 0);
     }
-    int y0 = win->cursor.y;
-    int x0 = win->cursor.x;
+    int y0 = buf->cursor.y;
+    int x0 = buf->cursor.x;
     buf_row_insert_char_in(buf, &buf->rows[y0], x0, c);
-    win->cursor.x = x0 + 1;
+    buf->cursor.x = x0 + 1;
+    ed_mark_dirty();
 }
 
 void buf_insert_newline_in(Buffer *buf) {
@@ -410,10 +413,10 @@ void buf_insert_newline_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    int y0 = win->cursor.y;
-    int x0 = win->cursor.x;
+    int y0 = buf->cursor.y;
+    int x0 = buf->cursor.x;
     if (x0 == 0) {
-        buf_row_insert_in(buf, win->cursor.y, "", 0);
+        buf_row_insert_in(buf, buf->cursor.y, "", 0);
     } else {
         Row *row = &buf->rows[y0];
         const char *rest = row->chars.data + x0;
@@ -425,8 +428,9 @@ void buf_insert_newline_in(Buffer *buf) {
         row->chars.data[row->chars.len] = '\0';
         buf_row_update(row);
     }
-    win->cursor.y = y0 + 1;
-    win->cursor.x = 0;
+    buf->cursor.y = y0 + 1;
+    buf->cursor.x = 0;
+    ed_mark_dirty();
 }
 
 void buf_del_char_in(Buffer *buf) {
@@ -437,13 +441,13 @@ void buf_del_char_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (win->cursor.y == buf->num_rows)
+    if (buf->cursor.y == buf->num_rows)
         return;
-    if (win->cursor.x == 0 && win->cursor.y == 0)
+    if (buf->cursor.x == 0 && buf->cursor.y == 0)
         return;
 
-    int y = win->cursor.y;
-    int x = win->cursor.x;
+    int y = buf->cursor.y;
+    int x = buf->cursor.x;
     Row *row = &buf->rows[y];
     if (x > 0) {
         int deleted_char =
@@ -454,14 +458,15 @@ void buf_del_char_in(Buffer *buf) {
         HookCharEvent event = {buf, y, x - 1, deleted_char};
         hook_fire_char(HOOK_CHAR_DELETE, &event);
 
-        win->cursor.x = x - 1;
+        buf->cursor.x = x - 1;
     } else {
         int prev_len = buf->rows[y - 1].chars.len;
-        win->cursor.x = prev_len;
+        buf->cursor.x = prev_len;
         buf_row_append_in(buf, &buf->rows[y - 1], &row->chars);
         buf_row_del_in(buf, y);
-        win->cursor.y = y - 1;
+        buf->cursor.y = y - 1;
     }
+    ed_mark_dirty();
 }
 
 void buf_delete_line_in(Buffer *buf) {
@@ -472,33 +477,34 @@ void buf_delete_line_in(Buffer *buf) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows))
         return;
 
     /* Update registers: numbered delete and unnamed */
-    regs_push_delete(buf->rows[win->cursor.y].chars.data,
-                     buf->rows[win->cursor.y].chars.len);
+    regs_push_delete(buf->rows[buf->cursor.y].chars.data,
+                     buf->rows[buf->cursor.y].chars.len);
 
     /* Fire hook before deletion */
-    HookLineEvent event = {buf, win->cursor.y,
-                           buf->rows[win->cursor.y].chars.data,
-                           buf->rows[win->cursor.y].chars.len};
+    HookLineEvent event = {buf, buf->cursor.y,
+                           buf->rows[buf->cursor.y].chars.data,
+                           buf->rows[buf->cursor.y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
 
-    buf_row_del_in(buf, win->cursor.y);
+    buf_row_del_in(buf, buf->cursor.y);
     if (buf->num_rows == 0) {
         buf_row_insert_in(buf, 0, "", 0);
-        win->cursor.y = 0;
+        buf->cursor.y = 0;
         win->row_offset = 0;
-    } else if (win->cursor.y >= buf->num_rows) {
-        win->cursor.y = buf->num_rows - 1;
+    } else if (buf->cursor.y >= buf->num_rows) {
+        buf->cursor.y = buf->num_rows - 1;
     }
-    win->cursor.x = 0;
+    buf->cursor.x = 0;
+    ed_mark_dirty();
 }
 void buf_yank_line_in(Buffer *buf) {
     WIN(win)
     TextSelection sel;
-    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_line(buf, buf->cursor.y, buf->cursor.x, &sel))
         return;
     yank_selection(&sel);
 }
@@ -512,7 +518,7 @@ void buf_find_in(Buffer *buf) {
         return;
 
     Window *win = window_cur();
-    int start_y = win ? win->cursor.y : 0;
+    int start_y = win ? buf->cursor.y : 0;
     int current = start_y;
 
     int use_regex = E.search_is_regex;
@@ -552,8 +558,8 @@ void buf_find_in(Buffer *buf) {
 
         if (match) {
             if (win) {
-                win->cursor.y = current;
-                win->cursor.x = buf_row_rx_to_cx(row, rx);
+                buf->cursor.y = current;
+                buf->cursor.x = buf_row_rx_to_cx(row, rx);
             }
             Window *cur = window_cur();
             if (cur)

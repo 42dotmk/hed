@@ -49,6 +49,7 @@
 #include "textobj.h"
 
 /* Utilities */
+#include "autocomplete.h"
 #include "bottom_ui.h"
 #include "fzf.h"
 #include "history.h"

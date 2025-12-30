@@ -43,8 +43,6 @@ Window *winmodal_create(int x, int y, int width, int height) {
     modal->wrap = 0;
     modal->row_offset = 0;
     modal->col_offset = 0;
-    modal->cursor.x = 0;
-    modal->cursor.y = 0;
     modal->gutter_mode = 0;
     modal->gutter_fixed_width = 0;
     modal->sel.type = SEL_NONE;
@@ -170,7 +168,6 @@ void winmodal_to_layout(Window *modal) {
         if (!E.windows.data[i].visible &&
             E.windows.data[i].buffer_index == modal->buffer_index) {
             /* Restore window state from modal */
-            E.windows.data[i].cursor = modal->cursor;
             E.windows.data[i].row_offset = modal->row_offset;
             E.windows.data[i].col_offset = modal->col_offset;
             E.windows.data[i].wrap = modal->wrap;

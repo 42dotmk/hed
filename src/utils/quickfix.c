@@ -103,8 +103,8 @@ static void qf_update_window_view(Qf *qf) {
     for (int wi = 0; wi < (int)E.windows.len; wi++) {
         Window *w = &E.windows.data[wi];
         if (w->buffer_index == buf_index && w->is_quickfix) {
-            w->cursor.y = cursor_row;
-            w->cursor.x = 0;
+            buf->cursor.y = cursor_row;
+            buf->cursor.x = 0;
             if (w->height > 0) {
                 if (cursor_row < w->row_offset)
                     w->row_offset = cursor_row;
@@ -532,14 +532,14 @@ static void qf_jump_to_internal(const QfItem *it, int focus_target) {
         if (it->line > 0) {
             buf_goto_line(it->line);
         }
-        if (it->col > 0 && win->cursor.y < b->num_rows) {
-            int max = b->rows[win->cursor.y].chars.len;
+        if (it->col > 0 && b->cursor.y < b->num_rows) {
+            int max = b->rows[b->cursor.y].chars.len;
             int cx = it->col - 1;
             if (cx < 0)
                 cx = 0;
             if (cx > max)
                 cx = max;
-            win->cursor.x = cx;
+            b->cursor.x = cx;
         }
     }
 

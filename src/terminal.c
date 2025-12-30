@@ -196,16 +196,16 @@ void window_scroll(Window *win) {
         content_cols = 1;
 
     E.render_x = 0;
-    if (win->cursor.y < buf->num_rows) {
-        E.render_x = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    if (buf->cursor.y < buf->num_rows) {
+        E.render_x = buf_row_cx_to_rx(&buf->rows[buf->cursor.y], buf->cursor.x);
     }
 
     if (!win->wrap) {
-        if (win->cursor.y < win->row_offset) {
-            win->row_offset = win->cursor.y;
+        if (buf->cursor.y < win->row_offset) {
+            win->row_offset = buf->cursor.y;
         }
-        if (win->cursor.y >= win->row_offset + win->height) {
-            win->row_offset = win->cursor.y - win->height + 1;
+        if (buf->cursor.y >= win->row_offset + win->height) {
+            win->row_offset = buf->cursor.y - win->height + 1;
         }
         if (E.render_x < win->col_offset) {
             win->col_offset = E.render_x;
@@ -224,10 +224,10 @@ void window_scroll(Window *win) {
     for (int y = 0; y < buf->num_rows; y++) {
         Row *row = &buf->rows[y];
         int h = row_visual_height(row, content_cols, 1);
-        if (y < win->cursor.y) {
+        if (y < buf->cursor.y) {
             cursor_visual += h;
-        } else if (y == win->cursor.y) {
-            int rx = buf_row_cx_to_rx(row, win->cursor.x);
+        } else if (y == buf->cursor.y) {
+            int rx = buf_row_cx_to_rx(row, buf->cursor.x);
             if (rx < 0)
                 rx = 0;
             int sub = rx / content_cols;
@@ -321,10 +321,10 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
         return 0;
 
     if (win->sel.type == SEL_VISUAL_BLOCK || E.mode == MODE_VISUAL_BLOCK) {
-        int sy = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y
-                                                   : win->cursor.y;
-        int ey = win->sel.anchor_y > win->cursor.y ? win->sel.anchor_y
-                                                   : win->cursor.y;
+        int sy = win->sel.anchor_y < buf->cursor.y ? win->sel.anchor_y
+                                                   : buf->cursor.y;
+        int ey = win->sel.anchor_y > buf->cursor.y ? win->sel.anchor_y
+                                                   : buf->cursor.y;
         if (row < sy || row > ey)
             return 0;
         int anchor_rx = win->sel.block_start_rx;
@@ -347,11 +347,11 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
     }
 
     if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
-        !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        !BOUNDS_CHECK(buf->cursor.y, buf->num_rows))
         return 0;
 
     int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
-    int cy = win->cursor.y, cx = win->cursor.x;
+    int cy = buf->cursor.y, cx = buf->cursor.x;
     int top_y = ay, top_x = ax, bot_y = cy, bot_x = cx;
     if (ay > cy || (ay == cy && ax > cx)) {
         top_y = cy;
@@ -402,8 +402,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     if (content_cols < 0)
         content_cols = 0;
     int cursor_rx = 0;
-    if (buf && win->cursor.y >= 0 && win->cursor.y < buf->num_rows) {
-        cursor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    if (buf && buf->cursor.y >= 0 && buf->cursor.y < buf->num_rows) {
+        cursor_rx = buf_row_cx_to_rx(&buf->rows[buf->cursor.y], buf->cursor.x);
     }
 
     /* helper functions moved to file scope */
@@ -448,7 +448,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 char nb[32];
                 int num = filerow + 1;
                 if (E.relative_line_numbers && buf) {
-                    int cur = win->cursor.y;
+                    int cur = buf->cursor.y;
                     if (filerow != cur)
                         num = abs(filerow - cur);
                 }
@@ -761,11 +761,11 @@ void ed_render_frame(void) {
         cur_row = lo.cmd_row;
         cur_col = 2 + E.command_len; /* ':' + content */
     } else {
-        if (!buf || win->cursor.y >= buf->num_rows) {
+        if (!buf || buf->cursor.y >= buf->num_rows) {
             cur_row = win->top;
             cur_col = win->left + margin;
         } else if (!win->wrap) {
-            cur_row = (win->cursor.y - win->row_offset) + win->top;
+            cur_row = (buf->cursor.y - win->row_offset) + win->top;
             cur_col = (E.render_x - win->col_offset) + win->left + margin;
         } else {
             /* Map cursor to visual row/column when wrapped */
@@ -777,10 +777,10 @@ void ed_render_frame(void) {
             for (int y = 0; y < buf->num_rows; y++) {
                 Row *row = &buf->rows[y];
                 int h = row_visual_height(row, content_cols, 1);
-                if (y < win->cursor.y) {
+                if (y < buf->cursor.y) {
                     visual_row += h;
-                } else if (y == win->cursor.y) {
-                    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+                } else if (y == buf->cursor.y) {
+                    int rx = buf_row_cx_to_rx(row, buf->cursor.x);
                     if (rx < 0)
                         rx = 0;
                     int sub = rx / content_cols;
@@ -815,4 +815,5 @@ void ed_set_status_message(const char *fmt, ...) {
     vsnprintf(E.status_msg, sizeof(E.status_msg), fmt, ap);
     va_end(ap);
     log_msg("status: %s", E.status_msg);
+    ed_mark_dirty(); /* Status message changed */
 }

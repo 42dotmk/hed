@@ -35,7 +35,6 @@ typedef struct Window {
 
     int row_offset;   /* first visible visual row (wrap-aware) */
     int col_offset;   /* first visible buffer column (render x) */
-    Cursor cursor;    /* window-local cursor (x=col, y=row index) */
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;

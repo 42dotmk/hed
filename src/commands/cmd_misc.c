@@ -278,9 +278,7 @@ void cmd_put(const char *args) {
         ed_set_status_message("Register %c empty", reg);
         return;
     }
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+    BUF(buf)
     /* Paste from the specified register */
     paste_from_register(buf, reg, true);
 }
@@ -421,9 +419,7 @@ void cmd_logclear(const char *args) {
  * is treated like a save+reload operation. */
 void cmd_fmt(const char *args) {
     (void)args;
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+    BUF(buf)
     if (!buf->filename || !*buf->filename) {
         ed_set_status_message("fmt: buffer has no filename");
         return;
@@ -481,7 +477,7 @@ void cmd_fmt(const char *args) {
 }
 void cmd_buf_refresh(const char* args){
 	(void)args;
-	Buffer *buf=buf_cur();
+	BUF(buf)
 	buf_reload(buf);
 }
 void cmd_ts(const char *args) {
@@ -543,20 +539,17 @@ void cmd_tsi(const char *args) {
 
 void cmd_new_line(const char *args) {
     (void)args;
-    Window *win = window_cur();
+    BUFWIN(buf, win)
     if (!win || win->is_quickfix)
-        return;
-    Buffer *buf = buf_cur();
-    if (!buf)
         return;
 
     if (buf->num_rows == 0) {
-        win->cursor.y = 0;
-        win->cursor.x = 0;
+        buf->cursor.y = 0;
+        buf->cursor.x = 0;
     } else {
         Row *row =
-            (win->cursor.y < buf->num_rows) ? &buf->rows[win->cursor.y] : NULL;
-        win->cursor.x = row ? (int)row->chars.len : 0;
+            (buf->cursor.y < buf->num_rows) ? &buf->rows[buf->cursor.y] : NULL;
+        buf->cursor.x = row ? (int)row->chars.len : 0;
     }
     buf_insert_newline_in(buf);
     ed_set_mode(MODE_INSERT);
@@ -564,14 +557,11 @@ void cmd_new_line(const char *args) {
 
 void cmd_new_line_above(const char *args) {
     (void)args;
-    Window *win = window_cur();
+    BUFWIN(buf, win)
     if (!win || win->is_quickfix)
         return;
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
 
-    win->cursor.x = 0;
+    buf->cursor.x = 0;
     buf_insert_newline_in(buf);
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
@@ -722,11 +712,7 @@ void cmd_modal_to_layout(const char *args) {
 
 /* Create a new fold region: :foldnew <start> <end> */
 void cmd_fold_new(const char *args) {
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("foldnew: no buffer");
-        return;
-    }
+    BUF(buf)
 
     if (!args || !*args) {
         ed_set_status_message("foldnew: usage: foldnew <start> <end>");
@@ -766,11 +752,7 @@ void cmd_fold_new(const char *args) {
 
 /* Remove fold at line: :foldrm <line> */
 void cmd_fold_rm(const char *args) {
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("foldrm: no buffer");
-        return;
-    }
+    BUF(buf)
 
     if (!args || !*args) {
         ed_set_status_message("foldrm: usage: foldrm <line>");
@@ -815,11 +797,7 @@ void cmd_fold_rm(const char *args) {
 
 /* Toggle fold at line: :foldtoggle <line> */
 void cmd_fold_toggle(const char *args) {
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("foldtoggle: no buffer");
-        return;
-    }
+    BUFWIN(buf, win)
 
     int line = -1;
     if (args && *args) {
@@ -831,12 +809,7 @@ void cmd_fold_toggle(const char *args) {
         line--; /* Convert to 0-indexed */
     } else {
         /* Use cursor line if no argument */
-        Window *win = window_cur();
-        if (!win) {
-            ed_set_status_message("foldtoggle: no window");
-            return;
-        }
-        line = win->cursor.y;
+        line = buf->cursor.y;
     }
 
     if (line < 0 || line >= buf->num_rows) {
@@ -859,11 +832,7 @@ void cmd_fold_toggle(const char *args) {
 }
 
 void cmd_foldmethod(const char *args) {
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("foldmethod: no buffer");
-        return;
-    }
+    BUF(buf)
 
     if (!args || !*args) {
         /* Show current fold method */
@@ -904,11 +873,7 @@ void cmd_foldmethod(const char *args) {
 
 void cmd_foldupdate(const char *args) {
     (void)args;
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("foldupdate: no buffer");
-        return;
-    }
+    BUF(buf)
 
     /* Reapply the current fold method */
     fold_apply_method(buf, buf->fold_method);

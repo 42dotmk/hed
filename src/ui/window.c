@@ -21,8 +21,6 @@ void windows_init(void) {
     E.windows.data[0].row_offset = 0;
     E.windows.data[0].col_offset = 0;
     E.windows.data[0].wrap = E.default_wrap;
-    E.windows.data[0].cursor.x = 0;
-    E.windows.data[0].cursor.y = 0;
     E.windows.data[0].gutter_mode = 0;
     E.windows.data[0].gutter_fixed_width = 0;
     E.windows.data[0].sel.type = SEL_NONE;
@@ -50,7 +48,6 @@ void win_attach_buf(Window *win, Buffer *buf) {
     if (!BOUNDS_CHECK(idx, E.buffers.len))
         return; /* Extra safety check */
     win->buffer_index = idx;
-    win->cursor = buf->cursor;
     if (win->focus) {
         E.current_buffer = idx;
     }

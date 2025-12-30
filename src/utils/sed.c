@@ -60,8 +60,8 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
 
     /* Save cursor position for restoration */
     Window *win = window_cur();
-    int saved_cx = win ? win->cursor.x : 0;
-    int saved_cy = win ? win->cursor.y : 0;
+    int saved_cx = win ? buf->cursor.x : 0;
+    int saved_cy = win ? buf->cursor.y : 0;
 
     /* 2. Serialize buffer to string */
     size_t input_len = 0;
@@ -137,7 +137,7 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
         if (saved_cy < 0) {
             saved_cy = 0;
         }
-        win->cursor.y = saved_cy;
+        buf->cursor.y = saved_cy;
 
         /* Clamp X to valid range for current line */
         if (saved_cy < buf->num_rows) {
@@ -149,7 +149,7 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
         if (saved_cx < 0) {
             saved_cx = 0;
         }
-        win->cursor.x = saved_cx;
+        buf->cursor.x = saved_cx;
     }
 
     /* 9. Show success message */

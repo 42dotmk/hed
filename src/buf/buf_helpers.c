@@ -8,33 +8,6 @@ void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
 
 /*** Cursor movement helpers ***/
 
-static inline void cur_sync_from_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) {
-        buf->cursor.x = win->cursor.x;
-        buf->cursor.y = win->cursor.y;
-    }
-}
-static inline void cur_sync_to_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) {
-        win->cursor.x = buf->cursor.x;
-        win->cursor.y = buf->cursor.y;
-    }
-}
-
-/*
- * Macro to eliminate cursor sync boilerplate in helper functions.
- * Usage: CURSOR_OP({ code that modifies buf->cursor_x/y })
- */
-#define CURSOR_OP(code)                                                        \
-    do {                                                                       \
-        Buffer *buf = buf_cur();                                               \
-        Window *win = window_cur();                                            \
-        if (!PTR_VALID(buf) || !PTR_VALID(win))                                \
-            return;                                                            \
-        cur_sync_from_window(buf, win);                                        \
-        code cur_sync_to_window(buf, win);                                     \
-    } while (0)
-
 /* Visual-line helpers for soft-wrap navigation */
 static int row_visual_height_buf(const Buffer *buf, int row_index,
                                  int content_cols, int wrap) {
@@ -61,7 +34,7 @@ static int cursor_visual_position(const Buffer *buf, const Window *win,
             *out_vis_col = 0;
         return 0;
     }
-    int cy = win->cursor.y;
+    int cy = buf->cursor.y;
     if (cy < 0)
         cy = 0;
     if (cy >= buf->num_rows)
@@ -72,7 +45,7 @@ static int cursor_visual_position(const Buffer *buf, const Window *win,
         visual += row_visual_height_buf(buf, y, content_cols, 1);
     }
     const Row *row = &buf->rows[cy];
-    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+    int rx = buf_row_cx_to_rx(row, buf->cursor.x);
     if (rx < 0)
         rx = 0;
     int h = row_visual_height_buf(buf, cy, content_cols, 1);
@@ -98,8 +71,8 @@ static int buffer_total_visual_rows(const Buffer *buf, int content_cols) {
 static void cursor_from_visual(Buffer *buf, Window *win, int target_visual,
                                int content_cols, int vis_col) {
     if (!buf || !win || buf->num_rows <= 0) {
-        win->cursor.y = 0;
-        win->cursor.x = 0;
+        buf->cursor.y = 0;
+        buf->cursor.x = 0;
         return;
     }
     if (target_visual < 0)
@@ -116,8 +89,8 @@ static void cursor_from_visual(Buffer *buf, Window *win, int target_visual,
     if (y >= buf->num_rows) {
         y = buf->num_rows - 1;
         if (y < 0) {
-            win->cursor.y = 0;
-            win->cursor.x = 0;
+            buf->cursor.y = 0;
+            buf->cursor.x = 0;
             return;
         }
         int h = row_visual_height_buf(buf, y, content_cols, 1);
@@ -147,24 +120,22 @@ static void cursor_from_visual(Buffer *buf, Window *win, int target_visual,
         rx = 0;
 
     int cx = buf_row_rx_to_cx(row, rx);
-    win->cursor.y = y;
-    win->cursor.x = cx;
+    buf->cursor.y = y;
+    buf->cursor.x = cx;
 }
 
 void buf_cursor_move_top(void) {
-    CURSOR_OP({
-        buf->cursor.y = 0;
-        buf->cursor.x = 0;
-    });
+    BUF(buf);
+    buf->cursor.y = 0;
+    buf->cursor.x = 0;
 }
 
 void buf_cursor_move_bottom(void) {
-    CURSOR_OP({
-        buf->cursor.y = buf->num_rows - 1;
-        if (buf->cursor.y < 0)
-            buf->cursor.y = 0;
-        buf->cursor.x = 0;
-    });
+    BUF(buf);
+    buf->cursor.y = buf->num_rows - 1;
+    if (buf->cursor.y < 0)
+        buf->cursor.y = 0;
+    buf->cursor.x = 0;
 }
 
 /*** Screen positioning helpers ***/
@@ -176,7 +147,7 @@ void buf_center_screen(void) {
     /* Center current line in the middle of the current window (logical rows) */
     if (!buf || win->wrap)
         return;
-    win->row_offset = win->cursor.y - (win->height / 2);
+    win->row_offset = buf->cursor.y - (win->height / 2);
     if (win->row_offset < 0)
         win->row_offset = 0;
     int maxoff = buf->num_rows - win->height;
@@ -188,63 +159,46 @@ void buf_center_screen(void) {
 }
 
 void buf_scroll_half_page_up(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
+	BUF(buf)
     int half_page = E.screen_rows / 2;
-    win->cursor.y -= half_page;
-    if (win->cursor.y < 0)
-        win->cursor.y = 0;
+    buf->cursor.y -= half_page;
+    if (buf->cursor.y < 0)
+        buf->cursor.y = 0;
 }
 
 void buf_scroll_half_page_down(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
+	BUF(buf)
     int half_page = E.screen_rows / 2;
-    win->cursor.y += half_page;
-    if (win->cursor.y >= buf->num_rows) {
-        win->cursor.y = buf->num_rows - 1;
-        if (win->cursor.y < 0)
-            win->cursor.y = 0;
+    buf->cursor.y += half_page;
+    if (buf->cursor.y >= buf->num_rows) {
+        buf->cursor.y = buf->num_rows - 1;
+        if (buf->cursor.y < 0)
+            buf->cursor.y = 0;
     }
 }
 
 void buf_scroll_page_up(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    win->cursor.y -= E.screen_rows;
-    if (win->cursor.y < 0)
-        win->cursor.y = 0;
+	BUF(buf)
+    buf->cursor.y -= E.screen_rows;
+    if (buf->cursor.y < 0)
+        buf->cursor.y = 0;
 }
 
 void buf_scroll_page_down(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    win->cursor.y += E.screen_rows;
-    if (win->cursor.y >= buf->num_rows) {
-        win->cursor.y = buf->num_rows - 1;
-        if (win->cursor.y < 0)
-            win->cursor.y = 0;
+	BUF(buf)
+    buf->cursor.y += E.screen_rows;
+    if (buf->cursor.y >= buf->num_rows) {
+        buf->cursor.y = buf->num_rows - 1;
+        if (buf->cursor.y < 0)
+            buf->cursor.y = 0;
     }
 }
 
 /*** Line operations helpers ***/
 
 void buf_join_lines(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) ||
-        win->cursor.y >= buf->num_rows - 1)
-        return;
-
-    int y = win->cursor.y;
+	BUF(buf)
+    int y = buf->cursor.y;
     Row *current = &buf->rows[y];
     Row *next = &buf->rows[y + 1];
     if (!PTR_VALID(current) || !PTR_VALID(next))
@@ -271,35 +225,31 @@ void buf_duplicate_line(void) {
 }
 
 void buf_move_line_up(void) {
-	BUFWIN(buf, win);
-    Row temp = buf->rows[win->cursor.y];
-    buf->rows[win->cursor.y] = buf->rows[win->cursor.y - 1];
-    buf->rows[win->cursor.y - 1] = temp;
-    win->cursor.y--;
+	BUF(buf)
+    Row temp = buf->rows[buf->cursor.y];
+    buf->rows[buf->cursor.y] = buf->rows[buf->cursor.y - 1];
+    buf->rows[buf->cursor.y - 1] = temp;
+    buf->cursor.y--;
 }
 
 void buf_move_line_down(void) {
-	BUFWIN(buf, win)
-    Row temp = buf->rows[win->cursor.y];
-    buf->rows[win->cursor.y] = buf->rows[win->cursor.y + 1];
-    buf->rows[win->cursor.y + 1] = temp;
-    win->cursor.y++;
+	BUF(buf)
+    Row temp = buf->rows[buf->cursor.y];
+    buf->rows[buf->cursor.y] = buf->rows[buf->cursor.y + 1];
+    buf->rows[buf->cursor.y + 1] = temp;
+    buf->cursor.y++;
 }
 
 /*** Text manipulation helpers ***/
 
 void buf_indent_line(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) ||
-        !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
+	BUF(buf)
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
 
-    Row *row = &buf->rows[win->cursor.y];
+    Row *row = &buf->rows[buf->cursor.y];
 
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
@@ -307,22 +257,18 @@ void buf_indent_line(void) {
     }
 
     buf_row_update(row);
-    win->cursor.x += TAB_STOP;
+    buf->cursor.x += TAB_STOP;
     buf->dirty++;
 }
 
 void buf_unindent_line(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) ||
-        !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
+	BUF(buf)
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
     }
 
-    Row *row = &buf->rows[win->cursor.y];
+    Row *row = &buf->rows[buf->cursor.y];
 
     /* Remove up to TAB_STOP spaces from the beginning */
     int spaces_to_remove = 0;
@@ -339,18 +285,14 @@ void buf_unindent_line(void) {
     }
 
     buf_row_update(row);
-    win->cursor.x -= spaces_to_remove;
-    if (win->cursor.x < 0)
-        win->cursor.x = 0;
+    buf->cursor.x -= spaces_to_remove;
+    if (buf->cursor.x < 0)
+        buf->cursor.x = 0;
     buf->dirty++;
 }
 
 void buf_toggle_comment(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) ||
-        !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
+	BUF(buf)
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return;
@@ -375,7 +317,7 @@ void buf_toggle_comment(void) {
             comment = "// ";
     }
 
-    int y = win->cursor.y;
+    int y = buf->cursor.y;
     Row *row = &buf->rows[y];
     int comment_len = strlen(comment);
 
@@ -393,14 +335,14 @@ void buf_toggle_comment(void) {
         for (int i = 0; i < comment_len; i++) {
             sstr_delete_char(&row->chars, 0);
         }
-        win->cursor.x -= comment_len;
-        if (win->cursor.x < 0)
-            win->cursor.x = 0;
+        buf->cursor.x -= comment_len;
+        if (buf->cursor.x < 0)
+            buf->cursor.x = 0;
     } else {
         for (int i = comment_len - 1; i >= 0; i--) {
             sstr_insert_char(&row->chars, 0, comment[i]);
         }
-        win->cursor.x += comment_len;
+        buf->cursor.x += comment_len;
     }
 
     buf_row_update(row);
@@ -410,11 +352,7 @@ void buf_toggle_comment(void) {
 /*** Navigation helpers ***/
 
 void buf_goto_line(int line_num) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
+	BUF(buf)
     /* Convert from 1-indexed to 0-indexed */
     line_num--;
 
@@ -423,17 +361,14 @@ void buf_goto_line(int line_num) {
     if (line_num >= buf->num_rows)
         line_num = buf->num_rows - 1;
 
-    win->cursor.y = line_num;
-    win->cursor.x = 0;
+    buf->cursor.y = line_num;
+    buf->cursor.x = 0;
 }
 
 int buf_get_line_under_cursor(SizedStr *out) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
-        return 0;
+	BUF(buf)
     TextSelection sel;
-    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_line(buf, buf->cursor.y, buf->cursor.x, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
     sstr_free(out);
@@ -443,12 +378,9 @@ int buf_get_line_under_cursor(SizedStr *out) {
 }
 
 int buf_get_word_under_cursor(SizedStr *out) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
-        return 0;
+	BUF(buf)
     TextSelection sel;
-    if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_word(buf, buf->cursor.y, buf->cursor.x, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
     sstr_free(out);
@@ -540,10 +472,10 @@ int buf_get_path_under_cursor(SizedStr *out, int *out_line, int *out_col) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
         return 0;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows))
         return 0;
 
-    Row *row = &buf->rows[win->cursor.y];
+    Row *row = &buf->rows[buf->cursor.y];
     if (row->chars.len == 0)
         return 0;
 
@@ -553,7 +485,7 @@ int buf_get_path_under_cursor(SizedStr *out, int *out_line, int *out_col) {
         *out_col = 0;
 
     int len = (int)row->chars.len;
-    int cx = win->cursor.x;
+    int cx = buf->cursor.x;
     if (cx >= len)
         cx = len - 1;
     if (cx < 0)
@@ -603,7 +535,7 @@ int buf_get_paragraph_under_cursor(SizedStr *out) {
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
         return 0;
     TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_paragraph(buf, buf->cursor.y, buf->cursor.x, &sel))
         return 0;
     sstr_free(out);
     *out = sstr_new();
@@ -631,7 +563,7 @@ int buf_get_word_range(int *start_x, int *end_x) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return 0;
     TextSelection sel;
-    if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_word(buf, buf->cursor.y, buf->cursor.x, &sel))
         return 0;
     if (start_x)
         *start_x = sel.start.col;
@@ -646,7 +578,7 @@ int buf_get_paragraph_range(int *start_y, int *end_y) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return 0;
     TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_paragraph(buf, buf->cursor.y, buf->cursor.x, &sel))
         return 0;
     if (start_y)
         *start_y = sel.start.line;
@@ -683,7 +615,7 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         row->chars.len -= (ex - sx);
         row->chars.data[row->chars.len] = '\0';
         buf_row_update(row);
-        win->cursor.x = sx;
+        buf->cursor.x = sx;
     } else {
         /* Delete part of first line */
         Row *first = &buf->rows[sy];
@@ -707,8 +639,8 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         buf_row_del_in(buf, sy + 1);
         buf_row_append_in(buf, first, &tail);
         sstr_free(&tail);
-        win->cursor.y = sy;
-        win->cursor.x = sx;
+        buf->cursor.y = sy;
+        buf->cursor.x = sx;
     }
 }
 
@@ -738,8 +670,8 @@ void buf_delete_selection(TextSelection *sel) {
                      sel->end.col);
 
     /* Update cursor to the position specified by the textobject */
-    win->cursor.y = sel->cursor.line;
-    win->cursor.x = sel->cursor.col;
+    buf->cursor.y = sel->cursor.line;
+    buf->cursor.x = sel->cursor.col;
 }
 
 void buf_yank_selection(TextSelection *sel) {
@@ -760,12 +692,8 @@ void buf_change_selection(TextSelection *sel) {
 
 void buf_change_line(void) {
     Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-
     TextSelection sel;
-    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_line(buf, buf->cursor.y, buf->cursor.x, &sel))
         return;
 
     buf_change_selection(&sel);
@@ -774,21 +702,21 @@ void buf_change_line(void) {
 
 void buf_move_cursor_key(int key) {
 	BUFWIN(buf, win);
-    Row *row = (win->cursor.y >= 0 && win->cursor.y < buf->num_rows)
-                   ? &buf->rows[win->cursor.y]
+    Row *row = (buf->cursor.y >= 0 && buf->cursor.y < buf->num_rows)
+                   ? &buf->rows[buf->cursor.y]
                    : NULL;
     switch (key) {
     case KEY_ARROW_LEFT:
     case 'h':
         if (row) {
-            int rx = buf_row_cx_to_rx(row, win->cursor.x);
+            int rx = buf_row_cx_to_rx(row, buf->cursor.x);
             if (rx > 0) {
-                win->cursor.x = buf_row_rx_to_cx(row, rx - 1);
-            } else if (win->cursor.y > 0) {
-                win->cursor.y--;
-                Row *pr = &buf->rows[win->cursor.y];
+                buf->cursor.x = buf_row_rx_to_cx(row, rx - 1);
+            } else if (buf->cursor.y > 0) {
+                buf->cursor.y--;
+                Row *pr = &buf->rows[buf->cursor.y];
                 int prcols = buf_row_cx_to_rx(pr, (int)pr->chars.len);
-                win->cursor.x = buf_row_rx_to_cx(pr, prcols);
+                buf->cursor.x = buf_row_rx_to_cx(pr, prcols);
             }
         }
         break;
@@ -830,8 +758,8 @@ void buf_move_cursor_key(int key) {
                 cursor_from_visual(buf, win, target, content_cols, vis_col);
             }
         } else {
-            if (win->cursor.y < buf->num_rows - 1)
-                win->cursor.y++;
+            if (buf->cursor.y < buf->num_rows - 1)
+                buf->cursor.y++;
         }
         break;
     case KEY_ARROW_UP:
@@ -871,42 +799,37 @@ void buf_move_cursor_key(int key) {
                 cursor_from_visual(buf, win, target, content_cols, vis_col);
             }
         } else {
-            if (win->cursor.y > 0)
-                win->cursor.y--;
+            if (buf->cursor.y > 0)
+                buf->cursor.y--;
         }
         break;
     case KEY_ARROW_RIGHT:
     case 'l':
         if (row) {
-            int rx = buf_row_cx_to_rx(row, win->cursor.x);
+            int rx = buf_row_cx_to_rx(row, buf->cursor.x);
             int rcols = buf_row_cx_to_rx(row, (int)row->chars.len);
             if (rx < rcols) {
-                win->cursor.x = buf_row_rx_to_cx(row, rx + 1);
-            } else if (win->cursor.y < buf->num_rows - 1) {
-                win->cursor.y++;
-                win->cursor.x = 0;
+                buf->cursor.x = buf_row_rx_to_cx(row, rx + 1);
+            } else if (buf->cursor.y < buf->num_rows - 1) {
+                buf->cursor.y++;
+                buf->cursor.x = 0;
             }
         }
         break;
     }
-    row = (win->cursor.y >= 0 && win->cursor.y < buf->num_rows)
-              ? &buf->rows[win->cursor.y]
+    row = (buf->cursor.y >= 0 && buf->cursor.y < buf->num_rows)
+              ? &buf->rows[buf->cursor.y]
               : NULL;
     int rowlen = row ? (int)row->chars.len : 0;
-    if (win->cursor.x > rowlen)
-        win->cursor.x = rowlen;
-    if (win->cursor.x < 0)
-        win->cursor.x = 0;
+    if (buf->cursor.x > rowlen)
+        buf->cursor.x = rowlen;
+    if (buf->cursor.x < 0)
+        buf->cursor.x = 0;
 }
 
 void buf_find_matching_bracket(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    cur_sync_from_window(buf, win);
+	BUF(buf)
     if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
-        cur_sync_to_window(buf, win);
         return;
     }
 
@@ -957,7 +880,6 @@ void buf_find_matching_bracket(void) {
                     /* Found match */
                     buf->cursor.y = y;
                     buf->cursor.x = x;
-                    cur_sync_to_window(buf, win);
                     return;
                 }
             }
@@ -975,7 +897,6 @@ void buf_find_matching_bracket(void) {
 
     /* No match found */
     ed_set_status_message("No matching bracket found");
-    cur_sync_to_window(buf, win);
 }
 
 /*** Selection helpers ***/
@@ -988,7 +909,7 @@ void buf_select_word(void) {
     int sx = 0, ex = 0;
     if (!buf_get_word_range(&sx, &ex))
         return;
-    win->cursor.x = ex;
+    buf->cursor.x = ex;
 }
 
 void buf_select_line(void) {
@@ -996,9 +917,9 @@ void buf_select_line(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows))
         return;
-    win->cursor.x = buf->rows[win->cursor.y].chars.len;
+    buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
 }
 
 void buf_select_all(void) {
@@ -1006,11 +927,11 @@ void buf_select_all(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
-    win->cursor.y = buf->num_rows - 1;
-    if (win->cursor.y < 0)
-        win->cursor.y = 0;
-    if (win->cursor.y < buf->num_rows)
-        win->cursor.x = buf->rows[win->cursor.y].chars.len;
+    buf->cursor.y = buf->num_rows - 1;
+    if (buf->cursor.y < 0)
+        buf->cursor.y = 0;
+    if (buf->cursor.y < buf->num_rows)
+        buf->cursor.x = buf->rows[buf->cursor.y].chars.len;
 }
 
 void buf_select_paragraph(void) {
@@ -1019,52 +940,12 @@ void buf_select_paragraph(void) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
     TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_paragraph(buf, buf->cursor.y, buf->cursor.x, &sel))
         return;
-    win->cursor.y = sel.end.line;
-    win->cursor.x = sel.end.col;
+    buf->cursor.y = sel.end.line;
+    buf->cursor.x = sel.end.col;
 }
 
-/*** Text-object deletion helpers ("da" / "di") ***/
-
-static int map_delim_key(int t, char *open, char *close) {
-    switch (t) {
-    case '(':
-    case ')':
-        *open = '(';
-        *close = ')';
-        return 1;
-    case '[':
-    case ']':
-        *open = '[';
-        *close = ']';
-        return 1;
-    case '{':
-    case '}':
-        *open = '{';
-        *close = '}';
-        return 1;
-    case '<':
-    case '>':
-        *open = '<';
-        *close = '>';
-        return 1;
-    case '"':
-        *open = '"';
-        *close = '"';
-        return 1;
-    case '\'':
-        *open = '\'';
-        *close = '\'';
-        return 1;
-    case '`':
-        *open = '`';
-        *close = '`';
-        return 1;
-    default:
-        return 0;
-    }
-}
 
 
 /* Yank data insertion */

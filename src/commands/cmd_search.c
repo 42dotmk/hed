@@ -130,8 +130,8 @@ void cmd_ssearch(const char *args) {
             lno = 1;
         if (lno > buf->num_rows)
             lno = buf->num_rows;
-        win->cursor.y = lno - 1;
-        win->cursor.x = 0;
+        buf->cursor.y = lno - 1;
+        buf->cursor.x = 0;
         (void)col;
         buf_center_screen();
         ed_set_status_message("ssearch: line %d", lno);

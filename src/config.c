@@ -4,6 +4,7 @@
 #include "keybinds_builtins.h"
 #include "hook_builtins.h"
 #include "lsp_hooks.h"
+#include "cmd_cursor.h"
 
 
 void insert_mode_bindings() {
@@ -12,10 +13,14 @@ void insert_mode_bindings() {
     mapi("<Tab>", kb_insert_tab, "insert tab");
     mapi("<BS>", kb_insert_backspace, "backspace");
     mapi("<C-h>", kb_insert_backspace, "backspace");
+
     mapi("<Up>", kb_move_up, "move up");
     mapi("<Down>", kb_move_down, "move down");
     mapi("<Left>", kb_move_left, "move left");
     mapi("<Right>", kb_move_right, "move right");
+
+    mapi("<C-n>", autocomplete_trigger, "autocomplete");
+    mapi("<C-p>", autocomplete_prev, "prev completion");
 }
 
 void normal_mode_bindings() {
@@ -54,6 +59,7 @@ void normal_mode_bindings() {
     cmapn(" wk", "wk");
     cmapn(" wl", "wl");
     /* h/j/k/l and arrow keys now handled by text object fallback */
+    mapn("<Esc>", kb_normal_escape, "clear cursors");
     mapn("/", kb_search_prompt, "search");
     mapn("-", kb_dired_parent, "dired parent");
     mapn("~", kb_dired_home, "dired home");
@@ -155,6 +161,7 @@ void normal_mode_bindings() {
     mapn("r", kb_replace_char, "replace char");
     mapn("x", kb_delete_char, "del char");
     mapn("yy", kb_yank_line, "yank line");
+    cmapn("K", "lsp_hover");
     mapn("za", kb_fold_toggle, "fold toggle");
     mapn("zc", kb_fold_close, "fold close");
     mapn("zM", kb_fold_close_all, "close all folds");
@@ -281,6 +288,11 @@ void user_commands_init(void) {
     cmd("lsp_hover", cmd_lsp_hover, "LSP hover info");
     cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
     cmd("lsp_completion", cmd_lsp_completion, "LSP completion");
+
+    cmd("cursor_add", cmd_cursor_add, "add cursor");
+    cmd("cursor_clear", cmd_cursor_clear, "clear cursors");
+    cmd("cursor_add_below", cmd_cursor_add_below, "cursor below");
+    cmd("cursor_add_above", cmd_cursor_add_above, "cursor above");
 }
 
 void user_hooks_init(void) {

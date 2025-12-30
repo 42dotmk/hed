@@ -116,14 +116,7 @@ void cmd_lsp_stop(const char *args) {
  * Usage: :lsp_hover
  */
 void cmd_lsp_hover(const char *args) {
-    (void)args;
-
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("LSP: No active buffer");
-        return;
-    }
-
+    BUF(buf)
     lsp_request_hover(buf, buf->cursor.y, buf->cursor.x);
 }
 
@@ -131,14 +124,7 @@ void cmd_lsp_hover(const char *args) {
  * Usage: :lsp_definition
  */
 void cmd_lsp_definition(const char *args) {
-    (void)args;
-
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("LSP: No active buffer");
-        return;
-    }
-
+    BUF(buf)
     lsp_request_definition(buf, buf->cursor.y, buf->cursor.x);
 }
 
@@ -146,13 +132,6 @@ void cmd_lsp_definition(const char *args) {
  * Usage: :lsp_completion
  */
 void cmd_lsp_completion(const char *args) {
-    (void)args;
-
-    Buffer *buf = buf_cur();
-    if (!buf) {
-        ed_set_status_message("LSP: No active buffer");
-        return;
-    }
-
+    BUF(buf)
     lsp_request_completion(buf, buf->cursor.y, buf->cursor.x);
 }

@@ -155,15 +155,15 @@ static int search_and_position(Buffer *buf, Window *win, const char *pattern) {
         char *found = strstr(row->chars.data, search_pat);
         if (found) {
             /* Position cursor at the match */
-            win->cursor.y = y;
-            win->cursor.x = found - row->chars.data;
+            buf->cursor.y = y;
+            buf->cursor.x = found - row->chars.data;
 
             /* Adjust row offset to make the line visible */
-            if (win->cursor.y < win->row_offset) {
-                win->row_offset = win->cursor.y;
+            if (buf->cursor.y < win->row_offset) {
+                win->row_offset = buf->cursor.y;
             }
-            if (win->cursor.y >= win->row_offset + win->height) {
-                win->row_offset = win->cursor.y - win->height + 1;
+            if (buf->cursor.y >= win->row_offset + win->height) {
+                win->row_offset = buf->cursor.y - win->height + 1;
             }
 
             free(search_pat);

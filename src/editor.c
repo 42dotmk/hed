@@ -48,6 +48,7 @@ void ed_set_mode(EditorMode new_mode) {
     HookModeEvent event = {old_mode, new_mode};
     hook_fire_mode(HOOK_MODE_CHANGE, &event);
 
+    ed_mark_dirty(); /* Mode change requires redraw */
 }
 
 int ed_read_key(void) {
@@ -148,12 +149,24 @@ void ed_move_cursor(int key) {
  */
 
 static void handle_insert_mode_keypress(int c) {
-	BUFWIN(buf, win);
+	BUF(buf);
+
+    /* Handle autocomplete special keys */
+    if (autocomplete_is_active()) {
+        if (c == '\t' || c == '\r') {  /* Tab or Enter */
+            autocomplete_accept();
+            return;
+        } else if (c == '\x1b') {  /* Escape */
+            autocomplete_cancel();
+            return;
+        }
+    }
+
     if (keybind_process(c, E.mode))
         return;
     if (!iscntrl(c)) {
         buf_insert_char_in(buf, c);
-	    HookCharEvent event = {buf, win->cursor.x, win->cursor.y, c};
+	    HookCharEvent event = {buf, buf->cursor.x, buf->cursor.y, c};
 	    hook_fire_char(HOOK_CHAR_INSERT, &event);
     }
 }
@@ -174,36 +187,56 @@ static void handle_visual_mode_keypress(int c, Buffer *buf) {
 void ed_process_keypress(void) {
     int c = ed_read_key();
     Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    int old_x = win ? win->cursor.x : 0;
-    int old_y = win ? win->cursor.y : 0;
 
-    /* Dispatch to appropriate mode handler */
-    switch (E.mode) {
-    case MODE_COMMAND:
-        command_mode_handle_keypress(c);
-        break;
-    case MODE_INSERT:
-        handle_insert_mode_keypress(c);
-        break;
-    case MODE_NORMAL:
-        handle_normal_mode_keypress(c, buf);
-        break;
-    case MODE_VISUAL:
-    case MODE_VISUAL_LINE:
-    case MODE_VISUAL_BLOCK:
-        handle_visual_mode_keypress(c, buf);
-        break;
-    }
+    if (!buf)
+        return;
 
-    /* Fire cursor-move hook if cursor changed position */
-    /* some command may have changed the win and buf, so we need to get them
-     * again */
-    win = window_cur();
-    buf = buf_cur();
-    if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {
-        HookCursorEvent ev = {buf, old_x, old_y, win->cursor.x, win->cursor.y};
-        hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
+    /* Determine how many cursors to process */
+    int cursor_count = (buf->cursors.len > 0) ? (int)buf->cursors.len : 1;
+
+    /* Multi-cursor loop: process keypress for each cursor */
+    for (int i = 0; i < cursor_count; i++) {
+        /* Swap in current cursor position */
+        Cursor saved_cursor;
+        if (buf->cursors.len > 0) {
+            saved_cursor = buf->cursor;
+            buf->cursor = buf->cursors.data[i];
+        }
+
+        int old_x = buf->cursor.x;
+        int old_y = buf->cursor.y;
+
+        /* Dispatch to appropriate mode handler */
+        switch (E.mode) {
+        case MODE_COMMAND:
+            command_mode_handle_keypress(c);
+            break;
+        case MODE_INSERT:
+            handle_insert_mode_keypress(c);
+            break;
+        case MODE_NORMAL:
+            handle_normal_mode_keypress(c, buf);
+            break;
+        case MODE_VISUAL:
+        case MODE_VISUAL_LINE:
+        case MODE_VISUAL_BLOCK:
+            handle_visual_mode_keypress(c, buf);
+            break;
+        }
+
+        /* Save updated cursor position back */
+        if (buf->cursors.len > 0) {
+            buf->cursors.data[i] = buf->cursor;
+            buf->cursor = saved_cursor;
+        }
+
+        /* Fire cursor-move hook if cursor changed position */
+        /* some command may have changed the buf, so we need to get it again */
+        buf = buf_cur();
+        if (buf && (buf->cursor.x != old_x || buf->cursor.y != old_y)) {
+            HookCursorEvent ev = {buf, old_x, old_y, buf->cursor.x, buf->cursor.y};
+            hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
+        }
     }
 }
 
@@ -227,6 +260,7 @@ void ed_init_state() {
     E.search_query = sstr_new();
     E.search_is_regex = 1;
     E.search_prompt_active = 0;
+    E.needs_render = 1; /* Initial render needed */
 }
 
 void ed_init(int create_default_buffer) {
@@ -251,6 +285,7 @@ void ed_init(int create_default_buffer) {
     jump_list_init(&E.jump_list);
     macro_init();
     lsp_init();
+    autocomplete_init();
 
     /* Ensure at least one editable buffer exists at startup if requested */
     if (create_default_buffer) {

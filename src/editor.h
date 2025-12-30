@@ -108,6 +108,9 @@ typedef struct {
         char last_played;     /* Last register played with @ (for @@) */
     } macro_recording;
     int search_prompt_active; /* 1 while interactive / search prompt is open */
+
+    /* Rendering optimization */
+    int needs_render;         /* 1 if screen needs redraw */
 } Ed;
 
 /* Global editor state */
@@ -124,5 +127,8 @@ void ed_set_status_message(const char *fmt, ...);
 
 void ed_init(int create_default_buffer);
 void ed_change_cursor_shape(void);
+
+/* Rendering optimization */
+static inline void ed_mark_dirty(void) { E.needs_render = 1; }
 
 #endif

@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+
 #include "dired.h"
 #include "hed.h"
 #include "lib/file_helpers.h"
@@ -165,8 +168,8 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     buf->dirty = 0;
     Window *win = window_cur();
     if (win && win->buffer_index == (int)(buf - E.buffers.data)) {
-        win->cursor.x = 0;
-        win->cursor.y = 0;
+        buf->cursor.x = 0;
+        buf->cursor.y = 0;
         win->row_offset = 0;
     }
     ed_set_status_message("dired: %s", st->cwd);
@@ -249,11 +252,11 @@ int dired_handle_enter(void) {
     Window *win = window_cur();
     if (!st || !win)
         return 0;
-    if (win->cursor.y < 0 || win->cursor.y >= st->buf->num_rows)
+    if (st->buf->cursor.y < 0 || st->buf->cursor.y >= st->buf->num_rows)
         return 1;
 
     char name[PATH_MAX];
-    if (!dired_row_text(st->buf, win->cursor.y, name, sizeof(name)))
+    if (!dired_row_text(st->buf, st->buf->cursor.y, name, sizeof(name)))
         return 1;
     int is_dir = name[0] && name[strlen(name) - 1] == '/';
     dired_trim_slash(name);

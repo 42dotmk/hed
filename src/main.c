@@ -37,7 +37,6 @@ int main(int argc, char *argv[]) {
     log_init(".hedlog");
     atexit(log_close);
     log_msg("=== HED START argc=%d ===", argc);
-    log_msg("Before enable_raw_mode");
     enable_raw_mode();
     log_msg("Before ed_init, file_count=%d", file_count);
     ed_init(file_count == 0);
@@ -75,7 +74,6 @@ int main(int argc, char *argv[]) {
             win->buffer_index = last_idx;
     }
 
-    /* Run startup command passed via -c "<command>" */
     if (startup_cmd && *startup_cmd) {
         const char *cmdline = startup_cmd;
         if (*cmdline == ':')
@@ -122,7 +120,6 @@ int main(int argc, char *argv[]) {
 
         /* Add LSP file descriptors to select set */
         lsp_fill_fdset(&rfds, &maxfd);
-
         int rc = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (rc == -1) {
             if (errno == EINTR)
@@ -136,7 +133,7 @@ int main(int argc, char *argv[]) {
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             ed_process_keypress();
         }
-    }
+    }    /* Run startup command passed via -c "<command>" */
 
     return 0;
 }

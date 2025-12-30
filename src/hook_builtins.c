@@ -38,7 +38,7 @@ void hook_auto_pair(const HookCharEvent *event) {
     }
     if (inserted) {
         buf_insert_char_in(buf, inserted);
-        win->cursor.x--;
+        buf->cursor.x--;
     }
 }
 
@@ -47,7 +47,7 @@ void hook_smart_indent(const HookCharEvent *event) {
     if (event->c == '\n') {
         Buffer *buf = event->buf;
         if (!buf) return;
-        Row *prev_row = &buf->rows[win->cursor.y - 1];
+        Row *prev_row = &buf->rows[buf->cursor.y - 1];
         int prev_indent = 0;
         for (size_t i = 0; i < prev_row->chars.len; i++) {
             if (prev_row->chars.data[i] == ' ')

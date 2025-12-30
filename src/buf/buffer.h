@@ -25,6 +25,9 @@ typedef struct Buffer {
     Cursor cursor;
     char *cursor_style;
 
+    /* Multi-cursor support */
+    CursorVec cursors;    /* Vector of all cursor positions */
+
     char *filename;
     char *title; /* Display title: filename or "[No Name]" */
     char *filetype;
@@ -57,6 +60,7 @@ void buf_del_char_in(Buffer *buf);
 void buf_delete_line_in(Buffer *buf);
 void buf_yank_line_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);
 #endif
