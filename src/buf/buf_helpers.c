@@ -769,6 +769,7 @@ void buf_change_line(void) {
         return;
 
     buf_change_selection(&sel);
+    win->cursor.x = 0;
 }
 
 void buf_change_to_line_end(void) {
