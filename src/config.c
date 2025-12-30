@@ -167,6 +167,11 @@ void normal_mode_bindings() {
     mapn("zR", kb_fold_open_all, "open all folds");
     mapn("zz", buf_center_screen, "center screen");
     mapn("~", kb_toggle_case, "toggle case");
+
+    // one-offs
+    mapn("D", kb_delete_to_line_end, "del to line end");
+    mapn("C", buf_change_to_line_end, "change to line end");
+    mapn("S", buf_change_line, "change line");
 }
 
 void user_keybinds_init(void) {
