@@ -81,6 +81,11 @@ void normal_mode_bindings() {
     cmapn(".", "repeat");
     cmapn("q", "record");
     cmapn("@", "play");
+    cmapn("ZQ", "q!");
+    cmapn("ZZ", "wq"); // not quite the same as in neovim
+                       // ZZ in neovim writes to disk only if changes are made
+                       // whereas :wq always writes to disk
+
     /* $, 0, w, b, e movements now handled by text object fallback */
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
@@ -162,6 +167,11 @@ void normal_mode_bindings() {
     mapn("zR", kb_fold_open_all, "open all folds");
     mapn("zz", buf_center_screen, "center screen");
     mapn("~", kb_toggle_case, "toggle case");
+
+    // one-offs
+    mapn("D", kb_delete_to_line_end, "del to line end");
+    mapn("C", buf_change_to_line_end, "change to line end");
+    mapn("S", buf_change_line, "change line");
 }
 
 void user_keybinds_init(void) {

@@ -17,6 +17,7 @@ void kb_enter_insert_mode(void);
 void kb_append_mode(void);
 void kb_enter_command_mode(void);
 void kb_delete_line(void);
+void kb_delete_to_line_end(void);
 void kb_yank_line(void);
 void kb_paste(void);
 void kb_delete_char(void);
