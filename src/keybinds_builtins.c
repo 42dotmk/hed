@@ -318,6 +318,17 @@ void kb_delete_line(void) {
     buf_delete_selection(&sel);
 }
 
+void kb_delete_to_line_end(void) {
+    ASSERT_EDIT(buf, win);
+
+    TextSelection sel;
+    if (!textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_delete_selection(&sel);
+    win->cursor.x = sel.start.col > 0 ? sel.start.col - 1 : 0;
+}
+
 void kb_yank_line(void) {
 	BUFWIN(buf, win)
     buf_yank_line_in(buf);

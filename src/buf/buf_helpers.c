@@ -769,8 +769,22 @@ void buf_change_line(void) {
         return;
 
     buf_change_selection(&sel);
+    win->cursor.x = 0;
 }
 
+void buf_change_to_line_end(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!PTR_VALID(buf) || !PTR_VALID(win))
+        return;
+
+    TextSelection sel;
+    if (!textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+
+    buf_change_selection(&sel);
+    win->cursor.x = sel.start.col;
+}
 
 void buf_move_cursor_key(int key) {
 	BUFWIN(buf, win);

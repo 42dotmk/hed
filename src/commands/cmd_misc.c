@@ -573,6 +573,7 @@ void cmd_new_line_above(const char *args) {
 
     win->cursor.x = 0;
     buf_insert_newline_in(buf);
+    win->cursor.y--;
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
 }
