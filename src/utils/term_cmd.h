@@ -1,5 +1,6 @@
 #ifndef TERM_CMD_H
 #define TERM_CMD_H
+#include <stdbool.h>
 
 /*
  * TERMINAL COMMAND EXECUTION UTILITY

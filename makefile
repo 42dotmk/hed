@@ -1,4 +1,4 @@
-CC=LD_LIBRARY_PATH=/usr/lib clang
+CC=LD_LIBRARY_PATH=/usr/lib gcc
 BASE_CFLAGS = $(shell cat compile_flags.txt | tr '\n' ' ')
 CFLAGS = $(BASE_CFLAGS)
 

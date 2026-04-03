@@ -1,5 +1,6 @@
 #ifndef FILE_HELPERS_H
 #define FILE_HELPERS_H
+#include <stdbool.h>
 #include "sizedstr.h"
 bool path_dirname(char *filename, SizedStr *out);
 void path_dirname_buf(const char *filename, char *out, size_t out_sz);

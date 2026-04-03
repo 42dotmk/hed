@@ -1,5 +1,6 @@
 #ifndef KEYBINDS_H
 #define KEYBINDS_H
+#include <stdbool.h>
 
 /* Keybinding callback signature */
 typedef void (*KeybindCallback)(void);

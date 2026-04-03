@@ -1,7 +1,7 @@
 -O2
 -Wall
 -Wextra
--std=c23
+-std=c11
 -pedantic
 -I/usr/include
 -Isrc

@@ -1,4 +1,5 @@
 #include "file_helpers.h"
+#include "strutil.h"
 #include "sizedstr.h"
 #include <limits.h>
 #include <stdio.h>

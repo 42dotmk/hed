@@ -1,4 +1,5 @@
 #include "lsp.h"
+#include "strutil.h"
 #include "editor.h"
 #include "json_helpers.h"
 #include "log.h"

@@ -3,6 +3,9 @@
 
 #include <stddef.h>
 
+/* Portable strdup — not part of C11, added in C23/POSIX */
+char *strdup(const char *s);
+
 /* Copy input string with leading/trailing ASCII whitespace removed.
  * Returns the number of bytes written to out (excluding NUL). */
 size_t str_trim_whitespace(const char *in, char *out, size_t out_sz);

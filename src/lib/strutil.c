@@ -1,6 +1,14 @@
 #include "hed.h"
+#include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+
+char *strdup(const char *s) {
+    size_t len = strlen(s) + 1;
+    char *copy = malloc(len);
+    if (copy) memcpy(copy, s, len);
+    return copy;
+}
 
 static int _is_space_char(char c) {
     return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
