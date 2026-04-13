@@ -33,7 +33,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TSI): ts/ts_lang_install.c
-	$(CC) -std=c23 -Wall -Wextra -O2 -I/usr/include -o $@ $<
+	$(CC) -Wall -Wextra -O2 -I/usr/include -o $@ $<
 
 publish: 
 	@echo "Publishing hed and tsi to /usr/local/bin/"
