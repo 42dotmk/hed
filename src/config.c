@@ -6,7 +6,7 @@
 #include "lsp_hooks.h"
 
 
-void insert_mode_bindings() {
+void insert_mode_bindings(void) {
     mapi("<Esc>", kb_insert_escape, "exit insert");
     mapi("<CR>", kb_insert_newline, "new line");
     mapi("<Tab>", kb_insert_tab, "insert tab");
@@ -18,7 +18,7 @@ void insert_mode_bindings() {
     mapi("<Right>", kb_move_right, "move right");
 }
 
-void normal_mode_bindings() {
+void normal_mode_bindings(void) {
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");
     cmapn(" bd", "bd");
@@ -192,6 +192,10 @@ void user_textobj_init(void) {
     textobj_register("w", textobj_to_word_end, "word forward");
     textobj_register("b", textobj_to_word_start, "word backward");
     textobj_register("e", textobj_to_word_end, "word end");
+    textobj_register("W", textobj_to_WORD_end, "WORD forward");
+    textobj_register("B", textobj_to_WORD_start, "WORD backward");
+    textobj_register("}", textobj_to_paragraph_end, "next paragraph");
+    textobj_register("{", textobj_to_paragraph_start, "prev paragraph");
     textobj_register("$", textobj_to_line_end, "end of line");
     textobj_register("0", textobj_to_line_start, "beginning of line");
     textobj_register("G", textobj_to_file_end, "end of file");

@@ -178,7 +178,6 @@ void ed_process_keypress(void) {
     int old_x = win ? win->cursor.x : 0;
     int old_y = win ? win->cursor.y : 0;
 
-    /* Dispatch to appropriate mode handler */
     switch (E.mode) {
     case MODE_COMMAND:
         command_mode_handle_keypress(c);

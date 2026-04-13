@@ -724,11 +724,20 @@ void buf_delete_selection(TextSelection *sel) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
 
-    /* Special case: whole-line deletion (dd command)
-     * Detected when end=(start.line+1, 0) and start.col=0 */
-    if (sel->end.line == sel->start.line + 1 && sel->end.col == 0 &&
-        sel->start.col == 0) {
-        /* Use existing line deletion logic which properly handles row removal */
+    /* Special case: whole-line deletion (dd command).
+     * Pattern 1: end=(start.line+1, 0) and start.col=0  (normal lines)
+     * Pattern 2: single-line selection covering full row content, col 0→len
+     *            (last line, including when it is empty) */
+    int del_line = sel->start.line;
+    int full_line_cross = (sel->end.line == sel->start.line + 1 &&
+                           sel->end.col == 0 && sel->start.col == 0);
+    int full_line_last = 0;
+    if (!full_line_cross && sel->start.line == sel->end.line &&
+        del_line >= 0 && del_line < buf->num_rows) {
+        int row_len = (int)buf->rows[del_line].chars.len;
+        full_line_last = (sel->start.col == 0 && sel->end.col == row_len);
+    }
+    if (full_line_cross || full_line_last) {
         buf_delete_line_in(buf);
         return;
     }
@@ -737,9 +746,26 @@ void buf_delete_selection(TextSelection *sel) {
     buf_delete_range(sel->start.line, sel->start.col, sel->end.line,
                      sel->end.col);
 
-    /* Update cursor to the position specified by the textobject */
-    win->cursor.y = sel->cursor.line;
-    win->cursor.x = sel->cursor.col;
+    /* Place cursor at the start of the deleted range */
+    win->cursor.y = sel->start.line;
+    win->cursor.x = sel->start.col;
+
+    /* If deletion left two adjacent spaces, remove one.
+     * This avoids the common double-space artifact when deleting a word
+     * that had a space on each side. */
+    int cy = win->cursor.y;
+    int cx = win->cursor.x;
+    if (cy >= 0 && cy < buf->num_rows) {
+        Row *row = &buf->rows[cy];
+        if (cx > 0 && cx < (int)row->chars.len &&
+            row->chars.data[cx] == ' ' && row->chars.data[cx - 1] == ' ') {
+            size_t tail = row->chars.len - (cx + 1);
+            memmove(row->chars.data + cx, row->chars.data + cx + 1, tail);
+            row->chars.len--;
+            row->chars.data[row->chars.len] = '\0';
+            buf_row_update(row);
+        }
+    }
 }
 
 void buf_yank_selection(TextSelection *sel) {
@@ -1038,48 +1064,6 @@ void buf_select_paragraph(void) {
     win->cursor.y = sel.end.line;
     win->cursor.x = sel.end.col;
 }
-
-/*** Text-object deletion helpers ("da" / "di") ***/
-
-static int map_delim_key(int t, char *open, char *close) {
-    switch (t) {
-    case '(':
-    case ')':
-        *open = '(';
-        *close = ')';
-        return 1;
-    case '[':
-    case ']':
-        *open = '[';
-        *close = ']';
-        return 1;
-    case '{':
-    case '}':
-        *open = '{';
-        *close = '}';
-        return 1;
-    case '<':
-    case '>':
-        *open = '<';
-        *close = '>';
-        return 1;
-    case '"':
-        *open = '"';
-        *close = '"';
-        return 1;
-    case '\'':
-        *open = '\'';
-        *close = '\'';
-        return 1;
-    case '`':
-        *open = '`';
-        *close = '`';
-        return 1;
-    default:
-        return 0;
-    }
-}
-
 
 /* Yank data insertion */
 

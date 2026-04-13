@@ -665,7 +665,7 @@ void kb_search_file_under_cursor(void) {
         "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always "
         "--line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null";
 
-    char fzf_opts[4096];
+    char fzf_opts[PATH_MAX * 2 + 256];
     snprintf(fzf_opts, sizeof(fzf_opts),
              "--select-1 --exit-0 --query %s --preview '%s' "
              "--preview-window right,60%%,wrap",
@@ -731,6 +731,24 @@ void kb_open_file_under_cursor(void) {
     FILE *f = fopen(target, "r");
     if (f) {
         fclose(f);
+    } else if (!path_is_absolute(expanded)) {
+        /* Fall back to CWD for relative paths */
+        char cwd_resolved[PATH_MAX];
+        const char *cwd = E.cwd[0] ? E.cwd : NULL;
+        char tmp_cwd[PATH_MAX];
+        if (!cwd && getcwd(tmp_cwd, sizeof(tmp_cwd)))
+            cwd = tmp_cwd;
+        if (cwd && path_join_dir(cwd_resolved, sizeof(cwd_resolved), cwd, expanded)) {
+            f = fopen(cwd_resolved, "r");
+            if (f) {
+                fclose(f);
+                target = cwd_resolved;
+            }
+        }
+        if (!f) {
+            ed_set_status_message("gf: file does not exist: %s", expanded);
+            return;
+        }
     } else {
         ed_set_status_message("gf: file does not exist: %s", target);
         return;
@@ -953,10 +971,10 @@ void kb_fold_close_all(void) {
 }
 
 void kb_del_win(char direction);
-void kb_del_up() { kb_del_win('k'); }
-void kb_del_down() { kb_del_win('j'); }
-void kb_del_left() { kb_del_win('h'); }
-void kb_del_right() { kb_del_win('l'); }
+void kb_del_up(void) { kb_del_win('k'); }
+void kb_del_down(void) { kb_del_win('j'); }
+void kb_del_left(void) { kb_del_win('h'); }
+void kb_del_right(void) { kb_del_win('l'); }
 
 void kb_end_append(void) {
     /* Move to end of line using text object, then enter append mode */

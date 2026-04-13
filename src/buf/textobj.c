@@ -1,6 +1,5 @@
 #include "textobj.h"
 #include "row.h"
-#include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <string.h>
@@ -98,12 +97,20 @@ static int is_word_byte(unsigned char b) {
     return (b == '_' || (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') ||
             (b >= 'a' && b <= 'z') || (b & 0x80));
 }
-static int is_word_cp(const char *s, int len, int idx) {
+/* Character class for word motions (Vim-compatible):
+ * 0 = blank/space, 1 = word char (alphanum/_/utf8), 2 = punctuation */
+static int char_class(const char *s, int len, int idx) {
     if (idx < 0 || idx >= len)
         return 0;
-    return is_word_byte((unsigned char)s[idx]);
+    unsigned char b = (unsigned char)s[idx];
+    if (b == ' ' || b == '\t')
+        return 0;
+    if (is_word_byte(b))
+        return 1;
+    return 2;
 }
 
+/* Returns true if cursor is on any non-blank character (word or punct token) */
 static int column_in_word(const Row *row, int col) {
     if (!row || row->chars.len == 0)
         return 0;
@@ -112,7 +119,7 @@ static int column_in_word(const Row *row, int col) {
     if (col < 0 || col >= len)
         return 0;
     int idx = utf8_cp_start(s, len, col);
-    return is_word_cp(s, len, idx);
+    return char_class(s, len, idx) != 0;
 }
 
 static int word_range_at(const Row *row, int col, int *sx, int *ex) {
@@ -127,24 +134,29 @@ static int word_range_at(const Row *row, int col, int *sx, int *ex) {
         cx = len - 1;
 
     int i = utf8_cp_start(s, len, cx);
-    if (!is_word_cp(s, len, i)) {
+    int cls = char_class(s, len, i);
+
+    /* If on a blank, scan back for the nearest non-blank */
+    if (cls == 0) {
         int j = utf8_prev_cp(s, len, i);
-        while (j >= 0 && !is_word_cp(s, len, j)) {
+        while (j >= 0 && char_class(s, len, j) == 0)
             j = utf8_prev_cp(s, len, j);
-        }
         if (j < 0)
             return 0;
         i = j;
+        cls = char_class(s, len, i);
     }
 
+    /* Extend left over same class */
     int sx_local = i;
     int prev = utf8_prev_cp(s, len, sx_local);
-    while (prev >= 0 && is_word_cp(s, len, prev)) {
+    while (prev >= 0 && char_class(s, len, prev) == cls) {
         sx_local = prev;
         prev = utf8_prev_cp(s, len, prev);
     }
+    /* Extend right over same class */
     int ex_local = utf8_next_cp(s, len, i);
-    while (ex_local < len && is_word_cp(s, len, ex_local)) {
+    while (ex_local < len && char_class(s, len, ex_local) == cls) {
         ex_local = utf8_next_cp(s, len, ex_local);
     }
 
@@ -166,17 +178,16 @@ static int word_start_at_or_after(const Row *row, int col) {
     if (idx >= len)
         return -1;
     idx = utf8_cp_start(s, len, idx);
-    if (!is_word_cp(s, len, idx)) {
+    /* Skip blanks */
+    while (idx < len && char_class(s, len, idx) == 0)
         idx = utf8_next_cp(s, len, idx);
-        while (idx < len && !is_word_cp(s, len, idx)) {
-            idx = utf8_next_cp(s, len, idx);
-        }
-        if (idx >= len)
-            return -1;
-    }
+    if (idx >= len)
+        return -1;
+    /* Walk back to start of this token */
+    int cls = char_class(s, len, idx);
     while (1) {
         int prev = utf8_prev_cp(s, len, idx);
-        if (prev < 0 || !is_word_cp(s, len, prev))
+        if (prev < 0 || char_class(s, len, prev) != cls)
             break;
         idx = prev;
     }
@@ -189,14 +200,16 @@ static int word_start_before(const Row *row, int col) {
     const char *s = row->chars.data;
     int len = (int)row->chars.len;
     int idx = utf8_prev_cp(s, len, col);
-    while (idx >= 0 && !is_word_cp(s, len, idx)) {
+    /* Skip blanks */
+    while (idx >= 0 && char_class(s, len, idx) == 0)
         idx = utf8_prev_cp(s, len, idx);
-    }
     if (idx < 0)
         return -1;
+    /* Walk back to start of this token */
+    int cls = char_class(s, len, idx);
     while (1) {
         int prev = utf8_prev_cp(s, len, idx);
-        if (prev < 0 || !is_word_cp(s, len, prev))
+        if (prev < 0 || char_class(s, len, prev) != cls)
             break;
         idx = prev;
     }
@@ -243,6 +256,143 @@ static int find_prev_word(Buffer *buf, int line, int col, int *out_line,
         if (word_col < 0)
             continue;
         if (!word_range_at(row, word_col, out_sx, out_ex))
+            continue;
+        if (out_line)
+            *out_line = y;
+        return 1;
+    }
+    return 0;
+}
+
+/* =========================================================================
+ * WORD helpers: whitespace-delimited tokens (any non-blank run is a WORD)
+ * ========================================================================= */
+
+static int is_blank_at(const char *s, int len, int idx) {
+    if (idx < 0 || idx >= len)
+        return 1;
+    unsigned char b = (unsigned char)s[idx];
+    return b == ' ' || b == '\t';
+}
+
+static int WORD_range_at(const Row *row, int col, int *sx, int *ex) {
+    if (!row || row->chars.len == 0 || !sx || !ex)
+        return 0;
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int cx = col;
+    if (cx < 0)
+        cx = 0;
+    if (cx >= len)
+        cx = len - 1;
+    int i = utf8_cp_start(s, len, cx);
+    if (is_blank_at(s, len, i)) {
+        int j = utf8_prev_cp(s, len, i);
+        while (j >= 0 && is_blank_at(s, len, j))
+            j = utf8_prev_cp(s, len, j);
+        if (j < 0)
+            return 0;
+        i = j;
+    }
+    int sx_local = i;
+    int prev = utf8_prev_cp(s, len, sx_local);
+    while (prev >= 0 && !is_blank_at(s, len, prev)) {
+        sx_local = prev;
+        prev = utf8_prev_cp(s, len, prev);
+    }
+    int ex_local = utf8_next_cp(s, len, i);
+    while (ex_local < len && !is_blank_at(s, len, ex_local))
+        ex_local = utf8_next_cp(s, len, ex_local);
+    if (sx_local >= ex_local)
+        return 0;
+    *sx = sx_local;
+    *ex = ex_local;
+    return 1;
+}
+
+static int WORD_start_at_or_after(const Row *row, int col) {
+    if (!row || row->chars.len == 0)
+        return -1;
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int idx = col;
+    if (idx < 0)
+        idx = 0;
+    if (idx >= len)
+        return -1;
+    idx = utf8_cp_start(s, len, idx);
+    while (idx < len && is_blank_at(s, len, idx))
+        idx = utf8_next_cp(s, len, idx);
+    if (idx >= len)
+        return -1;
+    while (1) {
+        int prev = utf8_prev_cp(s, len, idx);
+        if (prev < 0 || is_blank_at(s, len, prev))
+            break;
+        idx = prev;
+    }
+    return idx;
+}
+
+static int WORD_start_before(const Row *row, int col) {
+    if (!row || row->chars.len == 0)
+        return -1;
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int idx = utf8_prev_cp(s, len, col);
+    while (idx >= 0 && is_blank_at(s, len, idx))
+        idx = utf8_prev_cp(s, len, idx);
+    if (idx < 0)
+        return -1;
+    while (1) {
+        int prev = utf8_prev_cp(s, len, idx);
+        if (prev < 0 || is_blank_at(s, len, prev))
+            break;
+        idx = prev;
+    }
+    return idx;
+}
+
+static int find_next_WORD(Buffer *buf, int line, int col, int *out_line,
+                          int *out_sx, int *out_ex) {
+    if (!buf || buf->num_rows <= 0 || !out_sx || !out_ex)
+        return 0;
+    int start_line = clamp_line(buf, line);
+    if (start_line < 0)
+        return 0;
+    for (int y = start_line; y < buf->num_rows; y++) {
+        Row *row = &buf->rows[y];
+        int start_col = (y == start_line) ? col : 0;
+        if (start_col > (int)row->chars.len)
+            start_col = (int)row->chars.len;
+        int wc = WORD_start_at_or_after(row, start_col);
+        if (wc < 0)
+            continue;
+        if (!WORD_range_at(row, wc, out_sx, out_ex))
+            continue;
+        if (out_line)
+            *out_line = y;
+        return 1;
+    }
+    return 0;
+}
+
+static int find_prev_WORD(Buffer *buf, int line, int col, int *out_line,
+                          int *out_sx, int *out_ex) {
+    if (!buf || buf->num_rows <= 0 || !out_sx || !out_ex)
+        return 0;
+    int start_line = clamp_line(buf, line);
+    if (start_line < 0)
+        return 0;
+    for (int y = start_line; y >= 0; y--) {
+        Row *row = &buf->rows[y];
+        int start_col = (y == start_line) ? col : (int)row->chars.len;
+        if (start_col > (int)row->chars.len)
+            start_col = (int)row->chars.len;
+        int wc = WORD_start_before(row, start_col);
+        if (wc < 0)
+            continue;
+        if (!WORD_range_at(row, wc, out_sx, out_ex))
             continue;
         if (out_line)
             *out_line = y;
@@ -623,6 +773,89 @@ int textobj_to_word_start(Buffer *buf, int line, int col, TextSelection *sel) {
                          (TextPos){target_line, end_col}, cursor);
 }
 
+int textobj_to_WORD_end(Buffer *buf, int line, int col, TextSelection *sel) {
+    int y = clamp_line(buf, line);
+    if (y < 0)
+        return 0;
+    Row *row = &buf->rows[y];
+    int x = clamp_col(row, col);
+    int sx = 0, ex = 0;
+    int target_line = y;
+    int start_col = x;
+
+    if (column_in_word(row, x)) {
+        if (!WORD_range_at(row, x, &sx, &ex))
+            return 0;
+        if (x >= ex - 1) {
+            if (!find_next_WORD(buf, y, ex, &target_line, &sx, &ex))
+                return 0;
+            row = &buf->rows[target_line];
+            start_col = sx;
+        } else {
+            if (start_col < sx)
+                start_col = sx;
+            if (start_col > ex)
+                start_col = ex;
+        }
+    } else {
+        if (!find_next_WORD(buf, y, x, &target_line, &sx, &ex))
+            return 0;
+        row = &buf->rows[target_line];
+        start_col = sx;
+    }
+
+    int cursor_col = utf8_prev_cp(row->chars.data, (int)row->chars.len, ex);
+    if (cursor_col < 0)
+        cursor_col = start_col;
+    TextPos cursor = {target_line, cursor_col};
+    return set_selection(sel, (TextPos){target_line, start_col},
+                         (TextPos){target_line, ex}, cursor);
+}
+
+int textobj_to_WORD_start(Buffer *buf, int line, int col, TextSelection *sel) {
+    int y = clamp_line(buf, line);
+    if (y < 0)
+        return 0;
+    Row *row = &buf->rows[y];
+    int orig_x = clamp_col(row, col);
+    int sx = 0, ex = 0;
+    int target_line = y;
+
+    if (column_in_word(row, orig_x)) {
+        if (!WORD_range_at(row, orig_x, &sx, &ex))
+            return 0;
+        if (orig_x == sx) {
+            if (!find_prev_WORD(buf, y, sx, &target_line, &sx, &ex))
+                return 0;
+            row = &buf->rows[target_line];
+        }
+    } else {
+        if (!find_prev_WORD(buf, y, orig_x, &target_line, &sx, &ex))
+            return 0;
+        row = &buf->rows[target_line];
+    }
+
+    int row_len = (int)row->chars.len;
+    int end_col = ex;
+    if (target_line == y) {
+        if (orig_x >= sx && orig_x < ex) {
+            end_col = utf8_next_cp(row->chars.data, row_len, orig_x);
+            if (end_col > ex)
+                end_col = ex;
+        } else {
+            end_col = orig_x;
+            if (end_col < sx)
+                end_col = sx;
+            if (end_col > row_len)
+                end_col = row_len;
+        }
+    }
+
+    TextPos cursor = {target_line, sx};
+    return set_selection(sel, (TextPos){target_line, sx},
+                         (TextPos){target_line, end_col}, cursor);
+}
+
 int textobj_to_line_end(Buffer *buf, int line, int col, TextSelection *sel) {
     int y = clamp_line(buf, line);
     if (y < 0)
@@ -690,6 +923,21 @@ int textobj_to_paragraph_end(Buffer *buf, int line, int col,
     int sy = 0, ey = 0;
     if (!paragraph_range(buf, y, &sy, &ey))
         return 0;
+
+    /* If already at the end of this paragraph, advance to the next one */
+    if (y >= ey) {
+        int search = ey + 1;
+        while (search < buf->num_rows && is_blank_row(&buf->rows[search]))
+            search++;
+        if (search >= buf->num_rows)
+            return 0; /* no next paragraph */
+        int next_sy = 0, next_ey = 0;
+        if (!paragraph_range(buf, search, &next_sy, &next_ey))
+            return 0;
+        sy = next_sy;
+        ey = next_ey;
+    }
+
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
     Row *end_row = &buf->rows[ey];
@@ -714,12 +962,27 @@ int textobj_to_paragraph_start(Buffer *buf, int line, int col,
     int sy = 0, ey = 0;
     if (!paragraph_range(buf, y, &sy, &ey))
         return 0;
+
+    /* If already at the start of this paragraph, retreat to the previous one */
+    if (y <= sy && sy > 0) {
+        int search = sy - 1;
+        while (search > 0 && is_blank_row(&buf->rows[search]))
+            search--;
+        if (search < 0 || is_blank_row(&buf->rows[search]))
+            return 0; /* no previous paragraph */
+        int prev_sy = 0, prev_ey = 0;
+        if (!paragraph_range(buf, search, &prev_sy, &prev_ey))
+            return 0;
+        sy = prev_sy;
+        ey = prev_ey;
+    }
+
     Row *row = &buf->rows[y];
     int x = clamp_col(row, col);
-    (void)ey; /* ey unused but computed for symmetry */
     int end_col = x;
     if (end_col < (int)row->chars.len)
         end_col++;
+    (void)ey;
     TextPos cursor = {sy, 0};
     return set_selection(sel, (TextPos){sy, 0}, (TextPos){y, end_col}, cursor);
 }

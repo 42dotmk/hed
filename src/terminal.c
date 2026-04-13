@@ -7,6 +7,7 @@
 #include "fold.h"
 #include "hooks.h"
 #include "safe_string.h"
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -393,6 +394,7 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
 
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     Buffer *buf = NULL;
+    assert(win!=NULL);
     if (E.buffers.len > 0 && win->buffer_index >= 0 &&
         win->buffer_index < (int)E.buffers.len)
         buf = &E.buffers.data[win->buffer_index];
@@ -406,10 +408,6 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         cursor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
     }
 
-    /* helper functions moved to file scope */
-
-    /* Determine starting logical row and wrapped sub-row based on visual offset
-     */
     int row = 0;
     int sub = 0;
     if (buf) {
@@ -721,33 +719,30 @@ void ed_render_frame(void) {
     ansi_home(&ab);
 
     /* Ensure highlighting is parsed for buffers used in windows */
-    if (ts_is_enabled()) {
-        for (int wi = 0; wi < (int)E.windows.len; ++wi) {
-            int bi = E.windows.data[wi].buffer_index;
-            if (bi >= 0 && bi < (int)E.buffers.len) {
-                ts_buffer_autoload(&E.buffers.data[bi]);
-                ts_buffer_reparse(&E.buffers.data[bi]);
-            }
-        }
-    }
+    // if (ts_is_enabled()) {
+    //     for (int wi = 0; wi < (int)E.windows.len; ++wi) {
+    //         int bi = E.windows.data[wi].buffer_index;
+    //         if (bi >= 0 && bi < (int)E.buffers.len) {
+    //             ts_buffer_autoload(&E.buffers.data[bi]);
+    //             ts_buffer_reparse(&E.buffers.data[bi]);
+    //         }
+    //     }
+    // }
 
     /* Draw all windows */
     for (int wi = 0; wi < (int)E.windows.len; ++wi) {
         ed_draw_rows_win(&ab, &E.windows.data[wi]);
     }
-    /* Draw decorations (borders/splits) over content */
     if (E.wlayout_root) {
         wlayout_draw_decorations(&ab, E.wlayout_root);
     }
-    draw_status_bar(&ab, &lo);
-    draw_message_bar(&ab, &lo);
-
-    /* Draw modal window on top if one is shown */
     if (E.modal_window && E.modal_window->visible) {
         ed_draw_rows_win(&ab, E.modal_window);
-        /* Draw border around modal */
         win_draw_modal_border(&ab, E.modal_window);
     }
+
+    draw_status_bar(&ab, &lo);
+    draw_message_bar(&ab, &lo);
 
     Buffer *buf = NULL;
     if (E.buffers.len > 0 && win->buffer_index >= 0 &&

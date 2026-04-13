@@ -30,6 +30,8 @@ int textobj_brackets_with(Buffer *buf, int line, int col, char open, char close,
 
 int textobj_to_word_end(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_to_word_start(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_to_WORD_end(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_to_WORD_start(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_to_line_end(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_to_line_start(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_to_file_end(Buffer *buf, int line, int col, TextSelection *sel);

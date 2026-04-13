@@ -427,6 +427,11 @@ void buf_insert_newline_in(Buffer *buf) {
     }
     win->cursor.y = y0 + 1;
     win->cursor.x = 0;
+
+    /* Guard: if cursor landed past the last row (e.g. empty buffer),
+     * insert the missing row so cursor always points to a valid line. */
+    if (win->cursor.y >= buf->num_rows)
+        buf_row_insert_in(buf, win->cursor.y, "", 0);
 }
 
 void buf_del_char_in(Buffer *buf) {
@@ -543,7 +548,7 @@ void buf_find_in(Buffer *buf) {
                 rx = (int)m.rm_so;
             }
         } else {
-            char *lit = strstr(render, E.search_query.data);
+            const char *lit = strstr(render, E.search_query.data);
             if (lit) {
                 match = lit;
                 rx = (int)(lit - render);
