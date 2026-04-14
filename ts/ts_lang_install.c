@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
             snprintf(repo_url, sizeof(repo_url), "%s", custom_url);
         } else {
             snprintf(repo_url, sizeof(repo_url),
-                     "https://github.com/tree-sitter-grammars/tree-sitter-%s.git",
+                     "git@github.com:tree-sitter-grammars/tree-sitter-%s.git",
                      lang);
         }
         snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
                     "First clone attempt failed, trying upstream tree-sitter org...\n");
             /* Fallback: original tree-sitter org */
             snprintf(repo_url, sizeof(repo_url),
-                     "https://github.com/tree-sitter/tree-sitter-%s.git",
+                     "git@github.com:tree-sitter/tree-sitter-%s.git",
                      lang);
             snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
                      repo_url, build_dir);
