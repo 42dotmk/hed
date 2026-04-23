@@ -424,12 +424,19 @@ size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
                  * punctuation.special, delimiter */
                 sgr = COLOR_PUNCT;
             } else if (nlen >= 4 && strncmp(name, "text", 4) == 0) {
-                /* text.danger, text.warning, text.note */
-                if (nlen >= 11 && strncmp(name, "text.danger", 11) == 0)
+                if (nlen >= 10 && strncmp(name, "text.title", 10) == 0)
+                    sgr = COLOR_TITLE;
+                else if (nlen >= 12 && strncmp(name, "text.literal", 12) == 0)
+                    sgr = COLOR_STRING;
+                else if (nlen >= 8 && strncmp(name, "text.uri", 8) == 0)
+                    sgr = COLOR_URI;
+                else if (nlen >= 14 && strncmp(name, "text.reference", 14) == 0)
+                    sgr = COLOR_TYPE;
+                else if (nlen >= 11 && strncmp(name, "text.danger", 11) == 0)
                     sgr = COLOR_DIAG_ERROR;
                 else if (nlen >= 12 && strncmp(name, "text.warning", 12) == 0)
                     sgr = COLOR_DIAG_WARN;
-                else if (nlen >= 10 && strncmp(name, "text.note", 9) == 0)
+                else if (nlen >= 9 && strncmp(name, "text.note", 9) == 0)
                     sgr = COLOR_DIAG_NOTE;
                 else
                     sgr = COLOR_COMMENT;

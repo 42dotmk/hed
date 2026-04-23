@@ -290,9 +290,10 @@ void user_commands_init(void) {
     cmd("foldtoggle", cmd_fold_toggle, "toggle fold at line");
     cmd("foldmethod", cmd_foldmethod, "set fold method");
     cmd("foldupdate", cmd_foldupdate, "update folds");
-    cmd("lsp_start", cmd_lsp_start, "start LSP server");
-    cmd("lsp_stop", cmd_lsp_stop, "stop LSP server");
-    cmd("lsp_hover", cmd_lsp_hover, "LSP hover info");
+    cmd("lsp_connect",    cmd_lsp_connect,    "connect to a running LSP server");
+    cmd("lsp_disconnect", cmd_lsp_disconnect, "disconnect LSP server");
+    cmd("lsp_status",     cmd_lsp_status,     "show LSP server status");
+    cmd("lsp_hover",      cmd_lsp_hover,      "LSP hover info");
     cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
     cmd("lsp_completion", cmd_lsp_completion, "LSP completion");
 }

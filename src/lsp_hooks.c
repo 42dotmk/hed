@@ -1,33 +1,30 @@
 #include "hed.h"
 #include "lsp.h"
 
-/* Hook callbacks to integrate LSP with buffer lifecycle */
-
 static void lsp_hook_buffer_open(const HookBufferEvent *event) {
-    if (!event || !event->buf)
-        return;
-
-    lsp_on_buffer_open(event->buf);
+    if (event) lsp_on_buffer_open(event->buf);
 }
 
 static void lsp_hook_buffer_close(const HookBufferEvent *event) {
-    if (!event || !event->buf)
-        return;
-
-    lsp_on_buffer_close(event->buf);
+    if (event) lsp_on_buffer_close(event->buf);
 }
 
 static void lsp_hook_buffer_save(const HookBufferEvent *event) {
-    if (!event || !event->buf)
-        return;
-
-    lsp_on_buffer_save(event->buf);
+    if (event) lsp_on_buffer_save(event->buf);
 }
 
-/* Register LSP hooks - call this from user_hooks_init() in config.c */
+/* Send didChange when leaving INSERT mode — batches all edits into one sync. */
+static void lsp_hook_mode_change(const HookModeEvent *event) {
+    if (!event) return;
+    if (event->old_mode == MODE_INSERT && event->new_mode == MODE_NORMAL) {
+        Buffer *buf = buf_cur();
+        if (buf) lsp_on_buffer_changed(buf);
+    }
+}
+
 void lsp_hooks_init(void) {
-    /* Register for all modes and all filetypes */
-    hook_register_buffer(HOOK_BUFFER_OPEN, MODE_NORMAL, "*", lsp_hook_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_OPEN,  MODE_NORMAL, "*", lsp_hook_buffer_open);
     hook_register_buffer(HOOK_BUFFER_CLOSE, MODE_NORMAL, "*", lsp_hook_buffer_close);
-    hook_register_buffer(HOOK_BUFFER_SAVE, MODE_NORMAL, "*", lsp_hook_buffer_save);
+    hook_register_buffer(HOOK_BUFFER_SAVE,  MODE_NORMAL, "*", lsp_hook_buffer_save);
+    hook_register_mode(HOOK_MODE_CHANGE, lsp_hook_mode_change);
 }

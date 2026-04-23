@@ -35,4 +35,8 @@
 #define COLOR_DIAG_WARN RGBC(224, 175, 104)  /* #e0af68 */
 #define COLOR_DIAG_NOTE RGBC(122, 162, 247)  /* #7aa2f7 */
 
+/* Markup / prose */
+#define COLOR_TITLE "\x1b[1;38;2;192;202;245m"  /* bold + fg white — headings */
+#define COLOR_URI   "\x1b[4;38;2;122;162;247m"  /* underline + blue — links/URIs */
+
 #endif /* THEME_H */

@@ -204,6 +204,28 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Some grammars (e.g. markdown) nest the actual parser under a
+     * subdirectory named tree-sitter-<lang>/ instead of src/ at the root.
+     * Detect this and descend into the subdirectory. */
+    if (!file_exists("src/parser.c")) {
+        char subdir[256];
+        snprintf(subdir, sizeof(subdir), "tree-sitter-%s", lang);
+        if (file_exists(subdir)) {
+            fprintf(stderr, "Detected nested layout, entering %s/\n", subdir);
+            if (chdir(subdir) != 0) {
+                perror("chdir subdir");
+                return 1;
+            }
+            /* Update build_dir so the .so copy path stays correct. */
+            char new_build[1024];
+            if (!getcwd(new_build, sizeof(new_build))) {
+                perror("getcwd subdir");
+                return 1;
+            }
+            snprintf(build_dir, sizeof(build_dir), "%s", new_build);
+        }
+    }
+
     /* Build parser.o */
     if (!file_exists("src/parser.c")) {
         fprintf(stderr, "Expected src/parser.c in %s\n", build_dir);
