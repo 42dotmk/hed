@@ -192,6 +192,8 @@ void buf_scroll_half_page_up(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
+    if (buf->filename)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
     int half_page = E.screen_rows / 2;
     win->cursor.y -= half_page;
     if (win->cursor.y < 0)
@@ -203,6 +205,8 @@ void buf_scroll_half_page_down(void) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
+    if (buf->filename)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
     int half_page = E.screen_rows / 2;
     win->cursor.y += half_page;
     if (win->cursor.y >= buf->num_rows) {
@@ -417,11 +421,11 @@ void buf_goto_line(int line_num) {
 
     /* Convert from 1-indexed to 0-indexed */
     line_num--;
+    if (line_num < 0) line_num = 0;
+    if (line_num >= buf->num_rows) line_num = buf->num_rows - 1;
 
-    if (line_num < 0)
-        line_num = 0;
-    if (line_num >= buf->num_rows)
-        line_num = buf->num_rows - 1;
+    if (abs(line_num - win->cursor.y) >= 5 && buf->filename)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
 
     win->cursor.y = line_num;
     win->cursor.x = 0;

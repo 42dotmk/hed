@@ -21,7 +21,6 @@ void kb_delete_to_line_end(void);
 void kb_yank_line(void);
 void kb_paste(void);
 void kb_delete_char(void);
-
 /* Operator functions (wait for text object input) */
 void kb_operator_delete(void);
 void kb_operator_change(void);
@@ -39,6 +38,9 @@ void kb_fzf(void);
 void kb_quit_all(void);
 void kb_jump_backward(void);  /* Ctrl-O - jump to previous buffer */
 void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
+void kb_goto_file_start(void); /* gg - go to first line */
+void kb_para_next(void);       /* }  - next paragraph  */
+void kb_para_prev(void);       /* {  - prev paragraph  */
 void kb_tmux_send_line(void); /* Send current line to tmux runner pane */
 void kb_move_left(void);
 void kb_move_right(void);

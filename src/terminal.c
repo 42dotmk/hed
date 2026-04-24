@@ -675,18 +675,16 @@ static void win_draw_modal_border(Abuf *ab, Window *win) {
         ab_append_str(ab, "─");
     ab_append_str(ab, "┘");
 
-    /* Draw title if buffer has a name */
-    Buffer *buf = NULL;
+    /* Draw bottom label from buf->title if set */
     if (win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len) {
-        buf = &E.buffers.data[win->buffer_index];
-        if (buf->filename) {
-            /* Draw title in top border */
-            int title_len = strlen(buf->filename);
-            if (title_len > width - 4)
-                title_len = width - 4;
-            ansi_move(ab, top - 1, left + 2);
+        Buffer *buf = &E.buffers.data[win->buffer_index];
+        if (buf->title) {
+            int label_len = (int)strlen(buf->title);
+            if (label_len > width - 4)
+                label_len = width - 4;
+            ansi_move(ab, top + height, left + 2);
             ab_append_str(ab, "[ ");
-            ab_append(ab, buf->filename, title_len);
+            ab_append(ab, buf->title, (size_t)label_len);
             ab_append_str(ab, " ]");
         }
     }
@@ -718,16 +716,14 @@ void ed_render_frame(void) {
     ansi_hide_cursor(&ab);
     ansi_home(&ab);
 
-    /* Ensure highlighting is parsed for buffers used in windows */
-    // if (ts_is_enabled()) {
-    //     for (int wi = 0; wi < (int)E.windows.len; ++wi) {
-    //         int bi = E.windows.data[wi].buffer_index;
-    //         if (bi >= 0 && bi < (int)E.buffers.len) {
-    //             ts_buffer_autoload(&E.buffers.data[bi]);
-    //             ts_buffer_reparse(&E.buffers.data[bi]);
-    //         }
-    //     }
-    // }
+    /* Reparse tree-sitter for any window whose buffer changed since last draw */
+    if (ts_is_enabled()) {
+        for (int wi = 0; wi < (int)E.windows.len; ++wi) {
+            int bi = E.windows.data[wi].buffer_index;
+            if (bi >= 0 && bi < (int)E.buffers.len)
+                ts_buffer_reparse(&E.buffers.data[bi]);
+        }
+    }
 
     /* Draw all windows */
     for (int wi = 0; wi < (int)E.windows.len; ++wi) {

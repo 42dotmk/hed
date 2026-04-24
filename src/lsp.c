@@ -2,6 +2,7 @@
 #include "lsp.h"
 #include "json_helpers.h"
 #include "log.h"
+#include "winmodal.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,6 +14,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 #define LSP_MAX_SERVERS   8
 #define LSP_READ_BUF_SIZE 65536
@@ -241,19 +244,127 @@ static void lsp_notify_existing_buffers(LspServer *srv) {
 
 /* ------------------------------------------ response / notification handlers */
 
+/* Strip basic markdown inline markers in-place: **x** *x* `x` -> x */
+static void strip_markdown_inline(char *s) {
+    char *r = s, *w = s;
+    while (*r) {
+        if (r[0] == '*' && r[1] == '*') { r += 2; continue; }
+        if (r[0] == '*')               { r += 1; continue; }
+        if (r[0] == '`')               { r += 1; continue; }
+        *w++ = *r++;
+    }
+    *w = '\0';
+}
+
+/* Create a read-only popup modal from multi-line text and show it.
+ * Dismiss with q or <Esc> (handled in ed_process_keypress). */
+static void lsp_show_popup(const char *title, const char *text) {
+    if (!text || !*text) {
+        ed_set_status_message("LSP: (empty response)");
+        return;
+    }
+    log_msg("LSP popup [%s]: %s", title, text);
+
+    /* First pass: split lines, skip bare file paths, measure dimensions.
+     * A "bare path" is a line whose first non-space char is '/' and contains
+     * no spaces — clangd appends these after the actual hover content. */
+    int   max_width  = 0;
+    int   nlines     = 0;
+    char  src_label[256] = {0}; /* basename of the last skipped path line */
+    const char *p    = text;
+    while (*p) {
+        int len = 0;
+        while (p[len] && p[len] != '\n') len++;
+        int w = len;
+        while (w > 0 && (p[w-1] == '\r' || p[w-1] == ' ')) w--;
+        /* detect bare path: starts with '/', no spaces */
+        int is_path = (w > 0 && p[0] == '/');
+        if (is_path) {
+            for (int i = 1; i < w; i++) {
+                if (p[i] == ' ') { is_path = 0; break; }
+            }
+        }
+        if (is_path) {
+            /* extract basename for bottom label */
+            const char *slash = p;
+            for (int i = 0; i < w; i++)
+                if (p[i] == '/') slash = p + i + 1;
+            int blen = (int)(p + w - slash);
+            if (blen > (int)sizeof(src_label) - 1) blen = (int)sizeof(src_label) - 1;
+            memcpy(src_label, slash, (size_t)blen);
+            src_label[blen] = '\0';
+        } else {
+            if (w > max_width) max_width = w;
+            nlines++;
+        }
+        p += len + (p[len] == '\n' ? 1 : 0);
+    }
+    /* strip trailing blank content lines */
+    if (nlines == 0) { ed_set_status_message("LSP: (empty)"); return; }
+
+    /* Cap dimensions to screen, leave room for border (drawn outside rect) */
+    int width  = max_width;
+    int height = nlines;
+    if (width  < 20)                width  = 20;
+    if (width  > E.screen_cols - 6) width  = E.screen_cols - 6;
+    if (height > E.screen_rows - 6) height = E.screen_rows - 6;
+
+    /* Create scratch buffer — no filename (no top title), title = src label */
+    int     buf_idx = -1;
+    if (buf_new(NULL, &buf_idx) != ED_OK) return;
+    Buffer *buf = &E.buffers.data[buf_idx];
+    free(buf->filename); buf->filename = NULL;
+    free(buf->title);
+    buf->title = src_label[0] ? strdup(src_label) : NULL;
+
+    /* Second pass: insert non-path lines into the buffer */
+    p = text;
+    int row = 0;
+    while (*p) {
+        int len = 0;
+        while (p[len] && p[len] != '\n') len++;
+        char *line = malloc((size_t)len + 1);
+        if (!line) break;
+        memcpy(line, p, (size_t)len);
+        line[len] = '\0';
+        /* strip \r */
+        int w = len;
+        if (w > 0 && line[w-1] == '\r') line[--w] = '\0';
+        /* skip bare path lines */
+        int is_path = (w > 0 && line[0] == '/');
+        if (is_path) {
+            for (int i = 1; i < w; i++) {
+                if (line[i] == ' ') { is_path = 0; break; }
+            }
+        }
+        if (!is_path) {
+            strip_markdown_inline(line);
+            buf_row_insert_in(buf, row, line, (size_t)strlen(line));
+            row++;
+        }
+        free(line);
+        p += len + (p[len] == '\n' ? 1 : 0);
+    }
+    buf->dirty    = 0;   /* reset so buf_close won't block */
+    buf->readonly = 1;
+
+    /* Create and show centered modal */
+    Window *modal = winmodal_create(-1, -1, width, height);
+    if (!modal) { buf->dirty = 0; buf_close(buf_idx); return; }
+    modal->buffer_index = buf_idx;
+    winmodal_show(modal);
+    ed_set_status_message("q/<Esc> close  j/k scroll");
+}
+
 static void lsp_handle_hover_result(cJSON *result) {
     if (!result || cJSON_IsNull(result)) {
         ed_set_status_message("LSP hover: no info");
         return;
     }
-    const char *text = NULL;
 
-    /* contents can be:  string | MarkedString | { kind, value } | array */
-    cJSON *contents = cJSON_GetObjectItemCaseSensitive(result, "contents");
-    if (!contents) {
-        ed_set_status_message("LSP hover: empty");
-        return;
-    }
+    /* contents: string | { kind, value } | MarkedString[] */
+    cJSON      *contents = cJSON_GetObjectItemCaseSensitive(result, "contents");
+    const char *text     = NULL;
 
     if (cJSON_IsString(contents)) {
         text = contents->valuestring;
@@ -261,15 +372,29 @@ static void lsp_handle_hover_result(cJSON *result) {
         cJSON *val = cJSON_GetObjectItemCaseSensitive(contents, "value");
         if (val && cJSON_IsString(val)) text = val->valuestring;
     } else if (cJSON_IsArray(contents)) {
-        cJSON *first = cJSON_GetArrayItem(contents, 0);
-        if (first) {
-            if (cJSON_IsString(first))
-                text = first->valuestring;
+        /* concatenate all entries */
+        static char combined[4096];
+        combined[0] = '\0';
+        int off = 0;
+        for (int i = 0; i < cJSON_GetArraySize(contents) && off < (int)sizeof(combined) - 2; i++) {
+            cJSON *item = cJSON_GetArrayItem(contents, i);
+            const char *v = NULL;
+            if (cJSON_IsString(item)) v = item->valuestring;
             else {
-                cJSON *val = cJSON_GetObjectItemCaseSensitive(first, "value");
-                if (val && cJSON_IsString(val)) text = val->valuestring;
+                cJSON *val = cJSON_GetObjectItemCaseSensitive(item, "value");
+                if (val && cJSON_IsString(val)) v = val->valuestring;
+            }
+            if (v && *v) {
+                if (off > 0) combined[off++] = '\n';
+                int rem = (int)sizeof(combined) - off - 1;
+                int len = (int)strlen(v);
+                if (len > rem) len = rem;
+                memcpy(combined + off, v, (size_t)len);
+                off += len;
+                combined[off] = '\0';
             }
         }
+        if (combined[0]) text = combined;
     }
 
     if (!text || !*text) {
@@ -277,19 +402,7 @@ static void lsp_handle_hover_result(cJSON *result) {
         return;
     }
 
-    /* Show first non-empty line in the status bar */
-    char line[256];
-    const char *nl = strchr(text, '\n');
-    if (nl && nl - text < (int)sizeof(line) - 1) {
-        size_t len = (size_t)(nl - text);
-        memcpy(line, text, len);
-        line[len] = '\0';
-    } else {
-        snprintf(line, sizeof(line), "%s", text);
-    }
-    /* Remove simple markdown bold/italic markers */
-    log_msg("LSP hover: %s", text);
-    ed_set_status_message("Hover: %s", line);
+    lsp_show_popup("Hover", text);
 }
 
 static void lsp_handle_definition_result(cJSON *result) {

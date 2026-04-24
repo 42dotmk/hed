@@ -168,7 +168,11 @@ void hist_init(CmdHistory *h) {
 void hist_free(CmdHistory *h) { hist_clear_items(h); }
 
 void hist_add(CmdHistory *h, const char *line) {
-    if (!h)
+    if (!h || !line || !*line)
+        return;
+    /* Skip if identical to the most recent entry */
+    if (h->items.len > 0 && h->items.data[0] &&
+        strcmp(h->items.data[0], line) == 0)
         return;
     hist_insert_front(h, line);
     hist_prepend_to_file(line);

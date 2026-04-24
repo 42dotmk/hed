@@ -348,6 +348,8 @@ void ed_process_command(void) {
             *space = ' ';
         ed_set_status_message("Unknown command: %s", E.command_buf);
     } else {
+        if (space)
+            *space = ' '; /* restore full "cmd args" before saving to history */
         regs_set_cmd(E.command_buf, strlen(E.command_buf));
         hist_add(&E.history, E.command_buf);
     }

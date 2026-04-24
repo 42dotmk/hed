@@ -223,6 +223,55 @@ void cmd_history(const char *args) {
     ed_set_status_message("%s", buf);
 }
 
+void cmd_history_fzf(const char *args) {
+    (void)args;
+    int hlen = hist_len(&E.history);
+    if (hlen == 0) {
+        ed_set_status_message("No history");
+        return;
+    }
+
+    /* Write history to a temp file to avoid escaping/length issues */
+    char tmppath[64];
+    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_hist_%d", getpid());
+    FILE *fp = fopen(tmppath, "w");
+    if (!fp) {
+        ed_set_status_message("hfzf: failed to write temp file");
+        return;
+    }
+    for (int i = 0; i < hlen; i++) {
+        const char *line = hist_get(&E.history, i);
+        if (line) fprintf(fp, "%s\n", line);
+    }
+    fclose(fp);
+
+    char fzf_cmd[128];
+    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
+
+    char **sel = NULL;
+    int cnt    = 0;
+    fzf_run(fzf_cmd, 0, &sel, &cnt);
+    unlink(tmppath);
+
+    if (cnt == 0 || !sel || !sel[0]) {
+        fzf_free(sel, cnt);
+        return;
+    }
+
+    /* Prefill command buffer with selection and stay in command mode */
+    ed_set_mode(MODE_COMMAND);
+    E.command_len = 0;
+    size_t ll = strlen(sel[0]);
+    if (ll > sizeof(E.command_buf) - 1)
+        ll = sizeof(E.command_buf) - 1;
+    memcpy(E.command_buf, sel[0], ll);
+    E.command_len = (int)ll;
+    E.command_buf[E.command_len] = '\0';
+    ed_set_status_message(":%s", E.command_buf);
+    E.stay_in_command = 1;
+    fzf_free(sel, cnt);
+}
+
 void cmd_registers(const char *args) {
     (void)args;
     char out[256];

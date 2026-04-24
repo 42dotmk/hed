@@ -32,6 +32,11 @@ void keybind_init(void);
 void keybind_register(int mode, const char *sequence, KeybindCallback callback,
                       const char *desc);
 
+/* Filetype-specific variant — only fires when the current buffer's filetype
+ * matches. Takes priority over a global binding on the same sequence. */
+void keybind_register_ft(int mode, const char *sequence, const char *filetype,
+                         KeybindCallback callback, const char *desc);
+
 /**
  * Register a keybinding that invokes a command (like typing :<name> <args>)
  *
@@ -41,6 +46,10 @@ void keybind_register(int mode, const char *sequence, KeybindCallback callback,
  */
 void keybind_register_command(int mode, const char *sequence,
                               const char *cmdline);
+
+/* Filetype-specific command keybinding variant. */
+void keybind_register_command_ft(int mode, const char *sequence,
+                                  const char *filetype, const char *cmdline);
 
 /**
  * Process a key press through the keybinding system

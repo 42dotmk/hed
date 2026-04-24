@@ -23,6 +23,10 @@ typedef enum {
 
     HOOK_CURSOR_MOVE,
 
+    /* Fires for every key before normal dispatch.
+     * Set event->consumed = 1 to prevent further processing. */
+    HOOK_KEYPRESS,
+
     HOOK_TYPE_COUNT
 } HookType;
 
@@ -59,12 +63,18 @@ typedef struct {
     int new_y;
 } HookCursorEvent;
 
+typedef struct {
+    int key;      /* key code as returned by ed_read_key() */
+    int consumed; /* set to 1 by a handler to cancel further processing */
+} HookKeyEvent;
+
 /* Callback function pointer types */
 typedef void (*HookCharCallback)(const HookCharEvent *event);
 typedef void (*HookLineCallback)(const HookLineEvent *event);
 typedef void (*HookBufferCallback)(const HookBufferEvent *event);
 typedef void (*HookModeCallback)(const HookModeEvent *event);
 typedef void (*HookCursorCallback)(const HookCursorEvent *event);
+typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may set consumed */
 
 /* Hook API */
 void hook_init(void);
@@ -82,6 +92,8 @@ void hook_register_buffer(HookType type, int mode, const char *filetype,
 void hook_register_mode(HookType type, HookModeCallback callback);
 void hook_register_cursor(HookType type, int mode, const char *filetype,
                           HookCursorCallback callback);
+/* Keypress hooks always fire regardless of mode or filetype. */
+void hook_register_key(HookType type, HookKeyCallback callback);
 
 /* Hook firing functions */
 void hook_fire_char(HookType type, const HookCharEvent *event);
@@ -89,6 +101,7 @@ void hook_fire_line(HookType type, const HookLineEvent *event);
 void hook_fire_buffer(HookType type, const HookBufferEvent *event);
 void hook_fire_mode(HookType type, const HookModeEvent *event);
 void hook_fire_cursor(HookType type, const HookCursorEvent *event);
+void hook_fire_key(HookType type, HookKeyEvent *event);
 
 /* User hooks initialization (implemented in user_hooks.c) */
 void user_hooks_init(void);

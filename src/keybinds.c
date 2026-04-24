@@ -16,7 +16,8 @@ typedef struct {
     KeybindCallback callback;
     CommandCallback command_callback; /* optional: invoked with cmdline */
     int mode;
-    char *desc; /* stores command line when using command_callback */
+    char *desc;     /* stores command line when using command_callback */
+    char *filetype; /* NULL = global; non-NULL = filetype-specific */
 } Keybind;
 
 /* Global keybinding storage */
@@ -93,15 +94,25 @@ void keybind_init(void) {
 /* Register a keybinding */
 void keybind_register(int mode, const char *sequence,
                       KeybindCallback callback, const char *desc) {
-    if (keybind_count >= MAX_KEYBINDS) {
-        return;
-    }
-
-    keybinds[keybind_count].sequence = strdup(sequence);
-    keybinds[keybind_count].callback = callback;
-    keybinds[keybind_count].mode = mode;
+    if (keybind_count >= MAX_KEYBINDS) return;
+    keybinds[keybind_count].sequence         = strdup(sequence);
+    keybinds[keybind_count].callback         = callback;
+    keybinds[keybind_count].mode             = mode;
     keybinds[keybind_count].command_callback = NULL;
-    keybinds[keybind_count].desc = desc ? strdup(desc) : NULL;
+    keybinds[keybind_count].desc             = desc ? strdup(desc) : NULL;
+    keybinds[keybind_count].filetype         = NULL;
+    keybind_count++;
+}
+
+void keybind_register_ft(int mode, const char *sequence, const char *filetype,
+                         KeybindCallback callback, const char *desc) {
+    if (keybind_count >= MAX_KEYBINDS) return;
+    keybinds[keybind_count].sequence         = strdup(sequence);
+    keybinds[keybind_count].callback         = callback;
+    keybinds[keybind_count].mode             = mode;
+    keybinds[keybind_count].command_callback = NULL;
+    keybinds[keybind_count].desc             = desc ? strdup(desc) : NULL;
+    keybinds[keybind_count].filetype         = filetype ? strdup(filetype) : NULL;
     keybind_count++;
 }
 
@@ -129,13 +140,25 @@ static void kb_run_command(const char *cmdline) {
 
 void keybind_register_command(int mode, const char *sequence,
                               const char *cmdline) {
-    if (keybind_count >= MAX_KEYBINDS)
-        return;
-    keybinds[keybind_count].sequence = strdup(sequence);
-    keybinds[keybind_count].callback = NULL;
+    if (keybind_count >= MAX_KEYBINDS) return;
+    keybinds[keybind_count].sequence         = strdup(sequence);
+    keybinds[keybind_count].callback         = NULL;
     keybinds[keybind_count].command_callback = kb_run_command;
-    keybinds[keybind_count].mode = mode;
-    keybinds[keybind_count].desc = cmdline ? strdup(cmdline) : strdup("");
+    keybinds[keybind_count].mode             = mode;
+    keybinds[keybind_count].desc             = cmdline ? strdup(cmdline) : strdup("");
+    keybinds[keybind_count].filetype         = NULL;
+    keybind_count++;
+}
+
+void keybind_register_command_ft(int mode, const char *sequence,
+                                  const char *filetype, const char *cmdline) {
+    if (keybind_count >= MAX_KEYBINDS) return;
+    keybinds[keybind_count].sequence         = strdup(sequence);
+    keybinds[keybind_count].callback         = NULL;
+    keybinds[keybind_count].command_callback = kb_run_command;
+    keybinds[keybind_count].mode             = mode;
+    keybinds[keybind_count].desc             = cmdline ? strdup(cmdline) : strdup("");
+    keybinds[keybind_count].filetype         = filetype ? strdup(filetype) : NULL;
     keybind_count++;
 }
 
@@ -229,52 +252,57 @@ bool keybind_process(int key, int mode) {
         key_buffer_len = strlen(key_buffer);
     }
 
-    /* Check for exact matches */
-    int exact_match = -1;
-    int partial_match = 0;
+    /* Check for exact matches — filetype-specific takes priority over global */
+    int exact_match    = -1; /* best global match */
+    int exact_ft_match = -1; /* best filetype-specific match */
+    int partial_match  = 0;
+
+    const char *cur_ft = NULL;
+    {
+        Buffer *cb = buf_cur();
+        if (cb) cur_ft = cb->filetype;
+    }
 
     for (int i = 0; i < keybind_count; i++) {
-        /* Skip if mode doesn't match */
-        if (keybinds[i].mode != mode) {
+        if (keybinds[i].mode != mode) continue;
+
+        if (strcmp(keybinds[i].sequence, key_buffer) == 0) {
+            if (keybinds[i].filetype == NULL) {
+                if (exact_match < 0) exact_match = i; /* keep first global */
+            } else if (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0) {
+                exact_ft_match = i; /* filetype match wins immediately */
+                break;
+            }
+            /* filetype set but doesn't match current — skip */
             continue;
         }
 
-        /* Check for exact match */
-        if (strcmp(keybinds[i].sequence, key_buffer) == 0) {
-            exact_match = i;
-            break;
-        }
-
-        /* Check for partial match (sequence starts with buffer) */
+        /* Partial match: include if global or filetype matches */
         if (strncmp(keybinds[i].sequence, key_buffer, key_buffer_len) == 0) {
-            partial_match = 1;
+            if (keybinds[i].filetype == NULL ||
+                (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0))
+                partial_match = 1;
         }
     }
 
+    int use_match = exact_ft_match >= 0 ? exact_ft_match : exact_match;
+
     /* Exact match found - execute action */
-    if (exact_match >= 0) {
+    if (use_match >= 0) {
         int repeat = have_count ? pending_count : 1;
-        if (repeat < 1)
-            repeat = 1;
-        if (keybinds[exact_match].callback) {
+        if (repeat < 1) repeat = 1;
+        if (keybinds[use_match].callback) {
             for (int r = 0; r < repeat; r++) {
-                keybinds[exact_match].callback();
-                /* If callback consumed the count, stop repeating */
-                if (!have_count)
-                    break;
+                keybinds[use_match].callback();
+                if (!have_count) break;
             }
-        } else if (keybinds[exact_match].command_callback) {
+        } else if (keybinds[use_match].command_callback) {
             for (int r = 0; r < repeat; r++) {
-                keybinds[exact_match].command_callback(
-                    keybinds[exact_match].desc);
-                /* If callback consumed the count, stop repeating */
-                if (!have_count)
-                    break;
+                keybinds[use_match].command_callback(keybinds[use_match].desc);
+                if (!have_count) break;
             }
         }
-        /* Store the executed keybind sequence in the '.' register */
         regs_set_dot(key_buffer, key_buffer_len);
-
         keybind_clear_buffer();
         return true;
     }

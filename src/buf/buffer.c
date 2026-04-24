@@ -161,23 +161,30 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         return;
     }
 
+    /* Record current position BEFORE switching so <C-o> returns here */
+    if (add_to_jumplist) {
+        Buffer *cur = buf_cur();
+        Window *win = window_cur();
+        if (cur && cur->filename) {
+            int cx = win ? win->cursor.x : cur->cursor.x;
+            int cy = win ? win->cursor.y : cur->cursor.y;
+            jump_list_add(&E.jump_list, cur->filename, cx, cy);
+        }
+    }
+
     /* Check if buffer already exists */
     int found = buf_find_by_filename(filename);
     if (found >= 0) {
-        /* Switch to existing buffer and reload it */
         EdError err = buf_switch(found);
         if (err == ED_OK) {
-            buf_cur();
             ed_set_status_message("Switched to: %s", filename);
         } else {
             ed_set_status_message("Failed to switch: %s", ed_error_string(err));
         }
     } else {
-        /* Open new buffer and attach to current window */
         Buffer *nb = NULL;
         EdError err = buf_open_file(filename, &nb);
         if (err == ED_OK || err == ED_ERR_FILE_NOT_FOUND) {
-            /* Success or new file (both OK) */
             Window *win = window_cur();
             if (win && nb) {
                 win_attach_buf(win, nb);
@@ -186,11 +193,6 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         } else {
             ed_set_status_message("Failed to open: %s", ed_error_string(err));
         }
-    }
-    if (add_to_jumplist) {
-        Cursor *cursor = &buf_cur()->cursor;
-        char *filename = buf_cur()->filename;
-        jump_list_add(&E.jump_list, filename, cursor->x, cursor->y);
     }
 }
 

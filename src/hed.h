@@ -20,8 +20,16 @@
 #define mapv(x, y, d) keybind_register(MODE_VISUAL, x, y, d)
 #define mapi(x, y, d) keybind_register(MODE_INSERT, x, y, d)
 #define mapvb(x, y, d) keybind_register(MODE_VISUAL_BLOCK, x, y, d)
-#define cmapn(x, y) keybind_register_command(MODE_NORMAL, x, y)
-#define cmapv(x, y) keybind_register_command(MODE_VISUAL, x, y)
+#define cmapn(x, y)           keybind_register_command(MODE_NORMAL, x, y)
+#define cmapv(x, y)           keybind_register_command(MODE_VISUAL, x, y)
+
+/* Filetype-specific keybind macros — only fire when buffer filetype matches */
+#define mapn_ft(ft, x, y, d)  keybind_register_ft(MODE_NORMAL, x, ft, y, d)
+#define mapi_ft(ft, x, y, d)  keybind_register_ft(MODE_INSERT, x, ft, y, d)
+#define mapv_ft(ft, x, y, d)  keybind_register_ft(MODE_VISUAL, x, ft, y, d)
+#define cmapn_ft(ft, x, y)    keybind_register_command_ft(MODE_NORMAL, x, ft, y)
+#define cmapi_ft(ft, x, y)    keybind_register_command_ft(MODE_INSERT, x, ft, y)
+#define cmapv_ft(ft, x, y)    keybind_register_command_ft(MODE_VISUAL, x, ft, y)
 
 /* Library helpers - must come first for type definitions */
 #include "ansi.h"

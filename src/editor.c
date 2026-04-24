@@ -9,7 +9,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
 Ed E;
 
 void ed_change_cursor_shape(void) {
@@ -173,6 +172,9 @@ static void handle_visual_mode_keypress(int c, Buffer *buf) {
 /* Main keypress dispatcher - delegates to mode-specific handlers */
 void ed_process_keypress(void) {
     int c = ed_read_key();
+    HookKeyEvent kev = { c, 0 };
+    hook_fire_key(HOOK_KEYPRESS, &kev);
+    if (kev.consumed) return;
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     int old_x = win ? win->cursor.x : 0;

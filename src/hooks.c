@@ -184,6 +184,26 @@ void hook_fire_mode(HookType type, const HookModeEvent *event) {
     }
 }
 
+void hook_register_key(HookType type, HookKeyCallback callback) {
+    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE)
+        return;
+    char *ft_copy = strdup("*");
+    if (!ft_copy) return;
+    int idx = hooks[type].count++;
+    hooks[type].entries[idx].callback = (void *)callback;
+    hooks[type].entries[idx].mode     = -1;
+    hooks[type].entries[idx].filetype = ft_copy;
+}
+
+void hook_fire_key(HookType type, HookKeyEvent *event) {
+    if (type >= HOOK_TYPE_COUNT) return;
+    for (int i = 0; i < hooks[type].count; i++) {
+        HookKeyCallback cb = (HookKeyCallback)hooks[type].entries[i].callback;
+        cb(event);
+        if (event->consumed) return; /* stop at first consumer */
+    }
+}
+
 void hook_fire_cursor(HookType type, const HookCursorEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;

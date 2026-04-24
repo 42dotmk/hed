@@ -459,61 +459,71 @@ size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
     }
     ts_query_cursor_delete(cur);
 
-    /* Render line with ANSI segments */
-    const char *line = buf->rows[line_index].render.data;
-    int linelen = (int)buf->rows[line_index].render.len;
-    int x = col_offset;
-    if (x < 0)
-        x = 0;
-    if (x > linelen)
-        x = linelen;
-    int rem = max_cols;
-    size_t out = 0;
-    uint32_t line_start = (uint32_t)start;
-    /* sort segs by start */
+    /* Sort segments by start byte */
     for (int i = 0; i < sc; i++)
         for (int j = i + 1; j < sc; j++)
             if (segs[j].s < segs[i].s) {
-                Seg t = segs[i];
-                segs[i] = segs[j];
-                segs[j] = t;
+                Seg t = segs[i]; segs[i] = segs[j]; segs[j] = t;
             }
-    int si = 0;
-    uint32_t pos = line_start + (uint32_t)x;
-    while (rem > 0 && pos < line_start + (uint32_t)linelen) {
-        int colored = 0;
-        while (si < sc && segs[si].e <= pos)
-            si++;
-        if (si < sc && segs[si].s <= pos && pos < segs[si].e) {
-            /* inside colored seg */
+
+    /* Render the line.
+     *
+     * Tree-sitter segments use chars-space byte offsets (matching chars.data).
+     * The display uses render.data where tabs are expanded to spaces.
+     * We walk chars.data for segment comparison and render.data for output,
+     * keeping both in sync so tab expansion doesn't shift highlight boundaries.
+     */
+    const Row    *row      = &buf->rows[line_index];
+    const char   *rdata    = row->render.data;
+    int           rlen     = (int)row->render.len;
+    const char   *cdata    = row->chars.data;
+    int           clen     = (int)row->chars.len;
+
+    /* Find the chars index that corresponds to render offset col_offset.
+     * We advance through chars, counting rendered columns. */
+    int roff = 0; /* render column counter */
+    int ci   = 0; /* index into chars.data */
+    while (ci < clen && roff < col_offset) {
+        unsigned char c = (unsigned char)cdata[ci];
+        int w = (c == '\t') ? (TAB_STOP - roff % TAB_STOP) : 1;
+        if (roff + w > col_offset) break; /* tab spans the boundary */
+        roff += w;
+        ci++;
+    }
+    /* roff is now <= col_offset; skip any partial-tab render columns */
+    int rout = col_offset; /* position in render.data for output */
+
+    int   si  = 0;
+    int   rem = max_cols;
+    size_t out = 0;
+    uint32_t cpos = (uint32_t)start + (uint32_t)ci; /* chars-space position */
+
+    while (rem > 0 && ci < clen && rout < rlen) {
+        /* Advance past expired segments */
+        while (si < sc && segs[si].e <= cpos) si++;
+
+        unsigned char c = (unsigned char)cdata[ci];
+        int rw = (c == '\t') ? (TAB_STOP - rout % TAB_STOP) : 1;
+        if (rw < 1) rw = 1;
+
+        int in_seg = (si < sc && segs[si].s <= cpos && cpos < segs[si].e);
+
+        if (in_seg) {
             size_t el = strlen(segs[si].sgr);
-            if (out + el < dst_cap) {
-                memcpy(dst + out, segs[si].sgr, el);
-                out += el;
-            }
-            while (rem > 0 && pos < segs[si].e &&
-                   pos < line_start + (uint32_t)linelen) {
-                char ch = line[pos - line_start];
-                if (out + 1 < dst_cap)
-                    dst[out++] = ch;
-                pos++;
-                rem--;
-            }
-            const char *reset = COLOR_RESET;
-            size_t rl = strlen(reset);
-            if (out + rl < dst_cap) {
-                memcpy(dst + out, reset, rl);
-                out += rl;
-            }
-            colored = 1;
+            if (out + el < dst_cap) { memcpy(dst + out, segs[si].sgr, el); out += el; }
         }
-        if (!colored && rem > 0 && pos < line_start + (uint32_t)linelen) {
-            char ch = line[pos - line_start];
-            if (out + 1 < dst_cap)
-                dst[out++] = ch;
-            pos++;
-            rem--;
+        /* Output render.data chars for this chars character */
+        for (int k = 0; k < rw && rout < rlen && rem > 0; k++) {
+            if (out + 1 < dst_cap) dst[out++] = rdata[rout];
+            rout++; rem--;
         }
+        if (in_seg) {
+            size_t rl = strlen(COLOR_RESET);
+            if (out + rl < dst_cap) { memcpy(dst + out, COLOR_RESET, rl); out += rl; }
+        }
+
+        cpos++;
+        ci++;
     }
     return out;
 }

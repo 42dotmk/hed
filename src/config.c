@@ -128,9 +128,11 @@ void normal_mode_bindings(void) {
     mapn("<<", buf_unindent_line, "unindent");
     mapn("<C-d>", buf_scroll_half_page_down, "scroll down");
     mapn("<C-v>", kb_visual_block_toggle, "visual block");
+    mapn("}", kb_para_next, "next paragraph");
+    mapn("{", kb_para_prev, "prev paragraph");
     mapn(" jf", kb_jump_forward, "jump forward");
     mapn(" jb", kb_jump_backward, "jump back");
-    mapn("<C-i>", kb_jump_forward, "jump forward");
+    mapn("<Tab>", kb_jump_forward, "jump forward");
     mapn("<C-o>", kb_jump_backward, "jump back");
     mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
     mapn(">>", buf_indent_line, "indent");
@@ -148,7 +150,7 @@ void normal_mode_bindings(void) {
     /* Special cases: operator on same key acts on line */
     mapn("dd", kb_delete_line, "del line");
     /* Note: cc conflicts with comment toggle - moved comment to gc */
-    /* Note: G, gg now handled by text object fallback */
+    mapn("gg", kb_goto_file_start, "start of file");
     mapn("gc", buf_toggle_comment, "toggle comment");
 
     mapn("gf", kb_open_file_under_cursor, "open file");
@@ -172,6 +174,12 @@ void normal_mode_bindings(void) {
     mapn("D", kb_delete_to_line_end, "del to line end");
     mapn("C", buf_change_to_line_end, "change to line end");
     mapn("S", buf_change_line, "change line");
+
+    // LSP
+    cmapn("K", "lsp_hover");
+
+    // history
+    cmapn(" fh", "hfzf");
 }
 
 void user_keybinds_init(void) {
@@ -231,7 +239,8 @@ void user_commands_init(void) {
     cmd("c", cmd_cpick, "pick cmd");
     cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
-    cmd("history", cmd_history, "cmd hist");
+    cmd("history", cmd_history,     "cmd hist");
+    cmd("hfzf",    cmd_history_fzf, "fuzzy search command history");
     cmd("reg", cmd_registers, "registers");
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");

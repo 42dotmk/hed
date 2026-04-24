@@ -483,22 +483,31 @@ void kb_operator_yank(void) {
 }
 
 /* Move operator - moves cursor to text object position (fallback for unmapped keys) */
+/* Save current position to the jump list (for within-file jumps). */
+static void jump_save_current(void) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !buf->filename) return;
+    int cx = win ? win->cursor.x : buf->cursor.x;
+    int cy = win ? win->cursor.y : buf->cursor.y;
+    jump_list_add(&E.jump_list, buf->filename, cx, cy);
+}
+
 void kb_operator_move(int key) {
     BUFWIN(buf, win)
 
-    /* Try single-key text object */
     char textobj_key[16];
     TextSelection sel;
 
     build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
     if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        /* Move cursor to the text object's cursor position */
+        /* Save jump if the movement crosses 5+ lines */
+        if (abs(sel.cursor.line - win->cursor.y) >= 5)
+            jump_save_current();
         win->cursor.y = sel.cursor.line;
         win->cursor.x = sel.cursor.col;
         return;
     }
-
-    /* Not a text object - do nothing (key not handled) */
 }
 
 /* Select operator - creates visual selection via text object (v + motion) */
@@ -622,8 +631,8 @@ void kb_move_down(void) { ed_move_cursor(KEY_ARROW_DOWN); }
 /* Normal mode - search */
 void kb_search_next(void) {
     Buffer *buf = buf_cur();
-    if (!buf)
-        return;
+    if (!buf) return;
+    jump_save_current();
     buf_find_in(buf);
 }
 
@@ -637,6 +646,7 @@ void kb_find_under_cursor(void) {
     E.search_query = sstr_from(w.data, w.len);
     ed_set_status_message("* %.*s", (int)(w.len > 40 ? 40 : w.len), w.data);
     sstr_free(&w);
+    jump_save_current();
     buf_find_in(buf_cur());
 }
 void kb_search_file_under_cursor(void) {
@@ -785,31 +795,36 @@ void kb_redo(void) {
 
 /* Helper: perform jump in specified direction */
 static void kb_jump(int direction) {
-    int cursor_x, cursor_y;
-    char *filename = "\0";
+    int cursor_x = 0, cursor_y = 0;
+    char *filename = NULL;
     int success;
 
-    if (direction < 0) {
-        success =
-            jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+    if (direction < 0)
+        success = jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+    else
+        success = jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
 
-        if (success && filename && filename[0] != '\0') {
-            buf_open_or_switch(filename, false);
-            free(filename);
-        } else {
-            log_msg("At beginning of jump list");
-            return;
-        }
-    } else {
-        success =
-            jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+    if (!success || !filename || !filename[0]) {
+        free(filename);
+        ed_set_status_message(direction < 0 ? "Already at oldest jump"
+                                             : "Already at newest jump");
+        return;
+    }
 
-        if (success && filename && filename[0] != '\0') {
-            buf_open_or_switch(filename, false);
-            free(filename);
-        } else {
-            log_msg("At end of jump list");
-            return;
+    buf_open_or_switch(filename, false);
+    free(filename);
+
+    /* Restore cursor position */
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (buf) {
+        int row = (cursor_y < buf->num_rows) ? cursor_y : buf->num_rows - 1;
+        if (row < 0) row = 0;
+        buf->cursor.y = row;
+        buf->cursor.x = cursor_x;
+        if (win) {
+            win->cursor.y = row;
+            win->cursor.x = cursor_x;
         }
     }
 }
@@ -817,6 +832,29 @@ static void kb_jump(int direction) {
 void kb_jump_backward(void) { kb_jump(-1); }
 
 void kb_jump_forward(void) { kb_jump(1); }
+
+static void kb_para_jump(const char *key) {
+    BUFWIN(buf, win)
+    TextSelection sel;
+    if (textobj_lookup(key, buf, win->cursor.y, win->cursor.x, &sel)) {
+        jump_save_current();
+        win->cursor.y = sel.cursor.line;
+        win->cursor.x = sel.cursor.col;
+    }
+}
+
+void kb_para_next(void) { kb_para_jump("}"); }
+void kb_para_prev(void) { kb_para_jump("{"); }
+
+void kb_goto_file_start(void) {
+    BUFWIN(buf, win)
+    if (win->cursor.y >= 5)
+        jump_save_current();
+    win->cursor.y = 0;
+    win->cursor.x = 0;
+    buf->cursor.y = 0;
+    buf->cursor.x = 0;
+}
 
 /* Tmux integration: send current paragraph to tmux runner pane */
 void kb_tmux_send_line(void) {
