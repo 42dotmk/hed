@@ -178,8 +178,9 @@ void normal_mode_bindings(void) {
     // LSP
     cmapn("K", "lsp_hover");
 
-    // history
+    // history / jump
     cmapn(" fh", "hfzf");
+    cmapn(" fj", "jfzf");
 }
 
 void user_keybinds_init(void) {
@@ -239,8 +240,9 @@ void user_commands_init(void) {
     cmd("c", cmd_cpick, "pick cmd");
     cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
-    cmd("history", cmd_history,     "cmd hist");
-    cmd("hfzf",    cmd_history_fzf, "fuzzy search command history");
+    cmd("history", cmd_history,       "cmd hist");
+    cmd("hfzf",    cmd_history_fzf,   "fuzzy search command history");
+    cmd("jfzf",    cmd_jumplist_fzf,  "fuzzy search jump list");
     cmd("reg", cmd_registers, "registers");
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");

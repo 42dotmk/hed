@@ -42,7 +42,6 @@ make test
 # Generate ctags
 make tags
 ```
-
 The build system:
 - Uses clang with C23 standard (`-std=c23`)
 - Strict warnings: `-Wall -Wextra -pedantic`

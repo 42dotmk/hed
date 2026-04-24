@@ -272,6 +272,78 @@ void cmd_history_fzf(const char *args) {
     fzf_free(sel, cnt);
 }
 
+void cmd_jumplist_fzf(const char *args) {
+    (void)args;
+    int jlen = (int)E.jump_list.entries.len;
+    if (jlen == 0) {
+        ed_set_status_message("Jump list is empty");
+        return;
+    }
+
+    /* Write entries to temp file as "filepath:line:col" (1-indexed) */
+    char tmppath[64];
+    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_jumps_%d", getpid());
+    FILE *fp = fopen(tmppath, "w");
+    if (!fp) {
+        ed_set_status_message("jfzf: failed to write temp file");
+        return;
+    }
+    /* Most recent first */
+    for (int i = jlen - 1; i >= 0; i--) {
+        JumpEntry *e = &E.jump_list.entries.data[i];
+        if (e->filepath)
+            fprintf(fp, "%s:%d:%d\n", e->filepath, e->cursor_y + 1, e->cursor_x + 1);
+    }
+    fclose(fp);
+
+    char fzf_cmd[128];
+    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
+
+    const char *fzf_opts =
+        "--delimiter ':' "
+        "--preview 'command -v bat >/dev/null 2>&1 "
+            "&& bat --style=plain --color=always --highlight-line {2} "
+                "--line-range {2}:+30 {1} "
+            "|| awk \"NR>={2}-5 && NR<={2}+25\" {1}' "
+        "--preview-window 'right,60%,+{2}-5'";
+
+    char **sel = NULL;
+    int cnt    = 0;
+    fzf_run_opts(fzf_cmd, fzf_opts, 0, &sel, &cnt);
+    unlink(tmppath);
+
+    if (cnt == 0 || !sel || !sel[0]) {
+        fzf_free(sel, cnt);
+        return;
+    }
+
+    /* Parse "filepath:line:col" */
+    char *entry = sel[0];
+    /* Find last two colons to extract line and col */
+    char *last_colon = strrchr(entry, ':');
+    if (!last_colon) { fzf_free(sel, cnt); return; }
+    int col = atoi(last_colon + 1) - 1;
+    *last_colon = '\0';
+
+    char *prev_colon = strrchr(entry, ':');
+    if (!prev_colon) { fzf_free(sel, cnt); return; }
+    int line = atoi(prev_colon + 1) - 1;
+    *prev_colon = '\0';
+
+    /* entry is now just the filepath */
+    buf_open_or_switch(entry, false);
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (buf) {
+        int row = (line < buf->num_rows) ? line : buf->num_rows - 1;
+        if (row < 0) row = 0;
+        buf->cursor.y = row;
+        buf->cursor.x = col;
+        if (win) { win->cursor.y = row; win->cursor.x = col; }
+    }
+    fzf_free(sel, cnt);
+}
+
 void cmd_registers(const char *args) {
     (void)args;
     char out[256];

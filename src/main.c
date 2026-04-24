@@ -2,6 +2,7 @@
 #include "macros.h"
 #include <sys/select.h>
 
+
 int main(int argc, char *argv[]) {
     const char *startup_cmd = NULL;
     char **file_args = NULL;

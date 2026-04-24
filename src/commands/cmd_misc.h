@@ -6,6 +6,7 @@ void cmd_list_keybinds(const char *args);
 void cmd_echo(const char *args);
 void cmd_history(const char *args);
 void cmd_history_fzf(const char *args);
+void cmd_jumplist_fzf(const char *args);
 void cmd_registers(const char *args);
 void cmd_put(const char *args);
 void cmd_undo(const char *args);
