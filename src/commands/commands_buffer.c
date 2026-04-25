@@ -259,6 +259,10 @@ void cmd_write(const char *args) {
     if (!buf)
         return;
 
+    /* dired buffers commit create/rename/delete ops instead of writing bytes */
+    if (dired_handle_save(buf))
+        return;
+
     /* If a filename is provided, set it on the buffer before saving */
     if (args && *args) {
         char newname[PATH_MAX];

@@ -4,16 +4,37 @@
 #include "vector.h"
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
+
+/* Each rendered line is prefixed with "/XXXX/ " — 4 hex digits flanked by
+ * slashes, then a space. The prefix gives every entry a stable opaque ID so
+ * a save can distinguish renames from delete+create. */
+#define DIRED_PREFIX_LEN 7
+#define DIRED_TMP_PREFIX ".__dired_tmp_"
+
+typedef struct {
+    uint32_t id;
+    char name[PATH_MAX]; /* basename, no trailing slash */
+    int is_dir;
+} DiredSnapshotEntry;
+
+VEC_DEFINE(DiredSnapshotVec, DiredSnapshotEntry);
 
 typedef struct {
     Buffer *buf;
     char origin[PATH_MAX];
     char cwd[PATH_MAX];
+    DiredSnapshotVec snapshot;
+    uint32_t next_id;
 } DiredState;
 
 VEC_DEFINE(DiredStateVec, DiredState);
@@ -43,19 +64,30 @@ static DiredState *dired_state_create(Buffer *buf, const char *dir) {
     DiredState st = {.buf = buf};
     dired_copy(st.origin, sizeof(st.origin), dir);
     dired_copy(st.cwd, sizeof(st.cwd), dir);
+    st.next_id = 1;
     vec_push_typed(&dired_states, DiredState, st);
 
-    /* Check if push succeeded */
     if (dired_states.len == old_len)
         return NULL;
 
     return &dired_states.data[dired_states.len - 1];
 }
 
+static void dired_state_free(DiredState *st) {
+    if (!st)
+        return;
+    free(st->snapshot.data);
+    st->snapshot.data = NULL;
+    st->snapshot.len = 0;
+    st->snapshot.cap = 0;
+}
+
 static void dired_state_remove(Buffer *buf) {
     size_t idx = (size_t)-1;
-    if (!dired_state_find(buf, &idx) || idx == (size_t)-1)
+    DiredState *st = dired_state_find(buf, &idx);
+    if (!st || idx == (size_t)-1)
         return;
+    dired_state_free(st);
     vec_remove(&dired_states, DiredState, idx);
 }
 
@@ -106,6 +138,88 @@ static int dired_join(const char *dir, const char *name, char *out,
     return 1;
 }
 
+static int dired_hex_digit(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+/* Parse a rendered dired line. On success, fills *has_id, *id, name buffer
+ * (without trailing slash), *is_dir. Returns:
+ *   1 = parsed (may be a known-id line or a free-form new line)
+ *   0 = empty (skip)
+ *  -1 = invalid (e.g. embedded slash, "." or "..") */
+static int dired_parse_line(const char *src, size_t srclen, int *has_id,
+                            uint32_t *id, char *name, size_t name_sz,
+                            int *is_dir) {
+    *has_id = 0;
+    *id = 0;
+    *is_dir = 0;
+    name[0] = '\0';
+
+    /* Strip trailing whitespace */
+    while (srclen > 0 &&
+           (src[srclen - 1] == ' ' || src[srclen - 1] == '\t' ||
+            src[srclen - 1] == '\r'))
+        srclen--;
+
+    /* Strip leading whitespace */
+    size_t start = 0;
+    while (start < srclen && (src[start] == ' ' || src[start] == '\t'))
+        start++;
+
+    if (start >= srclen)
+        return 0;
+
+    /* Try to parse "/XXXX/ " prefix */
+    if (srclen - start >= DIRED_PREFIX_LEN && src[start] == '/' &&
+        src[start + 5] == '/' && src[start + 6] == ' ') {
+        int d0 = dired_hex_digit(src[start + 1]);
+        int d1 = dired_hex_digit(src[start + 2]);
+        int d2 = dired_hex_digit(src[start + 3]);
+        int d3 = dired_hex_digit(src[start + 4]);
+        if (d0 >= 0 && d1 >= 0 && d2 >= 0 && d3 >= 0) {
+            *has_id = 1;
+            *id = (uint32_t)((d0 << 12) | (d1 << 8) | (d2 << 4) | d3);
+            start += DIRED_PREFIX_LEN;
+        }
+    }
+
+    if (start >= srclen)
+        return 0;
+
+    size_t nlen = srclen - start;
+    if (nlen + 1 > name_sz)
+        nlen = name_sz - 1;
+    memcpy(name, src + start, nlen);
+    name[nlen] = '\0';
+
+    /* Trailing slash → directory */
+    while (nlen > 0 && name[nlen - 1] == '/') {
+        *is_dir = 1;
+        name[nlen - 1] = '\0';
+        nlen--;
+    }
+
+    if (nlen == 0)
+        return 0;
+
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return -1;
+
+    /* Reject any embedded slash — we only allow basenames */
+    for (size_t i = 0; i < nlen; i++) {
+        if (name[i] == '/')
+            return -1;
+    }
+
+    return 1;
+}
+
 static int dired_list_dir(DiredState *st, const char *dir) {
     if (!st || !dir || !*dir)
         return 0;
@@ -125,6 +239,10 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     struct dirent *de;
     while ((de = readdir(dp)) != NULL) {
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+            continue;
+        /* Hide internal temp-rename markers from prior aborted saves */
+        if (strncmp(de->d_name, DIRED_TMP_PREFIX,
+                    sizeof(DIRED_TMP_PREFIX) - 1) == 0)
             continue;
         if (count == cap) {
             cap = cap ? cap * 2 : 32;
@@ -152,11 +270,20 @@ static int dired_list_dir(DiredState *st, const char *dir) {
 
     Buffer *buf = st->buf;
     dired_clear_buffer(buf);
+
+    /* Reset snapshot for the new listing */
+    vec_clear(&st->snapshot);
+    st->next_id = 1;
+
     for (size_t i = 0; i < count; i++) {
+        uint32_t id = st->next_id++;
+        DiredSnapshotEntry snap = {.id = id, .is_dir = entries[i].is_dir};
+        dired_copy(snap.name, sizeof(snap.name), entries[i].name);
+        vec_push_typed(&st->snapshot, DiredSnapshotEntry, snap);
+
         char line[PATH_MAX];
-        dired_copy(line, sizeof(line), entries[i].name);
-        if (entries[i].is_dir)
-            strncat(line, "/", sizeof(line) - strlen(line) - 1);
+        snprintf(line, sizeof(line), "/%04x/ %s%s", id, entries[i].name,
+                 entries[i].is_dir ? "/" : "");
         buf_row_insert_in(buf, buf->num_rows, line, strlen(line));
     }
     free(entries);
@@ -211,7 +338,8 @@ void dired_open(const char *path) {
     buf->title = strdup("dired");
     free(buf->filetype);
     buf->filetype = strdup("dired");
-    buf->readonly = 1;
+    /* Editable: user adds/removes/renames lines, then :w to commit */
+    buf->readonly = 0;
     buf->dirty = 0;
 
     DiredState *st = dired_state_create(buf, resolved);
@@ -228,7 +356,10 @@ void dired_open(const char *path) {
     E.current_buffer = idx;
 }
 
-static int dired_row_text(Buffer *buf, int row, char *out, size_t out_sz) {
+/* Extract the displayed name (after the optional ID prefix), with trailing
+ * slash dropped. Returns 1 on success. */
+static int dired_row_name(Buffer *buf, int row, char *out, size_t out_sz,
+                          int *is_dir_out) {
     if (!buf || !out || out_sz == 0)
         return 0;
     if (row < 0 || row >= buf->num_rows) {
@@ -236,12 +367,16 @@ static int dired_row_text(Buffer *buf, int row, char *out, size_t out_sz) {
         return 0;
     }
     Row *r = &buf->rows[row];
-    size_t len = r->chars.len;
-    if (len >= out_sz)
-        len = out_sz - 1;
-    memcpy(out, r->chars.data, len);
-    out[len] = '\0';
-    return 1;
+    int has_id = 0;
+    uint32_t id = 0;
+    int is_dir = 0;
+    int rc = dired_parse_line(r->chars.data, r->chars.len, &has_id, &id, out,
+                              out_sz, &is_dir);
+    (void)id;
+    (void)has_id;
+    if (is_dir_out)
+        *is_dir_out = is_dir;
+    return rc == 1;
 }
 
 int dired_handle_enter(void) {
@@ -253,10 +388,11 @@ int dired_handle_enter(void) {
         return 1;
 
     char name[PATH_MAX];
-    if (!dired_row_text(st->buf, win->cursor.y, name, sizeof(name)))
+    int is_dir = 0;
+    if (!dired_row_name(st->buf, win->cursor.y, name, sizeof(name), &is_dir))
         return 1;
-    int is_dir = name[0] && name[strlen(name) - 1] == '/';
-    dired_trim_slash(name);
+    if (!name[0])
+        return 1;
 
     char path[PATH_MAX];
     if (!dired_join(st->cwd, name, path, sizeof(path)))
@@ -264,8 +400,11 @@ int dired_handle_enter(void) {
 
     if (is_dir || path_is_dir(path)) {
         dired_list_dir(st, path);
-    } else {
+    } else if (path_exists(path)) {
         buf_open_or_switch(path, true);
+    } else {
+        ed_set_status_message("dired: %s does not exist (save with :w first)",
+                              name);
     }
     return 1;
 }
@@ -309,6 +448,344 @@ int dired_handle_chdir(void) {
     } else {
         ed_set_status_message("cd: %s", strerror(errno));
     }
+    return 1;
+}
+
+/* ============================================================
+ *  Save: diff buffer rows vs snapshot, apply create/rename/delete
+ * ============================================================ */
+
+typedef enum {
+    DIRED_OP_CREATE,
+    DIRED_OP_RENAME,
+    DIRED_OP_DELETE,
+} DiredOpKind;
+
+typedef struct {
+    DiredOpKind kind;
+    char src_name[PATH_MAX];  /* delete/rename source */
+    char dst_name[PATH_MAX];  /* create/rename target */
+    int is_dir;
+    char tmp_name[PATH_MAX];  /* used by two-pass rename */
+} DiredOp;
+
+VEC_DEFINE(DiredOpVec, DiredOp);
+
+typedef struct {
+    int has_id;
+    uint32_t id;
+    char name[PATH_MAX];
+    int is_dir;
+    int row;
+} DiredCurrent;
+
+VEC_DEFINE(DiredCurrentVec, DiredCurrent);
+
+static int dired_find_snapshot_by_id(DiredState *st, uint32_t id,
+                                     size_t *out_idx) {
+    for (size_t i = 0; i < st->snapshot.len; i++) {
+        if (st->snapshot.data[i].id == id) {
+            if (out_idx)
+                *out_idx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Returns 0 on success, -1 on validation failure (status set, no ops applied) */
+static int dired_collect_current(DiredState *st, DiredCurrentVec *out) {
+    Buffer *buf = st->buf;
+    for (int row = 0; row < buf->num_rows; row++) {
+        Row *r = &buf->rows[row];
+        DiredCurrent c = {.row = row};
+        int rc = dired_parse_line(r->chars.data, r->chars.len, &c.has_id, &c.id,
+                                  c.name, sizeof(c.name), &c.is_dir);
+        if (rc == 0)
+            continue;
+        if (rc < 0) {
+            ed_set_status_message(
+                "dired: invalid name on line %d (no '/' or '.', '..')",
+                row + 1);
+            return -1;
+        }
+        vec_push_typed(out, DiredCurrent, c);
+    }
+
+    /* Reject duplicate IDs (e.g. user copy-pasted a line) */
+    for (size_t i = 0; i < out->len; i++) {
+        if (!out->data[i].has_id)
+            continue;
+        for (size_t j = i + 1; j < out->len; j++) {
+            if (!out->data[j].has_id)
+                continue;
+            if (out->data[i].id == out->data[j].id) {
+                ed_set_status_message(
+                    "dired: duplicate id /%04x/ on lines %d and %d — "
+                    "remove the prefix from one of them",
+                    out->data[i].id, out->data[i].row + 1,
+                    out->data[j].row + 1);
+                return -1;
+            }
+        }
+    }
+
+    /* Reject duplicate final names */
+    for (size_t i = 0; i < out->len; i++) {
+        for (size_t j = i + 1; j < out->len; j++) {
+            if (strcmp(out->data[i].name, out->data[j].name) == 0) {
+                ed_set_status_message(
+                    "dired: duplicate name '%s' on lines %d and %d",
+                    out->data[i].name, out->data[i].row + 1,
+                    out->data[j].row + 1);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
+                            DiredOpVec *ops) {
+    /* Mark each snapshot entry as matched/unmatched */
+    char *matched = NULL;
+    if (st->snapshot.len > 0) {
+        matched = calloc(st->snapshot.len, 1);
+        if (!matched) {
+            ed_set_status_message("dired: out of memory");
+            return -1;
+        }
+    }
+
+    /* Pass 1: classify each current row */
+    for (size_t i = 0; i < current->len; i++) {
+        DiredCurrent *c = &current->data[i];
+        size_t snap_idx = (size_t)-1;
+        if (c->has_id && dired_find_snapshot_by_id(st, c->id, &snap_idx)) {
+            DiredSnapshotEntry *snap = &st->snapshot.data[snap_idx];
+            matched[snap_idx] = 1;
+            if (strcmp(snap->name, c->name) == 0 && snap->is_dir == c->is_dir) {
+                /* Unchanged */
+                continue;
+            }
+            if (snap->is_dir != c->is_dir) {
+                ed_set_status_message(
+                    "dired: cannot change file/dir type via rename: '%s'",
+                    snap->name);
+                free(matched);
+                return -1;
+            }
+            DiredOp op = {.kind = DIRED_OP_RENAME, .is_dir = snap->is_dir};
+            dired_copy(op.src_name, sizeof(op.src_name), snap->name);
+            dired_copy(op.dst_name, sizeof(op.dst_name), c->name);
+            vec_push_typed(ops, DiredOp, op);
+        } else {
+            /* No id, or unknown id → treat as a new file/dir to create */
+            DiredOp op = {.kind = DIRED_OP_CREATE, .is_dir = c->is_dir};
+            dired_copy(op.dst_name, sizeof(op.dst_name), c->name);
+            vec_push_typed(ops, DiredOp, op);
+        }
+    }
+
+    /* Pass 2: any unmatched snapshot entry was deleted */
+    for (size_t i = 0; i < st->snapshot.len; i++) {
+        if (matched[i])
+            continue;
+        DiredOp op = {.kind = DIRED_OP_DELETE,
+                      .is_dir = st->snapshot.data[i].is_dir};
+        dired_copy(op.src_name, sizeof(op.src_name),
+                   st->snapshot.data[i].name);
+        vec_push_typed(ops, DiredOp, op);
+    }
+
+    free(matched);
+    return 0;
+}
+
+/* Apply renames using a two-pass temp rename to handle cycles like A→B B→A.
+ * Returns count of renames applied; sets *had_error on first failure. */
+static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) {
+    int applied = 0;
+
+    /* Pass 1: source → temp */
+    for (size_t i = 0; i < ops->len; i++) {
+        DiredOp *op = &ops->data[i];
+        if (op->kind != DIRED_OP_RENAME)
+            continue;
+        snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%zu",
+                 DIRED_TMP_PREFIX, i);
+        char src[PATH_MAX], tmp[PATH_MAX];
+        if (!dired_join(st->cwd, op->src_name, src, sizeof(src)) ||
+            !dired_join(st->cwd, op->tmp_name, tmp, sizeof(tmp))) {
+            ed_set_status_message("dired: path too long: %s", op->src_name);
+            *had_error = 1;
+            op->tmp_name[0] = '\0';
+            continue;
+        }
+        if (rename(src, tmp) != 0) {
+            ed_set_status_message("dired: rename %s: %s", op->src_name,
+                                  strerror(errno));
+            *had_error = 1;
+            op->tmp_name[0] = '\0';
+        }
+    }
+
+    /* Pass 2: temp → destination */
+    for (size_t i = 0; i < ops->len; i++) {
+        DiredOp *op = &ops->data[i];
+        if (op->kind != DIRED_OP_RENAME)
+            continue;
+        if (!op->tmp_name[0])
+            continue;
+        char tmp[PATH_MAX], dst[PATH_MAX];
+        if (!dired_join(st->cwd, op->tmp_name, tmp, sizeof(tmp)) ||
+            !dired_join(st->cwd, op->dst_name, dst, sizeof(dst))) {
+            ed_set_status_message("dired: path too long: %s", op->dst_name);
+            *had_error = 1;
+            continue;
+        }
+        if (path_exists(dst)) {
+            ed_set_status_message("dired: target exists: %s", op->dst_name);
+            *had_error = 1;
+            /* Roll the temp back to original name to leave fs consistent */
+            char src[PATH_MAX];
+            if (dired_join(st->cwd, op->src_name, src, sizeof(src)))
+                rename(tmp, src);
+            continue;
+        }
+        if (rename(tmp, dst) != 0) {
+            ed_set_status_message("dired: rename %s -> %s: %s", op->src_name,
+                                  op->dst_name, strerror(errno));
+            *had_error = 1;
+            continue;
+        }
+        applied++;
+    }
+    return applied;
+}
+
+static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) {
+    int applied = 0;
+    for (size_t i = 0; i < ops->len; i++) {
+        DiredOp *op = &ops->data[i];
+        if (op->kind != DIRED_OP_DELETE)
+            continue;
+        char path[PATH_MAX];
+        if (!dired_join(st->cwd, op->src_name, path, sizeof(path))) {
+            ed_set_status_message("dired: path too long: %s", op->src_name);
+            *had_error = 1;
+            continue;
+        }
+        int rc;
+        if (op->is_dir) {
+            rc = rmdir(path);
+            if (rc != 0 && (errno == ENOTEMPTY || errno == EEXIST)) {
+                ed_set_status_message(
+                    "dired: directory not empty: %s (delete contents first)",
+                    op->src_name);
+                *had_error = 1;
+                continue;
+            }
+        } else {
+            rc = unlink(path);
+        }
+        if (rc != 0) {
+            ed_set_status_message("dired: delete %s: %s", op->src_name,
+                                  strerror(errno));
+            *had_error = 1;
+            continue;
+        }
+        applied++;
+    }
+    return applied;
+}
+
+static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) {
+    int applied = 0;
+    for (size_t i = 0; i < ops->len; i++) {
+        DiredOp *op = &ops->data[i];
+        if (op->kind != DIRED_OP_CREATE)
+            continue;
+        char path[PATH_MAX];
+        if (!dired_join(st->cwd, op->dst_name, path, sizeof(path))) {
+            ed_set_status_message("dired: path too long: %s", op->dst_name);
+            *had_error = 1;
+            continue;
+        }
+        if (path_exists(path)) {
+            ed_set_status_message("dired: already exists: %s", op->dst_name);
+            *had_error = 1;
+            continue;
+        }
+        if (op->is_dir) {
+            if (mkdir(path, 0755) != 0) {
+                ed_set_status_message("dired: mkdir %s: %s", op->dst_name,
+                                      strerror(errno));
+                *had_error = 1;
+                continue;
+            }
+        } else {
+            int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+            if (fd < 0) {
+                ed_set_status_message("dired: create %s: %s", op->dst_name,
+                                      strerror(errno));
+                *had_error = 1;
+                continue;
+            }
+            close(fd);
+        }
+        applied++;
+    }
+    return applied;
+}
+
+int dired_handle_save(Buffer *buf) {
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "dired") != 0)
+        return 0;
+
+    DiredState *st = dired_state_find(buf, NULL);
+    if (!st) {
+        ed_set_status_message("dired: no state for buffer");
+        return 1;
+    }
+
+    DiredCurrentVec current = {0};
+    DiredOpVec ops = {0};
+
+    if (dired_collect_current(st, &current) != 0)
+        goto done;
+
+    if (dired_build_plan(st, &current, &ops) != 0)
+        goto done;
+
+    if (ops.len == 0) {
+        buf->dirty = 0;
+        ed_set_status_message("dired: no changes");
+        goto done;
+    }
+
+    int had_error = 0;
+    int n_renamed = dired_apply_renames(st, &ops, &had_error);
+    int n_deleted = dired_apply_deletes(st, &ops, &had_error);
+    int n_created = dired_apply_creates(st, &ops, &had_error);
+
+    /* Re-read the directory; status from list_dir would clobber our summary,
+     * so capture it after. */
+    dired_list_dir(st, st->cwd);
+
+    if (had_error) {
+        /* The most recent specific error is already in the status line from
+         * the failing op; append a summary so the user knows what did succeed. */
+        log_msg("dired: applied with errors — created=%d renamed=%d deleted=%d",
+                n_created, n_renamed, n_deleted);
+    } else {
+        ed_set_status_message("dired: created %d, renamed %d, deleted %d",
+                              n_created, n_renamed, n_deleted);
+    }
+
+done:
+    free(current.data);
+    free(ops.data);
     return 1;
 }
 
