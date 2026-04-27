@@ -739,9 +739,190 @@ static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) 
     return applied;
 }
 
+/* Pending-confirm state. At most one dired save can be awaiting confirmation
+ * at a time; the modal blocks input so re-entry shouldn't happen, but we
+ * guard against it anyway. */
+static struct {
+    int active;
+    int dired_buf_idx;    /* dired buffer that owns the pending plan */
+    int confirm_buf_idx;  /* scratch buffer rendered into the modal */
+    Window *modal;
+    DiredOpVec ops;
+} dired_pending;
+
+static void dired_render_plan(Buffer *buf, const char *cwd,
+                              const DiredOpVec *ops, int *out_max_w) {
+    int n_create = 0, n_rename = 0, n_delete = 0;
+    for (size_t i = 0; i < ops->len; i++) {
+        switch (ops->data[i].kind) {
+        case DIRED_OP_CREATE: n_create++; break;
+        case DIRED_OP_RENAME: n_rename++; break;
+        case DIRED_OP_DELETE: n_delete++; break;
+        }
+    }
+
+    char line[PATH_MAX * 2];
+    int max_w = 0;
+
+#define APPEND(...)                                                            \
+    do {                                                                       \
+        int __n = snprintf(line, sizeof(line), __VA_ARGS__);                   \
+        if (__n < 0) __n = 0;                                                  \
+        if (__n > max_w) max_w = __n;                                          \
+        buf_row_insert_in(buf, buf->num_rows, line, (size_t)strnlen(line, sizeof(line))); \
+    } while (0)
+
+    APPEND("dired: confirm changes");
+    APPEND("in: %s", cwd);
+    APPEND("%s", "");
+
+    if (n_create > 0) {
+        APPEND("CREATE (%d):", n_create);
+        for (size_t i = 0; i < ops->len; i++) {
+            const DiredOp *op = &ops->data[i];
+            if (op->kind != DIRED_OP_CREATE) continue;
+            APPEND("  + %s%s", op->dst_name, op->is_dir ? "/" : "");
+        }
+        APPEND("%s", "");
+    }
+    if (n_rename > 0) {
+        APPEND("RENAME (%d):", n_rename);
+        for (size_t i = 0; i < ops->len; i++) {
+            const DiredOp *op = &ops->data[i];
+            if (op->kind != DIRED_OP_RENAME) continue;
+            APPEND("  ~ %s -> %s", op->src_name, op->dst_name);
+        }
+        APPEND("%s", "");
+    }
+    if (n_delete > 0) {
+        APPEND("DELETE (%d):", n_delete);
+        for (size_t i = 0; i < ops->len; i++) {
+            const DiredOp *op = &ops->data[i];
+            if (op->kind != DIRED_OP_DELETE) continue;
+            APPEND("  - %s%s", op->src_name, op->is_dir ? "/" : "");
+        }
+        APPEND("%s", "");
+    }
+
+    APPEND("y: apply   n / q / <Esc>: cancel   j / k: scroll");
+
+#undef APPEND
+
+    if (out_max_w)
+        *out_max_w = max_w;
+}
+
+static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
+    int dired_idx = (int)(st->buf - E.buffers.data);
+
+    int buf_idx = -1;
+    if (buf_new(NULL, &buf_idx) != ED_OK) {
+        ed_set_status_message("dired: confirm modal: buf_new failed");
+        free(ops.data);
+        return 0;
+    }
+    Buffer *cb = &E.buffers.data[buf_idx];
+    free(cb->filename); cb->filename = NULL;
+    free(cb->title); cb->title = strdup("dired confirm");
+    free(cb->filetype); cb->filetype = strdup("dired_confirm");
+
+    int max_w = 0;
+    dired_render_plan(cb, st->cwd, &ops, &max_w);
+    cb->dirty = 0;
+    cb->readonly = 1;
+
+    int width = max_w + 2;
+    if (width < 32) width = 32;
+    if (width > E.screen_cols - 6) width = E.screen_cols - 6;
+    int height = cb->num_rows;
+    if (height < 5) height = 5;
+    if (height > E.screen_rows - 6) height = E.screen_rows - 6;
+
+    Window *modal = winmodal_create(-1, -1, width, height);
+    if (!modal) {
+        cb->dirty = 0;
+        buf_close(buf_idx);
+        free(ops.data);
+        ed_set_status_message("dired: confirm modal: winmodal_create failed");
+        return 0;
+    }
+    modal->buffer_index = buf_idx;
+    winmodal_show(modal);
+
+    dired_pending.active = 1;
+    dired_pending.dired_buf_idx = dired_idx;
+    dired_pending.confirm_buf_idx = buf_idx;
+    dired_pending.modal = modal;
+    dired_pending.ops = ops; /* ownership transferred */
+
+    ed_set_status_message("dired: y to apply, n/q/<Esc> to cancel");
+    return 1;
+}
+
+static void dired_dismiss_pending(int do_apply) {
+    if (!dired_pending.active)
+        return;
+
+    /* Snapshot pending fields and clear global state up front so that any
+     * reentrant call (e.g. via buf_close hooks) is a no-op. */
+    Window *modal = dired_pending.modal;
+    int confirm_idx = dired_pending.confirm_buf_idx;
+    int dired_idx = dired_pending.dired_buf_idx;
+    DiredOpVec ops = dired_pending.ops;
+    memset(&dired_pending, 0, sizeof(dired_pending));
+    dired_pending.dired_buf_idx = -1;
+    dired_pending.confirm_buf_idx = -1;
+
+    if (modal) {
+        winmodal_hide(modal);
+        winmodal_destroy(modal);
+    }
+
+    /* Closing the confirm buffer shifts higher indices down by one. */
+    if (confirm_idx >= 0 && confirm_idx < (int)E.buffers.len) {
+        E.buffers.data[confirm_idx].dirty = 0;
+        buf_close(confirm_idx);
+        if (dired_idx > confirm_idx)
+            dired_idx--;
+    }
+
+    Buffer *dbuf = NULL;
+    if (dired_idx >= 0 && dired_idx < (int)E.buffers.len) {
+        Buffer *cand = &E.buffers.data[dired_idx];
+        if (cand->filetype && strcmp(cand->filetype, "dired") == 0)
+            dbuf = cand;
+    }
+    DiredState *st = dbuf ? dired_state_find(dbuf, NULL) : NULL;
+
+    if (do_apply && st) {
+        int had_error = 0;
+        int n_renamed = dired_apply_renames(st, &ops, &had_error);
+        int n_deleted = dired_apply_deletes(st, &ops, &had_error);
+        int n_created = dired_apply_creates(st, &ops, &had_error);
+        dired_list_dir(st, st->cwd);
+        if (had_error) {
+            log_msg("dired: applied with errors — created=%d renamed=%d "
+                    "deleted=%d", n_created, n_renamed, n_deleted);
+        } else {
+            ed_set_status_message("dired: created %d, renamed %d, deleted %d",
+                                  n_created, n_renamed, n_deleted);
+        }
+    } else {
+        ed_set_status_message("dired: cancelled");
+    }
+
+    free(ops.data);
+}
+
 int dired_handle_save(Buffer *buf) {
     if (!buf || !buf->filetype || strcmp(buf->filetype, "dired") != 0)
         return 0;
+
+    if (dired_pending.active) {
+        ed_set_status_message(
+            "dired: confirm or cancel pending changes first");
+        return 1;
+    }
 
     DiredState *st = dired_state_find(buf, NULL);
     if (!st) {
@@ -752,41 +933,71 @@ int dired_handle_save(Buffer *buf) {
     DiredCurrentVec current = {0};
     DiredOpVec ops = {0};
 
-    if (dired_collect_current(st, &current) != 0)
-        goto done;
+    if (dired_collect_current(st, &current) != 0) {
+        free(current.data);
+        free(ops.data);
+        return 1;
+    }
 
-    if (dired_build_plan(st, &current, &ops) != 0)
-        goto done;
+    if (dired_build_plan(st, &current, &ops) != 0) {
+        free(current.data);
+        free(ops.data);
+        return 1;
+    }
+
+    free(current.data);
 
     if (ops.len == 0) {
+        free(ops.data);
         buf->dirty = 0;
         ed_set_status_message("dired: no changes");
-        goto done;
+        return 1;
     }
 
-    int had_error = 0;
-    int n_renamed = dired_apply_renames(st, &ops, &had_error);
-    int n_deleted = dired_apply_deletes(st, &ops, &had_error);
-    int n_created = dired_apply_creates(st, &ops, &had_error);
-
-    /* Re-read the directory; status from list_dir would clobber our summary,
-     * so capture it after. */
-    dired_list_dir(st, st->cwd);
-
-    if (had_error) {
-        /* The most recent specific error is already in the status line from
-         * the failing op; append a summary so the user knows what did succeed. */
-        log_msg("dired: applied with errors — created=%d renamed=%d deleted=%d",
-                n_created, n_renamed, n_deleted);
-    } else {
-        ed_set_status_message("dired: created %d, renamed %d, deleted %d",
-                              n_created, n_renamed, n_deleted);
-    }
-
-done:
-    free(current.data);
-    free(ops.data);
+    /* Ownership of ops moves into the modal; success or failure of show
+     * frees it appropriately. */
+    dired_show_confirm_modal(st, ops);
     return 1;
+}
+
+static void dired_keypress_hook(HookKeyEvent *event) {
+    if (!dired_pending.active || !event)
+        return;
+    Window *modal = winmodal_current();
+    if (!modal || modal != dired_pending.modal)
+        return;
+
+    int key = event->key;
+    switch (key) {
+    case 'y':
+    case 'Y':
+        dired_dismiss_pending(1);
+        break;
+    case 'n':
+    case 'N':
+    case 'q':
+    case '\x1b':
+        dired_dismiss_pending(0);
+        break;
+    case 'j':
+    case KEY_ARROW_DOWN: {
+        int idx = modal->buffer_index;
+        if (idx >= 0 && idx < (int)E.buffers.len) {
+            Buffer *cb = &E.buffers.data[idx];
+            int max_off = cb->num_rows - modal->height;
+            if (max_off < 0) max_off = 0;
+            if (modal->row_offset < max_off) modal->row_offset++;
+        }
+        break;
+    }
+    case 'k':
+    case KEY_ARROW_UP:
+        if (modal->row_offset > 0) modal->row_offset--;
+        break;
+    default:
+        break;
+    }
+    event->consumed = 1;
 }
 
 static void dired_on_buffer_close(const HookBufferEvent *event) {
@@ -794,14 +1005,24 @@ static void dired_on_buffer_close(const HookBufferEvent *event) {
         return;
     if (!event->buf->filetype || strcmp(event->buf->filetype, "dired") != 0)
         return;
+    /* If the dired buffer being closed is the one with a pending plan,
+     * cancel without applying — keeps state consistent. */
+    if (dired_pending.active) {
+        int idx = (int)(event->buf - E.buffers.data);
+        if (idx == dired_pending.dired_buf_idx)
+            dired_dismiss_pending(0);
+    }
     dired_state_remove(event->buf);
 }
 
 void dired_hooks_init(void) {
+    dired_pending.dired_buf_idx = -1;
+    dired_pending.confirm_buf_idx = -1;
     int modes[] = {MODE_NORMAL, MODE_INSERT, MODE_COMMAND, MODE_VISUAL,
                    MODE_VISUAL_BLOCK};
     for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); i++) {
         hook_register_buffer(HOOK_BUFFER_CLOSE, modes[i], "dired",
                              dired_on_buffer_close);
     }
+    hook_register_key(HOOK_KEYPRESS, dired_keypress_hook);
 }
