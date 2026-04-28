@@ -4,6 +4,7 @@
 #include "keybinds_builtins.h"
 #include "hook_builtins.h"
 #include "lsp_hooks.h"
+#include "utils/viewmd.h"
 
 
 void insert_mode_bindings(void) {
@@ -65,6 +66,7 @@ void normal_mode_bindings(void) {
     mapn(" dj", kb_del_down, "del win down");
     mapn(" dk", kb_del_up, "del win up");
     cmapn(" rr", "reload");
+    cmapn(" rp", "viewmd");
 
     cmapn(" tq", "ctoggle");
     cmapn("<C-n>", "cnext");
@@ -307,6 +309,7 @@ void user_commands_init(void) {
     cmd("lsp_hover",      cmd_lsp_hover,      "LSP hover info");
     cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
     cmd("lsp_completion", cmd_lsp_completion, "LSP completion");
+    cmd("viewmd", cmd_viewmd_preview, "markdown live preview");
 }
 
 void user_hooks_init(void) {
@@ -315,5 +318,6 @@ void user_hooks_init(void) {
     hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", hook_auto_pair);
     dired_hooks_init();
     lsp_hooks_init();
+    viewmd_init();
 }
 

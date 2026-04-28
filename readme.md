@@ -1,5 +1,4 @@
 # hed
-
 Modal terminal editor written in C11. hed keeps a small core but ships useful modern tools: tree-sitter highlights, fuzzy file/search pickers, ripgrep-backed quickfix lists, window splits, tmux runner support, and an explicit C API for adding commands, keybindings, and hooks.
 ## Highlights
 - Normal / Insert / Command plus Visual (char + block) modes with Vim-like motions and operators, undo/redo, registers, and shared clipboard across buffers.
