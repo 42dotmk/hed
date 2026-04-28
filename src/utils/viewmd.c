@@ -98,8 +98,7 @@ static int viewmd_launch(void) {
             dup2(devnull, STDERR_FILENO);
             close(devnull);
         }
-        /* Pass "-" so viewmd reads initial content from stdin (we close it) */
-        execlp("viewmd", "viewmd", "-", NULL);
+        execlp("viewmd", "viewmd", "--socket", NULL);
         _exit(1);
     }
 

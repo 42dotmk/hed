@@ -1,5 +1,6 @@
-# hed
+# HED
 Modal terminal editor written in C11. hed keeps a small core but ships useful modern tools: tree-sitter highlights, fuzzy file/search pickers, ripgrep-backed quickfix lists, window splits, tmux runner support, and an explicit C API for adding commands, keybindings, and hooks.
+
 ## Highlights
 - Normal / Insert / Command plus Visual (char + block) modes with Vim-like motions and operators, undo/redo, registers, and shared clipboard across buffers.
 - Unlimited buffers and multiple windows with vertical/horizontal splits; quickfix pane stays in sync with the cursor for previews.
@@ -14,6 +15,7 @@ Modal terminal editor written in C11. hed keeps a small core but ships useful mo
 - Optional but recommended: `ripgrep`, `fzf`, `tmux`, `lazygit`, `bat` (for previews), `nnn` (directory browsing)
 
 ## Build
+
 ```bash
 make            # builds build/hed and build/tsi, copies ts-langs/
 make run        # run the binary after building
@@ -22,9 +24,11 @@ make clean      # remove build artifacts
 Outputs: `build/hed` (editor) and `build/tsi` (tree-sitter grammar installer).
 
 ## Run
+
 ```bash
 ./build/hed [file ...]
 ```
+
 Use `-c "<command>"` to run a command at startup (same as typing `:<command>`), e.g., `-c "e other.txt"` or `-c "q!"`. Multiple filenames open multiple buffers. Logs go to `.hedlog` (clear with `:logclear`).
 
 ## Quickstart Keys

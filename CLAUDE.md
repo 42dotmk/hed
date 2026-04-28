@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **hed** is a modal terminal editor written in C11 with Vim-like bindings. It integrates tree-sitter for syntax highlighting, ripgrep for search, fzf for fuzzy finding, and tmux for runner pane support. The codebase emphasizes a small core (~13,000 LOC) with explicit C APIs for extensibility through commands, keybindings, and hooks.
 
+
 **Key Features**:
 - Modal editing (Normal/Insert/Visual/Visual Block/Command modes)
 - Tree-sitter syntax highlighting with 12+ language grammars

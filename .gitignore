@@ -5,3 +5,4 @@ ts-langs
 .hedlog
 tasks
 tags
+/lsp-servers
