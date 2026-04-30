@@ -19,8 +19,10 @@ esac
 
 if command -v curl >/dev/null 2>&1; then
     DL="curl -fsSL -o"
+    DL_STDOUT="curl -fsSL"
 elif command -v wget >/dev/null 2>&1; then
     DL="wget -qO"
+    DL_STDOUT="wget -qO -"
 else
     echo "Need curl or wget installed." >&2
     exit 1
@@ -46,84 +48,87 @@ echo "Installed hed and tsi to ${INSTALL_DIR}"
 # fzf       : fuzzy pickers (:fzf, :recent, :c, history fzf)
 # ripgrep   : :rg, :ssearch, :rgword
 # (tree-sitter is statically linked into the binary; no system pkg needed.)
-missing_names=()
-missing_apt=()
-missing_dnf=()
-missing_pacman=()
-missing_brew=()
+#
+# We download portable static binaries from upstream releases into
+# $INSTALL_DIR — no sudo, no package manager, no version pinning to your
+# distro's repos.
 
-add_missing() {
-    missing_names+=("$1")
-    missing_apt+=("$2")
-    missing_dnf+=("$3")
-    missing_pacman+=("$4")
-    missing_brew+=("$5")
+# Resolve the latest release tag for a GitHub repo via the public API.
+latest_tag() {
+    # $1 = owner/repo. Echoes "vX.Y.Z" on success.
+    $DL_STDOUT "https://api.github.com/repos/$1/releases/latest" \
+        | grep -m1 '"tag_name"' \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
 }
 
+install_fzf() {
+    local tag ver tmp
+    tag=$(latest_tag junegunn/fzf) || { echo "Could not resolve fzf release tag." >&2; return 1; }
+    ver="${tag#v}"
+    tmp=$(mktemp -d)
+    trap "rm -rf '$tmp'" RETURN
+    echo "Downloading fzf ${tag}"
+    $DL "$tmp/fzf.tgz" \
+        "https://github.com/junegunn/fzf/releases/download/${tag}/fzf-${ver}-linux_amd64.tar.gz"
+    tar -xzf "$tmp/fzf.tgz" -C "$tmp" fzf
+    chmod +x "$tmp/fzf"
+    mv "$tmp/fzf" "$INSTALL_DIR/fzf"
+    echo "  -> $INSTALL_DIR/fzf"
+}
+
+install_ripgrep() {
+    local tag tmp inner
+    tag=$(latest_tag BurntSushi/ripgrep) || { echo "Could not resolve ripgrep release tag." >&2; return 1; }
+    tmp=$(mktemp -d)
+    trap "rm -rf '$tmp'" RETURN
+    inner="ripgrep-${tag}-x86_64-unknown-linux-musl"
+    echo "Downloading ripgrep ${tag}"
+    $DL "$tmp/rg.tgz" \
+        "https://github.com/BurntSushi/ripgrep/releases/download/${tag}/${inner}.tar.gz"
+    tar -xzf "$tmp/rg.tgz" -C "$tmp"
+    chmod +x "$tmp/${inner}/rg"
+    mv "$tmp/${inner}/rg" "$INSTALL_DIR/rg"
+    echo "  -> $INSTALL_DIR/rg"
+}
+
+missing_names=()
+missing_installers=()
+
 if ! command -v fzf >/dev/null 2>&1; then
-    add_missing "fzf" "fzf" "fzf" "fzf" "fzf"
+    missing_names+=("fzf")
+    missing_installers+=("install_fzf")
 fi
 if ! command -v rg >/dev/null 2>&1; then
-    add_missing "ripgrep" "ripgrep" "ripgrep" "ripgrep" "ripgrep"
+    missing_names+=("ripgrep")
+    missing_installers+=("install_ripgrep")
 fi
 
 if [ "${#missing_names[@]}" -eq 0 ]; then
     echo "All optional dependencies are present."
 else
     echo
-    echo "Missing optional dependencies:"
+    echo "Missing optional dependencies (will be downloaded as portable static binaries to $INSTALL_DIR):"
     for n in "${missing_names[@]}"; do echo "  - $n"; done
-
-    PM=""
-    PM_INSTALL=""
-    if command -v apt-get >/dev/null 2>&1; then
-        PM="apt"; PM_INSTALL="sudo apt-get install -y"
-        pkgs=("${missing_apt[@]}")
-    elif command -v dnf >/dev/null 2>&1; then
-        PM="dnf"; PM_INSTALL="sudo dnf install -y"
-        pkgs=("${missing_dnf[@]}")
-    elif command -v pacman >/dev/null 2>&1; then
-        PM="pacman"; PM_INSTALL="sudo pacman -S --needed --noconfirm"
-        pkgs=("${missing_pacman[@]}")
-    elif command -v brew >/dev/null 2>&1; then
-        PM="brew"; PM_INSTALL="brew install"
-        pkgs=("${missing_brew[@]}")
-    fi
-
-    if [ -z "$PM" ]; then
-        echo
-        echo "No supported package manager found (apt/dnf/pacman/brew)."
-        echo "Install the above manually if you want full functionality."
-    else
-        echo
-        echo "Detected package manager: $PM"
-        echo "Would install: ${pkgs[*]}"
-        echo "Command: $PM_INSTALL ${pkgs[*]}"
-        echo
-        printf "Install missing dependencies? [y/N/p(ick)] "
-        read -r reply </dev/tty || reply="n"
-        case "$reply" in
-            y|Y|yes)
-                $PM_INSTALL "${pkgs[@]}"
-                ;;
-            p|P|pick)
-                chosen=()
-                for i in "${!missing_names[@]}"; do
-                    printf "  install %s (%s)? [y/N] " "${missing_names[$i]}" "${pkgs[$i]}"
-                    read -r r </dev/tty || r="n"
-                    case "$r" in y|Y|yes) chosen+=("${pkgs[$i]}") ;; esac
-                done
-                if [ "${#chosen[@]}" -gt 0 ]; then
-                    $PM_INSTALL "${chosen[@]}"
-                else
-                    echo "Nothing selected, skipping."
-                fi
-                ;;
-            *)
-                echo "Skipping dependency install."
-                ;;
-        esac
-    fi
+    echo
+    printf "Install them? [Y/n/p(ick)] "
+    read -r reply </dev/tty || reply="y"
+    case "$reply" in
+        n|N|no)
+            echo "Skipping dependency install."
+            ;;
+        p|P|pick)
+            for i in "${!missing_names[@]}"; do
+                printf "  install %s? [y/N] " "${missing_names[$i]}"
+                read -r r </dev/tty || r="n"
+                case "$r" in y|Y|yes) "${missing_installers[$i]}" ;; esac
+            done
+            ;;
+        *)
+            for fn in "${missing_installers[@]}"; do
+                "$fn"
+            done
+            ;;
+    esac
 fi
 
 case ":$PATH:" in
