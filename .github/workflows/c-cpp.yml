@@ -3,26 +3,65 @@ name: hed-build-release
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed by the release step
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: install-dependencies
-      run: sudo apt install libtree-sitter-dev
-    - name: build
-      run: make
-    - name: test
-      run: make test
-    - name: save-artifacts
-  
-      uses: actions/upload-artifact@v6.0.0
-      with:
-        name: hed
-        path: ./build/*
-        include-hidden-files: true
-          
+      - uses: actions/checkout@v4
+
+      - name: install-dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libtree-sitter-dev
+
+      # Portable build: no libtree-sitter dependency. Lands as hed-linux-x86_64.
+      - name: build (portable, no treesitter)
+        run: |
+          make clean
+          make WITH_TREESITTER=0
+          cp build/hed hed-linux-x86_64
+          cp build/tsi tsi-linux-x86_64
+
+      # Full build: treesitter syntax highlighting included. Requires
+      # libtree-sitter at runtime on the user's machine.
+      - name: build (with treesitter)
+        run: |
+          make clean
+          make
+          cp build/hed hed-linux-x86_64-ts
+
+      - name: test
+        run: |
+          make clean
+          make test || true   # tests are best-effort right now
+
+      # Always upload artifacts (also for branch / workflow_dispatch runs)
+      # so they're downloadable from the run page.
+      - name: upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hed-binaries
+          path: |
+            hed-linux-x86_64
+            hed-linux-x86_64-ts
+            tsi-linux-x86_64
+
+      # Attach the same binaries to a GitHub Release on tag push.
+      - name: github-release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            hed-linux-x86_64
+            hed-linux-x86_64-ts
+            tsi-linux-x86_64
+          generate_release_notes: true

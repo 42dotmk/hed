@@ -5,6 +5,27 @@ Vim-style modal editing by default; Emacs and VSCode keymaps ship as
 plugins and can be swapped at runtime. Tree-sitter for highlighting,
 ripgrep/fzf for search, tmux for runner panes, OSC 52 for clipboard.
 
+## Install
+
+Pre-built Linux x86_64 binary (no dependencies — built with
+`WITH_TREESITTER=0`):
+
+```sh
+wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x86_64 \
+  && chmod +x hed \
+  && ./hed
+```
+
+Want syntax highlighting? Grab the `-ts` build instead and install
+`libtree-sitter` (`sudo apt-get install libtree-sitter0`):
+
+```sh
+wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x86_64-ts \
+  && chmod +x hed
+```
+
+Or build from source:
+
 ```
 make
 ./build/hed file.c
