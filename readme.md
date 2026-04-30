@@ -9,10 +9,46 @@ Modal terminal editor written in C11. hed keeps a small core but ships useful mo
 - Fuzzy tools: `:fzf` file picker, `:recent` recent files, `:c` command picker, optional `bat` previews.
 - Integrations: tmux runner pane (`:tmux_toggle`, `:tmux_send`), lazygit wrapper (`:git`), shell passthrough (`:shell`), formatter hook (`:fmt`), optional word wrap and line-number toggles.
 
+## Install
+
+One-line install (Linux x86_64). Drops `hed` and `tsi` into
+`~/.local/bin`, offers to grab portable `fzf` and `ripgrep` binaries
+into the same dir, and lets you multi-select tree-sitter grammars to
+install up front:
+
+```bash
+curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
+```
+
+To install to a different directory:
+
+```bash
+HED_INSTALL_DIR=$HOME/bin curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
+```
+
+The published binary statically links the tree-sitter runtime, so no
+`libtree-sitter` system package is required. Grammars are loaded on
+demand via `dlopen`.
+
+If `~/.local/bin` is not on your `PATH`, the installer tells you how
+to add it.
+
 ## Requirements
-- clang, make, POSIX terminal.
-- `libtree-sitter` headers/runtime (`-ltree-sitter` is linked).
-- Optional but recommended: `ripgrep`, `fzf`, `tmux`, `lazygit`, `bat` (for previews), `nnn` (directory browsing)
+
+For the prebuilt binary: nothing — it's a self-contained ELF.
+
+For full functionality (the installer offers to fetch portable
+binaries for the first two):
+- `ripgrep` — `:rg`, `:ssearch`, `:rgword`
+- `fzf` — `:fzf`, `:recent`, `:c`, history fzf
+- `git` + `cc` — needed by `tsi` to build new tree-sitter grammars
+- Optional: `tmux`, `lazygit`, `bat` (fzf previews), `ctags`,
+  `clang-format` / `rustfmt` / `prettier` / `black` / `gofmt`
+
+To build from source:
+- clang or gcc (C11), `make`, POSIX terminal
+- `git submodule update --init --recursive` — pulls the vendored
+  tree-sitter runtime under `vendor/tree-sitter`
 
 ## Build
 
