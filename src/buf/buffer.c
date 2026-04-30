@@ -10,6 +10,7 @@
 extern int ts_is_enabled(void)               __attribute__((weak));
 extern int ts_buffer_autoload(Buffer *buf)   __attribute__((weak));
 extern void ts_buffer_reparse(Buffer *buf)   __attribute__((weak));
+extern void ts_buffer_free(Buffer *buf)      __attribute__((weak));
 
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
@@ -292,8 +293,8 @@ EdError buf_close(int index) {
     hook_fire_buffer(HOOK_BUFFER_CLOSE, &event);
 
     /* Free buffer resources */
-    /* Tree-sitter cleanup (no-op if disabled) */
-    ts_buffer_free(buf);
+    /* Tree-sitter cleanup (no-op if plugin not linked). */
+    if (ts_buffer_free) ts_buffer_free(buf);
     for (int i = 0; i < buf->num_rows; i++) {
         row_free(&buf->rows[i]);
     }
