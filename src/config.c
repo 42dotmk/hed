@@ -1,25 +1,27 @@
 #include "config.h"
 #include "hed.h"
 #include "keybinds_builtins.h"
-#include "plugins/auto_pair/auto_pair.h"
-#include "plugins/clipboard/clipboard.h"
-#include "plugins/core/core.h"
-#include "plugins/dired/dired_plugin.h"
-#include "plugins/emacs_keybinds/emacs_keybinds.h"
-#include "plugins/fmt/fmt.h"
-#include "plugins/keymap/keymap.h"
-#include "plugins/lsp/lsp_plugin.h"
-#include "plugins/plugin.h"
-#include "plugins/quickfix_preview/quickfix_preview.h"
-#include "plugins/smart_indent/smart_indent.h"
-#include "plugins/tmux/tmux_plugin.h"
-#include "plugins/viewmd/viewmd_plugin.h"
-#include "plugins/vim_keybinds/vim_keybinds.h"
+#include "auto_pair/auto_pair.h"
+#include "clipboard/clipboard.h"
+#include "core/core.h"
+#include "dired/dired_plugin.h"
+#include "emacs_keybinds/emacs_keybinds.h"
+#include "fmt/fmt.h"
+#include "keymap/keymap.h"
+#include "lsp/lsp_plugin.h"
+#include "plugin.h"
+#include "quickfix_preview/quickfix_preview.h"
+#include "smart_indent/smart_indent.h"
+#include "tmux/tmux_plugin.h"
+#include "viewmd/viewmd_plugin.h"
+#include "vim_keybinds/vim_keybinds.h"
+#include "vscode_keybinds/vscode_keybinds.h"
 
 void config_init(void) {
     plugin_load(&plugin_core,             1);
     plugin_load(&plugin_vim_keybinds,     1);
     plugin_load(&plugin_emacs_keybinds,   0);
+    plugin_load(&plugin_vscode_keybinds,  0);
     plugin_load(&plugin_keymap,           1);
     plugin_load(&plugin_clipboard,        1);
     plugin_load(&plugin_quickfix_preview, 1);

@@ -655,6 +655,80 @@ void kb_move_right(void) { ed_move_cursor(KEY_ARROW_RIGHT); }
 void kb_move_up(void) { ed_move_cursor(KEY_ARROW_UP); }
 void kb_move_down(void) { ed_move_cursor(KEY_ARROW_DOWN); }
 
+/* Apply a text-object motion to the active window's cursor. Used by
+ * the modeless keymap plugins (emacs, vscode) so they don't have to
+ * touch cursor.x/cursor.y directly. */
+typedef int (*TextObjMotion)(Buffer *, int, int, TextSelection *);
+
+static void kb_apply_motion(TextObjMotion fn) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || !fn) return;
+    TextSelection sel;
+    if (!fn(buf, win->cursor.y, win->cursor.x, &sel)) return;
+    win->cursor.y = sel.cursor.line;
+    win->cursor.x = sel.cursor.col;
+}
+
+/* Implementation below — count-aware line jump used by gg/G. */
+static void goto_line_or(int fallback_y);
+
+void kb_goto_line_start(void) { kb_apply_motion(textobj_to_line_start); }
+void kb_goto_line_end(void)   { kb_apply_motion(textobj_to_line_end); }
+/* kb_goto_file_end: with no count → end of file, with count → that line. */
+void kb_goto_file_end(void) {
+    Buffer *buf = buf_cur();
+    if (!buf) return;
+    goto_line_or(buf->num_rows - 1);
+}
+void kb_goto_word_start(void) { kb_apply_motion(textobj_to_word_start); }
+void kb_goto_word_end(void)   { kb_apply_motion(textobj_to_word_end); }
+void kb_goto_para_start(void) { kb_apply_motion(textobj_to_paragraph_start); }
+void kb_goto_para_end(void)   { kb_apply_motion(textobj_to_paragraph_end); }
+
+/* Selection-aware motion helpers (VSCode / modern Emacs semantics):
+ *   kb_drop_*   — drop any active selection, then move.
+ *   kb_extend_* — enter visual if not already, then move (extending sel).
+ * Used by modeless keymaps (vscode_keybinds, emacs_keybinds) to bind
+ * Shift+arrow to extend and plain arrow to drop. */
+
+static int in_visual_mode(void) {
+    return E.mode == MODE_VISUAL ||
+           E.mode == MODE_VISUAL_LINE ||
+           E.mode == MODE_VISUAL_BLOCK;
+}
+
+#define DROP_THEN(name, body)                              \
+    void kb_drop_##name(void) {                            \
+        if (in_visual_mode()) kb_visual_escape();          \
+        body;                                              \
+    }
+#define EXTEND_THEN(name, body)                            \
+    void kb_extend_##name(void) {                          \
+        if (!in_visual_mode()) kb_visual_begin(0);         \
+        body;                                              \
+    }
+
+DROP_THEN(left,   kb_move_left())
+DROP_THEN(right,  kb_move_right())
+DROP_THEN(up,     kb_move_up())
+DROP_THEN(down,   kb_move_down())
+DROP_THEN(word_l, kb_goto_word_start())
+DROP_THEN(word_r, kb_goto_word_end())
+DROP_THEN(bol,    kb_goto_line_start())
+DROP_THEN(eol,    kb_goto_line_end())
+
+EXTEND_THEN(left,   kb_move_left())
+EXTEND_THEN(right,  kb_move_right())
+EXTEND_THEN(up,     kb_move_up())
+EXTEND_THEN(down,   kb_move_down())
+EXTEND_THEN(word_l, kb_goto_word_start())
+EXTEND_THEN(word_r, kb_goto_word_end())
+EXTEND_THEN(bol,    kb_goto_line_start())
+EXTEND_THEN(eol,    kb_goto_line_end())
+/* kb_goto_file_start is defined further below (jump-list aware version
+ * used by vim's gg). Both keymap plugins reach it through this header. */
+
 /* Normal mode - search */
 void kb_search_next(void) {
     Buffer *buf = buf_cur();
@@ -873,15 +947,30 @@ static void kb_para_jump(const char *key) {
 void kb_para_next(void) { kb_para_jump("}"); }
 void kb_para_prev(void) { kb_para_jump("{"); }
 
-void kb_goto_file_start(void) {
+/* gg / G semantics: with no count → file start/end. With a count >= 1
+ * → jump to that line (matches vim's `42G` / `42gg`). Consumes the
+ * count via keybind_get_and_clear_pending_count so the dispatch loop's
+ * repeat-on-count breaks after one call. */
+static void goto_line_or(int fallback_y) {
     BUFWIN(buf, win)
-    if (win->cursor.y >= 5)
+    int count = keybind_get_and_clear_pending_count();
+    int target;
+    if (count > 1) {
+        target = count - 1;
+    } else {
+        target = fallback_y;
+    }
+    if (target < 0) target = 0;
+    if (target >= buf->num_rows) target = buf->num_rows - 1;
+    if (abs(target - win->cursor.y) >= 5)
         jump_save_current();
-    win->cursor.y = 0;
+    win->cursor.y = target;
     win->cursor.x = 0;
-    buf->cursor.y = 0;
+    buf->cursor.y = target;
     buf->cursor.x = 0;
 }
+
+void kb_goto_file_start(void) { goto_line_or(0); }
 
 /* Toggle case of character under cursor and move right */
 void kb_toggle_case(void) {

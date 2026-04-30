@@ -45,6 +45,37 @@ void kb_move_left(void);
 void kb_move_right(void);
 void kb_move_up(void);
 void kb_move_down(void);
+
+/* Cursor motions that delegate to text-objects (no mode change). Used
+ * by modeless keymap plugins. */
+void kb_goto_line_start(void);
+void kb_goto_line_end(void);
+void kb_goto_file_start(void);
+void kb_goto_file_end(void);
+void kb_goto_word_start(void);
+void kb_goto_word_end(void);
+void kb_goto_para_start(void);
+void kb_goto_para_end(void);
+
+/* Selection-aware variants used by modeless keymaps. `kb_drop_*` exits
+ * any active visual selection and then moves; `kb_extend_*` enters
+ * visual mode (if not already) and then moves, extending the selection. */
+void kb_drop_left(void);
+void kb_drop_right(void);
+void kb_drop_up(void);
+void kb_drop_down(void);
+void kb_drop_word_l(void);
+void kb_drop_word_r(void);
+void kb_drop_bol(void);
+void kb_drop_eol(void);
+void kb_extend_left(void);
+void kb_extend_right(void);
+void kb_extend_up(void);
+void kb_extend_down(void);
+void kb_extend_word_l(void);
+void kb_extend_word_r(void);
+void kb_extend_bol(void);
+void kb_extend_eol(void);
 void kb_insert_newline(void);
 void kb_insert_tab(void);
 void kb_insert_backspace(void);

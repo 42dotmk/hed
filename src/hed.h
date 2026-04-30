@@ -23,6 +23,7 @@
 #define mapvl(x, y, d) keybind_register(MODE_VISUAL_LINE, x, y, d)
 #define cmapn(x, y)           keybind_register_command(MODE_NORMAL, x, y)
 #define cmapv(x, y)           keybind_register_command(MODE_VISUAL, x, y)
+#define cmapi(x, y)           keybind_register_command(MODE_INSERT, x, y)
 
 /* Filetype-specific keybind macros — only fire when buffer filetype matches */
 #define mapn_ft(ft, x, y, d)  keybind_register_ft(MODE_NORMAL, x, ft, y, d)

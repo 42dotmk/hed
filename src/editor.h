@@ -28,13 +28,35 @@
 #define KEY_ARROW_LEFT 1005
 #define KEY_HOME 1006
 #define KEY_END 1007
+#define KEY_F1  1010
+#define KEY_F2  1011
+#define KEY_F3  1012
+#define KEY_F4  1013
+#define KEY_F5  1014
+#define KEY_F6  1015
+#define KEY_F7  1016
+#define KEY_F8  1017
+#define KEY_F9  1018
+#define KEY_F10 1019
+#define KEY_F11 1020
+#define KEY_F12 1021
 
-/* Meta/Alt modifier: OR'd with the base key code.
- * E.g. M-x is encoded as (KEY_META | 'x'). Out of range of the special
- * keys above and well above any byte value, so it never overlaps. */
+/* Modifier flags OR'd with the base key code. Out of range of the
+ * special keys above and well above any byte value, so they never
+ * overlap with raw key codes.
+ *   KEY_META  — Alt / Meta modifier (e.g. <M-x> = KEY_META | 'x')
+ *   KEY_CTRL  — Ctrl modifier on a SPECIAL key (e.g. <C-Left>).
+ *               Plain Ctrl+letter is still encoded as bytes 1..26;
+ *               KEY_CTRL is only used for non-byte keys (arrows etc.).
+ */
 #define KEY_META  0x10000
-#define KEY_IS_META(k) (((k) & KEY_META) != 0)
-#define KEY_NO_META(k) ((k) & 0xFFFF)
+#define KEY_CTRL  0x20000
+#define KEY_SHIFT 0x40000
+#define KEY_IS_META(k)  (((k) & KEY_META)  != 0)
+#define KEY_IS_CTRL(k)  (((k) & KEY_CTRL)  != 0)
+#define KEY_IS_SHIFT(k) (((k) & KEY_SHIFT) != 0)
+#define KEY_NO_META(k)  ((k) & 0xFFFF)
+#define KEY_BASE(k)     ((k) & 0xFFFF)
 
 #define CURSOR_STYLE_NONE "\x1b[0 q"
 #define CURSOR_STYLE_BLOCK "\x1b[1 q"
@@ -131,6 +153,13 @@ void ed_move_cursor(int key);
 void ed_process_command(void);
 
 void ed_set_mode(EditorMode new_mode);
+
+/* Modeless toggle. When on, NORMAL mode is unreachable — any attempt to
+ * enter it is silently redirected to INSERT. Used by emacs/vscode-style
+ * keymaps that are conceptually modeless. Visual and Command modes are
+ * preserved. */
+void ed_set_modeless(int on);
+int  ed_is_modeless(void);
 void ed_set_status_message(const char *fmt, ...);
 
 void ed_init(int create_default_buffer);

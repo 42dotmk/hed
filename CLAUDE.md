@@ -4,704 +4,563 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**hed** is a modal terminal editor written in C11 with Vim-like bindings. It integrates tree-sitter for syntax highlighting, ripgrep for search, fzf for fuzzy finding, and tmux for runner pane support. The codebase emphasizes a small core (~13,000 LOC) with explicit C APIs for extensibility through commands, keybindings, and hooks.
+**hed** is a terminal editor written in C11 with a small core and a plugin
+system. It integrates tree-sitter for syntax highlighting, ripgrep for
+search, fzf for fuzzy finding, and tmux for runner pane support. Default
+keybinds are Vim-style; alternate Emacs and VSCode keymaps ship as
+plugins and can be hot-swapped at runtime via `:keymap`.
 
-
-**Key Features**:
-- Modal editing (Normal/Insert/Visual/Visual Block/Command modes)
-- Tree-sitter syntax highlighting with 12+ language grammars
+**Key features:**
+- Plugin architecture — most user-facing features are plugins; config is
+  a manifest of which to load
+- Three keymap variants: `vim_keybinds` (default), `emacs_keybinds`,
+  `vscode_keybinds` (latter two are modeless via the editor's
+  `ed_set_modeless()` toggle)
+- Modal editing (Normal / Insert / Visual / Visual Line / Visual Block /
+  Command modes) when running under a modal keymap
+- Tree-sitter syntax highlighting with 14+ language grammars
 - Quickfix list with live preview synchronization
-- Fuzzy finding integration (fzf)
+- Fuzzy finding (fzf) for files, recents, commands, history, jump list
 - Tmux runner pane integration
 - Macro recording and playback
-- Code folding (manual, bracket-based, indent-based)
-- Directory browser (dired/oil.nvim-like)
+- Code folding (manual / bracket / indent)
+- Directory browser (oil.nvim-style)
 - Modal (floating) windows
 - Ctags integration
-- Jump list and recent files tracking
+- Jump list, recent files, command history (persistent)
 - Undo/redo with snapshot-based history
 - Vim-like registers and text objects
+- System clipboard via OSC 52 (no external `pbcopy`/`xclip` needed)
+- Meta/Alt key support in the input layer (`<M-x>`)
 
 ## Build Commands
 
 ```bash
-# Build the project (outputs build/hed and build/tsi)
-make
-
-# Clean build artifacts
-make clean
-
-# Format all source files with clang-format
-make fmt
-
-# Run the editor after building
-make run
-
-# Run tests
-make test
-
-# Generate ctags
-make tags
+make                           # build → build/hed and build/tsi
+make clean                     # remove build/
+make fmt                       # clang-format -i on all sources
+make run                       # build then run
+make test                      # unity unit tests
+make tags                      # ctags -R
+make PLUGINS_DIR=/path/to/plugins   # use an external plugin set
 ```
+
 The build system:
-- Uses clang with C23 standard (`-std=c23`)
-- Strict warnings: `-Wall -Wextra -pedantic`
-- Links against `libtree-sitter` and `libdl` dynamically
-- Produces two binaries: `build/hed` (the editor) and `build/tsi` (tree-sitter language installer)
-- Copies tree-sitter grammars from `ts-langs/` during build
+- Uses `gcc` with C11 + `-Wall -Wextra -pedantic`
+- Links against `libtree-sitter` and `libdl`
+- Produces `build/hed` (editor) and `build/tsi` (tree-sitter installer)
+- Auto-discovers `*.c` recursively under `src/` and `$(PLUGINS_DIR)`
+- Default `PLUGINS_DIR` is `plugins/` (top-level)
 
 ## Running hed
 
 ```bash
-# Open files
-./build/hed [file ...]
-
-# Execute a command at startup
-./build/hed -c "e other.txt"
-./build/hed -c "q!"
-
-# Open a directory (launches dired browser)
-./build/hed /path/to/directory
-./build/hed .
+./build/hed [file ...]                  # open files
+./build/hed -c "<command>"              # run a command at startup
+./build/hed /path/to/dir                # open directory (dired)
+./build/hed .                           # current dir as dired
 ```
 
 Logs are written to `.hedlog` in the current directory.
 
 ## Architecture Overview
 
+### The Plugin System
+
+Most features live in `plugins/<name>/` and are activated by
+`config_init()` in `src/config.c`. The plugin interface (3 functions, 1
+struct) is in `src/plugin.{c,h}`:
+
+```c
+typedef struct Plugin {
+    const char *name, *desc;
+    int  (*init)(void);
+    void (*deinit)(void);
+} Plugin;
+
+int plugin_load(const Plugin *p, int enabled);   // register and optionally init
+int plugin_enable(const Plugin *p);              // run init() if not already
+int plugin_disable(const Plugin *p);             // run deinit() if any
+```
+
+Each plugin exposes `extern const Plugin plugin_<name>` via a small
+header. `config.c` includes those headers and calls `plugin_load(&...,
+1|0)` — explicit, link-checked, no string lookup. There is no master
+list / manifest file; the config IS the manifest.
+
+`plugin_load(p, 0)` registers a plugin without calling `init()` —
+useful for keymap plugins that should be available for runtime swap but
+not active at boot. `:plugins` command lists loaded plugins and their
+enabled state.
+
 ### Core Data Flow
 
-1. **Main Loop** (`src/main.c`):
-   - Uses `select()` to wait for stdin input or macro queue events
-   - Calls `ed_read_key()` to get the next keypress (from stdin or macro buffer)
-   - Calls `ed_process_keypress()` to handle keys based on current mode
-   - Calls `ed_render_frame()` to redraw the screen
-   - Supports startup commands via `-c "<command>"` flag
+1. **Main loop** (`src/main.c`): `select()` on stdin → `ed_read_key()`
+   → `ed_process_keypress()` → `ed_render_frame()`. Supports startup
+   commands via `-c`.
 
-2. **Editor State** (`src/editor.c`, `src/editor.h`):
-   Global `Ed E` structure contains:
-   - `buffers`: Vector of all open buffers
-   - `current_buffer`: Index of active buffer
-   - `mode`: Current editor mode (Normal/Insert/Visual/Visual Block/Command)
-   - Window layout tree and focus tracking
-   - Quickfix list with preview synchronization
-   - Jump list for buffer navigation history (Ctrl-O/Ctrl-I)
-   - Recent files tracking
-   - Command history (persistent)
-   - Registers (Vim-like named registers a-z, 0-9, ", :, .)
-   - Macro recording/playback state
-   - Search state (current query and regex mode)
-   - Working directory tracking
+2. **Editor state** (`src/editor.{c,h}`): global `Ed E` with buffers,
+   active mode, layout tree, quickfix, jump list, recents, command
+   history, registers, macro queue, search state, cwd. Also owns the
+   modeless flag (`g_modeless`).
 
-3. **Buffer System** (`src/buf/`):
-   - `Buffer`: Contains rows, cursor position, filename, filetype, tree-sitter state, folding regions
-   - `Row`: Line data with both raw chars and rendered display (for tabs/unicode)
-   - `textobj.c`: Text object operations (words, paragraphs, delimiter pairs)
-   - Support for read-only buffers (quickfix, dired)
-   - Per-buffer undo/redo stacks
+3. **Buffer system** (`src/buf/`): `Buffer` (rows + cursor + filename +
+   filetype + tree-sitter state + folds + undo), `Row` (raw chars +
+   render), `textobj.c` (text object extraction), `buf_helpers.c`.
 
-4. **Command Execution** (`src/commands.c`):
-   - Commands registered via `command_register(name, callback, desc)` in `src/config.c`
-   - User types `:command args` which gets parsed and dispatched to the callback
-   - Command callbacks receive args as a string
-   - 87+ built-in commands available
+4. **Command execution** (`src/commands.{c,h}`): registered via
+   `command_register(name, callback, desc)` (or the `cmd(...)` macro).
+   Plugins register their own commands inside their `init()`.
 
-5. **Keybinding Dispatch** (`src/keybinds.c`):
-   - Keybinds registered per-mode via `keybind_register(mode, key_sequence, callback)`
-   - Built-in keybind functions in `src/keybinds_builtins.c`
-   - User configuration in `src/config.c` using `mapn/mapi/mapv/mapvb` macros
-   - Multi-key sequences supported (`dd`, `gg`, `yy`)
-   - Leader key sequences (`<space>ff`, `<space>sd`)
-   - Numeric count support for operators
+5. **Keybinding dispatch** (`src/keybinds.{c,h}`):
+   - Per-mode: `keybind_register(mode, sequence, callback, desc)`
+   - Macros in `src/hed.h`: `mapn` / `mapi` / `mapv` / `mapvb` / `mapvl`
+     for function callbacks, `cmapn` / `cmapv` / `cmapi` for command
+     callbacks (run `:cmd args`)
+   - Multi-key sequences (`dd`, `gg`, `<C-x><C-s>`)
+   - Numeric prefix support — count is consumed by callbacks via
+     `keybind_get_and_clear_pending_count()` (see `kb_goto_file_start`)
+   - **Last-write-wins**: re-registering the same `(mode, sequence,
+     filetype)` replaces the prior binding (`remove_duplicate` in
+     `keybinds.c`). This lets later plugins or user config override
+     plugin defaults.
 
-6. **Hook System** (`src/hooks.c`, `src/hooks.h`):
-   - Events: char insert/delete, line insert/delete, buffer lifecycle, mode change, cursor movement
-   - Callbacks registered with mode and filetype filters
-   - Quickfix preview synchronization implemented via cursor movement hook in `src/user_hooks_quickfix.c`
-   - Auto-pairing, smart indentation, cursor shape changes
-   - Dired buffer lifecycle management
+6. **Hook system** (`src/hooks.{c,h}`):
+   - Events: char/line insert/delete, buffer lifecycle (open/close/
+     switch/save), buffer pre-open and pre-save (intercept hooks),
+     mode change, cursor movement, keypress
+   - Pre-open / pre-save hooks let plugins claim ownership by setting
+     `event->consumed = 1` (this is how `dired` intercepts directory
+     opens without core knowing about it)
+
+7. **Modeless mode** (`src/editor.c`): when `ed_set_modeless(1)` is on,
+   any attempt to enter `MODE_NORMAL` is silently redirected to
+   `MODE_INSERT`. Used by `emacs_keybinds` and `vscode_keybinds`.
+   Toggleable at runtime via `:modeless on|off|toggle`.
 
 ### Key Subsystems
 
-#### Tree-sitter Integration (`src/utils/ts.c`)
-- Grammars loaded dynamically as `.so` files from `$HED_TS_PATH` (defaults to `~/.config/hed/ts` or `ts-langs/`)
-- Each buffer has a `TSState*` in `buf->ts_internal`
-- Parsing triggered when buffer dirty flag changes
-- Highlight queries loaded from `queries/<lang>/highlights.scm`
-- Language auto-detection by file extension in `buf_detect_filetype()`
-- Commands: `:ts on|off|auto`, `:tslang <name>`, `:tsi <lang>`
-- **Included grammars**: bash, c, c-sharp, commonlisp, html, javascript, make, markdown, org, python, rust, toml, unifieddiff, zsh
+#### Tree-sitter (`src/utils/ts.c`)
+Grammars are `.so` files loaded from `$HED_TS_PATH` (defaults to
+`~/.config/hed/ts` or `ts-langs/`). Each buffer has a `TSState*` in
+`buf->ts_internal`. Highlight queries from `queries/<lang>/highlights.scm`.
+Commands: `:ts on|off|auto`, `:tslang <name>`, `:tsi <lang>`.
+Included grammars: bash, c, c-sharp, commonlisp, html, javascript, make,
+markdown, org, python, rust, toml, unifieddiff, zsh.
 
-#### Directory Browser - Dired (`src/dired.c`, `src/dired.h`)
-**NEW FEATURE** - oil.nvim-like directory browser:
-- Opens directories as special "dired" buffers with filetype "dired"
-- Lists files and directories sorted alphabetically
-- Navigation keybinds (in dired buffers):
-  - `<Enter>`: Open file or navigate into directory
-  - `-`: Go to parent directory
-  - `~`: Return to original directory
-- Read-only buffer with automatic state management
-- Maintains per-buffer state (origin path, current path)
-- Integrated with buffer lifecycle hooks for cleanup
-- Open with: `:e .`, `:e /path/to/dir`, or `./build/hed .`
+#### Renderer (`src/terminal.c`)
+Builds each frame into a single `Abuf` (append buffer) and writes it in
+one `write()` call. Wraps each frame in **DEC mode 2026 (Synchronized
+Output)** so modern terminals commit atomically and don't flicker.
+Older terminals ignore the escape harmlessly. Inside tmux, `set -as
+terminal-features ',alacritty:sync'` (or similar for your outer term)
+in `~/.tmux.conf` is needed for the sync to propagate.
 
-#### Macro System (`src/macros.c`, `src/macros.h`)
-**NEW FEATURE** - Vim-style macro recording and playback:
-- Record to named registers (a-z)
-- Playback with numeric count support
-- Last macro repeat with `@@`
-- Special key encoding: `<Esc>`, `<CR>`, `<C-x>`, etc.
-- Transparent to underlying functions (simulates keyboard input)
-- Commands: `:record [reg]`, `:play [reg]`
-- Keybinds: `q<reg>` to record, `@<reg>` to play, `@@` to repeat last
-- Macro queue system allows execution without blocking on stdin
+#### Input layer (`src/editor.c`)
+`ed_read_key()` parses raw bytes into key codes:
+- Plain ASCII / control characters
+- CSI sequences (arrows, Home, End, PageUp/Down, Delete)
+- **Meta/Alt keys**: `ESC <byte>` becomes `KEY_META | byte`. Encodes as
+  `<M-x>`, `<M-/>`, etc. for use in `mapi`/`mapn`.
 
-#### Code Folding (`src/utils/fold.c`, `src/fold_methods/`)
-**NEW FEATURE** - Code folding with multiple detection methods:
+#### Quickfix
+`E.qf` stores entries (file:line:col:text). The `quickfix_preview`
+plugin (cursor hook scoped to `quickfix` filetype) keeps `E.qf.sel` in
+sync with cursor and previews the target window. Populated by `:rg`,
+`:ssearch`, `:cadd`. Navigation: `:cnext`, `:cprev`, `:copenidx N`,
+`:ctoggle`. Default keybinds: `gn`/`<C-n>`, `gp`/`<C-p>`, `<space>tq`.
 
-**Fold Methods**:
-1. **Manual** (`FOLD_METHOD_MANUAL`) - User-created folds only
-2. **Bracket** (`FOLD_METHOD_BRACKET`) - Auto-detect `{` `}` pairs
-3. **Indent** (`FOLD_METHOD_INDENT`) - Indentation-based regions
+#### Window layout (`src/ui/wlayout.c`, `src/ui/window.h`)
+Binary tree of splits. Leaves are `Window`s with buffer index, cursor,
+offsets, gutter mode, wrap setting. Directional focus via
+`windows_focus_left/right/up/down`. Quickfix is a special window with
+`is_quickfix=1`. Modal (floating) windows draw on top via
+`src/ui/winmodal.c`.
 
-**Commands**:
-- `:foldnew [start] [end]` - Create fold
-- `:foldrm` - Remove fold at cursor
-- `:foldtoggle` - Toggle fold at cursor
-- `:foldmethod <method>` - Set auto-detection method
-- `:foldupdate` - Regenerate folds based on current method
+#### Other in-core subsystems
+- **Macros** (`src/macros.c`): `q<reg>` / `@<reg>` / `@@`, plus
+  `:record`, `:play`. Macro queue lets recorded keys execute without
+  blocking on stdin.
+- **Folding** (`src/utils/fold.c`, `src/fold_methods/`): manual,
+  bracket-based, indent-based. Per-buffer `FoldList`, collapsed lines
+  shown as `[...]`. `za`/`zo`/`zc`/`zR`/`zM`.
+- **Ctags** (`src/utils/ctags.c`): `:tag <name>` and `gd` use ripgrep
+  to look up tags. `make tags` to (re)generate.
+- **Undo** (`src/utils/undo.c`): per-buffer snapshot stacks captured
+  via mode-change and char/line modification hooks. `u` / `<C-r>`,
+  `:undo` / `:redo`.
+- **Registers** (`src/registers.c`): vim-like `"` (unnamed), `0` (yank),
+  `1`–`9` (delete history), `a`–`z` (named), `:` (last command), `.`
+  (last keybind sequence). Append with uppercase `A`–`Z`.
+- **Jump list** (`src/utils/jump_list.c`): `<C-o>`/`<space>jb` back,
+  `<C-i>`/`<space>jf` forward.
+- **Recent files** (`src/utils/recent_files.c`): `:recent` with fzf,
+  `<space>fr`. Persisted across sessions.
+- **History** (`src/utils/history.c`): persistent command-line history,
+  `:hfzf` for fuzzy search.
 
-**Keybindings**:
-- `za` - Toggle fold at cursor
-- `zo` - Open fold
-- `zc` - Close fold
-- `zR` - Open all folds
-- `zM` - Close all folds
+## Plugins (in `plugins/`)
 
-**Implementation**:
-- Per-buffer fold regions stored in `FoldList`
-- Collapsed folds shown as single line with `[...]` indicator
-- Cursor automatically adjusted when navigating collapsed folds
-- Rendering optimizations skip collapsed line content
+| Plugin | What it owns |
+|---|---|
+| `core` | Default `:command` set + a few editor-wide hooks (cursor shape, undo registration). `:goto`, `:modeless`, `:plugins` live here. |
+| `vim_keybinds` | Default Vim modal keymap + textobjects (`hjkl`, `w`/`b`/`e`, operators, `gg`/`G`, `dd`/`yy`, fold keys, etc.) |
+| `emacs_keybinds` | Emacs keymap with `C-a/C-e/C-n/C-p/C-b/C-f/C-d/C-k/C-y/C-s`, `C-x` prefix cluster, `M-f`/`M-b`/`M-x`/etc. Sets `ed_set_modeless(1)`. |
+| `vscode_keybinds` | VSCode keymap with `Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D` + `Home`/`End`. Sets `ed_set_modeless(1)`. |
+| `keymap` | `:keymap vim\|emacs\|vscode` and `:keymap-toggle` for runtime swap. |
+| `clipboard` | Mirrors yank to system clipboard via OSC 52. |
+| `quickfix_preview` | Cursor hook that previews quickfix entries. |
+| `dired` | Directory browser. Owns `<CR>`/`-`/`~`/`cd` keybinds + `HOOK_BUFFER_OPEN_PRE`/`SAVE_PRE` interceptors. |
+| `lsp` | LSP client (WIP). Lifecycle hooks + `:lsp_*` commands. |
+| `viewmd` | Markdown live preview. |
+| `tmux` | Runner pane integration. `:tmux_toggle` / `:tmux_send` / `:tmux_kill` / `:tmux_send_line`. |
+| `fmt` | `:fmt` runs an external formatter (clang-format, rustfmt, prettier, ...) by filetype. |
+| `auto_pair` | Auto-insert matching brackets/quotes in insert mode. |
+| `smart_indent` | Carry previous line's indentation onto new lines. |
+| `example` | Starter template — copy and rename to make your own plugin. |
 
-#### Modal Windows (`src/ui/winmodal.c`, `src/ui/winmodal.h`)
-**NEW FEATURE** - Floating window support:
-- Windows that draw on top of the layout tree
-- Can be centered or custom positioned
-- Block input to underlying windows when shown
-- Support borders and decorations
-- Commands: `:modal` (convert current to modal), `:unmodal` (back to layout)
-- Each window has `is_modal` and `visible` flags
-- Use cases: popup menus, centered focus windows, overlays
+Each plugin has its own `README.md`. See `plugins/example/README.md`
+for the recipe to add a new plugin.
 
-#### Quickfix List (`src/utils/quickfix.c`)
-- Global `E.quickfix` stores entries with filename:line:col:message
-- Special read-only buffer with filetype "quickfix"
-- Populated by `:rg`, `:ssearch`, `:cadd` commands
-- Cursor movement in **any buffer** triggers preview update via hook
-- Navigation: `:cnext`, `:cprev`, `:copenidx N`, `:ctoggle`
-- Keybinds: `gn`/`<C-n>` (next), `gp`/`<C-p>` (prev), `<space>tq` (toggle)
-- Live preview synchronization shows context of current quickfix entry
+## Configuration (`src/config.c`)
 
-#### Ctags Integration (`src/utils/ctags.c`)
-**NEW FEATURE** - Tag-based code navigation:
-- Uses standard ctags file format
-- `:tag <name>` - Jump to tag definition
-- `gd` - Jump to tag under cursor
-- Searches using ripgrep for fast lookup
-- Parses tag file format: `TAG FILEPATH REGEX_STRING`
-- Generate tags with `make tags` or `ctags -R .`
+`config_init()` is a single function with a manifest:
 
-#### Window Layout (`src/ui/wlayout.c`, `src/ui/window.h`)
-- Binary tree structure for splits (horizontal/vertical)
-- Each leaf node is a `Window` with: buffer_index, cursor, row_offset, col_offset, wrap settings, gutter_mode
-- Focus moves directionally with `windows_focus_left/right/up/down()`
-- Quickfix window is a special window with `is_quickfix=1`
-- Weight-based sizing for flexible split distribution
-- UTF-8 borders and configurable decorations
-- Dynamic recalculation on split/close/resize
+```c
+void config_init(void) {
+    plugin_load(&plugin_core,             1);
+    plugin_load(&plugin_vim_keybinds,     1);
+    plugin_load(&plugin_emacs_keybinds,   0);   // loaded but not active
+    plugin_load(&plugin_vscode_keybinds,  0);
+    plugin_load(&plugin_keymap,           1);
+    plugin_load(&plugin_clipboard,        1);
+    plugin_load(&plugin_quickfix_preview, 1);
+    plugin_load(&plugin_dired,            1);
+    plugin_load(&plugin_lsp,              1);
+    plugin_load(&plugin_viewmd,           1);
+    plugin_load(&plugin_auto_pair,        1);
+    plugin_load(&plugin_smart_indent,     1);
+    plugin_load(&plugin_fmt,              1);
+    plugin_load(&plugin_tmux,             1);
 
-#### Fuzzy Finding (`src/utils/fzf.c`)
-- Shell out to `fzf` with optional `bat` preview
-- Used by `:fzf` (file picker), `:recent`, `:c` (command picker), `:rg` (interactive ripgrep)
-- Results parsed and fed to commands (e.g., open files, populate quickfix)
-- Multiple file selection support
-- Keybinds: `<space>ff` or `<space><space>` (file picker), `<space>c` (command picker)
+    /* Personal overrides — last-write-wins beats plugin defaults. */
+    cmapn(" ff", "fzf");
+    /* ... */
+}
+```
 
-#### Tmux Integration (`src/utils/tmux.c`)
-- `:tmux_toggle` creates/shows a runner pane in the same tmux window
-- `:tmux_send <cmd>` sends text to that pane
-- Keybind `<space>ts` sends current line to runner
-- Pane identified by hed's PID as target name
-- Automatic pane creation/reuse
-- `:tmux_kill` terminates the runner pane
+To add a personal plugin: copy `plugins/example/`, rename, register in
+`config.c`. To use an out-of-tree plugin set: `make
+PLUGINS_DIR=$HOME/my-hed-plugins` and reference its headers from your
+config.
 
-#### Undo System (`src/utils/undo.c`)
-- Per-buffer undo stacks store snapshots of rows
-- Captures state before modifications via buffer modification hooks
-- Commands `:undo` and `:redo` (also `u` and `<C-r>`)
-- Snapshot-based approach preserves entire buffer state
-- Efficient for large files with sparse edits
-
-#### Register System (`src/registers.c`)
-Vim-like register support:
-- `"` - Unnamed (default clipboard)
-- `0` - Yank register (last yank)
-- `1-9` - Delete history (rotating)
-- `a-z` - Named registers
-- `:` - Last command
-- `.` - Last keybind sequence
-
-Features:
-- Shared clipboard across buffers
-- Block selection support
-- Append to named registers (uppercase A-Z)
-- Integration with system clipboard (planned)
-
-#### Jump List (`src/utils/jump_list.c`)
-- Vim-style jump list navigation
-- Tracks buffer switches with cursor positions
-- `<C-o>` / `<space>jb` - Jump backward
-- `<C-i>` / `<space>jf` - Jump forward
-- Maintains history of where you've been for easy navigation back
-
-#### Recent Files (`src/utils/recent_files.c`)
-- Persistent tracking of opened files
-- `:recent` command launches fzf picker with recent files
-- Stored in history file between sessions
-- Keybind: `<space>fr` (fuzzy recent files)
-
-### Extension Points (src/config.c)
-
-All user-facing customization lives in `src/config.c`:
-
-1. **user_commands_init()**: Register commands using `cmd(name, callback, desc)`
-   - Callback signature: `void callback(const char *args)`
-   - Example: `cmd("mycommand", cmd_mycommand, "my custom command");`
-
-2. **user_keybinds_init()**: Register keybindings using mode-specific macros
-   - `mapn(key, callback, desc)` - Normal mode function keybind
-   - `mapi(key, callback, desc)` - Insert mode function keybind
-   - `mapv(key, callback, desc)` - Visual mode function keybind
-   - `mapvb(key, callback, desc)` - Visual block mode function keybind
-   - `cmapn(key, "command")` - Normal mode command keybind
-   - `cmapv(key, "command")` - Visual mode command keybind
-   - Key sequences like `<space>ff` are literal spaces in strings: `" ff"`
-   - Multi-key sequences: `"dd"`, `"gg"`, `"yy"`
-
-3. **user_hooks_init()**: Register hooks for events
-   - Example: `hook_register_mode(HOOK_MODE_CHANGE, on_mode_change_callback);`
-   - Hook types in `src/hooks.h`: char/line insert/delete, buffer lifecycle, mode change, cursor movement
-   - Additional quickfix hooks in `src/user_hooks_quickfix.c`
-   - Built-in hooks for auto-pairing, smart indentation, cursor shape
-
-After modifying `src/config.c`, use `:reload` from within hed to rebuild and restart.
+After modifying `src/config.c`, run `:reload` from within hed to
+rebuild and restart.
 
 ## Built-in Commands Reference
 
 ### File I/O
-- `:e <file>` - Edit file or directory (dired)
-- `:w [file]` - Write buffer
-- `:q` - Quit (fails if unsaved changes)
-- `:q!` - Force quit without saving
-- `:wq` - Write and quit
-- `:qa` - Quit all windows
+- `:e <file>` — edit file or open directory (dired)
+- `:w [file]` — write
+- `:q` / `:q!` / `:wq` — quit / force quit / write & quit
 
-### Buffer Management
-- `:ls` - List all buffers
-- `:bn` - Next buffer
-- `:bp` - Previous buffer
-- `:b <N>` - Switch to buffer N
-- `:bd` - Delete (close) current buffer
-- `:new` - Create new empty buffer
+### Buffer / Window
+- `:ls`, `:bn`, `:bp`, `:b <N>`, `:bd`, `:new`, `:refresh`
+- `:split`, `:vsplit`, `:wclose`, `:wfocus`, `:wh|wj|wk|wl`
+- `:modal` / `:unmodal`
 
-### Window Management
-- `:split` - Horizontal split
-- `:vsplit` - Vertical split
-- `:wclose` - Close current window
-- `:modal` - Convert current window to modal (floating)
-- `:unmodal` - Convert modal window back to layout
-
-### Search & Navigation
-- `:rg [pattern]` - Ripgrep search (no args = interactive fzf)
-- `:ssearch <pattern>` - Search in current file
-- `:rgword` - Ripgrep for word under cursor
-- `:fzf` - Fuzzy file finder
-- `:recent` - Fuzzy recent files picker
-- `:c` - Fuzzy command picker
-- `:tag <name>` - Jump to ctag
-- `/` - Search forward in buffer
-- `?` - Search backward in buffer
+### Navigation
+- `:goto <line>` — jump to line N
+- `:goto <motion> [count]` — apply text-object motion ([count] times)
+- `:tag <name>`, `:rg`, `:rgword`, `:ssearch`, `:fzf`, `:recent`, `:c`
+- `/`, `?` — search forward / backward in buffer
 
 ### Quickfix
-- `:copen` - Open quickfix window
-- `:cclose` - Close quickfix window
-- `:ctoggle` - Toggle quickfix window
-- `:cnext` - Next quickfix entry
-- `:cprev` - Previous quickfix entry
-- `:copenidx <N>` - Open Nth quickfix entry
-- `:cadd <file:line:col:text>` - Add entry to quickfix
-- `:cclear` - Clear quickfix list
+- `:copen`, `:cclose`, `:ctoggle`, `:cnext`, `:cprev`, `:copenidx <N>`,
+  `:cadd <file:line:col:text>`, `:cclear`
 
-### Tree-sitter
-- `:ts on|off|auto` - Toggle tree-sitter highlighting
-- `:tslang <name>` - Force language for current buffer
-- `:tsi <lang>` - Install tree-sitter grammar
+### Tree-sitter / formatting
+- `:ts on|off|auto`, `:tslang <name>`, `:tsi <lang>`
+- `:fmt` (filetype-driven)
+
+### Folding / macros / undo
+- `:foldnew`, `:foldrm`, `:foldtoggle`, `:foldmethod`, `:foldupdate`
+- `:record [reg]`, `:play [reg]`
+- `:undo`, `:redo`, `:repeat`
+
+### Tmux
+- `:tmux_toggle`, `:tmux_send <cmd>`, `:tmux_kill`, `:tmux_send_line`
+
+### Plugin / mode / keymap
+- `:plugins` — list loaded/enabled plugins
+- `:keymap [vim|emacs|vscode]` — query or switch keymap
+- `:keymap-toggle` — cycle vim → emacs → vscode → vim
+- `:modeless on|off|toggle` — gate the always-insert redirect
+
+### Misc
+- `:git` (lazygit), `:shell <cmd>`, `:reload`, `:logclear`,
+  `:ln`, `:rln`, `:wrap`, `:cd`, `:pwd`, `:reg`, `:put`, `:echo`,
+  `:history`, `:hfzf`, `:jfzf`, `:keybinds`, `:sed`
+
+## Common Keybindings (default `vim_keybinds`)
+
+### Normal mode — motion
+`h`/`j`/`k`/`l`, `w`/`b`/`e`, `0`/`$`, `gg`/`G`, `{`/`}`, `<C-u>`/`<C-d>`,
+`%` (matching bracket), `*` / `<C-*>` (find under cursor),
+`gf` / `gF` (open / search file under cursor)
+
+Numeric prefix: `42G`, `42gg` jump to line 42. `5j` → down 5 lines.
+
+### Normal mode — editing
+`i`/`a`/`I`/`A`/`o`/`O`, `x`, `dd`, `yy`, `D`, `C`, `S`, `J`, `r`, `~`,
+`p`, `<<` / `>>`, `gc` (toggle comment), `u` / `<C-r>`, `.`
+
+### Normal mode — operators + text objects
+`d`/`c`/`y` followed by a motion or text object:
+`diw`, `daw`, `ci(`, `da{`, `yi"`, etc.
+
+### Normal mode — leader (`<space>`)
+- `<space>ff` / `<space><space>` — fzf
+- `<space>fr` — recent files
+- `<space>c` / `<space>fc` — command picker
+- `<space>sd` / `<space>sa` / `<space>ss` — rg / rgword / ssearch
+- `<space>ts` — send paragraph to tmux
+- `<space>tt` / `<space>tT` — toggle / kill tmux pane
+- `<space>tq` — toggle quickfix
+- `<space>ws` / `<space>wv` — split / vsplit
+- `<space>ww` / `<space>wh` / `<space>wj` / `<space>wk` / `<space>wl` —
+  window focus
+- `<space>jb` / `<space>jf` — jump back / forward
+- `<space>tk` — keymap-toggle
+- `<space>fh` / `<space>fj` — history / jump-list fzf
 
 ### Folding
-- `:foldnew [start] [end]` - Create fold region
-- `:foldrm` - Remove fold at cursor
-- `:foldtoggle` - Toggle fold at cursor
-- `:foldmethod manual|bracket|indent` - Set fold detection method
-- `:foldupdate` - Regenerate folds
+`za`, `zo`, `zc`, `zR`, `zM`, `zz` (center)
+
+### Visual mode
+`v`, `V`, `<C-v>` to enter; `<Esc>` to exit. `y`, `d`, `c`, `<` / `>`.
+
+### Insert mode
+`<Esc>` exits to normal, `<CR>` newline, `<Tab>` insert tab, `<BS>` /
+`<C-h>` backspace. Auto-pairing for `()` / `[]` / `{}` / `<>` / quotes.
+Smart indent on `<CR>`.
 
 ### Macros
-- `:record [register]` - Start/stop recording macro
-- `:play [register]` - Play macro from register
+`q<reg>` start/stop, `@<reg>` play, `@@` repeat last.
 
-### Tmux Integration
-- `:tmux_toggle` - Toggle tmux runner pane
-- `:tmux_send <cmd>` - Send command to runner pane
-- `:tmux_kill` - Kill runner pane
+### Dired
+`<CR>` open, `-` parent, `~` home, `cd` chdir.
 
-### Tools & Utilities
-- `:fmt` - Format buffer with external formatter
-- `:git` - Launch lazygit
-- `:shell <cmd>` - Execute shell command
-- `:reload` - Rebuild and restart hed
-- `:ln on|off|rln` - Line number display mode
-- `:rln on|off` - Relative line numbers
-- `:wrap on|off` - Soft wrap
-- `:logclear` - Clear .hedlog file
-
-### Undo/Redo
-- `:undo` - Undo last change (also `u`)
-- `:redo` - Redo last undo (also `<C-r>`)
-
-## Common Keybindings
-
-### Normal Mode - Motion
-- `h/j/k/l` - Left/Down/Up/Right
-- `w/b` - Next/previous word
-- `e` - End of word
-- `0/$` - Start/end of line
-- `gg/G` - Start/end of file
-- `{/}` - Previous/next paragraph
-- `<C-u>/<C-d>` - Half page up/down
-
-### Normal Mode - Editing
-- `i/a` - Insert before/after cursor
-- `I/A` - Insert at line start/end
-- `o/O` - Open line below/above
-- `x` - Delete character
-- `dd` - Delete line
-- `yy` - Yank (copy) line
-- `p/P` - Paste after/before cursor
-- `u` - Undo
-- `<C-r>` - Redo
-- `.` - Repeat last change
-
-### Normal Mode - Text Objects
-- `diw/daw` - Delete inner/around word
-- `di(/da(` - Delete inner/around parentheses
-- `ci{/ca{` - Change inner/around braces
-- `yi"/ya"` - Yank inner/around quotes
-
-### Normal Mode - Leader Key (`<space>`)
-- `<space>ff` or `<space><space>` - Fuzzy file finder
-- `<space>fr` - Fuzzy recent files
-- `<space>c` - Fuzzy command picker
-- `<space>sd` - Ripgrep search
-- `<space>ss` - Search in file
-- `<space>ts` - Send line to tmux
-- `<space>tq` - Toggle quickfix
-- `<space>ws/wv` - Window split/vsplit
-- `<space>ww/wh/wj/wk/wl` - Window focus navigation
-- `<space>jb/jf` - Jump backward/forward
-
-### Normal Mode - Folding
-- `za` - Toggle fold
-- `zo` - Open fold
-- `zc` - Close fold
-- `zR` - Open all folds
-- `zM` - Close all folds
-
-### Normal Mode - Other
-- `gd` - Go to definition (ctags)
-- `gn/<C-n>` - Next quickfix entry
-- `gp/<C-p>` - Previous quickfix entry
-- `q<reg>` - Start/stop macro recording
-- `@<reg>` - Play macro
-- `@@` - Repeat last macro
-- `:` - Enter command mode
-- `/` - Search forward
-- `?` - Search backward
-
-### Visual Mode
-- `v` - Enter visual mode (character)
-- `V` - Enter visual mode (line)
-- `<C-v>` - Enter visual block mode
-- `d/y/c` - Delete/yank/change selection
-- `<` / `>` - Indent/dedent
-
-### Insert Mode
-- `<Esc>` or `<C-c>` - Return to normal mode
-- Auto-pairing for `(`, `[`, `{`, `<`
-- Smart indentation on newline
-
-### Dired Mode (in directory buffers)
-- `<Enter>` - Open file or enter directory
-- `-` - Go to parent directory
-- `~` - Go to home directory
+### Emacs / VSCode keymaps
+See `plugins/emacs_keybinds/README.md` and
+`plugins/vscode_keybinds/README.md`. Switch with `:keymap emacs` or
+`:keymap vscode`.
 
 ## Code Style and Patterns
 
-- **Error Handling**: Functions return `EdError` enum (ED_OK, ED_ERR_*). Check with `if (err != ED_OK)`.
-- **Bounds Checking**: Use `BOUNDS_CHECK(idx, len)` and `PTR_VALID(ptr)` macros from `src/lib/errors.h`
-- **String Safety**: Use `SizedStr` type for length-tracked strings (see `src/lib/sizedstr.h`)
-- **Logging**: Use `log_msg(fmt, ...)` which writes to `.hedlog`. Initialize with `log_init()`.
-- **Status Messages**: Use `ed_set_status_message(fmt, ...)` to show user feedback in status line
-- **Memory Management**: Manual malloc/free. Always null-check allocations.
-- **Vectors**: Use type-safe vector macros from `src/lib/vector.h` for growable arrays
+- **Errors**: functions return `EdError` enum. `if (err != ED_OK) ...`
+- **Bounds**: use `BOUNDS_CHECK(idx, len)` and `PTR_VALID(ptr)` from
+  `src/lib/errors.h`
+- **Strings**: `SizedStr` for length-tracked strings (`src/lib/sizedstr.h`)
+- **Logging**: `log_msg(fmt, ...)` writes to `.hedlog`
+- **Status**: `ed_set_status_message(fmt, ...)` for user feedback
+- **Memory**: manual `malloc`/`free`, null-check allocations
+- **Vectors**: type-safe macros in `src/lib/vector.h`
 
-## Common Patterns
+### Common patterns
 
-### Getting Current Buffer
 ```c
+/* Get current buffer/window */
 Buffer *buf = buf_cur();
-if (!buf) return;
-```
+Window *win = window_cur();
+if (!buf || !win) return;
 
-### Executing Commands Programmatically
-```c
+/* Invoke a command programmatically */
 command_invoke("split", NULL);
 command_invoke("e", "/path/to/file");
-```
 
-### Modifying Buffer Content
-```c
-// Insert character at cursor
-buf_insert_char(buf, c);
-
-// Delete current line
-buf_delete_line(buf, buf->cursor.y);
-
-// Insert new line
+/* Modify buffer */
+buf_insert_char_in(buf, c);
+buf_delete_line_in(buf);
 buf_row_insert_in(buf, at_row, text, text_len);
 ```
 
-### Registering a Command
+### Registering a plugin command/keybind/hook
+
+All inside the plugin's `init()`:
 ```c
-// In user_commands_init():
-cmd("mycommand", cmd_mycommand, "description");
-
-// Implement callback:
-void cmd_mycommand(const char *args) {
-    Buffer *buf = buf_cur();
-    if (!buf) return;
-    // ... use args ...
-    ed_set_status_message("Command executed: %s", args);
-}
-```
-
-### Registering a Keybind
-```c
-// In user_keybinds_init():
-
-// Function keybind (normal mode)
-mapn("x", kb_delete_char, "delete character");
-
-// Command keybind (normal mode)
-cmapn(" ff", "fzf");
-
-// Multi-key sequence
-mapn("dd", kb_delete_line, "delete line");
-```
-
-### Registering a Hook
-```c
-// In user_hooks_init():
-static void on_insert_hook(HookEventData *event) {
-    // Access event data
-    Buffer *buf = event->buffer;
-    char c = event->c;
-    // ... handle event ...
+static int my_plugin_init(void) {
+    cmd("mycmd", cmd_mycmd, "description");
+    mapn("<C-x>", kb_my_callback, "do thing");
+    cmapn(" ml", "mycmd");
+    hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_insert);
+    return 0;
 }
 
-hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_insert_hook);
-```
-
-### Using Vectors
-```c
-// Define a vector type
-DECLARE_VECTOR(IntVec, int)
-
-// Create and use
-IntVec vec = {0};
-vector_push(&vec, 42);
-vector_push(&vec, 99);
-
-for (int i = 0; i < vec.len; i++) {
-    log_msg("Item: %d", vec.items[i]);
-}
-
-vector_free(&vec);
+const Plugin plugin_my = {
+    .name = "my", .desc = "my plugin",
+    .init = my_plugin_init, .deinit = NULL,
+};
 ```
 
 ## Tree-sitter Language Management
 
-Tree-sitter grammars are stored as shared objects (`.so` files) and loaded dynamically:
-
-### Installing a Language
 ```bash
-# From hed command line:
-:tsi <lang>
-
-# Or manually with tsi binary:
-./build/tsi <lang>
+:tsi <lang>           # install grammar from within hed
+./build/tsi <lang>    # standalone installer
 ```
 
-This clones `tree-sitter-<lang>` from GitHub, builds `<lang>.so`, and copies it to `ts-langs/` along with highlight queries to `queries/<lang>/`.
+This clones `tree-sitter-<lang>` from GitHub, builds `<lang>.so`, copies
+it to `ts-langs/`, and copies highlight queries to `queries/<lang>/`.
 
-### Language Configuration
-- `:ts on|off|auto` - Toggle tree-sitter (auto = detect by extension)
-- `:tslang <name>` - Force language for current buffer
-- File extension mapping in `buf_detect_filetype()` in `src/buf/buffer.c`
-
-### Included Grammars
-bash, c, c-sharp, commonlisp, html, javascript, make, markdown, org, python, rust, toml, unifieddiff, zsh
+Filetype detection is in `buf_detect_filetype()` in
+`src/buf/buffer.c`. To force a language: `:tslang <name>`.
 
 ## Testing and Debugging
 
-- **Logs**: `tail -f .hedlog` to watch live logs, `:logclear` to truncate
-- **Unit Tests**: `make test` runs Unity test framework tests
-- **Valgrind**: Build with debug symbols (already in compile_flags.txt: `-g -O0`)
+- **Logs**: `tail -f .hedlog`. `:logclear` truncates.
+- **Tests**: `make test` runs Unity tests in `test/`
+- **Valgrind**: works under default flags
 - **GDB**: `gdb ./build/hed` then `run [args]`
-- **Test Framework**: Unity (lightweight C unit testing) in `test/` directory
 
 ## File Organization
 
 ```
 src/
-├── main.c              # Entry point, main loop
-├── editor.c/h          # Global editor state, core initialization
-├── config.c            # User configuration: commands, keybinds, hooks
-├── commands.c/h        # Command registration and dispatch
-├── keybinds.c/h        # Keybind registration and dispatch
-├── keybinds_builtins.c/h # Built-in keybind functions
-├── hooks.c/h           # Hook system implementation
-├── user_hooks_quickfix.c # Quickfix preview sync hook
-├── terminal.c/h        # Terminal raw mode, ANSI codes, rendering
-├── registers.c/h       # Yank/paste register management
-├── macros.c/h          # Macro recording/playback
-├── dired.c/h           # Directory browser (NEW)
-├── command_mode.c/h    # Command-line mode with completion
-├── lsp.c/h             # LSP client (stub/planned)
-├── hed.h               # Main header (includes all subsystems)
+├── main.c                # Entry point, main loop, select-based fd pump
+├── editor.c/h            # Global E state, ed_set_mode, ed_set_modeless
+├── config.c/h            # User configuration: plugin manifest + overrides
+├── plugin.c/h            # Plugin runtime (load/enable/disable/list)
+├── commands.c/h          # Command registration + dispatch
+├── command_mode.c/h      # Command-line UI (`:`) with completion + Tab→fzf
+├── keybinds.c/h          # Keybind registration + dispatch (last-write-wins)
+├── keybinds_builtins.c/h # kb_* callbacks (movement, edit, operators, ...)
+├── hooks.c/h             # Hook registration + firing
+├── hook_builtins.c/h     # hook_change_cursor_shape (others are plugins)
+├── terminal.c/h          # Raw mode, ANSI, render loop, save/load
+├── registers.c/h         # Yank/paste registers
+├── macros.c/h            # Macro recording/playback + macro queue
+├── hed.h                 # Master include + map/cmap macros
 ├── buf/
-│   ├── buffer.c/h      # Buffer data structure and operations
-│   ├── row.c/h         # Row (line) data structure
-│   ├── textobj.c/h     # Text object extraction (words, paragraphs, etc.)
-│   └── buf_helpers.c/h # Buffer utility functions
+│   ├── buffer.c/h        # Buffer struct + open/close/switch
+│   ├── row.c/h           # Row struct + render
+│   ├── textobj.c/h       # Text-object extraction
+│   └── buf_helpers.c/h   # Buffer utility functions
 ├── ui/
-│   ├── window.c/h      # Window structure and focus management
-│   ├── wlayout.c/h     # Window layout tree (splits)
-│   ├── winmodal.c/h    # Modal (floating) windows (NEW)
-│   └── abuf.c/h        # Append buffer for efficient rendering
+│   ├── window.c/h        # Window struct + focus
+│   ├── wlayout.c/h       # Layout tree (splits)
+│   ├── winmodal.c/h      # Modal (floating) windows
+│   └── abuf.c/h          # Append buffer
 ├── utils/
-│   ├── ts.c/h          # Tree-sitter integration
-│   ├── quickfix.c/h    # Quickfix list implementation
-│   ├── fzf.c/h         # Fuzzy finder integration
-│   ├── tmux.c/h        # Tmux runner pane integration
-│   ├── fold.c/h        # Code folding (NEW)
-│   ├── undo.c/h        # Undo/redo system
-│   ├── ctags.c/h       # Ctags integration (NEW)
-│   ├── jump_list.c/h   # Jump list (Ctrl-o/Ctrl-i)
-│   ├── history.c/h     # Command history
-│   ├── recent_files.c/h # Recent files tracking
-│   ├── bottom_ui.c/h   # Status line and command line UI
-│   └── term_cmd.c/h    # Terminal command execution helpers
-├── fold_methods/       # Fold detection methods (NEW)
-│   ├── fold_methods.c/h # Fold method interface
-│   ├── fold_bracket.c  # Bracket-based folding
-│   └── fold_indent.c   # Indent-based folding
+│   ├── ts.c/h            # Tree-sitter integration
+│   ├── quickfix.c/h      # Quickfix list
+│   ├── fzf.c/h           # fzf integration
+│   ├── fold.c/h          # Folding system
+│   ├── undo.c/h          # Undo/redo
+│   ├── ctags.c/h         # Ctags lookup
+│   ├── jump_list.c/h
+│   ├── history.c/h
+│   ├── recent_files.c/h
+│   ├── bottom_ui.c/h     # Status + cmdline drawing
+│   ├── term_cmd.c/h      # Shell-out helper
+│   ├── sed.c/h           # :sed implementation
+│   └── yank.c/h          # Yank-from-selection helper
+├── fold_methods/
+│   ├── fold_methods.c/h
+│   ├── fold_bracket.c
+│   └── fold_indent.c
 ├── lib/
-│   ├── vector.h        # Type-safe growable arrays (macros)
-│   ├── log.c/h         # Logging to .hedlog
-│   ├── errors.c/h      # Error codes and macros
-│   ├── sizedstr.c/h    # Length-tracked string type
-│   ├── strutil.c/h     # String manipulation utilities
-│   ├── safe_string.c/h # Safe string operations
-│   ├── file_helpers.c/h # File I/O helpers (path join, dirname, etc.)
-│   ├── theme.h         # Color theme definitions (Tokyo Night)
-│   ├── ansi.h          # Terminal escape sequences
-│   └── cursor.h        # Cursor position type
+│   ├── vector.h          # Type-safe growable arrays
+│   ├── log.c/h
+│   ├── errors.c/h
+│   ├── sizedstr.c/h
+│   ├── strutil.c/h
+│   ├── safe_string.c/h
+│   ├── file_helpers.c/h
+│   ├── theme.h
+│   ├── ansi.h
+│   ├── cursor.h
+│   └── cjson/            # JSON parser (used by LSP)
 └── commands/
-    ├── cmd_builtins.h  # Built-in command declarations
-    ├── cmd_misc.c/h    # Miscellaneous commands
-    ├── cmd_search.c/h  # Search-related commands
-    ├── commands_buffer.c/h # Buffer management commands
-    └── commands_ui.c/h # UI-related commands
+    ├── cmd_builtins.h    # Built-in command declarations
+    ├── cmd_misc.c/h
+    ├── cmd_search.c/h
+    ├── cmd_util.c/h
+    ├── commands_buffer.c/h
+    └── commands_ui.c/h
 
-test/
-├── unity.c/h           # Unity test framework
-├── test_textobj.c      # Text object tests
-└── makefile            # Test build system
+plugins/                  # Default location; override with PLUGINS_DIR
+├── core/                 # Default :commands + minimal hooks
+├── vim_keybinds/         # Default Vim keymap
+├── emacs_keybinds/       # Emacs keymap
+├── vscode_keybinds/      # VSCode keymap
+├── keymap/               # Runtime keymap swap (:keymap)
+├── clipboard/            # OSC 52 yank → system clipboard
+├── quickfix_preview/     # Cursor → preview sync
+├── dired/                # Directory browser
+├── lsp/                  # LSP client
+├── viewmd/               # Markdown live preview
+├── tmux/                 # Runner pane integration
+├── fmt/                  # External formatters (:fmt)
+├── auto_pair/            # ()/[]/{}/quotes auto-pairing
+├── smart_indent/         # Carry indent on newline
+└── example/              # Starter template — copy to make your own
 
-ts/
-├── ts_lang_install.c   # Tree-sitter language installer source
-└── build/              # Cloned tree-sitter grammar repos
-
-ts-langs/               # Compiled tree-sitter .so files
-queries/                # Tree-sitter highlight queries by language
-tasks/                  # Project tasks and roadmap
+test/                     # Unity unit tests
+ts/                       # Tree-sitter language installer source
+ts-langs/                 # Compiled tree-sitter .so files
+queries/                  # Highlight queries by language
+tasks/                    # Project notes / roadmap
 ```
 
 ## Dependencies
 
 ### Required
-- `clang` (C23 support)
+- `gcc` (or `clang`) with C11 support
 - `libtree-sitter` (headers and library)
-- `libdl` (dynamic loading)
+- `libdl`
 - POSIX terminal
 
-### Optional (for full feature set)
-- `ripgrep` - for `:rg`, `:ssearch`, `:rgword`
-- `fzf` - for `:fzf`, `:recent`, `:c` fuzzy pickers
-- `tmux` - for `:tmux_toggle`, `:tmux_send` runner integration
-- `lazygit` - for `:git` command
-- `bat` - for file preview in fzf
-- `ctags` - for `:tag`, `gd` tag navigation
-
-## Recent Development Focus
-
-Based on recent git commits and file changes:
-- Text object implementation and testing (Unity framework)
-- Jump list functionality
-- Recent files tracking
-- Quickfix system enhancements
-- Dired (directory browser) implementation
-- Buffer/window separation improvements
+### Optional
+- `ripgrep` — `:rg`, `:ssearch`, `:rgword`
+- `fzf` — `:fzf`, `:recent`, `:c`, `:hfzf`, `:jfzf`, command-name
+  Tab→fzf in command mode
+- `tmux` — runner pane integration
+- `lazygit` — `:git`
+- `bat` — file preview in fzf
+- `ctags` — `:tag`, `gd`
+- `clang-format`, `rustfmt`, `prettier`, `black`, `gofmt` — used by
+  `:fmt` based on filetype
 
 ## Philosophy & Design Principles
 
-1. **Small Core**: Keep the core editor simple and focused (~13K LOC)
-2. **Explicit APIs**: Clear, documented C APIs for all subsystems
-3. **Single Configuration File**: All user customization in `src/config.c`
-4. **Hook-Driven**: Use hooks for cross-cutting concerns (auto-pairing, preview sync)
-5. **Tool Integration**: Leverage external tools (ripgrep, fzf, tmux) rather than reimplementing
-6. **Type Safety**: Use macros for type-safe generics (vectors, etc.)
-7. **Error Handling**: Explicit error returns, bounds checking, null checks
-8. **Manual Memory Management**: Clear ownership, explicit malloc/free
-9. **Vim-like UX**: Modal editing, motions, operators, text objects
-10. **Modern C**: C23 standard with strict warnings
+1. **Small core, plugin shell**: anything that can be a plugin should be
+   one. The current core is ~10K LOC; each plugin is typically <300
+   LOC.
+2. **Explicit, not magic**: plugin manifest is a list of `plugin_load`
+   calls — no codegen, no constructors, no string lookup. Misspelling a
+   plugin name is a link error.
+3. **Last-write-wins keybinds**: plugin defaults are overridable. Order
+   in `config.c` is the precedence.
+4. **Hook-driven cross-cutting concerns**: pre-open/save intercept hooks
+   keep core unaware of dired, plugins, etc.
+5. **External tools over reinvention**: ripgrep, fzf, tmux, lazygit,
+   prettier — leverage what exists.
+6. **Type-safe generics via macros**: `DECLARE_VECTOR`, etc.
+7. **Manual memory management**: clear ownership, explicit `malloc`/
+   `free`, null checks.
+8. **Modal optional**: defaults are Vim, but emacs/vscode keymaps are
+   first-class via `ed_set_modeless()`.
 
 ## Future Roadmap
 
-Planned features (from `tasks/` directory):
-- LSP client implementation (currently stub)
-- Plugin system for dynamic loading
-- Directory marks (bookmarks for directories)
-- Additional text objects
-- More fold methods
-- System clipboard integration
+- LSP completions / formatting wiring
+- Plugin `deinit()` actually unregistering hooks/cmds/keybinds (needs
+  `hook_unregister`, `command_unregister`, `keybind_unregister`)
+- Generic open-handler / save-handler decoupling for `lsp_init`
+  (`editor.c`) and the fd-pump (`main.c`) — currently those are the
+  remaining core couplings to plugin code
+- `:plugin enable/disable <name>` runtime command (needs unregister)
+- More fold methods, more text objects
+- Configurable formatter table via runtime command (currently hard-coded
+  in `plugins/fmt/fmt.c`)

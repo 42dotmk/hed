@@ -32,15 +32,35 @@ static int pending_count = 0; /* numeric prefix */
 static int have_count = 0;
 /* Helper: convert key code to string representation */
 static void key_to_string(int key, char *buf, size_t bufsize) {
-    if (KEY_IS_META(key)) {
-        int base = KEY_NO_META(key);
-        if (base >= 32 && base < 127) {
-            snprintf(buf, bufsize, "<M-%c>", base);
+    if (KEY_IS_META(key) || KEY_IS_CTRL(key) || KEY_IS_SHIFT(key)) {
+        int base = KEY_BASE(key);
+        char prefix[16];
+        int p = 0;
+        prefix[p++] = '<';
+        if (KEY_IS_META(key))  { prefix[p++] = 'M'; prefix[p++] = '-'; }
+        if (KEY_IS_CTRL(key))  { prefix[p++] = 'C'; prefix[p++] = '-'; }
+        if (KEY_IS_SHIFT(key)) { prefix[p++] = 'S'; prefix[p++] = '-'; }
+        prefix[p] = '\0';
+
+        const char *named = NULL;
+        switch (base) {
+        case KEY_ARROW_UP:    named = "Up";    break;
+        case KEY_ARROW_DOWN:  named = "Down";  break;
+        case KEY_ARROW_LEFT:  named = "Left";  break;
+        case KEY_ARROW_RIGHT: named = "Right"; break;
+        case KEY_HOME:        named = "Home";  break;
+        case KEY_END:         named = "End";   break;
+        }
+        if (named) {
+            snprintf(buf, bufsize, "%s%s>", prefix, named);
+        } else if (base >= KEY_F1 && base <= KEY_F12) {
+            snprintf(buf, bufsize, "%sF%d>", prefix, base - KEY_F1 + 1);
+        } else if (base >= 32 && base < 127) {
+            snprintf(buf, bufsize, "%s%c>", prefix, base);
         } else if (base >= 1 && base <= 26) {
-            /* Meta + Ctrl + letter (rare but possible): <M-C-a>, <M-C-b>, ... */
-            snprintf(buf, bufsize, "<M-C-%c>", base + 'a' - 1);
+            snprintf(buf, bufsize, "%s%c>", prefix, base + 'a' - 1);
         } else {
-            snprintf(buf, bufsize, "<M-%d>", base);
+            snprintf(buf, bufsize, "%s%d>", prefix, base);
         }
         return;
     }
@@ -73,6 +93,8 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         snprintf(buf, bufsize, "<PageUp>");
     } else if (key == KEY_PAGE_DOWN) {
         snprintf(buf, bufsize, "<PageDown>");
+    } else if (key >= KEY_F1 && key <= KEY_F12) {
+        snprintf(buf, bufsize, "<F%d>", key - KEY_F1 + 1);
     } else if (key >= 1 && key <= 26) {
         /* Ctrl+letter */
         snprintf(buf, bufsize, "<C-%c>", key + 'a' - 1);
