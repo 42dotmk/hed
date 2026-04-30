@@ -14,5 +14,6 @@
 -Iplugins
 -Iplugins/dired
 -Iplugins/lsp
+-Iplugins/lsp/cjson
 -Iplugins/tmux
 -Iplugins/viewmd
