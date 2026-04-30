@@ -9,7 +9,7 @@ ripgrep/fzf for search, tmux for runner panes, OSC 52 for clipboard.
 
 Pre-built Linux x86_64 binary:
 
-```sh
+```bash
 wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x86_64 \
   && chmod +x hed \
   && ./hed
@@ -22,14 +22,14 @@ highlighting experience: `sudo apt-get install libtree-sitter0`. To
 install grammars on demand from inside hed, also grab the `tsi`
 helper:
 
-```sh
+```bash
 wget -O tsi https://github.com/42dotmk/hed/releases/latest/download/tsi-linux-x86_64 \
   && chmod +x tsi && sudo mv tsi /usr/local/bin/
 ```
 
 Or build from source:
 
-```
+```bash
 make
 ./build/hed file.c
 ```

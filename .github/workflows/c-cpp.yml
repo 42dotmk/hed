@@ -47,6 +47,7 @@ jobs:
           path: |
             hed-linux-x86_64
             tsi-linux-x86_64
+            install.sh
 
       # Attach the same binaries to a GitHub Release on tag push.
       - name: github-release
@@ -56,4 +57,5 @@ jobs:
           files: |
             hed-linux-x86_64
             tsi-linux-x86_64
+            install.sh
           generate_release_notes: true
