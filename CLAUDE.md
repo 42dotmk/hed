@@ -15,12 +15,11 @@ wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x8
   && ./hed
 ```
 
-The binary is built with treesitter support; if `libtree-sitter` isn't
-installed on the host, the editor still runs (grammars are loaded with
-`dlopen` and missing-ts is handled gracefully). For the full
-highlighting experience: `sudo apt-get install libtree-sitter0`. To
-install grammars on demand from inside hed, also grab the `tsi`
-helper:
+The binary statically links the tree-sitter runtime, so no
+`libtree-sitter` system package is required — the editor runs with
+syntax highlighting out of the box. Grammars are loaded on demand
+with `dlopen`. To install grammars from inside hed, also grab the
+`tsi` helper:
 
 ```bash
 wget -O tsi https://github.com/42dotmk/hed/releases/latest/download/tsi-linux-x86_64 \
@@ -82,8 +81,8 @@ The Makefile auto-discovers `*.c` recursively under `src/` and
 | Required | Optional |
 |---|---|
 | gcc / clang (C11) | ripgrep (`:rg`, `:ssearch`) |
-| libtree-sitter | fzf (`:fzf`, `:c`, `:recent`, history fzf) |
-| libdl | tmux (runner pane) |
+| libdl | fzf (`:fzf`, `:c`, `:recent`, history fzf) |
+|  | tmux (runner pane) |
 | POSIX terminal | lazygit (`:git`) |
 |  | bat (fzf preview) |
 |  | ctags (`:tag`, `gd`) |

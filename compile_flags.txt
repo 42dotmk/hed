@@ -3,6 +3,7 @@
 -Wextra
 -std=c11
 -pedantic
+-Ivendor/tree-sitter/lib/include
 -I/usr/include
 -Isrc
 -Isrc/buf

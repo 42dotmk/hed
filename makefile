@@ -12,11 +12,17 @@ BUILD_DIR = build
 # in-tree plugins/.
 PLUGINS_DIR ?= plugins
 
-# WITH_TREESITTER: 1 builds the treesitter plugin and links libtree-sitter,
-# 0 excludes both. Core uses weak refs to the ts_* symbols, so the editor
-# builds and runs cleanly either way (no syntax highlighting when off).
+# WITH_TREESITTER: 1 builds the treesitter plugin and statically links the
+# vendored libtree-sitter runtime (vendor/tree-sitter). 0 excludes both.
+# Core uses weak refs to the ts_* symbols, so the editor builds and runs
+# cleanly either way (no syntax highlighting when off).
 #     make WITH_TREESITTER=0
 WITH_TREESITTER ?= 1
+
+# Vendored tree-sitter runtime (git submodule at vendor/tree-sitter).
+TS_DIR     := vendor/tree-sitter
+TS_LIB_DIR := $(TS_DIR)/lib
+TS_LIB_A   := $(BUILD_DIR)/libtree-sitter.a
 
 TARGET = $(BUILD_DIR)/hed
 TSI    = $(BUILD_DIR)/tsi
@@ -26,11 +32,15 @@ CORE_SOURCES = $(shell find $(SRC_DIR) -type f -name "*.c" -not -path "$(SRC_DIR
 PLUGIN_SOURCES = $(shell find $(PLUGINS_DIR) -type f -name "*.c" 2>/dev/null)
 
 # Optional plugin filtering / library linking.
+# -rdynamic exports ts_* symbols from the binary so dlopen'd grammar .so
+# files can resolve them against our statically linked runtime.
 ifeq ($(WITH_TREESITTER),1)
-TS_LDFLAGS := -ltree-sitter -ldl
+TS_LDFLAGS  := $(TS_LIB_A) -ldl -rdynamic
+TS_DEPS     := $(TS_LIB_A)
 else
 PLUGIN_SOURCES := $(filter-out $(PLUGINS_DIR)/treesitter/%,$(PLUGIN_SOURCES))
-TS_LDFLAGS := -ldl
+TS_LDFLAGS  := -ldl
+TS_DEPS     :=
 endif
 
 SOURCES = $(CORE_SOURCES) $(PLUGIN_SOURCES)
@@ -52,8 +62,16 @@ test:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): $(OBJECTS)
-	$(CC) -o $@ $^ $(LDFLAGS) $(TS_LDFLAGS)
+$(TARGET): $(OBJECTS) $(TS_DEPS)
+	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) $(TS_LDFLAGS)
+
+# Build the tree-sitter runtime as a static archive from the vendored
+# amalgamation TU (lib/src/lib.c includes every other lib/src/*.c).
+$(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(BUILD_DIR)
+	$(CC) -O2 -std=c11 -fPIC -D_GNU_SOURCE \
+	    -I$(TS_LIB_DIR)/include -I$(TS_LIB_DIR)/src \
+	    -c $< -o $(BUILD_DIR)/ts-lib.o
+	$(AR) rcs $@ $(BUILD_DIR)/ts-lib.o
 
 # Compile rule for plugins (PLUGINS_DIR-rooted). Listed first so that when
 # PLUGINS_DIR == src/plugins the longer prefix wins over the generic rule.

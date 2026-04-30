@@ -17,11 +17,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: install-dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libtree-sitter-dev
+        with:
+          submodules: recursive
 
       # Single full build (WITH_TREESITTER=1). The treesitter plugin
       # uses dlopen for grammars and weak refs into ts_*, so the binary

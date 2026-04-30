@@ -45,17 +45,7 @@ echo "Installed hed and tsi to ${INSTALL_DIR}"
 # --- Optional runtime dependencies ----------------------------------------
 # fzf       : fuzzy pickers (:fzf, :recent, :c, history fzf)
 # ripgrep   : :rg, :ssearch, :rgword
-# tree-sitter (libtree-sitter0) : syntax highlighting
-check_dep() {
-    # $1 = friendly name, $2 = check command, $3 = apt pkg, $4 = dnf pkg,
-    # $5 = pacman pkg, $6 = brew pkg
-    local name="$1" check="$2"
-    if eval "$check" >/dev/null 2>&1; then
-        return 0
-    fi
-    return 1
-}
-
+# (tree-sitter is statically linked into the binary; no system pkg needed.)
 missing_names=()
 missing_apt=()
 missing_dnf=()
@@ -75,10 +65,6 @@ if ! command -v fzf >/dev/null 2>&1; then
 fi
 if ! command -v rg >/dev/null 2>&1; then
     add_missing "ripgrep" "ripgrep" "ripgrep" "ripgrep" "ripgrep"
-fi
-# libtree-sitter: look for the shared library in common locations
-if ! ldconfig -p 2>/dev/null | grep -q 'libtree-sitter\.so'; then
-    add_missing "libtree-sitter" "libtree-sitter0" "tree-sitter" "tree-sitter" "tree-sitter"
 fi
 
 if [ "${#missing_names[@]}" -eq 0 ]; then
