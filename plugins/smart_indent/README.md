@@ -3,7 +3,9 @@
 When the user inserts a newline in insert mode, copy the previous line's
 leading whitespace onto the new line so indentation persists naturally.
 
-Treats tabs as 4 spaces (matches the editor's default tab visual width).
+Whitespace is replicated **byte for byte** — if the previous line was
+indented with tabs, the new line gets tabs; spaces, spaces; mixed
+("\\t\\t  "), the same mix. No tab→space normalization.
 
 ## Hook
 

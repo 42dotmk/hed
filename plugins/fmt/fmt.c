@@ -1,8 +1,3 @@
-/* fmt plugin: ":fmt" — run an external formatter against the current
- * buffer, then reload it. Formatter selection is by filetype.
- *
- * NOTE: does NOT integrate with undo history; treated as save+reload. */
-
 #include "plugin.h"
 #include "cmd_util.h"
 #include "hed.h"

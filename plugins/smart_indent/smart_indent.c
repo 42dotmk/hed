@@ -11,18 +11,13 @@ static void hook_smart_indent(const HookCharEvent *event) {
     if (!buf) return;
     if (win->cursor.y < 1) return;
 
+    /* Copy the previous line's leading whitespace verbatim so a tab-
+     * indented line yields a tab-indented continuation, not 4 spaces. */
     Row *prev_row = &buf->rows[win->cursor.y - 1];
-    int prev_indent = 0;
     for (size_t i = 0; i < prev_row->chars.len; i++) {
-        if (prev_row->chars.data[i] == ' ')
-            prev_indent++;
-        else if (prev_row->chars.data[i] == '\t')
-            prev_indent += 4; /* assuming tab width of 4 */
-        else
-            break;
-    }
-    for (int i = 0; i < prev_indent; i++) {
-        buf_insert_char_in(buf, ' ');
+        char c = prev_row->chars.data[i];
+        if (c != ' ' && c != '\t') break;
+        buf_insert_char_in(buf, c);
     }
 }
 

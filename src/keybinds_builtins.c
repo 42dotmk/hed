@@ -619,6 +619,11 @@ void kb_delete_char(void) {
 void kb_insert_newline(void) {
     BUFWIN(buf, win);
     buf_insert_newline_in(buf);
+    /* Fire char-insert hook for '\n' so plugins like smart_indent run.
+     * The non-newline insert path in editor.c skips control chars, so
+     * '\n' would otherwise never reach HOOK_CHAR_INSERT. */
+    HookCharEvent ev = {buf, win->cursor.x, win->cursor.y, '\n'};
+    hook_fire_char(HOOK_CHAR_INSERT, &ev);
 }
 
 void kb_insert_tab(void) {
