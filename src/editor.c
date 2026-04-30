@@ -164,9 +164,14 @@ static void handle_normal_mode_keypress(int c, Buffer *buf) {
 
 static void handle_visual_mode_keypress(int c, Buffer *buf) {
     (void)buf;
-    if (!keybind_process(c, E.mode)) {
-        keybind_process(c, MODE_NORMAL);
-    }
+    /* Fall back through MODE_VISUAL so visual_line/visual_block only need
+     * to register the keys whose behaviour actually differs. */
+    if (keybind_process(c, E.mode))
+        return;
+    if ((E.mode == MODE_VISUAL_LINE || E.mode == MODE_VISUAL_BLOCK) &&
+        keybind_process(c, MODE_VISUAL))
+        return;
+    keybind_process(c, MODE_NORMAL);
 }
 
 /* Main keypress dispatcher - delegates to mode-specific handlers */

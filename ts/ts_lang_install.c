@@ -21,6 +21,7 @@
  *   - Copy the .so to ./ts/<lang>.so
  *   - Copy queries/highlights.scm (if present) to
  *       ./ts-langs/queries/<lang>/highlights.scm
+ *   - Copy queries/injections.scm and queries/locals.scm if present
  *
  * Run this from the hed repo root so that ts-langs/ and queries/
  * are created in the place hed expects.
@@ -84,6 +85,26 @@ static int copy_file(const char *src, const char *dst) {
     fclose(in);
     fclose(out);
     return 0;
+}
+
+/* Install a single query file from <build_dir>/queries/<qname> to
+ * ts-langs/queries/<lang>/<qname>. Missing source is not an error. */
+static int install_query(const char *build_dir, const char *lang,
+                         const char *qname) {
+    char src[1024];
+    snprintf(src, sizeof(src), "%s/queries/%s", build_dir, qname);
+    if (!file_exists(src)) {
+        fprintf(stderr, "  (no %s)\n", qname);
+        return 0;
+    }
+    if (mkdir_if_needed("ts-langs/queries") != 0) return -1;
+    char dst_dir[1024];
+    snprintf(dst_dir, sizeof(dst_dir), "ts-langs/queries/%s", lang);
+    if (mkdir_if_needed(dst_dir) != 0) return -1;
+    char dst[1024];
+    snprintf(dst, sizeof(dst), "%s/%s", dst_dir, qname);
+    fprintf(stderr, "Installing %s -> %s\n", src, dst);
+    return copy_file(src, dst);
 }
 
 void print_usage(const char *prog_name) {
@@ -284,29 +305,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Install queries/highlights.scm if present. */
-    char src_q[1024];
-    snprintf(src_q, sizeof(src_q), "%s/queries/highlights.scm", build_dir);
-    if (file_exists(src_q)) {
-        if (mkdir_if_needed("ts-langs/queries") != 0) return 1;
-        char dst_q_dir[1024];
-        snprintf(dst_q_dir, sizeof(dst_q_dir), "ts-langs/queries/%s", lang);
-        if (mkdir_if_needed(dst_q_dir) != 0) return 1;
-
-        char dst_q[1024];
-        snprintf(dst_q, sizeof(dst_q), "%s/highlights.scm", dst_q_dir);
-        fprintf(stderr, "Installing %s -> %s\n", src_q, dst_q);
-        if (copy_file(src_q, dst_q) != 0) {
-            fprintf(stderr, "Failed to copy %s to %s\n", src_q, dst_q);
-            return 1;
-        }
-    } else {
-        fprintf(stderr, "No queries/highlights.scm found for '%s' (syntax colors may be limited)\n", lang);
-    }
+    /* Install query files (highlights, injections, locals) if present. */
+    if (install_query(build_dir, lang, "highlights.scm") < 0) return 1;
+    if (install_query(build_dir, lang, "injections.scm") < 0) return 1;
+    if (install_query(build_dir, lang, "locals.scm") < 0) return 1;
 
     fprintf(stderr, "Done. Language '%s' installed.\n", lang);
     fprintf(stderr, "  Shared library: ts-langs/%s.so\n", lang);
-    fprintf(stderr, "  Queries:        ts-langs/queries/%s/highlights.scm (if present)\n", lang);
+    fprintf(stderr, "  Queries dir:    ts-langs/queries/%s/\n", lang);
     fprintf(stderr, "Remember to run hed from this directory and use :ts on / :tslang %s\n", lang);
 
     return 0;

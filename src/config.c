@@ -6,6 +6,10 @@
 #include "lsp_hooks.h"
 #include "utils/viewmd.h"
 
+void user_keybinds_init(void) {
+    normal_mode_bindings();
+    insert_mode_bindings();
+}
 
 void insert_mode_bindings(void) {
     mapi("<Esc>", kb_insert_escape, "exit insert");
@@ -91,9 +95,11 @@ void normal_mode_bindings(void) {
     /* $, 0, w, b, e movements now handled by text object fallback */
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
-    mapvb("%", buf_find_matching_bracket, "match bracket");
     mapn("*", kb_find_under_cursor, "find word");
     mapn("<C-*>", kb_find_under_cursor, "find word");
+
+    /* Char-visual bindings — visual_line and visual_block fall through to
+     * these via handle_visual_mode_keypress. */
     mapv("h", kb_move_left, "left");
     mapv("j", kb_move_down, "down");
     mapv("k", kb_move_up, "up");
@@ -102,31 +108,22 @@ void normal_mode_bindings(void) {
     mapv("<Down>", kb_move_down, "down");
     mapv("<Up>", kb_move_up, "up");
     mapv("<Right>", kb_move_right, "right");
-    mapvb("h", kb_move_left, "left");
-    mapvb("j", kb_move_down, "down");
-    mapvb("k", kb_move_up, "up");
-    mapvb("l", kb_move_right, "right");
-    mapvb("<Left>", kb_move_left, "left");
-    mapvb("<Down>", kb_move_down, "down");
-    mapvb("<Up>", kb_move_up, "up");
-    mapvb("<Right>", kb_move_right, "right");
     mapv("y", kb_visual_yank_selection, "yank");
-    mapvb("y", kb_visual_yank_selection, "yank");
     mapv("d", kb_visual_delete_selection, "delete");
-    mapvb("d", kb_visual_delete_selection, "delete");
     mapv("v", kb_visual_escape, "exit visual");
-    mapvb("v", kb_visual_escape, "exit visual");
     mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
-    mapvb("<C-v>", kb_visual_toggle_block_mode, "block mode");
     mapv("<Esc>", kb_visual_escape, "exit visual");
-    mapvb("<Esc>", kb_visual_escape, "exit visual");
     mapv("i", kb_visual_enter_insert_mode, "insert");
-    mapvb("i", kb_visual_enter_insert_mode, "insert");
     mapv("a", kb_visual_enter_append_mode, "append");
-    mapvb("a", kb_visual_enter_append_mode, "append");
     mapv(":", kb_visual_enter_command_mode, "command");
-    mapvb(":", kb_visual_enter_command_mode, "command");
     mapn(":", kb_enter_command_mode, "command");
+
+    /* Visual line mode — falls through to MODE_VISUAL bindings via the
+     * dispatcher (see handle_visual_mode_keypress). Only the keys that
+     * differ from char-visual need their own mapping. */
+    mapn("V", kb_visual_line_toggle, "visual line");
+    mapv("V", kb_visual_line_toggle, "switch to visual line");
+    mapvl("V", kb_visual_escape, "exit visual line");
     mapn("<<", buf_unindent_line, "unindent");
     mapn("<C-d>", buf_scroll_half_page_down, "scroll down");
     mapn("<C-v>", kb_visual_block_toggle, "visual block");
@@ -185,10 +182,7 @@ void normal_mode_bindings(void) {
     cmapn(" fj", "jfzf");
 }
 
-void user_keybinds_init(void) {
-    normal_mode_bindings();
-    insert_mode_bindings();
-}
+
 
 void user_textobj_init(void) {
     log_msg("Initializing user text objects");
@@ -320,4 +314,3 @@ void user_hooks_init(void) {
     lsp_hooks_init();
     viewmd_init();
 }
-

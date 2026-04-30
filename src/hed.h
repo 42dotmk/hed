@@ -20,6 +20,7 @@
 #define mapv(x, y, d) keybind_register(MODE_VISUAL, x, y, d)
 #define mapi(x, y, d) keybind_register(MODE_INSERT, x, y, d)
 #define mapvb(x, y, d) keybind_register(MODE_VISUAL_BLOCK, x, y, d)
+#define mapvl(x, y, d) keybind_register(MODE_VISUAL_LINE, x, y, d)
 #define cmapn(x, y)           keybind_register_command(MODE_NORMAL, x, y)
 #define cmapv(x, y)           keybind_register_command(MODE_VISUAL, x, y)
 

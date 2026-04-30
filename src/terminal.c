@@ -321,6 +321,21 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
     if (!BOUNDS_CHECK(row, buf->num_rows))
         return 0;
 
+    if (E.mode == MODE_VISUAL_LINE || win->sel.type == SEL_VISUAL_LINE) {
+        int sy = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y
+                                                   : win->cursor.y;
+        int ey = win->sel.anchor_y > win->cursor.y ? win->sel.anchor_y
+                                                   : win->cursor.y;
+        if (row < sy || row > ey)
+            return 0;
+        int rcols = render_cols_ss(&buf->rows[row].render);
+        if (start_rx)
+            *start_rx = 0;
+        if (end_rx)
+            *end_rx = rcols > 0 ? rcols : 1; /* mark the empty line too */
+        return 1;
+    }
+
     if (win->sel.type == SEL_VISUAL_BLOCK || E.mode == MODE_VISUAL_BLOCK) {
         int sy = win->sel.anchor_y < win->cursor.y ? win->sel.anchor_y
                                                    : win->cursor.y;

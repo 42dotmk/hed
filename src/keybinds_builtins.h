@@ -65,6 +65,7 @@ void kb_visual_enter_command_mode(void);
 void kb_search_prompt(void);
 void kb_visual_toggle(void);       /* Enter/exit visual mode */
 void kb_visual_block_toggle(void); /* Enter/exit visual block mode */
+void kb_visual_line_toggle(void);  /* Enter/exit visual line mode */
 void kb_visual_clear(Window *win);
 void kb_visual_begin(int block_mode);
 int kb_visual_yank(Buffer *buf, Window *win, int block_mode);

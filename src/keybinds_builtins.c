@@ -131,6 +131,21 @@ static int visual_block_range(Buffer *buf, Window *win, int *sy, int *ey,
     return 1;
 }
 
+/* Line-mode visual range: full rows from min(anchor_y,cursor_y) to max. */
+static int visual_line_range(Buffer *buf, Window *win, int *sy, int *ey) {
+    if (!buf || !win || win->sel.type != SEL_VISUAL_LINE)
+        return 0;
+    if (!BOUNDS_CHECK(win->sel.anchor_y, buf->num_rows) ||
+        !BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        return 0;
+    int ay = win->sel.anchor_y, cy = win->cursor.y;
+    int top = ay < cy ? ay : cy;
+    int bot = ay > cy ? ay : cy;
+    if (sy) *sy = top;
+    if (ey) *ey = bot;
+    return 1;
+}
+
 static int visual_yank(Buffer *buf, Window *win, int block_mode) {
     if (!buf || !win || win->sel.type == SEL_NONE)
         return 0;
@@ -141,7 +156,13 @@ static int visual_yank(Buffer *buf, Window *win, int block_mode) {
 
     /* Convert visual selection to TextSelection */
     TextSelection sel;
-    if (!block_mode) {
+    if (win->sel.type == SEL_VISUAL_LINE) {
+        int sy, ey;
+        if (!visual_line_range(buf, win, &sy, &ey))
+            return 0;
+        int ex = (int)buf->rows[ey].chars.len;
+        sel = textsel_make_range(sy, 0, ey, ex, SEL_VISUAL_LINE);
+    } else if (!block_mode) {
         int sy, sx, ey, ex_excl;
         if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
@@ -180,7 +201,13 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
 
     /* Convert visual selection to TextSelection */
     TextSelection sel;
-    if (!block_mode) {
+    if (win->sel.type == SEL_VISUAL_LINE) {
+        int sy, ey;
+        if (!visual_line_range(buf, win, &sy, &ey))
+            return 0;
+        int ex = (int)buf->rows[ey].chars.len;
+        sel = textsel_make_range(sy, 0, ey, ex, SEL_VISUAL_LINE);
+    } else if (!block_mode) {
         int sy, sx, ey, ex_excl;
         if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
@@ -305,6 +332,23 @@ void kb_visual_block_toggle(void) {
         return;
     }
     visual_begin(1);
+}
+
+void kb_visual_line_toggle(void) {
+    BUFWIN(buf, win)
+    if (E.mode == MODE_VISUAL_LINE && win->sel.type == SEL_VISUAL_LINE) {
+        visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return;
+    }
+    win->sel.type = SEL_VISUAL_LINE;
+    win->sel.anchor_y = win->cursor.y;
+    win->sel.anchor_x = win->cursor.x;
+    win->sel.anchor_rx =
+        buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    win->sel.block_start_rx = win->sel.anchor_rx;
+    win->sel.block_end_rx = win->sel.anchor_rx;
+    ed_set_mode(MODE_VISUAL_LINE);
 }
 
 /* Normal mode - text operations */
