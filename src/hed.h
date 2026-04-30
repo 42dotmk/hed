@@ -65,8 +65,6 @@
 #include "quickfix.h"
 #include "recent_files.h"
 #include "term_cmd.h"
-#include "tmux.h"
-#include "ts.h"
 
 /* UI */
 #include "abuf.h"

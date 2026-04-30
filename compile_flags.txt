@@ -12,9 +12,3 @@
 -Isrc/ui
 -Isrc/utils
 -Iplugins
--Iplugins/dired
--Iplugins/lsp
--Iplugins/lsp/cjson
--Iplugins/tmux
--Iplugins/treesitter
--Iplugins/viewmd

@@ -1,6 +1,14 @@
 #include "hed.h"
 #include "command_mode.h"
 #include "commands/cmd_search.h"
+
+/* Weak refs to the tmux plugin's history nav (skipped when not linked). */
+extern int  tmux_history_browse_up(const char *args, int args_len,
+                                   char *out, int out_cap)
+    __attribute__((weak));
+extern int  tmux_history_browse_down(char *out, int out_cap, int *restored)
+    __attribute__((weak));
+extern void tmux_history_reset_browse(void) __attribute__((weak));
 #include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
@@ -28,6 +36,8 @@ static int command_tmux_history_nav(int direction) {
         args++;
     int args_len = E.command_len - (int)(args - E.command_buf);
 
+    if (!tmux_history_browse_up || !tmux_history_browse_down)
+        return 0;
     char candidate[512];
     int ok =
         (direction < 0)
@@ -363,19 +373,19 @@ void command_mode_handle_keypress(int c) {
         E.mode = MODE_NORMAL;
         E.command_len = 0;
         hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
+        if (tmux_history_reset_browse) tmux_history_reset_browse();
         cmdcomp_clear();
     } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
         if (E.command_len > 0)
             E.command_len--;
         hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
+        if (tmux_history_reset_browse) tmux_history_reset_browse();
         cmdcomp_clear();
     } else if (c == KEY_ARROW_UP) {
         if (command_tmux_history_nav(-1)) {
             cmdcomp_clear();
         } else {
-            tmux_history_reset_browse();
+            if (tmux_history_reset_browse) tmux_history_reset_browse();
             if (hist_browse_up(&E.history, E.command_buf, E.command_len,
                                E.command_buf, (int)sizeof(E.command_buf))) {
                 E.command_len = (int)strlen(E.command_buf);
@@ -389,7 +399,7 @@ void command_mode_handle_keypress(int c) {
         if (command_tmux_history_nav(1)) {
             cmdcomp_clear();
         } else {
-            tmux_history_reset_browse();
+            if (tmux_history_reset_browse) tmux_history_reset_browse();
             if (hist_browse_down(&E.history, E.command_buf,
                                  (int)sizeof(E.command_buf), &restored)) {
                 E.command_len = (int)strlen(E.command_buf);
@@ -420,7 +430,7 @@ void command_mode_handle_keypress(int c) {
             E.command_buf[E.command_len++] = c;
         }
         hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
+        if (tmux_history_reset_browse) tmux_history_reset_browse();
         cmdcomp_clear();
     }
 }
@@ -464,7 +474,7 @@ void ed_process_command(void) {
         ed_set_mode(MODE_NORMAL);
         E.command_len = 0;
         hist_reset_browse(&E.history);
-        tmux_history_reset_browse();
+        if (tmux_history_reset_browse) tmux_history_reset_browse();
         cmdcomp_clear();
     }
 }

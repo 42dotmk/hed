@@ -8,6 +8,7 @@
 
 #include "plugin.h"
 #include "cmd_builtins.h"
+#include "cmd_lsp.h"
 #include "hed.h"
 #include "lsp.h"
 #include "lsp_hooks.h"
