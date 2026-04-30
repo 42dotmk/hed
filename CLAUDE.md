@@ -7,8 +7,7 @@ ripgrep/fzf for search, tmux for runner panes, OSC 52 for clipboard.
 
 ## Install
 
-Pre-built Linux x86_64 binary (no dependencies — built with
-`WITH_TREESITTER=0`):
+Pre-built Linux x86_64 binary:
 
 ```sh
 wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x86_64 \
@@ -16,12 +15,16 @@ wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x8
   && ./hed
 ```
 
-Want syntax highlighting? Grab the `-ts` build instead and install
-`libtree-sitter` (`sudo apt-get install libtree-sitter0`):
+The binary is built with treesitter support; if `libtree-sitter` isn't
+installed on the host, the editor still runs (grammars are loaded with
+`dlopen` and missing-ts is handled gracefully). For the full
+highlighting experience: `sudo apt-get install libtree-sitter0`. To
+install grammars on demand from inside hed, also grab the `tsi`
+helper:
 
 ```sh
-wget -O hed https://github.com/42dotmk/hed/releases/latest/download/hed-linux-x86_64-ts \
-  && chmod +x hed
+wget -O tsi https://github.com/42dotmk/hed/releases/latest/download/tsi-linux-x86_64 \
+  && chmod +x tsi && sudo mv tsi /usr/local/bin/
 ```
 
 Or build from source:

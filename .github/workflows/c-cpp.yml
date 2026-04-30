@@ -23,21 +23,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libtree-sitter-dev
 
-      # Portable build: no libtree-sitter dependency. Lands as hed-linux-x86_64.
-      - name: build (portable, no treesitter)
-        run: |
-          make clean
-          make WITH_TREESITTER=0
-          cp build/hed hed-linux-x86_64
-          cp build/tsi tsi-linux-x86_64
-
-      # Full build: treesitter syntax highlighting included. Requires
-      # libtree-sitter at runtime on the user's machine.
-      - name: build (with treesitter)
+      # Single full build (WITH_TREESITTER=1). The treesitter plugin
+      # uses dlopen for grammars and weak refs into ts_*, so the binary
+      # remains usable even on hosts without grammar .so files.
+      - name: build
         run: |
           make clean
           make
-          cp build/hed hed-linux-x86_64-ts
+          cp build/hed hed-linux-x86_64
+          cp build/tsi tsi-linux-x86_64
 
       - name: test
         run: |
@@ -52,7 +46,6 @@ jobs:
           name: hed-binaries
           path: |
             hed-linux-x86_64
-            hed-linux-x86_64-ts
             tsi-linux-x86_64
 
       # Attach the same binaries to a GitHub Release on tag push.
@@ -62,6 +55,5 @@ jobs:
         with:
           files: |
             hed-linux-x86_64
-            hed-linux-x86_64-ts
             tsi-linux-x86_64
           generate_release_notes: true
