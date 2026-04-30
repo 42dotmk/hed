@@ -131,6 +131,60 @@ else
     esac
 fi
 
+# --- Tree-sitter grammars (optional) --------------------------------------
+# tsi clones tree-sitter-<lang>, builds <lang>.so, and installs it to
+# ~/.config/hed/ts/. Needs git + cc on the host.
+
+LANG_CHOICES=(c cpp python javascript typescript rust go html css json bash lua ruby java markdown)
+
+if command -v git >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
+    echo
+    echo "Install tree-sitter grammars now? (used for syntax highlighting)"
+    echo "Available:"
+    for i in "${!LANG_CHOICES[@]}"; do
+        printf "  %2d) %s\n" "$((i+1))" "${LANG_CHOICES[$i]}"
+    done
+    echo
+    echo "Enter numbers separated by spaces (e.g. '1 3 7'), 'a' for all,"
+    echo "or just press Enter to skip. You can always run 'tsi <lang>' later."
+    printf "> "
+    read -r selection </dev/tty || selection=""
+
+    chosen_langs=()
+    case "$selection" in
+        ""|n|N|no|skip)
+            ;;
+        a|A|all)
+            chosen_langs=("${LANG_CHOICES[@]}")
+            ;;
+        *)
+            for n in $selection; do
+                if [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le "${#LANG_CHOICES[@]}" ]; then
+                    chosen_langs+=("${LANG_CHOICES[$((n-1))]}")
+                else
+                    echo "  ignoring invalid choice: $n"
+                fi
+            done
+            ;;
+    esac
+
+    if [ "${#chosen_langs[@]}" -gt 0 ]; then
+        echo "Installing grammars: ${chosen_langs[*]}"
+        ts_workdir=$(mktemp -d)
+        # tsi builds in $cwd/ts/build/<lang>, then installs to ~/.config/hed/ts.
+        ( cd "$ts_workdir" && for lang in "${chosen_langs[@]}"; do
+              echo
+              echo "=== $lang ==="
+              "$INSTALL_DIR/tsi" "$lang" || echo "  (failed to install $lang, continuing)"
+          done )
+        rm -rf "$ts_workdir"
+    fi
+else
+    echo
+    echo "Note: 'git' and/or 'cc' not found — skipping grammar install offer."
+    echo "Install them and run 'tsi <lang>' later (e.g. 'tsi python')."
+fi
+
 case ":$PATH:" in
     *":${INSTALL_DIR}:"*) ;;
     *)
