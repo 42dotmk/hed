@@ -1,15 +1,19 @@
 /* lsp plugin: activates LSP integration.
  *
- * Implementation lives in src/lsp.c, src/lsp_hooks.c, and
- * src/commands/cmd_lsp.c. This plugin owns activation only:
- * lifecycle hooks + command surface. */
+ * Owns the full lifecycle: lsp_init (server table reset), lsp_hooks_init
+ * (buffer/keypress/mode hooks), and the :lsp_* command surface.
+ *
+ * Implementation lives next to this file in lsp_impl.c, lsp_hooks.c,
+ * and cmd_lsp.c. */
 
 #include "plugin.h"
 #include "cmd_builtins.h"
 #include "hed.h"
+#include "lsp.h"
 #include "lsp_hooks.h"
 
 static int lsp_plugin_init(void) {
+    lsp_init();
     lsp_hooks_init();
 
     cmd("lsp_connect",    cmd_lsp_connect,    "connect to a running LSP server");

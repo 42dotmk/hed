@@ -157,9 +157,6 @@ static void register_commands(void) {
     cmd("wj", cmd_wdown, "focus window down");
     cmd("wk", cmd_wup, "focus window up");
     cmd("wl", cmd_wright, "focus window right");
-    cmd("ts", cmd_ts, "ts on|off|auto");
-    cmd("tslang", cmd_tslang, "tslang <name>");
-    cmd("tsi", cmd_tsi, "install ts lang");
     cmd("reload", cmd_reload, "rebuild+restart hed");
     cmd("modal", cmd_modal_from_current, "convert current window to modal");
     cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");

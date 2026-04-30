@@ -365,7 +365,6 @@ void ed_init(int create_default_buffer) {
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
     macro_init();
-    lsp_init();
 
     /* All subsystems are ready — let the user wire up their config. */
     config_init();

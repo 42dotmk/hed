@@ -13,6 +13,7 @@
 #include "quickfix_preview/quickfix_preview.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
+#include "treesitter/treesitter.h"
 #include "viewmd/viewmd_plugin.h"
 #include "vim_keybinds/vim_keybinds.h"
 #include "vscode_keybinds/vscode_keybinds.h"
@@ -32,6 +33,7 @@ void config_init(void) {
     plugin_load(&plugin_smart_indent,     1);
     plugin_load(&plugin_fmt,              1);
     plugin_load(&plugin_tmux,             1);
+    plugin_load(&plugin_treesitter,       1);
 
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");

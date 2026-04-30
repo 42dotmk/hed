@@ -8,6 +8,12 @@
 #include "hooks.h"
 #include "safe_string.h"
 #include <assert.h>
+
+/* Weak refs to the treesitter plugin (skipped when not linked). */
+extern int ts_is_enabled(void)             __attribute__((weak));
+extern void ts_buffer_reparse(Buffer *buf) __attribute__((weak));
+extern size_t ts_highlight_line(Buffer *buf, int row, char *out, size_t outsz,
+                                int slice_start, int slice_len) __attribute__((weak));
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -576,7 +582,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         render_slice_ss(&buf->rows[filerow].render, (start_rx_),               \
                         (slice_cols_), &__sb, &__blen);                        \
         if (__blen > 0) {                                                      \
-            if (ts_is_enabled()) {                                             \
+            if (ts_is_enabled && ts_is_enabled() && ts_highlight_line) {       \
                 char linebuf[4096];                                            \
                 size_t wrote = ts_highlight_line(                              \
                     buf, filerow, linebuf, sizeof(linebuf), __sb, __blen);     \
@@ -737,7 +743,7 @@ void ed_render_frame(void) {
     ansi_home(&ab);
 
     /* Reparse tree-sitter for any window whose buffer changed since last draw */
-    if (ts_is_enabled()) {
+    if (ts_is_enabled && ts_is_enabled() && ts_buffer_reparse) {
         for (int wi = 0; wi < (int)E.windows.len; ++wi) {
             int bi = E.windows.data[wi].buffer_index;
             if (bi >= 0 && bi < (int)E.buffers.len)

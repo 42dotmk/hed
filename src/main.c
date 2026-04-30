@@ -2,6 +2,12 @@
 #include "macros.h"
 #include <sys/select.h>
 
+/* Weak refs to the LSP plugin's fd-pump entry points. If the plugin
+ * isn't linked into this build (e.g., PLUGINS_DIR omits it), these
+ * resolve to NULL and the main loop skips the calls. */
+extern void lsp_fill_fdset(fd_set *set, int *max_fd) __attribute__((weak));
+extern void lsp_handle_readable(const fd_set *set) __attribute__((weak));
+
 
 int main(int argc, char *argv[]) {
     const char *startup_cmd = NULL;
@@ -121,8 +127,8 @@ int main(int argc, char *argv[]) {
         FD_SET(STDIN_FILENO, &rfds);
         int maxfd = STDIN_FILENO;
 
-        /* Add LSP file descriptors to select set */
-        lsp_fill_fdset(&rfds, &maxfd);
+        /* Let LSP plugin (if present) add its server fds to the set. */
+        if (lsp_fill_fdset) lsp_fill_fdset(&rfds, &maxfd);
 
         int rc = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (rc == -1) {
@@ -131,8 +137,7 @@ int main(int argc, char *argv[]) {
             die("select");
         }
 
-        /* Handle LSP messages */
-        lsp_handle_readable(&rfds);
+        if (lsp_handle_readable) lsp_handle_readable(&rfds);
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             ed_process_keypress();

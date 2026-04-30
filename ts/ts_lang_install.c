@@ -47,6 +47,47 @@ static int mkdir_if_needed(const char *path) {
     return 0;
 }
 
+/* Recursively create a directory and all parents. Equivalent to
+ * `mkdir -p`. Returns 0 on success or if it already exists. */
+static int mkdir_p(const char *path) {
+    if (!path || !*path) return 0;
+    char tmp[1024];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    size_t len = strlen(tmp);
+    if (tmp[len - 1] == '/') tmp[--len] = '\0';
+    for (size_t i = 1; i < len; i++) {
+        if (tmp[i] == '/') {
+            tmp[i] = '\0';
+            if (mkdir_if_needed(tmp) != 0) return -1;
+            tmp[i] = '/';
+        }
+    }
+    return mkdir_if_needed(tmp);
+}
+
+/* Mirror the loader's default in plugins/treesitter/ts_impl.c so that
+ * installed grammars land where hed will look for them by default. */
+static void default_install_base(char *out, size_t out_sz) {
+    if (!out || out_sz == 0) return;
+    out[0] = '\0';
+
+    const char *env = getenv("HED_TS_PATH");
+    if (env && *env) { snprintf(out, out_sz, "%s", env); return; }
+
+    const char *xdg_config = getenv("XDG_CONFIG_HOME");
+    if (xdg_config && *xdg_config) {
+        snprintf(out, out_sz, "%s/hed/ts", xdg_config);
+        return;
+    }
+    const char *home = getenv("HOME");
+    if (home && *home) {
+        snprintf(out, out_sz, "%s/.config/hed/ts", home);
+        return;
+    }
+    /* Fallback: in-tree directory. */
+    snprintf(out, out_sz, "ts-langs");
+}
+
 static int run_cmd(const char *cmd) {
     int rc = system(cmd);
     if (rc != 0) {
@@ -88,18 +129,20 @@ static int copy_file(const char *src, const char *dst) {
 }
 
 /* Install a single query file from <build_dir>/queries/<qname> to
- * ts-langs/queries/<lang>/<qname>. Missing source is not an error. */
-static int install_query(const char *build_dir, const char *lang,
-                         const char *qname) {
+ * <install_base>/queries/<lang>/<qname>. Missing source is not an error. */
+static int install_query(const char *build_dir, const char *install_base,
+                         const char *lang, const char *qname) {
     char src[1024];
     snprintf(src, sizeof(src), "%s/queries/%s", build_dir, qname);
     if (!file_exists(src)) {
         fprintf(stderr, "  (no %s)\n", qname);
         return 0;
     }
-    if (mkdir_if_needed("ts-langs/queries") != 0) return -1;
+    char queries_dir[1024];
+    snprintf(queries_dir, sizeof(queries_dir), "%s/queries", install_base);
+    if (mkdir_p(queries_dir) != 0) return -1;
     char dst_dir[1024];
-    snprintf(dst_dir, sizeof(dst_dir), "ts-langs/queries/%s", lang);
+    snprintf(dst_dir, sizeof(dst_dir), "%s/%s", queries_dir, lang);
     if (mkdir_if_needed(dst_dir) != 0) return -1;
     char dst[1024];
     snprintf(dst, sizeof(dst), "%s/%s", dst_dir, qname);
@@ -291,13 +334,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Ensure ts-langs/ exists and install the .so there. */
-    if (mkdir_if_needed("ts-langs") != 0) return 1;
+    /* Determine install base — ~/.config/hed/ts by default, override
+     * with $HED_TS_PATH or $XDG_CONFIG_HOME. */
+    char base[1024];
+    default_install_base(base, sizeof(base));
+    if (mkdir_p(base) != 0) {
+        fprintf(stderr, "Failed to create install base: %s\n", base);
+        return 1;
+    }
 
     char src_so[1024];
     snprintf(src_so, sizeof(src_so), "%s/%s", build_dir, so_name);
     char dst_so[1024];
-    snprintf(dst_so, sizeof(dst_so), "ts-langs/%s.so", lang);
+    snprintf(dst_so, sizeof(dst_so), "%s/%s.so", base, lang);
 
     fprintf(stderr, "Installing %s -> %s\n", src_so, dst_so);
     if (copy_file(src_so, dst_so) != 0) {
@@ -306,14 +355,14 @@ int main(int argc, char **argv) {
     }
 
     /* Install query files (highlights, injections, locals) if present. */
-    if (install_query(build_dir, lang, "highlights.scm") < 0) return 1;
-    if (install_query(build_dir, lang, "injections.scm") < 0) return 1;
-    if (install_query(build_dir, lang, "locals.scm") < 0) return 1;
+    if (install_query(build_dir, base, lang, "highlights.scm") < 0) return 1;
+    if (install_query(build_dir, base, lang, "injections.scm") < 0) return 1;
+    if (install_query(build_dir, base, lang, "locals.scm") < 0) return 1;
 
     fprintf(stderr, "Done. Language '%s' installed.\n", lang);
-    fprintf(stderr, "  Shared library: ts-langs/%s.so\n", lang);
-    fprintf(stderr, "  Queries dir:    ts-langs/queries/%s/\n", lang);
-    fprintf(stderr, "Remember to run hed from this directory and use :ts on / :tslang %s\n", lang);
+    fprintf(stderr, "  Shared library: %s/%s.so\n", base, lang);
+    fprintf(stderr, "  Queries dir:    %s/queries/%s/\n", base, lang);
+    fprintf(stderr, "Use :ts on / :tslang %s inside hed.\n", lang);
 
     return 0;
 }

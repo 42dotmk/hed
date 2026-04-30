@@ -6,6 +6,11 @@
 #include <assert.h>
 #include <regex.h>
 
+/* Weak refs to the treesitter plugin (skipped when not linked). */
+extern int ts_is_enabled(void)               __attribute__((weak));
+extern int ts_buffer_autoload(Buffer *buf)   __attribute__((weak));
+extern void ts_buffer_reparse(Buffer *buf)   __attribute__((weak));
+
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 void buf_row_del_in(Buffer *buf, int at);
@@ -143,9 +148,9 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     hook_fire_buffer(HOOK_BUFFER_OPEN, &event);
 
     ed_set_status_message("Loaded: %s", filename);
-    if (ts_is_enabled()) {
-        ts_buffer_autoload(buf);
-        ts_buffer_reparse(buf);
+    if (ts_is_enabled && ts_is_enabled()) {
+        if (ts_buffer_autoload) ts_buffer_autoload(buf);
+        if (ts_buffer_reparse)  ts_buffer_reparse(buf);
     }
     *out = buf;
 

@@ -548,63 +548,6 @@ void cmd_buf_refresh(const char* args){
 	Buffer *buf=buf_cur();
 	buf_reload(buf);
 }
-void cmd_ts(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("ts: %s", ts_is_enabled() ? "on" : "off");
-        return;
-    }
-    if (strcmp(args, "on") == 0) {
-        ts_set_enabled(1);
-        for (int i = 0; i < (int)E.buffers.len; i++) {
-            ts_buffer_autoload(&E.buffers.data[i]);
-            ts_buffer_reparse(&E.buffers.data[i]);
-        }
-        ed_set_status_message("ts: on");
-    } else if (strcmp(args, "off") == 0) {
-        ts_set_enabled(0);
-        ed_set_status_message("ts: off");
-    } else if (strcmp(args, "auto") == 0) {
-        ts_set_enabled(1);
-        Buffer *b = buf_cur();
-        if (b) {
-            if (!ts_buffer_autoload(b))
-                ed_set_status_message("ts: no lang for current file");
-            ts_buffer_reparse(b);
-        }
-        ed_set_status_message("ts: auto");
-    } else {
-        ed_set_status_message("ts: on|off|auto");
-    }
-}
-
-void cmd_tslang(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("tslang: <name>");
-        return;
-    }
-    Buffer *b = buf_cur();
-    if (!b)
-        return;
-    ts_set_enabled(1);
-    if (!ts_buffer_load_language(b, args)) {
-        ed_set_status_message("tslang: failed for %s", args);
-        return;
-    }
-    ts_buffer_reparse(b);
-    ed_set_status_message("tslang: %s", args);
-}
-
-void cmd_tsi(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("tsi: <lang>");
-        return;
-    }
-    char cmd[256];
-    /* Run tsi from build/; assumes hed is run from repo root */
-    snprintf(cmd, sizeof(cmd), "tsi %s", args);
-    cmd_shell(cmd);
-}
-
 void cmd_new_line(const char *args) {
     (void)args;
     Window *win = window_cur();
