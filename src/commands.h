@@ -48,12 +48,6 @@ void command_register(const char *name, CommandCallback callback,
  */
 int command_execute(const char *name, const char *args);
 
-/**
- * User commands initialization (implemented in config.c)
- * This is where users define their custom commands
- */
-void user_commands_init(void);
-
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);
 

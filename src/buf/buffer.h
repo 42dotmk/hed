@@ -10,6 +10,7 @@
 #include "errors.h"
 #include "row.h"
 #include "utils/fold.h"
+#include "utils/undo.h"
 
 /* FoldMethod enum for automatic fold detection */
 typedef enum {
@@ -34,6 +35,8 @@ typedef struct Buffer {
 
     FoldList folds; /* Code folding regions */
     FoldMethod fold_method; /* Active fold detection method */
+
+    UndoState undo; /* Undo/redo state */
 } Buffer;
 
 /* Buffer management */

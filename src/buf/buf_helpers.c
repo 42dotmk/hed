@@ -257,6 +257,9 @@ void buf_join_lines(void) {
     int need_space = (current->chars.len > 0 &&
                       current->chars.data[current->chars.len - 1] != ' ');
 
+    /* Capture original 'current' row before any direct char mutation. */
+    undo_record_replace(buf, y);
+
     /* Optional space insertion at end of current line */
     if (need_space) {
         sstr_append_char(&current->chars, ' ');
@@ -305,6 +308,8 @@ void buf_indent_line(void) {
 
     Row *row = &buf->rows[win->cursor.y];
 
+    undo_record_replace(buf, win->cursor.y);
+
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
         sstr_insert_char(&row->chars, 0, ' ');
@@ -327,6 +332,8 @@ void buf_unindent_line(void) {
     }
 
     Row *row = &buf->rows[win->cursor.y];
+
+    undo_record_replace(buf, win->cursor.y);
 
     /* Remove up to TAB_STOP spaces from the beginning */
     int spaces_to_remove = 0;
@@ -382,6 +389,8 @@ void buf_toggle_comment(void) {
     int y = win->cursor.y;
     Row *row = &buf->rows[y];
     int comment_len = strlen(comment);
+
+    undo_record_replace(buf, y);
 
     /* Check if line starts with comment */
     int is_commented = 1;
@@ -682,6 +691,7 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
             sx = 0;
         if (ex < sx)
             ex = sx;
+        undo_record_replace(buf, sy);
         size_t tail = row->chars.len - ex;
         memmove(row->chars.data + sx, row->chars.data + ex, tail);
         row->chars.len -= (ex - sx);
@@ -693,6 +703,7 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         Row *first = &buf->rows[sy];
         if (sx > (int)first->chars.len)
             sx = (int)first->chars.len;
+        undo_record_replace(buf, sy);
         first->chars.len = sx;
         first->chars.data[sx] = '\0';
         buf_row_update(first);
@@ -763,6 +774,7 @@ void buf_delete_selection(TextSelection *sel) {
         Row *row = &buf->rows[cy];
         if (cx > 0 && cx < (int)row->chars.len &&
             row->chars.data[cx] == ' ' && row->chars.data[cx - 1] == ' ') {
+            undo_record_replace(buf, cy);
             size_t tail = row->chars.len - (cx + 1);
             memmove(row->chars.data + cx, row->chars.data + cx + 1, tail);
             row->chars.len--;
@@ -780,6 +792,13 @@ void buf_yank_selection(TextSelection *sel) {
 }
 
 void buf_change_selection(TextSelection *sel) {
+    Buffer *buf = buf_cur();
+    /* Open one group spanning the deletion AND the upcoming insert
+     * session so c<motion><text><Esc> is a single undo step. The mode
+     * change hook will see an open group on INSERT entry and leave it
+     * alone; Esc closes it. */
+    if (buf)
+        undo_begin(buf, "change");
     buf_delete_selection(sel);
     ed_set_mode(MODE_INSERT);
 }
@@ -1110,6 +1129,7 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
             } else {
                 /* Multiple lines: split current line and insert between */
                 /* Save text after cursor */
+                undo_record_replace(buf, at_line);
                 SizedStr rest = sstr_new();
                 if (insert_col < (int)r->chars.len) {
                     sstr_append(&rest, r->chars.data + insert_col,
@@ -1169,8 +1189,10 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
                 Row *r = &buf->rows[target_line];
 
                 /* Pad line with spaces if needed */
-                while ((int)r->chars.len < insert_col) {
-                    sstr_append_char(&r->chars, ' ');
+                if ((int)r->chars.len < insert_col) {
+                    undo_record_replace(buf, target_line);
+                    while ((int)r->chars.len < insert_col)
+                        sstr_append_char(&r->chars, ' ');
                 }
 
                 /* Insert the block segment */

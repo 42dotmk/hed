@@ -153,7 +153,7 @@ static void on_line_change(const HookLineEvent *e) {
     viewmd_push(e->buf);
 }
 
-static void on_buffer_save(const HookBufferEvent *e) {
+static void on_buffer_save(HookBufferEvent *e) {
     if (!viewmd_is_running())
         return;
     if (E.current_buffer != viewmd_buf_idx)

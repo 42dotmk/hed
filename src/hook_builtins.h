@@ -10,8 +10,6 @@
  */
 
 #include "hed.h"
-void hook_smart_indent(const HookCharEvent *event);
 void hook_change_cursor_shape(const HookModeEvent *event);
-void hook_auto_pair(const HookCharEvent *event);
 
 #endif // !HOOK_BUILTINS_H

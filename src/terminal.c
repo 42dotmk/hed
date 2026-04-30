@@ -154,7 +154,7 @@ EdError buf_save_in(Buffer *buf) {
     recent_files_add(&E.recent_files, buf->filename);
 
     /* Fire hook */
-    HookBufferEvent event = {buf, buf->filename};
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SAVE, &event);
 
     ed_set_status_message("%d bytes written to %s", len, buf->filename);
@@ -728,6 +728,11 @@ void ed_render_frame(void) {
 
     Abuf ab;
     ab_init(&ab);
+    /* DEC mode 2026 (Synchronized Output): begin atomic frame. Modern
+     * terminals buffer until ESU and commit in one shot, eliminating
+     * mid-frame flicker. Older terminals (and tmux pre-3.4) ignore the
+     * sequence — harmless. */
+    ab_append(&ab, "\x1b[?2026h", 8);
     ansi_hide_cursor(&ab);
     ansi_home(&ab);
 
@@ -810,6 +815,8 @@ void ed_render_frame(void) {
     }
     ansi_move(&ab, cur_row, cur_col);
     ansi_show_cursor(&ab);
+    /* End Synchronized Update — terminal commits the whole frame now. */
+    ab_append(&ab, "\x1b[?2026l", 8);
 
     write(STDOUT_FILENO, ab.data, (size_t)ab.len);
     ab_free(&ab);

@@ -259,9 +259,15 @@ void cmd_write(const char *args) {
     if (!buf)
         return;
 
-    /* dired buffers commit create/rename/delete ops instead of writing bytes */
-    if (dired_handle_save(buf))
-        return;
+    /* Allow plugins (e.g., dired) to intercept the save. */
+    {
+        HookBufferEvent ev = {0};
+        ev.buf = buf;
+        ev.filename = buf->filename;
+        hook_fire_buffer(HOOK_BUFFER_SAVE_PRE, &ev);
+        if (ev.consumed)
+            return;
+    }
 
     /* If a filename is provided, set it on the buffer before saving */
     if (args && *args) {

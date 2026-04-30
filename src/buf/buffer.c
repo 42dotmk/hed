@@ -49,6 +49,7 @@ static void buf_init(Buffer *buf) {
     buf->ts_internal = NULL;
     fold_list_init(&buf->folds);
     buf->fold_method = FOLD_METHOD_MANUAL; /* Default: manual folding */
+    undo_state_init(&buf->undo);
 }
 
 /* Create a new buffer and return EdError status */
@@ -138,7 +139,7 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     buf->dirty = 0;
 
     recent_files_add(&E.recent_files, filename);
-    HookBufferEvent event = {buf, filename};
+    HookBufferEvent event = {.buf = buf, .filename = filename};
     hook_fire_buffer(HOOK_BUFFER_OPEN, &event);
 
     ed_set_status_message("Loaded: %s", filename);
@@ -156,9 +157,13 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         ed_set_status_message("No filename provided");
         return;
     }
-    if (path_is_dir(filename)) {
-        dired_open(filename);
-        return;
+    /* Allow plugins (e.g., dired) to intercept the open. */
+    {
+        HookBufferEvent ev = {0};
+        ev.filename = filename;
+        hook_fire_buffer(HOOK_BUFFER_OPEN_PRE, &ev);
+        if (ev.consumed)
+            return;
     }
 
     /* Record current position BEFORE switching so <C-o> returns here */
@@ -213,7 +218,7 @@ EdError buf_switch(int index) {
 	}
 
     /* Fire hook */
-    HookBufferEvent event = {buf, buf->filename};
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);
 
     return ED_OK;
@@ -232,7 +237,7 @@ void buf_next(void) {
     Buffer *buf = buf_cur();
 
     /* Fire hook */
-    HookBufferEvent event = {buf, buf->filename};
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);
 
     if (win) {
@@ -259,7 +264,7 @@ void buf_prev(void) {
                       win->cursor.y);
     }
     /* Fire hook */
-    HookBufferEvent event = {buf, buf->filename};
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SWITCH, &event);
 
     ed_set_status_message("Buffer %d: %s", E.current_buffer + 1, buf->title);
@@ -278,7 +283,7 @@ EdError buf_close(int index) {
     }
 
     /* Fire hook before closing */
-    HookBufferEvent event = {buf, buf->filename};
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_CLOSE, &event);
 
     /* Free buffer resources */
@@ -292,6 +297,7 @@ EdError buf_close(int index) {
     free(buf->title);
     free(buf->filetype);
     fold_list_free(&buf->folds);
+    undo_state_free(&buf->undo);
 
     /* Shift buffers down */
     for (int i = index; i < (int)E.buffers.len - 1; i++) {
@@ -324,6 +330,8 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
     if (at < 0 || at > buf->num_rows)
         return;
 
+    undo_record_insert(buf, at, s, len);
+
     Row *new_rows = realloc(buf->rows, sizeof(Row) * (buf->num_rows + 1));
     if (!new_rows) {
         ed_set_status_message("Out of memory");
@@ -352,6 +360,8 @@ void buf_row_del_in(Buffer *buf, int at) {
         return;
     if (!BOUNDS_CHECK(at, buf->num_rows))
         return;
+    undo_record_delete(buf, at, buf->rows[at].chars.data,
+                       buf->rows[at].chars.len);
     row_free(&buf->rows[at]);
     memmove(&buf->rows[at], &buf->rows[at + 1],
             sizeof(Row) * (buf->num_rows - at - 1));
@@ -362,6 +372,7 @@ void buf_row_del_in(Buffer *buf, int at) {
 void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c) {
     if (!buf || !row)
         return;
+    undo_record_replace(buf, (int)(row - buf->rows));
     sstr_insert_char(&row->chars, at, c);
     buf_row_update(row);
     buf->dirty++;
@@ -372,6 +383,7 @@ void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c) {
 void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str) {
     if (!buf || !row || !str)
         return;
+    undo_record_replace(buf, (int)(row - buf->rows));
     sstr_append(&row->chars, str->data, str->len);
     buf_row_update(row);
     buf->dirty++;
@@ -382,6 +394,7 @@ void buf_row_del_char_in(Buffer *buf, Row *row, int at) {
         return;
     if (at < 0 || at >= (int)row->chars.len)
         return;
+    undo_record_replace(buf, (int)(row - buf->rows));
     sstr_delete_char(&row->chars, at);
     buf_row_update(row);
     buf->dirty++;
@@ -420,6 +433,9 @@ void buf_insert_newline_in(Buffer *buf) {
         Row *row = &buf->rows[y0];
         const char *rest = row->chars.data + x0;
         size_t rest_len = row->chars.len - x0;
+        /* Capture original row before split: row gets truncated to [0, x0)
+         * and the rest moves into a new row. */
+        undo_record_replace(buf, y0);
         buf_row_insert_in(buf, y0 + 1, rest, rest_len);
 
         row = &buf->rows[y0];
@@ -599,6 +615,10 @@ void buf_reload(Buffer *buf) {
     /* Clear folds */
     fold_list_free(&buf->folds);
     fold_list_init(&buf->folds);
+
+    /* Drop undo history — rows are about to be replaced wholesale. */
+    undo_state_free(&buf->undo);
+    undo_state_init(&buf->undo);
 
     /* Detect filetype (update) */
     free(buf->filetype);

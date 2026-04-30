@@ -42,10 +42,6 @@ void hook_init(void) {
         hooks[i].count = 0;
     }
 
-    /* Call user hooks initialization */
-    user_hooks_init();
-    /* Built-in extra hooks (e.g., quickfix integration) */
-    user_hooks_quickfix_init();
 }
 
 /* Registration functions */
@@ -157,7 +153,7 @@ void hook_fire_line(HookType type, const HookLineEvent *event) {
     }
 }
 
-void hook_fire_buffer(HookType type, const HookBufferEvent *event) {
+void hook_fire_buffer(HookType type, HookBufferEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
 
@@ -169,6 +165,9 @@ void hook_fire_buffer(HookType type, const HookBufferEvent *event) {
             HookBufferCallback cb =
                 (HookBufferCallback)hooks[type].entries[i].callback;
             cb(event);
+            /* For *_PRE intercept hooks, stop after first claim. */
+            if (event->consumed)
+                return;
         }
     }
 }

@@ -32,6 +32,18 @@ static int pending_count = 0; /* numeric prefix */
 static int have_count = 0;
 /* Helper: convert key code to string representation */
 static void key_to_string(int key, char *buf, size_t bufsize) {
+    if (KEY_IS_META(key)) {
+        int base = KEY_NO_META(key);
+        if (base >= 32 && base < 127) {
+            snprintf(buf, bufsize, "<M-%c>", base);
+        } else if (base >= 1 && base <= 26) {
+            /* Meta + Ctrl + letter (rare but possible): <M-C-a>, <M-C-b>, ... */
+            snprintf(buf, bufsize, "<M-C-%c>", base + 'a' - 1);
+        } else {
+            snprintf(buf, bufsize, "<M-%d>", base);
+        }
+        return;
+    }
     if (key >= 32 && key < 127) {
         /* Printable ASCII */
         snprintf(buf, bufsize, "%c", key);
@@ -81,20 +93,45 @@ static int timeout_exceeded(void) {
     return elapsed_ms > SEQUENCE_TIMEOUT_MS;
 }
 
-/* Initialize keybinding system */
+/* Initialize keybinding system. User content is registered later from
+ * config_init() (see src/config.c). Registration uses last-write-wins,
+ * so the order in config_init determines precedence. */
 void keybind_init(void) {
     keybind_count = 0;
     key_buffer_len = 0;
     key_buffer[0] = '\0';
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
-    user_keybinds_init();
-    user_textobj_init();
+}
+
+/* Drop any prior keybind with the same (mode, sequence, filetype) tuple so
+ * that the latest registration wins. Lets users override plugin defaults. */
+static void remove_duplicate(int mode, const char *sequence,
+                             const char *filetype) {
+    for (int i = 0; i < keybind_count; i++) {
+        if (keybinds[i].mode != mode) continue;
+        if (strcmp(keybinds[i].sequence, sequence) != 0) continue;
+        int same_ft =
+            (keybinds[i].filetype == NULL && filetype == NULL) ||
+            (keybinds[i].filetype && filetype &&
+             strcmp(keybinds[i].filetype, filetype) == 0);
+        if (!same_ft) continue;
+
+        free(keybinds[i].sequence);
+        free(keybinds[i].desc);
+        free(keybinds[i].filetype);
+        for (int j = i; j < keybind_count - 1; j++) {
+            keybinds[j] = keybinds[j + 1];
+        }
+        keybind_count--;
+        return; /* invariant: at most one match exists */
+    }
 }
 
 /* Register a keybinding */
 void keybind_register(int mode, const char *sequence,
                       KeybindCallback callback, const char *desc) {
     if (keybind_count >= MAX_KEYBINDS) return;
+    remove_duplicate(mode, sequence, NULL);
     keybinds[keybind_count].sequence         = strdup(sequence);
     keybinds[keybind_count].callback         = callback;
     keybinds[keybind_count].mode             = mode;
@@ -107,6 +144,7 @@ void keybind_register(int mode, const char *sequence,
 void keybind_register_ft(int mode, const char *sequence, const char *filetype,
                          KeybindCallback callback, const char *desc) {
     if (keybind_count >= MAX_KEYBINDS) return;
+    remove_duplicate(mode, sequence, filetype);
     keybinds[keybind_count].sequence         = strdup(sequence);
     keybinds[keybind_count].callback         = callback;
     keybinds[keybind_count].mode             = mode;
@@ -141,6 +179,7 @@ static void kb_run_command(const char *cmdline) {
 void keybind_register_command(int mode, const char *sequence,
                               const char *cmdline) {
     if (keybind_count >= MAX_KEYBINDS) return;
+    remove_duplicate(mode, sequence, NULL);
     keybinds[keybind_count].sequence         = strdup(sequence);
     keybinds[keybind_count].callback         = NULL;
     keybinds[keybind_count].command_callback = kb_run_command;
@@ -153,6 +192,7 @@ void keybind_register_command(int mode, const char *sequence,
 void keybind_register_command_ft(int mode, const char *sequence,
                                   const char *filetype, const char *cmdline) {
     if (keybind_count >= MAX_KEYBINDS) return;
+    remove_duplicate(mode, sequence, filetype);
     keybinds[keybind_count].sequence         = strdup(sequence);
     keybinds[keybind_count].callback         = NULL;
     keybinds[keybind_count].command_callback = kb_run_command;

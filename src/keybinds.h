@@ -122,17 +122,5 @@ void textobj_register(const char *keys, TextObjFunc func, const char *desc);
 int textobj_lookup(const char *keys, struct Buffer *buf, int line, int col,
                    struct TextSelection *sel);
 
-/**
- * User keybindings initialization (implemented in user_hooks.c / config.c)
- * This is where users define their custom keybindings
- */
-void user_keybinds_init(void);
-
-/**
- * User text object initialization (implemented in config.c)
- * This is where users register text objects for operator composition
- */
-void user_textobj_init(void);
-
 /* Built-in keybinding callbacks live in keybinds_builtins.h */
 #endif // KEYBINDS_H

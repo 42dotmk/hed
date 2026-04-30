@@ -41,7 +41,6 @@ void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
 void kb_goto_file_start(void); /* gg - go to first line */
 void kb_para_next(void);       /* }  - next paragraph  */
 void kb_para_prev(void);       /* {  - prev paragraph  */
-void kb_tmux_send_line(void); /* Send current line to tmux runner pane */
 void kb_move_left(void);
 void kb_move_right(void);
 void kb_move_up(void);
@@ -50,10 +49,6 @@ void kb_insert_newline(void);
 void kb_insert_tab(void);
 void kb_insert_backspace(void);
 void kb_insert_escape(void);
-void kb_dired_enter(void);
-void kb_dired_parent(void);
-void kb_dired_home(void);
-void kb_dired_chdir(void);
 
 void kb_visual_yank_selection(void);
 void kb_visual_delete_selection(void);

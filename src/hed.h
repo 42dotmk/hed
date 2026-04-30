@@ -49,7 +49,6 @@
 #include "registers.h"
 #include "terminal.h"
 #include "undo.h"
-#include "dired.h"
 
 /* Buffer subsystem */
 #include "buf_helpers.h"

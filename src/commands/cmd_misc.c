@@ -408,12 +408,18 @@ void cmd_put(const char *args) {
 
 void cmd_undo(const char *args) {
     (void)args;
-    ed_set_status_message("Undo disabled");
+    Buffer *buf = buf_cur();
+    if (!buf) return;
+    if (!undo_apply(buf))
+        ed_set_status_message("Already at oldest change");
 }
 
 void cmd_redo(const char *args) {
     (void)args;
-    ed_set_status_message("Redo disabled");
+    Buffer *buf = buf_cur();
+    if (!buf) return;
+    if (!redo_apply(buf))
+        ed_set_status_message("Already at newest change");
 }
 
 void cmd_repeat(const char *args) {
@@ -537,69 +543,6 @@ void cmd_logclear(const char *args) {
     ed_set_status_message("log cleared");
 }
 
-/* Format current buffer using an external formatter based on filetype.
- * NOTE: This currently does NOT integrate with undo history; formatting
- * is treated like a save+reload operation. */
-void cmd_fmt(const char *args) {
-    (void)args;
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-    if (!buf->filename || !*buf->filename) {
-        ed_set_status_message("fmt: buffer has no filename");
-        return;
-    }
-
-    const char *ft = buf->filetype ? buf->filetype : "txt";
-    const char *tmpl = NULL;
-
-    if (strcmp(ft, "c") == 0 || strcmp(ft, "cpp") == 0) {
-        tmpl = "clang-format -i %s";
-    } else if (strcmp(ft, "rust") == 0) {
-        tmpl = "rustfmt %s";
-    } else if (strcmp(ft, "go") == 0) {
-        tmpl = "gofmt -w %s";
-    } else if (strcmp(ft, "python") == 0) {
-        tmpl = "black %s";
-    } else if (strcmp(ft, "javascript") == 0 || strcmp(ft, "typescript") == 0) {
-        tmpl = "prettier --write %s";
-    } else if (strcmp(ft, "json") == 0) {
-        tmpl = "prettier --parser json --write %s";
-    } else if (strcmp(ft, "html") == 0 || strcmp(ft, "css") == 0 ||
-               strcmp(ft, "markdown") == 0) {
-        tmpl = "prettier --write %s";
-    } else {
-        ed_set_status_message("fmt: no formatter for filetype '%s'", ft);
-        return;
-    }
-
-    /* Save buffer so formatter sees latest contents. */
-    EdError serr = buf_save_in(buf);
-    if (serr != ED_OK) {
-        ed_set_status_message("fmt: save failed: %s", ed_error_string(serr));
-        return;
-    }
-
-    char esc_path[1024];
-    shell_escape_single(buf->filename, esc_path, sizeof(esc_path));
-
-    char cmd[1536];
-    snprintf(cmd, sizeof(cmd), tmpl, esc_path);
-
-    /* Run formatter non-interactively, temporarily leaving raw mode. */
-    disable_raw_mode();
-    int status = system(cmd);
-    enable_raw_mode();
-
-    if (status != 0) {
-        ed_set_status_message("fmt: formatter exited with status %d", status);
-        return;
-    }
-
-    /* Reload buffer from disk to pick up formatted content. */
-    buf_reload(buf);
-    ed_set_status_message("fmt: formatted (%s)", buf->filename);
-}
 void cmd_buf_refresh(const char* args){
 	(void)args;
 	Buffer *buf=buf_cur();
@@ -697,24 +640,6 @@ void cmd_new_line_above(const char *args) {
     win->cursor.y--;
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
-}
-
-void cmd_tmux_toggle(const char *args) {
-    (void)args;
-    tmux_toggle_pane();
-}
-
-void cmd_tmux_send(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("Usage: :tmux_send <command>");
-        return;
-    }
-    tmux_send_command(args);
-}
-
-void cmd_tmux_kill(const char *args) {
-    (void)args;
-    tmux_kill_pane();
 }
 
 void cmd_shell(const char *args) {

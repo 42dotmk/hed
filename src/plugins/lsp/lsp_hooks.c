@@ -2,15 +2,15 @@
 #include "lsp.h"
 #include "winmodal.h"
 
-static void lsp_hook_buffer_open(const HookBufferEvent *event) {
+static void lsp_hook_buffer_open(HookBufferEvent *event) {
     if (event) lsp_on_buffer_open(event->buf);
 }
 
-static void lsp_hook_buffer_close(const HookBufferEvent *event) {
+static void lsp_hook_buffer_close(HookBufferEvent *event) {
     if (event) lsp_on_buffer_close(event->buf);
 }
 
-static void lsp_hook_buffer_save(const HookBufferEvent *event) {
+static void lsp_hook_buffer_save(HookBufferEvent *event) {
     if (event) lsp_on_buffer_save(event->buf);
 }
 

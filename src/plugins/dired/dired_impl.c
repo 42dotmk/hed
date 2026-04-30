@@ -1000,7 +1000,7 @@ static void dired_keypress_hook(HookKeyEvent *event) {
     event->consumed = 1;
 }
 
-static void dired_on_buffer_close(const HookBufferEvent *event) {
+static void dired_on_buffer_close(HookBufferEvent *event) {
     if (!event || !event->buf)
         return;
     if (!event->buf->filetype || strcmp(event->buf->filetype, "dired") != 0)

@@ -8,7 +8,6 @@
 #include <string.h>
 
 void cmd_cpick(const char *args) {
-    (void)args;
     /* Build printf list with name\tdesc lines for fzf preview */
     char pipebuf[8192];
     size_t off = 0;
@@ -33,8 +32,19 @@ void cmd_cpick(const char *args) {
     }
     pipebuf[off] = '\0';
 
-    const char *fzf_opts = "--delimiter '\t' --with-nth 1 --preview 'echo {2}' "
-                           "--preview-window right,60%,wrap";
+    /* If args contains a non-empty initial query, seed fzf with it via
+     * --query. Used by command-mode double-Tab escalation. */
+    char fzf_opts_buf[512];
+    char qescaped[256] = "";
+    if (args && *args) {
+        shell_escape_single(args, qescaped, sizeof(qescaped));
+    }
+    snprintf(fzf_opts_buf, sizeof(fzf_opts_buf),
+             "--delimiter '\t' --with-nth 1 --preview 'echo {2}' "
+             "--preview-window right,60%%,wrap%s%s",
+             qescaped[0] ? " --query " : "",
+             qescaped[0] ? qescaped : "");
+    const char *fzf_opts = fzf_opts_buf;
     char **sel = NULL;
     int cnt = 0;
     if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {

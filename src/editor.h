@@ -29,6 +29,13 @@
 #define KEY_HOME 1006
 #define KEY_END 1007
 
+/* Meta/Alt modifier: OR'd with the base key code.
+ * E.g. M-x is encoded as (KEY_META | 'x'). Out of range of the special
+ * keys above and well above any byte value, so it never overlaps. */
+#define KEY_META  0x10000
+#define KEY_IS_META(k) (((k) & KEY_META) != 0)
+#define KEY_NO_META(k) ((k) & 0xFFFF)
+
 #define CURSOR_STYLE_NONE "\x1b[0 q"
 #define CURSOR_STYLE_BLOCK "\x1b[1 q"
 #define CURSOR_STYLE_BLINKING_BLOCK "\x1b[2 q"
@@ -91,6 +98,10 @@ typedef struct {
         char base[256];
         char prefix[128];
         int active; /* 1 when a completion set is active */
+        /* 0=none/path, 1=command-name with multiple candidates pending.
+         * Set after first Tab on the command-name token when >1 match
+         * remains. A second Tab in this state fires fzf. */
+        int cmdname_pending;
     } cmd_complete;
 
     /* Macro replay queue - simulates keyboard input */

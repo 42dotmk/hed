@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "command_mode.h"
+#include "config.h"
 #include "macros.h"
 #include <dirent.h>
 #include <limits.h>
@@ -68,10 +69,17 @@ int ed_read_key(void) {
         char seq[3];
 
         if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+            /* Bare ESC. */
             key = '\x1b';
+        } else if (seq[0] != '[') {
+            /* ESC followed by any non-CSI byte = Meta/Alt + that key.
+             * Terminals encode M-x as the two bytes ESC, 'x'. */
+            key = KEY_META | (unsigned char)seq[0];
         } else if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+            /* CSI prefix but no follow-up — degrade to bare ESC. */
             key = '\x1b';
-        } else if (seq[0] == '[') {
+        } else {
+            /* seq[0] == '[': CSI escape sequence. */
             if (seq[1] >= '0' && seq[1] <= '9') {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) {
                     key = '\x1b';
@@ -118,8 +126,6 @@ int ed_read_key(void) {
                     break;
                 }
             }
-        } else {
-            key = '\x1b';
         }
     } else {
         key = c;
@@ -182,6 +188,13 @@ void ed_process_keypress(void) {
     if (kev.consumed) return;
     Buffer *buf = buf_cur();
     Window *win = window_cur();
+
+    /* Close any undo group left open by the previous keypress. INSERT
+     * keeps its group open across keypresses (closed by the mode hook
+     * on Esc); every other mode collapses each command into one undo. */
+    if (buf && E.mode != MODE_INSERT && undo_has_open(buf))
+        undo_end(buf);
+
     int old_x = win ? win->cursor.x : 0;
     int old_y = win ? win->cursor.y : 0;
 
@@ -257,6 +270,9 @@ void ed_init(int create_default_buffer) {
     jump_list_init(&E.jump_list);
     macro_init();
     lsp_init();
+
+    /* All subsystems are ready — let the user wire up their config. */
+    config_init();
 
     /* Ensure at least one editable buffer exists at startup if requested */
     if (create_default_buffer) {

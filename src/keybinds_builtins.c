@@ -8,7 +8,6 @@
 #include "hed.h"
 #include "strutil.h"
 #include "buf_helpers.h"
-#include "dired.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -608,22 +607,6 @@ void kb_operator_select(void) {
     ed_set_status_message("Unknown text object");
 }
 
-void kb_dired_enter(void) {
-    dired_handle_enter();
-}
-
-void kb_dired_parent(void) {
-    dired_handle_parent();
-}
-
-void kb_dired_home(void) {
-    dired_handle_home();
-}
-
-void kb_dired_chdir(void) {
-    dired_handle_chdir();
-}
-
 void kb_delete_char(void) {
     ASSERT_EDIT(buf, win);
     TextSelection sel;
@@ -898,31 +881,6 @@ void kb_goto_file_start(void) {
     win->cursor.x = 0;
     buf->cursor.y = 0;
     buf->cursor.x = 0;
-}
-
-/* Tmux integration: send current paragraph to tmux runner pane */
-void kb_tmux_send_line(void) {
-    SizedStr para = sstr_new();
-    if (!buf_get_paragraph_under_cursor(&para) || para.len == 0) {
-        sstr_free(&para);
-        ed_set_status_message("tmux: no paragraph to send");
-        return;
-    }
-
-    char *cmd = malloc(para.len + 1);
-    if (!cmd) {
-        sstr_free(&para);
-        ed_set_status_message("tmux: out of memory");
-        return;
-    }
-
-    memcpy(cmd, para.data, para.len);
-    cmd[para.len] = '\0';
-
-    tmux_send_command(cmd);
-
-    free(cmd);
-    sstr_free(&para);
 }
 
 /* Toggle case of character under cursor and move right */

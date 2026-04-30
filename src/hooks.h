@@ -14,6 +14,11 @@ typedef enum {
     HOOK_BUFFER_CLOSE,
     HOOK_BUFFER_SWITCH,
     HOOK_BUFFER_SAVE,
+
+    /* Intercept hooks: fire before the default action. A handler may set
+     * event->consumed = 1 to claim ownership and prevent core fallback. */
+    HOOK_BUFFER_OPEN_PRE,
+    HOOK_BUFFER_SAVE_PRE,
     // HOOK_BUFFER_VISIBLE,
     // HOOK_BUFFER_HIDDEN,
     // HOOK_BUFFER_MODIFIED,
@@ -48,6 +53,9 @@ typedef struct {
 typedef struct {
     Buffer *buf;
     const char *filename;
+    /* For *_PRE intercept hooks: handler sets to 1 to claim ownership.
+     * Ignored for non-intercept buffer hooks. */
+    int consumed;
 } HookBufferEvent;
 
 typedef struct {
@@ -71,7 +79,7 @@ typedef struct {
 /* Callback function pointer types */
 typedef void (*HookCharCallback)(const HookCharEvent *event);
 typedef void (*HookLineCallback)(const HookLineEvent *event);
-typedef void (*HookBufferCallback)(const HookBufferEvent *event);
+typedef void (*HookBufferCallback)(HookBufferEvent *event); /* non-const: handler may set consumed */
 typedef void (*HookModeCallback)(const HookModeEvent *event);
 typedef void (*HookCursorCallback)(const HookCursorEvent *event);
 typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may set consumed */
@@ -98,14 +106,10 @@ void hook_register_key(HookType type, HookKeyCallback callback);
 /* Hook firing functions */
 void hook_fire_char(HookType type, const HookCharEvent *event);
 void hook_fire_line(HookType type, const HookLineEvent *event);
-void hook_fire_buffer(HookType type, const HookBufferEvent *event);
+void hook_fire_buffer(HookType type, HookBufferEvent *event);
 void hook_fire_mode(HookType type, const HookModeEvent *event);
 void hook_fire_cursor(HookType type, const HookCursorEvent *event);
 void hook_fire_key(HookType type, HookKeyEvent *event);
 
-/* User hooks initialization (implemented in user_hooks.c) */
-void user_hooks_init(void);
-/* Additional built-in hooks (e.g., quickfix integration) */
-void user_hooks_quickfix_init(void);
 
 #endif

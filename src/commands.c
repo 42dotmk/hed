@@ -12,7 +12,6 @@ int command_count = 0;
 /* Initialize command system */
 void command_init(void) {
     command_count = 0;
-    user_commands_init();
 }
 
 /* Register a command */

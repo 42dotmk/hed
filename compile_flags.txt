@@ -11,4 +11,9 @@
 -Isrc/lib
 -Isrc/ui
 -Isrc/utils
+-Isrc/plugins
+-Isrc/plugins/dired
+-Isrc/plugins/lsp
+-Isrc/plugins/tmux
+-Isrc/plugins/viewmd
 

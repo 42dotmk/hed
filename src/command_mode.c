@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "command_mode.h"
+#include "commands/cmd_search.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
@@ -61,6 +62,90 @@ void cmdcomp_clear(void) {
     E.cmd_complete.base[0] = '\0';
     E.cmd_complete.prefix[0] = '\0';
     E.cmd_complete.active = 0;
+    E.cmd_complete.cmdname_pending = 0;
+}
+
+/* Returns 1 iff the buffer is still on the command-name token (no space
+ * typed yet). When true, Tab should complete a command name. */
+static int cmdcomp_is_cmdname_position(void) {
+    for (int i = 0; i < E.command_len; i++) {
+        if (E.command_buf[i] == ' ') return 0;
+    }
+    return 1;
+}
+
+/* Replace the leading token in command_buf with `replacement`. If
+ * `add_space` is non-zero and the token currently has no trailing space,
+ * append one. */
+static void cmdcomp_replace_first_token(const char *replacement, int add_space) {
+    int tok_end = E.command_len;
+    for (int i = 0; i < E.command_len; i++) {
+        if (E.command_buf[i] == ' ') { tok_end = i; break; }
+    }
+    int rlen = (int)strlen(replacement);
+    int extra = add_space ? 1 : 0;
+    int tail = E.command_len - tok_end;
+    int new_len = rlen + extra + tail;
+    if (new_len >= (int)sizeof(E.command_buf))
+        return; /* refuse to truncate */
+    memmove(E.command_buf + rlen + extra,
+            E.command_buf + tok_end,
+            (size_t)tail);
+    memcpy(E.command_buf, replacement, (size_t)rlen);
+    if (add_space) E.command_buf[rlen] = ' ';
+    E.command_len = new_len;
+    E.command_buf[E.command_len] = '\0';
+}
+
+/* Tab completion for the command name (first token).
+ * Returns 1 if the buffer changed; 0 otherwise. Sets cmdname_pending
+ * when >1 match remains (so the next Tab can escalate to fzf). */
+static int cmdcomp_complete_cmdname(void) {
+    char prefix[128];
+    int plen = E.command_len;
+    if (plen >= (int)sizeof(prefix)) plen = (int)sizeof(prefix) - 1;
+    memcpy(prefix, E.command_buf, (size_t)plen);
+    prefix[plen] = '\0';
+
+    /* Filter command list by prefix. */
+    int matches[256];
+    int n = 0;
+    for (int i = 0; i < command_count && n < (int)(sizeof(matches)/sizeof(matches[0])); i++) {
+        if (commands[i].name && strncmp(commands[i].name, prefix, (size_t)plen) == 0)
+            matches[n++] = i;
+    }
+    if (n == 0) {
+        ed_set_status_message("no matching commands");
+        E.cmd_complete.cmdname_pending = 0;
+        return 0;
+    }
+    if (n == 1) {
+        cmdcomp_replace_first_token(commands[matches[0]].name, 1);
+        E.cmd_complete.cmdname_pending = 0;
+        return 1;
+    }
+    /* >1 match: extend to longest common prefix among matches. */
+    const char *first = commands[matches[0]].name;
+    int lcp_len = (int)strlen(first);
+    for (int i = 1; i < n; i++) {
+        const char *nm = commands[matches[i]].name;
+        int j = 0;
+        while (j < lcp_len && nm[j] && first[j] == nm[j]) j++;
+        lcp_len = j;
+    }
+    int changed = 0;
+    if (lcp_len > plen) {
+        char lcp[128];
+        if (lcp_len >= (int)sizeof(lcp)) lcp_len = (int)sizeof(lcp) - 1;
+        memcpy(lcp, first, (size_t)lcp_len);
+        lcp[lcp_len] = '\0';
+        cmdcomp_replace_first_token(lcp, 0);
+        changed = 1;
+    }
+    /* Mark pending so next Tab opens fzf. */
+    E.cmd_complete.cmdname_pending = 1;
+    ed_set_status_message("%d matches — Tab again for fzf", n);
+    return changed;
 }
 
 static void cmdcomp_apply_token(const char *replacement) {
@@ -312,7 +397,24 @@ void command_mode_handle_keypress(int c) {
             cmdcomp_clear();
         }
     } else if (c == '\t') {
-        cmdcomp_next();
+        if (cmdcomp_is_cmdname_position()) {
+            if (E.cmd_complete.cmdname_pending) {
+                /* Second Tab on the command name: hand off to fzf, seeded
+                 * with the partial typed so far. cmd_cpick re-enters
+                 * command mode with the picked command pre-filled. */
+                char query[128];
+                int n = E.command_len;
+                if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
+                memcpy(query, E.command_buf, (size_t)n);
+                query[n] = '\0';
+                cmdcomp_clear();
+                cmd_cpick(query);
+            } else {
+                cmdcomp_complete_cmdname();
+            }
+        } else {
+            cmdcomp_next();
+        }
     } else if (!iscntrl(c) && c < 128) {
         if (E.command_len < (int)sizeof(E.command_buf) - 1) {
             E.command_buf[E.command_len++] = c;
