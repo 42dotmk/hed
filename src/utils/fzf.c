@@ -1,7 +1,9 @@
-#include "fzf.h"
-#include "cmd_util.h"
-#include "hed.h"
-#include "term_cmd.h"
+#include "utils/fzf.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "commands/cmd_util.h"
+#include "utils/term_cmd.h"
 #include <limits.h>
 
 int fzf_run_opts(const char *input_cmd, const char *fzf_opts, int multi,

@@ -1,7 +1,7 @@
 #ifndef REGISTERS_H
 #define REGISTERS_H
 
-#include "sizedstr.h"
+#include "lib/sizedstr.h"
 
 /* Simple Vim-like registers */
 

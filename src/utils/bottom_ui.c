@@ -1,6 +1,7 @@
-#include "bottom_ui.h"
-#include "ansi.h"
-#include "hed.h"
+#include "utils/bottom_ui.h"
+#include "lib/ansi.h"
+#include "editor.h"
+#include "terminal.h"
 
 int ui_message_lines_needed(void) {
     if (E.mode == MODE_COMMAND && !E.search_prompt_active)

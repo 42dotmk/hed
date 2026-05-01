@@ -1,4 +1,7 @@
-#include "hed.h"
+#include "utils/recent_files.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef RECENT_FILES_MAX
 #define RECENT_FILES_MAX 100

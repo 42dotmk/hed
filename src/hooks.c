@@ -1,4 +1,7 @@
-#include "hed.h"
+#include "hooks.h"
+#include "editor.h"
+#include <stdlib.h>
+#include <string.h>
 
 #define MAX_HOOKS_PER_TYPE 16
 
@@ -200,6 +203,26 @@ void hook_fire_key(HookType type, HookKeyEvent *event) {
         HookKeyCallback cb = (HookKeyCallback)hooks[type].entries[i].callback;
         cb(event);
         if (event->consumed) return; /* stop at first consumer */
+    }
+}
+
+void hook_register_simple(HookType type, HookSimpleCallback callback) {
+    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE)
+        return;
+    char *ft_copy = strdup("*");
+    if (!ft_copy) return;
+    int idx = hooks[type].count++;
+    hooks[type].entries[idx].callback = (void *)callback;
+    hooks[type].entries[idx].mode     = -1;
+    hooks[type].entries[idx].filetype = ft_copy;
+}
+
+void hook_fire_simple(HookType type) {
+    if (type >= HOOK_TYPE_COUNT) return;
+    for (int i = 0; i < hooks[type].count; i++) {
+        HookSimpleCallback cb =
+            (HookSimpleCallback)hooks[type].entries[i].callback;
+        cb();
     }
 }
 

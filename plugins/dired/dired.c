@@ -3,10 +3,8 @@
  * Hooks into HOOK_BUFFER_OPEN_PRE / HOOK_BUFFER_SAVE_PRE so core never
  * mentions dired. The implementation lives in dired_impl.c. */
 
-#include "plugin.h"
 #include "hed.h"
 #include "dired.h"
-#include "file_helpers.h"
 
 static void on_enter(void)  { dired_handle_enter(); }
 static void on_parent(void) { dired_handle_parent(); }

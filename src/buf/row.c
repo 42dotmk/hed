@@ -1,4 +1,9 @@
-#include "hed.h"
+#include "editor.h"
+#include "buf/row.h"
+#include "lib/errors.h"
+#include "lib/log.h"
+#include <stdlib.h>
+#include <string.h>
 /* UTF-8 aware: cx is a byte-index into row->chars. Returns visual columns. */
 int buf_row_cx_to_rx(const Row *row, int cx) {
     int rx = 0;

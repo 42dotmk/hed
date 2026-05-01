@@ -1,4 +1,6 @@
-#include "hed.h"
+#include "utils/jump_list.h"
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef JUMP_LIST_MAX
 #define JUMP_LIST_MAX 100

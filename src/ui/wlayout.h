@@ -1,7 +1,7 @@
 #ifndef WLAYOUT_H
 #define WLAYOUT_H
 
-#include "abuf.h"
+#include "ui/abuf.h"
 
 /* Split direction for layout nodes */
 typedef enum {

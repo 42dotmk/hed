@@ -1,8 +1,8 @@
 #ifndef TEXTOBJ_H
 #define TEXTOBJ_H
 
-#include "buffer.h"
-#include "../ui/window.h"
+#include "buf/buffer.h"
+#include "ui/window.h"
 
 /* Simple position (line, column), both 0-indexed and byte-based. */
 typedef struct TextPos {

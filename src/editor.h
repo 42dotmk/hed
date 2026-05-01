@@ -4,14 +4,14 @@
 #include <limits.h>
 #include <linux/limits.h>
 
-#include "buffer.h"
-#include "history.h"
-#include "jump_list.h"
-#include "quickfix.h"
-#include "recent_files.h"
-#include "sizedstr.h"
-#include "vector.h"
-#include "window.h"
+#include "buf/buffer.h"
+#include "utils/history.h"
+#include "utils/jump_list.h"
+#include "utils/quickfix.h"
+#include "utils/recent_files.h"
+#include "lib/sizedstr.h"
+#include "lib/vector.h"
+#include "ui/window.h"
 
 #define HED_VERSION "0.2.0"
 #define TAB_STOP 4

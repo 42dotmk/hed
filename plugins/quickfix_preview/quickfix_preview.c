@@ -1,7 +1,6 @@
 /* quickfix_preview plugin: keep E.qf.sel and the preview window in sync
  * with the cursor row when the quickfix buffer is focused. */
 
-#include "plugin.h"
 #include "hed.h"
 
 static void cursor_hook(const HookCursorEvent *event) {

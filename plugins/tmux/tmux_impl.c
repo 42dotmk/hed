@@ -1,5 +1,4 @@
 #include "tmux.h"
-#include "cmd_util.h"
 #include "hed.h"
 #include <stdarg.h>
 #include <sys/wait.h>

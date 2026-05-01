@@ -1,5 +1,7 @@
-#include "ansi.h"
-#include "hed.h"
+#include "lib/ansi.h"
+#include "ui/wlayout.h"
+#include "editor.h"
+#include <stdlib.h>
 
 static void wdecor_set_defaults(WDecor *d, int for_split_node) {
     if (!d)

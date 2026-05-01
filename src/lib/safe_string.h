@@ -17,7 +17,7 @@
  * - Clear, consistent API
  */
 
-#include "errors.h"
+#include "lib/errors.h"
 
 /*
  * Safe string copy - always null terminates.

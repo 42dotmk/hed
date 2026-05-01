@@ -6,9 +6,9 @@
 #define CURSOR_STYLE_UNDERLINE "\x1b[3 q"
 #define CURSOR_STYLE_BEAM "\x1b[5 q"
 
-#include "cursor.h"
-#include "errors.h"
-#include "row.h"
+#include "lib/cursor.h"
+#include "lib/errors.h"
+#include "buf/row.h"
 #include "utils/fold.h"
 #include "utils/undo.h"
 

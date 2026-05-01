@@ -1,11 +1,9 @@
 #include "viewmd.h"
 #include "hed.h"
-#include <fcntl.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 /* ---- module state ---- */
 

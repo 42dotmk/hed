@@ -6,9 +6,9 @@
  * Combines cmd_window.c and cmd_quickfix.c.
  */
 
-#include "commands_ui.h"
-#include "cmd_util.h"
-#include "hed.h"
+#include "commands/commands_ui.h"
+#include "commands/cmd_util.h"
+#include "editor.h"
 #include <stdlib.h>
 #include <string.h>
 

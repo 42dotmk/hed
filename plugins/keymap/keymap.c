@@ -6,12 +6,10 @@
  *
  * Owns the :keymap and :keymap-toggle commands. */
 
-#include "plugin.h"
-#include "../emacs_keybinds/emacs_keybinds.h"
-#include "../vim_keybinds/vim_keybinds.h"
-#include "../vscode_keybinds/vscode_keybinds.h"
+#include "emacs_keybinds/emacs_keybinds.h"
+#include "vim_keybinds/vim_keybinds.h"
+#include "vscode_keybinds/vscode_keybinds.h"
 #include "hed.h"
-#include <string.h>
 
 static const char *g_active = "vim";
 

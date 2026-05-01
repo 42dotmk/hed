@@ -4,22 +4,9 @@ CFLAGS = $(BASE_CFLAGS)
 
 SRC_DIR = src
 BUILD_DIR = build
-
-# PLUGINS_DIR: where plugins live. Override on the command line to use a
-# different plugin set, e.g.:
-#     make PLUGINS_DIR=$HOME/my-hed-plugins
-# Plugins from this directory are compiled and -I'd. The default is the
-# in-tree plugins/.
 PLUGINS_DIR ?= plugins
-
-# WITH_TREESITTER: 1 builds the treesitter plugin and statically links the
-# vendored libtree-sitter runtime (vendor/tree-sitter). 0 excludes both.
-# Core uses weak refs to the ts_* symbols, so the editor builds and runs
-# cleanly either way (no syntax highlighting when off).
-#     make WITH_TREESITTER=0
 WITH_TREESITTER ?= 1
 
-# Vendored tree-sitter runtime (git submodule at vendor/tree-sitter).
 TS_DIR     := vendor/tree-sitter
 TS_LIB_DIR := $(TS_DIR)/lib
 TS_LIB_A   := $(BUILD_DIR)/libtree-sitter.a
@@ -65,21 +52,18 @@ $(BUILD_DIR):
 $(TARGET): $(OBJECTS) $(TS_DEPS)
 	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) $(TS_LDFLAGS)
 
-# Build the tree-sitter runtime as a static archive from the vendored
-# amalgamation TU (lib/src/lib.c includes every other lib/src/*.c).
+
 $(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(BUILD_DIR)
 	$(CC) -O2 -std=c11 -fPIC -D_GNU_SOURCE \
 	    -I$(TS_LIB_DIR)/include -I$(TS_LIB_DIR)/src \
 	    -c $< -o $(BUILD_DIR)/ts-lib.o
 	$(AR) rcs $@ $(BUILD_DIR)/ts-lib.o
 
-# Compile rule for plugins (PLUGINS_DIR-rooted). Listed first so that when
-# PLUGINS_DIR == src/plugins the longer prefix wins over the generic rule.
+
 $(BUILD_DIR)/plugins/%.o: $(PLUGINS_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(PLUGINS_DIR) -c $< -o $@
 
-# Compile rule for core sources.
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(PLUGINS_DIR) -c $< -o $@

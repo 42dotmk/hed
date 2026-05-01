@@ -25,6 +25,5 @@ void cmd_rg_word(const char *args);
 void cmd_fzf(const char *args);
 void cmd_recent(const char *args);
 void cmd_shq(const char *args);
-void cmd_sed(const char *args);
 
 #endif /* CMD_SEARCH_H */

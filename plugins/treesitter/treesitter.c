@@ -7,11 +7,8 @@
  * those refs resolve to the real implementation; otherwise they're
  * NULL and core skips the calls. */
 
-#include "plugin.h"
 #include "hed.h"
 #include "ts.h"
-#include <stdio.h>
-#include <string.h>
 
 /* Forward decl from cmd_misc — used to launch the tsi installer. */
 void cmd_shell(const char *args);

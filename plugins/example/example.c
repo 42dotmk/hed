@@ -9,7 +9,6 @@
  *
  * See README.md for the step-by-step recipe. */
 
-#include "plugin.h"
 #include "hed.h"
 
 /* --- a command --- */

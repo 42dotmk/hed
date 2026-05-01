@@ -1,5 +1,16 @@
-#include "hed.h"
+#include "editor.h"
+#include "lib/log.h"
+#include "hooks.h"
+#include "commands.h"
+#include "terminal.h"
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "macros.h"
+#include "lib/file_helpers.h"
 #include <sys/select.h>
 
 /* Weak refs to the LSP plugin's fd-pump entry points. If the plugin
@@ -41,7 +52,12 @@ int main(int argc, char *argv[]) {
         file_args[file_count++] = argv[i];
     }
 
-    log_init(".hedlog");
+    char log_path[4096];
+    if (path_cache_file_for_cwd("log", log_path, sizeof(log_path))) {
+        log_init(log_path);
+    } else {
+        log_init(".hedlog");
+    }
     atexit(log_close);
     log_msg("=== HED START argc=%d ===", argc);
     log_msg("Before enable_raw_mode");
@@ -111,6 +127,8 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
+    hook_fire_simple(HOOK_STARTUP_DONE);
 
     while (1) {
         ed_render_frame();

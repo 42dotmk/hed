@@ -1,4 +1,9 @@
-#include "hed.h"
+#include "editor.h"
+#include "commands.h"
+#include "registers.h"
+#include "lib/safe_string.h"
+#include "lib/log.h"
+#include "terminal.h"
 #include "command_mode.h"
 #include "commands/cmd_search.h"
 

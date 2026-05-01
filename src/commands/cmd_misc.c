@@ -1,13 +1,21 @@
-#include "cmd_misc.h"
-#include "../hed.h"
-#include "../macros.h"
-#include "../registers.h"
-#include "../utils/ctags.h"
-#include "../utils/fold.h"
-#include "../utils/fzf.h"
-#include "../fold_methods/fold_methods.h"
-#include "../keybinds.h"
-#include "cmd_util.h"
+#include "commands/cmd_misc.h"
+#include "editor.h"
+#include "commands.h"
+#include "buf/buf_helpers.h"
+#include "utils/yank.h"
+#include "utils/term_cmd.h"
+#include "terminal.h"
+#include "lib/log.h"
+#include "ui/winmodal.h"
+#include <unistd.h>
+#include "macros.h"
+#include "registers.h"
+#include "utils/ctags.h"
+#include "utils/fold.h"
+#include "utils/fzf.h"
+#include "fold_methods/fold_methods.h"
+#include "keybinds.h"
+#include "commands/cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -652,27 +660,6 @@ void cmd_git(const char *args) {
     ed_render_frame();
 }
 
-void cmd_reload(const char *args) {
-    (void)args;
-    /* Rebuild hed via make, then exec the new binary. */
-    int status = term_cmd_run_interactive("make -j16", true);
-    if (status != 0) {
-        ed_set_status_message("reload: build failed (status %d)", status);
-        return;
-    }
-
-    /* Leave raw mode before replacing the process image. */
-    disable_raw_mode();
-
-    /* Restart the editor; assume we are run from repo root. */
-    const char *exe = "./build/hed";
-    execl(exe, exe, (char *)NULL);
-
-    /* If we reach here, exec failed. */
-    perror("execl");
-    enable_raw_mode();
-    ed_set_status_message("reload: failed to exec %s", exe);
-}
 
 void cmd_tag(const char *args) {
     (void)args;

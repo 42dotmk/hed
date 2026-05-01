@@ -1,5 +1,5 @@
-#include "textobj.h"
-#include "row.h"
+#include "buf/textobj.h"
+#include "buf/row.h"
 #include <limits.h>
 #include <stdbool.h>
 #include <string.h>

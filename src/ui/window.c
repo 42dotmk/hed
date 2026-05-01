@@ -1,8 +1,8 @@
 #include "editor.h"
-#include "safe_string.h"
-#include "wlayout.h"
-#include "winmodal.h"
-#include "buf_helpers.h"
+#include "lib/safe_string.h"
+#include "ui/wlayout.h"
+#include "ui/winmodal.h"
+#include "buf/buf_helpers.h"
 #include "assert.h"
 
 void windows_init(void) {

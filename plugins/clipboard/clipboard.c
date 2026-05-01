@@ -1,12 +1,6 @@
 /* clipboard plugin: mirror yank into the system clipboard via OSC 52. */
 
-#include "plugin.h"
 #include "hed.h"
-#include "keybinds_builtins.h"
-#include "registers.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 static void osc52_copy(const char *data, size_t len) {
     if (!data || len == 0) return;

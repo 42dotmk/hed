@@ -1,4 +1,7 @@
-#include "hed.h"
+#include "lib/log.h"
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 static FILE *g_log_fp = NULL;

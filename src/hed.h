@@ -1,7 +1,5 @@
 #ifndef HED_H
 #define HED_H
-#define _GNU_SOURCE
-#define _DEFAULT_SOURCE
 
 #include <ctype.h>
 #include <errno.h>
@@ -15,61 +13,50 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define cmd(name, cb, desc) command_register(name, cb, desc)
-#define mapn(x, y, d) keybind_register(MODE_NORMAL, x, y, d)
-#define mapv(x, y, d) keybind_register(MODE_VISUAL, x, y, d)
-#define mapi(x, y, d) keybind_register(MODE_INSERT, x, y, d)
-#define mapvb(x, y, d) keybind_register(MODE_VISUAL_BLOCK, x, y, d)
-#define mapvl(x, y, d) keybind_register(MODE_VISUAL_LINE, x, y, d)
-#define cmapn(x, y)           keybind_register_command(MODE_NORMAL, x, y)
-#define cmapv(x, y)           keybind_register_command(MODE_VISUAL, x, y)
-#define cmapi(x, y)           keybind_register_command(MODE_INSERT, x, y)
-
-/* Filetype-specific keybind macros — only fire when buffer filetype matches */
-#define mapn_ft(ft, x, y, d)  keybind_register_ft(MODE_NORMAL, x, ft, y, d)
-#define mapi_ft(ft, x, y, d)  keybind_register_ft(MODE_INSERT, x, ft, y, d)
-#define mapv_ft(ft, x, y, d)  keybind_register_ft(MODE_VISUAL, x, ft, y, d)
-#define cmapn_ft(ft, x, y)    keybind_register_command_ft(MODE_NORMAL, x, ft, y)
-#define cmapi_ft(ft, x, y)    keybind_register_command_ft(MODE_INSERT, x, ft, y)
-#define cmapv_ft(ft, x, y)    keybind_register_command_ft(MODE_VISUAL, x, ft, y)
-
 /* Library helpers - must come first for type definitions */
-#include "ansi.h"
-#include "errors.h"
-#include "log.h"
-#include "safe_string.h"
-#include "sizedstr.h"
-#include "strutil.h"
-#include "theme.h"
+#include "lib/ansi.h"
+#include "lib/errors.h"
+#include "lib/file_helpers.h"
+#include "lib/log.h"
+#include "lib/safe_string.h"
+#include "lib/sizedstr.h"
+#include "lib/strutil.h"
+#include "lib/theme.h"
+#include "lib/vector.h"
 
 /* Core modules */
 #include "commands.h"
+#include "commands/cmd_builtins.h"
+#include "commands/cmd_util.h"
 #include "editor.h"
+#include "hook_builtins.h"
 #include "hooks.h"
 #include "keybinds.h"
+#include "keybinds_builtins.h"
+#include "plugin.h"
 #include "registers.h"
 #include "terminal.h"
-#include "undo.h"
+#include "utils/undo.h"
 
 /* Buffer subsystem */
-#include "buf_helpers.h"
-#include "buffer.h"
-#include "row.h"
-#include "textobj.h"
+#include "buf/buf_helpers.h"
+#include "buf/buffer.h"
+#include "buf/row.h"
+#include "buf/textobj.h"
 
 /* Utilities */
-#include "bottom_ui.h"
-#include "fzf.h"
-#include "history.h"
-#include "jump_list.h"
-#include "quickfix.h"
-#include "recent_files.h"
-#include "term_cmd.h"
+#include "utils/bottom_ui.h"
+#include "utils/fzf.h"
+#include "utils/history.h"
+#include "utils/jump_list.h"
+#include "utils/quickfix.h"
+#include "utils/recent_files.h"
+#include "utils/term_cmd.h"
 
 /* UI */
-#include "abuf.h"
-#include "window.h"
-#include "winmodal.h"
-#include "wlayout.h"
+#include "ui/abuf.h"
+#include "ui/window.h"
+#include "ui/winmodal.h"
+#include "ui/wlayout.h"
 
 #endif

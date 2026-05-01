@@ -23,7 +23,6 @@ void cmd_shell(const char *args);
 void cmd_git(const char *args);
 void cmd_wrap(const char *args);
 void cmd_wrapdefault(const char *args);
-void cmd_reload(const char *args);
 void cmd_tag(const char *args);
 void cmd_modal_from_current(const char *args);
 void cmd_modal_to_layout(const char *args);

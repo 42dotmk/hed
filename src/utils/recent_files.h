@@ -3,7 +3,7 @@
 
 /* Recent files tracking - no duplicates, newest first */
 
-#include "vector.h"
+#include "lib/vector.h"
 VEC_DEFINE(RecentFileItems, char *);
 
 typedef struct {

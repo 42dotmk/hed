@@ -1,4 +1,4 @@
-#include "cmd_util.h"
+#include "commands/cmd_util.h"
 #include <stdlib.h>
 
 void shell_escape_single(const char *in, char *out, size_t outsz) {

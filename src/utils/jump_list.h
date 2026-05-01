@@ -9,7 +9,7 @@ typedef struct {
     int cursor_y;
 } JumpEntry;
 
-#include "vector.h"
+#include "lib/vector.h"
 VEC_DEFINE(JumpEntryVec, JumpEntry);
 
 typedef struct {

@@ -1,10 +1,5 @@
+#include "hed.h"
 #include "sed.h"
-#include "../hed.h"
-#include "../buf/row.h"
-#include "../commands/cmd_util.h"
-#include "term_cmd.h"
-#include <stdlib.h>
-#include <string.h>
 
 /* Forward declarations of internal buffer functions */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);

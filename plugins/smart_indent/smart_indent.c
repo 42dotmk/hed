@@ -1,7 +1,6 @@
 /* smart_indent plugin: when the user inserts a newline, prefix the new
  * line with the same leading whitespace as the previous line. */
 
-#include "plugin.h"
 #include "hed.h"
 
 static void hook_smart_indent(const HookCharEvent *event) {

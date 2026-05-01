@@ -9,7 +9,7 @@
  * the built-in behaviors (e.g., config and editor modules).
  */
 
-#include "hed.h"
+#include "hooks.h"
 void hook_change_cursor_shape(const HookModeEvent *event);
 
 #endif // !HOOK_BUILTINS_H

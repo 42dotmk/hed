@@ -1,6 +1,6 @@
 #ifndef ROW_H
 #define ROW_H
-#include "sizedstr.h"
+#include "lib/sizedstr.h"
 #include <stdbool.h>
 
 typedef struct {

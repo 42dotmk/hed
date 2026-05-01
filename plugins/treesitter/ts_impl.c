@@ -1,12 +1,7 @@
 #include "ts.h"
-#include "buffer.h"
 #include "hed.h"
-#include "log.h"
 #include <dlfcn.h>
 #include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <tree_sitter/api.h>
 
 /*

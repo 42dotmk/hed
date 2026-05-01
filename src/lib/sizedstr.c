@@ -1,4 +1,6 @@
-#include "hed.h"
+#include "lib/sizedstr.h"
+#include <stdlib.h>
+#include <string.h>
 
 SizedStr sstr_new(void) {
     SizedStr s = {NULL, 0, 0};

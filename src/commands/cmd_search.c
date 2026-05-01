@@ -1,8 +1,11 @@
-#include "cmd_search.h"
-#include "../hed.h"
-#include "cmd_util.h"
-#include "fzf.h"
-#include "../utils/sed.h"
+#include "commands/cmd_search.h"
+#include "editor.h"
+#include "commands.h"
+#include "buf/buf_helpers.h"
+#include "lib/strutil.h"
+#include "terminal.h"
+#include "commands/cmd_util.h"
+#include "utils/fzf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -467,16 +470,3 @@ void cmd_shq(const char *args) {
     }
 }
 
-void cmd_sed(const char *args) {
-	BUF(buf)
-    if (!args || !*args) {
-        ed_set_status_message("Usage: :sed <expression>");
-        return;
-    }
-
-    EdError err = sed_apply_to_buffer(buf, args);
-    if (err != ED_OK) {
-        /* Error message already set by sed_apply_to_buffer */
-        return;
-    }
-}

@@ -4,10 +4,7 @@
  * (src/config.c) — registrations use last-write-wins, see remove_duplicate
  * in src/keybinds.c. */
 
-#include "plugin.h"
 #include "hed.h"
-#include "hook_builtins.h"
-#include "keybinds_builtins.h"
 
 static void register_text_objects(void) {
     /* Basic movement (hjkl + arrows) */

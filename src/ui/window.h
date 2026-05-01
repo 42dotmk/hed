@@ -1,7 +1,7 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "buffer.h"
+#include "buf/buffer.h"
 
 /* Unified selection description for yanks/deletes */
 typedef enum {

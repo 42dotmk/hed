@@ -1,6 +1,9 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
+#include "lib/errors.h"
+#include "buf/buffer.h"
+#include "ui/window.h"
 #include <termios.h>
 
 /* Global terminal state */

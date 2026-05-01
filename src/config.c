@@ -1,5 +1,6 @@
 #include "config.h"
-#include "hed.h"
+#include "commands.h"
+#include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
 #include "clipboard/clipboard.h"
@@ -11,6 +12,10 @@
 #include "lsp/lsp_plugin.h"
 #include "plugin.h"
 #include "quickfix_preview/quickfix_preview.h"
+#include "reload/reload.h"
+#include "scratch/scratch.h"
+#include "sed/sed_plugin.h"
+#include "session/session_plugin.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
 #include "treesitter/treesitter.h"
@@ -34,6 +39,10 @@ void config_init(void) {
     plugin_load(&plugin_fmt,              1);
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_treesitter,       1);
+    plugin_load(&plugin_scratch,          1);
+    plugin_load(&plugin_sed,              1);
+    plugin_load(&plugin_reload,           1);
+    plugin_load(&plugin_session,          1);
 
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");
@@ -86,4 +95,5 @@ void config_init(void) {
     cmapn("K", "lsp_hover");
     cmapn(" fh", "hfzf");
     cmapn(" fj", "jfzf");
+    cmapn(" z", "scratch");
 }

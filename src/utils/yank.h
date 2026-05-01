@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../buf/buffer.h"
-#include "../buf/textobj.h"
-#include "../lib/errors.h"
-#include "../lib/sizedstr.h"
+#include "buf/buffer.h"
+#include "buf/textobj.h"
+#include "lib/errors.h"
+#include "lib/sizedstr.h"
 
 /*
  * Yank Module - Centralized clipboard operations

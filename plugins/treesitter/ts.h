@@ -1,7 +1,7 @@
 #ifndef TS_H
 #define TS_H
 
-#include "buffer.h"
+#include "buf/buffer.h"
 #include <stddef.h>
 
 /* Global toggle */

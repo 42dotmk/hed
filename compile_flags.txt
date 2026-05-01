@@ -1,15 +1,10 @@
+-D_GNU_SOURCE
+-D_DEFAULT_SOURCE
 -O2
 -Wall
 -Wextra
 -std=c11
 -pedantic
 -Ivendor/tree-sitter/lib/include
--I/usr/include
 -Isrc
--Isrc/buf
--Isrc/commands
--Isrc/fold_methods
--Isrc/lib
--Isrc/ui
--Isrc/utils
 -Iplugins

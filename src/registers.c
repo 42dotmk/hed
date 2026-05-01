@@ -1,5 +1,5 @@
 #include "editor.h"
-#include "sizedstr.h"
+#include "lib/sizedstr.h"
 #include <stdlib.h>
 #include <string.h>
 typedef struct {

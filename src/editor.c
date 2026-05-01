@@ -1,4 +1,14 @@
-#include "hed.h"
+#include "editor.h"
+#include "hooks.h"
+#include "keybinds.h"
+#include "terminal.h"
+#include "buf/buf_helpers.h"
+#include "registers.h"
+#include "commands.h"
+#include "ui/wlayout.h"
+#include "lib/log.h"
+#include <ctype.h>
+#include <errno.h>
 #include "command_mode.h"
 #include "config.h"
 #include "macros.h"

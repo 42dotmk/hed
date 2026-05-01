@@ -1,6 +1,10 @@
 #ifndef HOOKS_H
 #define HOOKS_H
 
+#include <stddef.h>
+
+typedef struct Buffer Buffer;
+
 /* Hook event types */
 typedef enum {
     /* Text modification hooks */
@@ -31,6 +35,12 @@ typedef enum {
     /* Fires for every key before normal dispatch.
      * Set event->consumed = 1 to prevent further processing. */
     HOOK_KEYPRESS,
+
+    /* Fires once, after ed_init + cli file opens + startup -c command,
+     * just before the main loop begins. No event payload. Use this to
+     * run plugin-side post-init logic that needs the editor fully set
+     * up (e.g., session restore). */
+    HOOK_STARTUP_DONE,
 
     HOOK_TYPE_COUNT
 } HookType;
@@ -83,6 +93,7 @@ typedef void (*HookBufferCallback)(HookBufferEvent *event); /* non-const: handle
 typedef void (*HookModeCallback)(const HookModeEvent *event);
 typedef void (*HookCursorCallback)(const HookCursorEvent *event);
 typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may set consumed */
+typedef void (*HookSimpleCallback)(void);              /* payload-free hooks (e.g., HOOK_STARTUP_DONE) */
 
 /* Hook API */
 void hook_init(void);
@@ -102,6 +113,8 @@ void hook_register_cursor(HookType type, int mode, const char *filetype,
                           HookCursorCallback callback);
 /* Keypress hooks always fire regardless of mode or filetype. */
 void hook_register_key(HookType type, HookKeyCallback callback);
+/* Simple, payload-free hooks (always fire). */
+void hook_register_simple(HookType type, HookSimpleCallback callback);
 
 /* Hook firing functions */
 void hook_fire_char(HookType type, const HookCharEvent *event);
@@ -110,6 +123,7 @@ void hook_fire_buffer(HookType type, HookBufferEvent *event);
 void hook_fire_mode(HookType type, const HookModeEvent *event);
 void hook_fire_cursor(HookType type, const HookCursorEvent *event);
 void hook_fire_key(HookType type, HookKeyEvent *event);
+void hook_fire_simple(HookType type);
 
 
 #endif

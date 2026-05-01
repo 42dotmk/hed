@@ -1,8 +1,6 @@
 #include "hed.h"
 #include "cmd_lsp.h"
 #include "lsp.h"
-#include <ctype.h>
-#include <string.h>
 
 /* Skip leading whitespace; return pointer into s. */
 static const char *skip_ws(const char *s) {

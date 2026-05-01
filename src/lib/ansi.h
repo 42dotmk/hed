@@ -1,7 +1,7 @@
 #ifndef ANSI_H
 #define ANSI_H
 
-#include "abuf.h"
+#include "ui/abuf.h"
 #include <stdio.h>
 
 static inline void ansi_hide_cursor(Abuf *ab) { ab_append(ab, "\x1b[?25l", 6); }

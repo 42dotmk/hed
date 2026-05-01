@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../buf/buffer.h"
-#include "../lib/errors.h"
+#include "buf/buffer.h"
+#include "lib/errors.h"
 
 /*
  * Apply a sed expression to a buffer in-place.

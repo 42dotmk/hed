@@ -1,19 +1,10 @@
 #include "hed.h"
 #include "lsp.h"
 #include "json_helpers.h"
-#include "log.h"
-#include "winmodal.h"
 #include <arpa/inet.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <netdb.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 

@@ -2,7 +2,6 @@
  * insert the matching closing one and step the cursor back so the
  * user can keep typing inside the pair. */
 
-#include "plugin.h"
 #include "hed.h"
 
 static void hook_auto_pair(const HookCharEvent *event) {

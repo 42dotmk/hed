@@ -1,6 +1,9 @@
-#include "ctags.h"
-#include "../hed.h"
-#include "log.h"
+#include "utils/ctags.h"
+#include "lib/log.h"
+#include "editor.h"
+#include "buf/buf_helpers.h"
+#include "lib/sizedstr.h"
+#include "utils/term_cmd.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

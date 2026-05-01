@@ -1,8 +1,14 @@
 #include "keybinds.h"
-#include "hed.h"
+#include "editor.h"
+#include "commands.h"
+#include "lib/log.h"
+#include <stdio.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 #include "registers.h"
-#include "safe_string.h"
-#include "textobj.h"
+#include "lib/safe_string.h"
+#include "buf/textobj.h"
 #include "keybinds_builtins.h"
 #include <time.h>
 

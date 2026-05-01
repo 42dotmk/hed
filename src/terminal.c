@@ -1,12 +1,15 @@
-#include "hed.h"
-#include "abuf.h"
-#include "ansi.h"
-#include "bottom_ui.h"
-#include "buffer.h"
+
+#include "ui/abuf.h"
+#include "lib/ansi.h"
+#include "utils/bottom_ui.h"
+#include "buf/buffer.h"
 #include "editor.h"
-#include "fold.h"
+#include "utils/fold.h"
 #include "hooks.h"
-#include "safe_string.h"
+#include "lib/safe_string.h"
+#include "lib/strutil.h"
+#include "lib/log.h"
+#include "ui/wlayout.h"
 #include <assert.h>
 
 /* Weak refs to the treesitter plugin (skipped when not linked). */

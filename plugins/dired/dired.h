@@ -1,7 +1,7 @@
 #ifndef DIRED_H
 #define DIRED_H
 
-#include "buffer.h"
+#include "buf/buffer.h"
 
 void dired_open(const char *path);
 int dired_handle_enter(void);

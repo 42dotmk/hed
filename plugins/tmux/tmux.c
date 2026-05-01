@@ -6,12 +6,8 @@
  * calls tmux_history_* directly. Those APIs remain in tmux.h and are
  * resolved via -Isrc/plugins/tmux. */
 
-#include "plugin.h"
-#include "buf_helpers.h"
 #include "hed.h"
 #include "tmux.h"
-#include <stdlib.h>
-#include <string.h>
 
 static void cmd_tmux_toggle(const char *args) {
     (void)args;

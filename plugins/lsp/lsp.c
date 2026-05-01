@@ -6,8 +6,6 @@
  * Implementation lives next to this file in lsp_impl.c, lsp_hooks.c,
  * and cmd_lsp.c. */
 
-#include "plugin.h"
-#include "cmd_builtins.h"
 #include "cmd_lsp.h"
 #include "hed.h"
 #include "lsp.h"

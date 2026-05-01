@@ -1,4 +1,7 @@
-#include "hed.h"
+#include "utils/history.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef CMD_HISTORY_MAX
 #define CMD_HISTORY_MAX 1000

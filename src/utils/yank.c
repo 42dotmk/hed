@@ -1,8 +1,9 @@
-#include "yank.h"
-#include "../hed.h"
-#include "../registers.h"
-#include "../buf/row.h"
-#include "../ui/window.h"
+#include "utils/yank.h"
+#include "editor.h"
+#include "buf/buf_helpers.h"
+#include "registers.h"
+#include "buf/row.h"
+#include "ui/window.h"
 #include <stdlib.h>
 #include <string.h>
 

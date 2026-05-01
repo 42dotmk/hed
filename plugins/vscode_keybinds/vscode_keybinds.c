@@ -1,7 +1,5 @@
-#include "plugin.h"
 #include "vscode_keybinds.h"
 #include "hed.h"
-#include "keybinds_builtins.h"
 
 static int vscode_keybinds_init(void) {
     /* Universal insert-mode keys (don't rely on vim_keybinds). */

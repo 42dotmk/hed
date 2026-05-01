@@ -1,4 +1,5 @@
-#include "hed.h"
+#include "lib/strutil.h"
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>

@@ -1,4 +1,11 @@
-#include "hed.h"
+#include "utils/quickfix.h"
+#include "editor.h"
+#include "buf/buf_helpers.h"
+#include "hooks.h"
+#include "lib/safe_string.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define QF_BUFFER_FILETYPE "quickfix"
 #define QF_BUFFER_TITLE "[Quickfix]"

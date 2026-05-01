@@ -1,7 +1,7 @@
 #ifndef LSP_H
 #define LSP_H
 
-#include "buffer.h"
+#include "buf/buffer.h"
 #include <sys/select.h>
 
 typedef struct LspServer LspServer;

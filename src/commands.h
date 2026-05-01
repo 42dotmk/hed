@@ -51,4 +51,7 @@ int command_execute(const char *name, const char *args);
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);
 
+/* Convenience macro — used by plugins and config.c */
+#define cmd(name, cb, desc) command_register(name, cb, desc)
+
 #endif

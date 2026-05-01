@@ -1,4 +1,11 @@
-#include "hed.h"
+#include "buf/buf_helpers.h"
+#include "editor.h"
+#include "lib/errors.h"
+#include "lib/safe_string.h"
+#include <assert.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);

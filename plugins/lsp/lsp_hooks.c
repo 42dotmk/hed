@@ -1,6 +1,5 @@
 #include "hed.h"
 #include "lsp.h"
-#include "winmodal.h"
 
 static void lsp_hook_buffer_open(HookBufferEvent *event) {
     if (event) lsp_on_buffer_open(event->buf);

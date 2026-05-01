@@ -6,11 +6,14 @@
  * Combines cmd_buffer.c and cmd_file.c.
  */
 
-#include "commands_buffer.h"
-#include "../hed.h"
-#include "../lib/file_helpers.h"
-#include "cmd_util.h"
-#include "fzf.h"
+#include "commands/commands_buffer.h"
+#include "editor.h"
+#include "hooks.h"
+#include "lib/strutil.h"
+#include "terminal.h"
+#include "lib/file_helpers.h"
+#include "commands/cmd_util.h"
+#include "utils/fzf.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>

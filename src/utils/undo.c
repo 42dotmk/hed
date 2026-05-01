@@ -1,9 +1,9 @@
-#include "undo.h"
-#include "buffer.h"
+#include "utils/undo.h"
+#include "buf/buffer.h"
 #include "editor.h"
 #include "hooks.h"
-#include "log.h"
-#include "row.h"
+#include "lib/log.h"
+#include "buf/row.h"
 #include <stdlib.h>
 #include <string.h>
 

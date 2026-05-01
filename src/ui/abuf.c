@@ -1,5 +1,6 @@
-#include "abuf.h"
-#include "hed.h"
+#include "ui/abuf.h"
+#include <stdlib.h>
+#include <string.h>
 
 static void ab_reserve(Abuf *ab, int add) {
     if (add <= 0)

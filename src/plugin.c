@@ -1,5 +1,6 @@
 #include "plugin.h"
-#include "hed.h"
+#include "lib/log.h"
+#include "editor.h"
 #include <stddef.h>
 
 #define MAX_PLUGINS 64

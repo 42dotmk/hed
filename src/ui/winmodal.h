@@ -1,7 +1,7 @@
 #ifndef WINMODAL_H
 #define WINMODAL_H
 
-#include "window.h"
+#include "ui/window.h"
 
 /**
  * Modal window API

@@ -1,7 +1,7 @@
 #ifndef BOTTOM_UI_H
 #define BOTTOM_UI_H
 
-#include "abuf.h"
+#include "ui/abuf.h"
 
 typedef struct Layout {
     int term_rows;

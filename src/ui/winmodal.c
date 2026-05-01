@@ -1,5 +1,5 @@
-#include "../hed.h"
-#include "winmodal.h"
+#include "editor.h"
+#include "ui/winmodal.h"
 #include <stdlib.h>
 
 Window *winmodal_create(int x, int y, int width, int height) {

@@ -1,17 +1,9 @@
 #include "dired.h"
 #include "hed.h"
-#include "lib/file_helpers.h"
-#include "vector.h"
 #include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 

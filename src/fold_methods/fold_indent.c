@@ -1,5 +1,5 @@
-#include "fold_methods.h"
-#include "fold.h"
+#include "fold_methods/fold_methods.h"
+#include "utils/fold.h"
 #include "buf/buffer.h"
 #include "buf/row.h"
 #include <stdlib.h>

@@ -3,7 +3,7 @@
 
 /* Command history structure and API */
 
-#include "vector.h"
+#include "lib/vector.h"
 VEC_DEFINE(CmdHistoryItems, char *);
 
 typedef struct {

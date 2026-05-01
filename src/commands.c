@@ -1,5 +1,5 @@
 #include "commands.h"
-#include "strutil.h"
+#include "lib/strutil.h"
 #include <stdlib.h>
 #include <string.h>
 

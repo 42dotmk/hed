@@ -3,13 +3,7 @@
  * indent, auto-pair). Commands owned by other plugins (lsp, viewmd,
  * dired's :keymap, etc.) live with their plugin, not here. */
 
-#include "plugin.h"
-#include "cmd_builtins.h"
 #include "hed.h"
-#include "hook_builtins.h"
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
 
 /* :goto — move the cursor by line number, by motion symbol, or by motion
  * symbol with a count.
@@ -136,7 +130,6 @@ static void register_commands(void) {
     cmd("rg", cmd_rg, "ripgrep");
     cmd("tag", cmd_tag, "jump to tag definition");
     cmd("shq", cmd_shq, "shell cmd");
-    cmd("sed", cmd_sed, "apply sed expression to buffer");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
     cmd("fzf", cmd_fzf, "pick a file(s)");
@@ -157,7 +150,6 @@ static void register_commands(void) {
     cmd("wj", cmd_wdown, "focus window down");
     cmd("wk", cmd_wup, "focus window up");
     cmd("wl", cmd_wright, "focus window right");
-    cmd("reload", cmd_reload, "rebuild+restart hed");
     cmd("modal", cmd_modal_from_current, "convert current window to modal");
     cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");
     cmd("foldnew", cmd_fold_new, "create fold region");

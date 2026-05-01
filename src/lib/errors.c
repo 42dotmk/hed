@@ -1,4 +1,4 @@
-#include "errors.h"
+#include "lib/errors.h"
 
 const char *ed_error_string(EdError err) {
     switch (err) {

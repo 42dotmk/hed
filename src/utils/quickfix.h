@@ -1,7 +1,7 @@
 #ifndef QUICKFIX_H
 #define QUICKFIX_H
 
-#include "buffer.h"
+#include "buf/buffer.h"
 
 typedef struct {
     char *text;
@@ -10,7 +10,7 @@ typedef struct {
     int col;        /* 1-based, optional (0 if unknown) */
 } QfItem;
 
-#include "vector.h"
+#include "lib/vector.h"
 VEC_DEFINE(QfItemVec, QfItem);
 
 typedef struct {

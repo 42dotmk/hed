@@ -1,8 +1,8 @@
 #ifndef UNDO_H
 #define UNDO_H
 
-#include "cursor.h"
-#include "sizedstr.h"
+#include "lib/cursor.h"
+#include "lib/sizedstr.h"
 #include <stddef.h>
 
 /*

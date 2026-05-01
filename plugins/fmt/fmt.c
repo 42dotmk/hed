@@ -1,10 +1,4 @@
-#include "plugin.h"
-#include "cmd_util.h"
 #include "hed.h"
-#include "strutil.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 /* Filetype → command template. `%s` is replaced by the (escaped) path. */
 typedef struct { const char *ft; const char *tmpl; } FmtRule;
