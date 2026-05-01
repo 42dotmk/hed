@@ -1,6 +1,6 @@
 # hed
 
-A small, hackable terminal editor written in C.
+A small sized(<1MB), hackable terminal editor written in C.
 
 Modal by default, but ships Emacs and VSCode keymaps you can swap to
 at runtime. Tree-sitter highlights, ripgrep / fzf integrations,
@@ -11,7 +11,7 @@ user-facing feature is a plugin you can rip out, fork, or replace.
 
 ## Install in 10 seconds
 
-One line, prebuilt Linux x86_64 binary:
+One line install:
 
 ```bash
 curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
