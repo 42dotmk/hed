@@ -1,20 +1,28 @@
 # quickfix_preview
 
-Live-previews the quickfix entry under the cursor. When the quickfix buffer
-is focused and you move the cursor with `j`/`k`, this plugin updates
-`E.qf.sel` and triggers `qf_preview_selected()` so the target window scrolls
-to the matching file:line — without leaving the quickfix pane.
+When the cursor moves inside a quickfix buffer, this plugin syncs the
+preview window to the entry under the cursor — file, line, and a few
+lines of surrounding context.
 
-## How it works
+## Behavior
 
-Registers a single `HOOK_CURSOR_MOVE` hook scoped to the `quickfix` filetype.
-On every cursor move it clamps the row to the quickfix items range, updates
-the selection, and re-renders the preview.
+The plugin registers a `HOOK_CURSOR_MOVE` handler that fires only
+when the focused buffer is the quickfix list (`[Quickfix]`). When the
+quickfix line under the cursor changes, it:
 
-## Enable
+1. Reads the file referenced by that entry.
+2. Centers the preview on the target line.
+3. Highlights the matched line.
 
-In `src/config.c`'s `user_hooks_init()`:
+If the preview window is closed (or no second window exists), the
+plugin does nothing.
 
-```c
-plugin_enable("quickfix_preview");
-```
+## Notes
+
+No commands, no keybinds — pure passive hook. Quickfix itself is
+provided by `core` (`:copen`, `:cclose`, `:ctoggle`, `:cnext`,
+`:cprev`, `:cadd`, `:cclear`).
+
+The quickfix buffer is created by `core` whenever a quickfix-
+producing command finishes (e.g., `:rg <pattern>`). This plugin only
+adds the live preview behavior.

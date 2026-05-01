@@ -1,84 +1,69 @@
 # emacs_keybinds
 
-Emacs-flavored keymap for hed. Provides standard Emacs muscle memory:
-`C-a`/`C-e`/`C-n`/`C-p`/`C-b`/`C-f`/`C-d`/`C-k`/`C-y`/`C-s`, the `C-x`
-prefix cluster, and Meta bindings (`M-x`/`M-f`/`M-b`/`M-w`/`M-d`/`M-<`/`M->`).
+Emacs-flavored keymap. Modeless — the editor stays in INSERT
+permanently; `<Esc>` is a no-op. NORMAL mode is unreachable while
+this keymap is active.
 
-## Effectively modeless
+Not loaded by default. Switch to it at runtime with `:keymap emacs`,
+or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds, 1);`.
 
-hed is modal at its core, but this plugin installs a `HOOK_MODE_CHANGE`
-that bounces NORMAL → INSERT immediately. The user spends all their time
-in INSERT mode (where typing is natural), with COMMAND mode entered
-explicitly via `M-x`. VISUAL mode still works for region selection.
+## Motion
 
-## Meta/Alt support
-
-The input layer (`src/editor.c:ed_read_key`) was extended to recognize
-`ESC` followed by a printable byte as a Meta-prefixed key. The keybind
-subsystem renders these as `<M-x>`, `<M-f>`, etc. so plugins and config
-can bind them naturally.
-
-Caveats:
-
-- `M-[` collides with the CSI escape prefix, so terminals never deliver
-  it as a Meta key.
-- Bare `<Esc>` (no follow-up byte within ~100ms) still works for users
-  who want to escape — but with the always-insert hook this is rarely
-  useful.
-
-## Conflicts with vim_keybinds
-
-Do not enable both simultaneously. Both want `<C-d>`, `<C-n>`, `<C-p>`,
-`<C-u>`, `<C-v>`, `<C-o>` in normal mode and would clobber each other
-(last-write-wins).
-
-## Bindings
-
-### Insert / global
-
-| Binding | Action |
+| Key | Action |
 |---|---|
-| `C-a` / `C-e` | beginning / end of line |
-| `C-b` / `C-f` | backward / forward char |
-| `C-n` / `C-p` | next / previous line |
-| `C-d` | delete char forward |
-| `C-k` | kill to end of line |
-| `C-y` | yank (paste) |
-| `C-s` / `C-r` | search forward / backward |
-| `C-g` | cancel |
-| `M-f` / `M-b` | forward / backward word (approx — paragraph) |
-| `M-<` / `M->` | beginning / end of buffer |
-| `M-d` | kill word forward (approx) |
-| `M-w` | copy region (when visual is active) |
-| `M-x` | enter command mode |
+| `C-a` `C-e` | Beginning / end of line |
+| `C-b` `C-f` | Backward / forward char |
+| `C-n` `C-p` | Next / previous line |
+| `M-b` `M-f` | Backward / forward word |
+| `M-<` `M->` | Buffer top / bottom |
+| Arrow keys | Cursor motion (works everywhere) |
 
-### `C-x` prefix (multi-key)
+## Editing
 
-| Binding | Action |
+| Key | Action |
 |---|---|
-| `C-x C-s` | save |
-| `C-x C-c` | quit |
-| `C-x C-f` | find file (fzf) |
-| `C-x b` | switch buffer (fzf) |
-| `C-x k` | kill buffer |
-| `C-x 0` | delete current window |
-| `C-x 2` | split below |
-| `C-x 3` | split right |
-| `C-x o` | other window |
-| `C-x u` | undo |
+| `C-d` | Delete char forward |
+| `<BS>` | Delete char backward |
+| `C-k` | Kill to end of line |
+| `M-d` | Kill word forward |
+| `M-w` | Copy region (no kill) |
+| `C-w` | Kill region |
+| `C-y` | Yank (paste from kill ring / register) |
+| `C-/` `C-_` | Undo |
 
-### Visual
+## Selection
 
-| Binding | Action |
+| Key | Action |
 |---|---|
-| `C-w` | kill region (cut) |
-| `C-g` | cancel selection |
+| `S-Up/Down/Left/Right` | Extend selection |
+| `C-S-Left` `C-S-Right` | Extend by word |
+| `S-Home` `S-End` | Extend to beginning / end of line |
+| `C-Space` | Set mark (start visual selection) |
 
-## Enable
+## C-x cluster (file & buffer ops)
 
-In `src/config.c`'s `load_plugins()`:
+| Key | Action |
+|---|---|
+| `C-x C-s` | Save (`:w`) |
+| `C-x C-c` | Quit (`:q`) |
+| `C-x C-f` | Open file picker (`:fzf`) |
+| `C-x b` | Switch buffer |
+| `C-x k` | Kill buffer |
+| `C-x 0` | Close current window |
+| `C-x 2` | Horizontal split |
+| `C-x 3` | Vertical split |
+| `C-x o` | Other window (focus next) |
+| `C-x u` | Undo |
 
-```c
-plugin_enable("emacs_keybinds");
-// remove or comment out plugin_enable("vim_keybinds")
-```
+## Command palette
+
+`M-x` — opens hed's command picker (same as `:c`).
+
+## Notes
+
+The plugin sets `ed_set_modeless(1)` on init so every `:` command
+that would normally drop you into NORMAL mode keeps you in INSERT.
+
+If you want a hybrid (Emacs keys but mode-aware), don't set modeless:
+edit `src/config.c` to call `ed_set_modeless(0)` after the plugin
+loads.

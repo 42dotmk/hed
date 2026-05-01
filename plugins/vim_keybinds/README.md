@@ -1,52 +1,109 @@
 # vim_keybinds
 
-Ships the default Vim-style modal keymap for hed: hjkl motion, operator
-keybinds (`d`, `c`, `y`), text-object dispatch, the leader (`<space>`)
-cluster, fold bindings (`za`, `zo`, `zM`, ...), and insert-mode helpers.
+The default Vim-style modal keymap. Loaded with `enabled=1` in the
+default `src/config.c`, so this is what you get on a fresh install.
 
-This plugin is what makes hed feel like Vim out of the box. Disabling it
-gives you a blank-canvas editor — useful as a starting point if you want a
-different keymap profile (emacs-style, modeless, etc).
+## Modes
 
-## Override semantics
+`NORMAL`, `INSERT`, `VISUAL`, `VISUAL_LINE`, `VISUAL_BLOCK`, `COMMAND`.
+`<Esc>` exits to NORMAL from anywhere.
 
-Bindings registered here are overridable. The keybind subsystem uses
-**last-write-wins** for any matching `(mode, sequence, filetype)` tuple
-(see `remove_duplicate` in `src/keybinds.c`).
+## Motions (NORMAL / VISUAL)
 
-Inside `config_init()` (in `src/config.c`), the order is:
+| Key | Motion |
+|---|---|
+| `h` `j` `k` `l` | Left / down / up / right |
+| Arrow keys | Same as `hjkl` |
+| `w` `b` `e` | Word forward / backward / end |
+| `0` `^` `$` | Line start / first non-blank / line end |
+| `gg` `G` | Buffer top / bottom |
+| `{` `}` | Previous / next paragraph |
+| `<C-u>` `<C-d>` | Half-page up / down |
+| `<C-b>` `<C-f>` | Page up / down |
+| `%` | Match bracket |
+| `n` `N` | Next / previous search match |
+| `*` `<C-*>` | Search word under cursor |
+| `42G` | Jump to line 42 (numeric prefix + `G`) |
+| `5j` | Move down 5 lines (numeric prefix + motion) |
 
-1. `vim_keybinds` runs first (ships defaults).
-2. Other plugins (`clipboard`, `dired`) register after, overriding select
-   bindings (`y`/`yy` for clipboard, `<CR>`/`-`/`~`/`cd` for dired).
-3. The user's personal `load_keybinds()` step runs last — anything declared
-   there wins.
+## Operators (NORMAL / VISUAL)
 
-So to override a default, just declare it later in `config_init`:
+`d` (delete), `c` (change), `y` (yank), `>` `<` (indent / outdent).
 
-```c
-mapn("j", my_custom_down, "scroll-then-down");
+Operator + motion or text object:
+
+```
+diw      delete inner word
+ci(      change inside parens
+ya"      yank around double-quoted string
+d$       delete to end of line
+y2j      yank current + 2 lines below
 ```
 
-## What this plugin does NOT own
+Text objects: `iw` `aw` `i(` `a(` `i[` `a[` `i{` `a{` `i"` `a"` `i'`
+`a'` `` i` `` `` a` ``.
 
-- Yank/clipboard sync — owned by the `clipboard` plugin.
-- Dired navigation (`<CR>`, `-`, `~`, `cd`) — owned by the `dired` plugin.
-- Filetype-scoped bindings — those go in the relevant feature plugin.
+## Modes — entering / leaving
 
-## Text objects
+| Key | Action |
+|---|---|
+| `i` `a` `I` `A` | Enter INSERT (at cursor / after / line start / line end) |
+| `o` `O` | Open new line below / above |
+| `v` | VISUAL |
+| `V` | VISUAL_LINE |
+| `<C-v>` | VISUAL_BLOCK |
+| `:` | COMMAND |
+| `/` `?` | Search forward / backward |
+| `<Esc>` | Back to NORMAL |
 
-Text objects (`iw`, `ap`, `i(`, hjkl motions, etc.) are registered here too —
-they're the operator-composition counterpart of the keybinds and conceptually
-part of the same "Vim defaults" surface.
+## Editing
 
-## Enable
+| Key | Action |
+|---|---|
+| `x` `X` | Delete char under / before cursor |
+| `r<char>` | Replace one character |
+| `D` | Delete to end of line |
+| `C` | Change to end of line |
+| `Y` | Yank line |
+| `p` `P` | Paste after / before |
+| `u` `<C-r>` | Undo / redo |
+| `.` | Repeat last change |
 
-In `src/config.c`'s `user_hooks_init()`:
+## Macros & marks
 
-```c
-plugin_enable("vim_keybinds");
-```
+`q<reg>` start recording, `q` to stop, `@<reg>` play, `@@` replay.
 
-Should be enabled first among the keybind-owning plugins so others can
-override its defaults.
+## Folds
+
+`za` toggle, `zo` open, `zc` close, `zR` open all, `zM` close all.
+
+## Leader cluster
+
+Space is the leader. The full default leader map lives in
+`src/config.c`; highlights:
+
+| Key | Action |
+|---|---|
+| `<space><space>` | `:fzf` |
+| `<space>ff` | `:fzf` |
+| `<space>fr` | `:recent` |
+| `<space>fc` `<space>fc` | `:c` (command picker) |
+| `<space>sd` `<space>sa` `<space>ss` | `:rg` / `:rgword` / `:ssearch` |
+| `<space>tt` `<space>tT` | `:tmux_toggle` / `:tmux_kill` |
+| `<space>ts` | `:tmux_send_line` |
+| `<space>tq` | `:ctoggle` |
+| `<space>tk` | `:keymap-toggle` |
+| `<space>ws` `<space>wv` | `:split` / `:vsplit` |
+| `<space>ww/h/j/k/l` | Focus next / left / down / up / right |
+| `<space>jb` `<space>jf` | `:jb` (jump back) / `:jf` (jump forward) |
+| `<space>fh` `<space>fj` | `:hfzf` / `:jfzf` |
+| `<space>z` | `:scratch` |
+| `<space>rr` | `:reload` |
+
+## Notes
+
+- Numeric prefixes work with motions and `G`. `42G` is the canonical
+  "jump to line 42."
+- `:keybinds` lists every binding currently registered for the
+  active mode — useful to see what your config and plugins have done
+  to the table.

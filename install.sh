@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
+#
+# hed installer
+#
+# Two install modes:
+#   1. binary  — download prebuilt hed/tsi from the latest GitHub release
+#   2. source  — clone the repo and build with make; symlink into ~/.local/bin
+#
+# Optional follow-ups:
+#   - portable static fzf and ripgrep into the same bin dir
+#   - tree-sitter grammars via the bundled tsi tool
+#
+# Everything lands under ~/.local/. No sudo. No package manager.
+
 set -euo pipefail
 
 REPO="42dotmk/hed"
 INSTALL_DIR="${HED_INSTALL_DIR:-$HOME/.local/bin}"
+SOURCE_DIR="${HED_SOURCE_DIR:-$HOME/.local/share/hed}"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
 case "$OS" in
     Linux) ;;
-    *) echo "Unsupported OS: $OS (only Linux prebuilt binaries are published)" >&2; exit 1 ;;
+    *) echo "Unsupported OS: $OS (only Linux is supported by the installer)" >&2; exit 1 ;;
 esac
 
 case "$ARCH" in
@@ -30,30 +44,90 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 
-base="https://github.com/${REPO}/releases/latest/download"
+# --- Pick install mode ----------------------------------------------------
 
-for bin in hed tsi; do
-    url="${base}/${bin}-linux-${ARCH}"
-    dest="${INSTALL_DIR}/${bin}"
-    echo "Downloading ${bin} -> ${dest}"
-    $DL "${dest}.tmp" "$url"
-    chmod +x "${dest}.tmp"
-    mv "${dest}.tmp" "${dest}"
-done
+MODE="${HED_INSTALL_MODE:-}"
+if [ -z "$MODE" ]; then
+    echo
+    echo "Install hed from:"
+    echo "  1) binary  — prebuilt Linux x86_64 release (fastest)"
+    echo "  2) source  — clone repo to $SOURCE_DIR, build with make"
+    echo
+    printf "Choice [1/2] (default: 1): "
+    read -r reply </dev/tty || reply="1"
+    case "$reply" in
+        2|s|src|source) MODE="source" ;;
+        *)              MODE="binary" ;;
+    esac
+fi
 
-echo
-echo "Installed hed and tsi to ${INSTALL_DIR}"
+# --- Binary install --------------------------------------------------------
+
+install_binary() {
+    local base="https://github.com/${REPO}/releases/latest/download"
+    for bin in hed tsi; do
+        local url="${base}/${bin}-linux-${ARCH}"
+        local dest="${INSTALL_DIR}/${bin}"
+        echo "Downloading ${bin} -> ${dest}"
+        $DL "${dest}.tmp" "$url"
+        chmod +x "${dest}.tmp"
+        mv "${dest}.tmp" "${dest}"
+    done
+    echo
+    echo "Installed hed and tsi to ${INSTALL_DIR}"
+}
+
+# --- Source install --------------------------------------------------------
+
+install_source() {
+    if ! command -v git >/dev/null 2>&1; then
+        echo "Source install requires git on PATH." >&2
+        exit 1
+    fi
+    if ! command -v make >/dev/null 2>&1; then
+        echo "Source install requires make on PATH." >&2
+        exit 1
+    fi
+    if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
+        echo "Source install requires a C compiler (cc or gcc)." >&2
+        exit 1
+    fi
+
+    if [ -d "$SOURCE_DIR/.git" ]; then
+        echo "Updating existing checkout at $SOURCE_DIR"
+        git -C "$SOURCE_DIR" fetch --tags --recurse-submodules
+        git -C "$SOURCE_DIR" pull --recurse-submodules --ff-only || {
+            echo "Could not fast-forward $SOURCE_DIR — please update manually." >&2
+            exit 1
+        }
+    else
+        echo "Cloning $REPO into $SOURCE_DIR"
+        mkdir -p "$(dirname "$SOURCE_DIR")"
+        git clone --recursive "https://github.com/${REPO}.git" "$SOURCE_DIR"
+    fi
+
+    echo "Building..."
+    make -C "$SOURCE_DIR" -j"$(nproc 2>/dev/null || echo 4)"
+
+    echo "Symlinking binaries into $INSTALL_DIR"
+    ln -sf "$SOURCE_DIR/build/hed" "$INSTALL_DIR/hed"
+    ln -sf "$SOURCE_DIR/build/tsi" "$INSTALL_DIR/tsi"
+
+    echo
+    echo "Installed hed (source) to $SOURCE_DIR, symlinked into $INSTALL_DIR"
+    echo "Update later with: cd $SOURCE_DIR && git pull --recurse-submodules && make"
+}
+
+case "$MODE" in
+    binary) install_binary ;;
+    source) install_source ;;
+esac
 
 # --- Optional runtime dependencies ----------------------------------------
 # fzf       : fuzzy pickers (:fzf, :recent, :c, history fzf)
 # ripgrep   : :rg, :ssearch, :rgword
 # (tree-sitter is statically linked into the binary; no system pkg needed.)
-#
-# We download portable static binaries from upstream releases into
-# $INSTALL_DIR — no sudo, no package manager, no version pinning to your
-# distro's repos.
 
-# Resolve the latest release tag for a GitHub repo via the public API.
 latest_tag() {
     # $1 = owner/repo. Echoes "vX.Y.Z" on success.
     $DL_STDOUT "https://api.github.com/repos/$1/releases/latest" \
@@ -171,7 +245,6 @@ if command -v git >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
     if [ "${#chosen_langs[@]}" -gt 0 ]; then
         echo "Installing grammars: ${chosen_langs[*]}"
         ts_workdir=$(mktemp -d)
-        # tsi builds in $cwd/ts/build/<lang>, then installs to ~/.config/hed/ts.
         ( cd "$ts_workdir" && for lang in "${chosen_langs[@]}"; do
               echo
               echo "=== $lang ==="
@@ -185,6 +258,7 @@ else
     echo "Install them and run 'tsi <lang>' later (e.g. 'tsi python')."
 fi
 
+# --- PATH check ------------------------------------------------------------
 case ":$PATH:" in
     *":${INSTALL_DIR}:"*) ;;
     *)

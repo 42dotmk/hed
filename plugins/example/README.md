@@ -1,65 +1,82 @@
 # example
 
-A minimal plugin you can copy as a starting template. Demonstrates the
-three things plugins typically do: register a command, register a
-keybind, register a hook.
+The starter template. Copy this directory, rename, and you have a
+plugin.
 
-Not enabled by default. Add to `src/config.c`'s `config_init()` to try it:
+## Recipe
 
-```c
-#include "plugins/example/example.h"
-...
-plugin_load(&plugin_example, 1);
+```bash
+cp -r plugins/example plugins/myplugin
+cd plugins/myplugin
+mv example.c myplugin.c
+mv example.h myplugin.h
+# inside both files, replace `example` → `myplugin`,
+# `plugin_example` → `plugin_myplugin`
 ```
 
-Then `:hello world` or `<space>eh` in normal mode.
+Then in `src/config.c`:
 
-## Recipe — making your own plugin
+```c
+#include "myplugin/myplugin.h"
+...
+plugin_load(&plugin_myplugin, 1);
+```
 
-1. **Copy the directory.**
-   ```sh
-   cp -r src/plugins/example src/plugins/myplugin
-   ```
+`make` picks up the new `.c` automatically — the makefile globs
+`*.c` recursively under `plugins/`.
 
-2. **Rename the symbol and files.** In `myplugin/myplugin.c` and
-   `myplugin/myplugin.h`, replace every `example`/`plugin_example` with
-   your plugin's name. The `Plugin.name` string is what shows up in
-   `:plugins`.
+## What the template demonstrates
 
-3. **Implement.** Add commands, keybinds, hooks inside the `_init`
-   function. See the existing plugins (`auto_pair`, `clipboard`, `dired`,
-   `tmux`) for patterns.
+- The minimum surface: an `init` function and a `Plugin` descriptor.
+- Registering a `:` command (`:hello`).
+- Registering a NORMAL-mode keybind (`<space>eh`).
+- Registering a hook (`HOOK_MODE_CHANGE`).
 
-4. **Register.** In `src/config.c`:
-   ```c
-   #include "plugins/myplugin/myplugin.h"
-   ...
-   plugin_load(&plugin_myplugin, 1);
-   ```
+That's it. Three patterns, ~50 lines.
 
-5. **Build.** `make` picks it up automatically — the Makefile globs
-   `*.c` under `$(PLUGINS_DIR)`.
+## Plugin contract
+
+Every plugin exposes:
+
+```c
+typedef struct Plugin {
+    const char *name, *desc;
+    int  (*init)(void);
+    void (*deinit)(void);
+} Plugin;
+
+extern const Plugin plugin_myplugin;
+```
+
+`plugin_load(&plugin_myplugin, 1)` registers the plugin and runs its
+`init()`. Pass `0` to register without enabling — useful for keymaps
+that get swapped to at runtime via `:keymap`.
+
+`init()` returns `0` on success. Inside it, register your commands
+with `cmd(...)`, your keybinds with `mapn(...)`/`mapi(...)`/etc., and
+your hooks with `hook_register_*(...)`. All of those macros are in
+`hed.h`, which is the only include a plugin should normally need.
 
 ## Out-of-tree plugins
 
-You can keep your plugins outside the hed repo and point the build at
-that directory:
+Keep a plugin set outside the hed repo and point the build at it:
 
-```sh
+```bash
 make PLUGINS_DIR=$HOME/my-hed-plugins
 ```
 
-Note: `config.c` includes plugin headers via path — out-of-tree plugins
-need their includes to resolve. The Makefile passes `-I$(PLUGINS_DIR)`
-so a plugin at `$HOME/my-hed-plugins/myplugin/myplugin.h` is reachable
-as `#include "myplugin/myplugin.h"`.
+Headers from out-of-tree plugins are reachable as
+`#include "myplugin/myplugin.h"` because the makefile passes
+`-I$(PLUGINS_DIR)`.
 
-## What every plugin needs
+## What `init` should *not* do
 
-- A `const Plugin plugin_<name>` symbol in a `.c` file.
-- A `<name>.h` header exposing that symbol via `extern`.
-- An `init` function (returns 0 on success).
-- A `deinit` function — optional today (no unregister API yet); set to
-  `NULL` if you don't need teardown.
-
-That's it. No hidden registry, no constructor magic, no manifest file.
+- Don't read configuration files at init time. Plugins are loaded
+  before `main()` finishes setup; the file system is fine but the
+  rendering subsystem is not.
+- Don't print to stdout — it goes to the terminal mid-render. Use
+  `log_msg(...)` (writes to the log file) or
+  `ed_set_status_message(...)` (writes to the status line).
+- Don't keep the editor busy. `init()` is synchronous; if you need to
+  do something heavy, spawn a thread or defer to a hook (e.g.,
+  `HOOK_STARTUP_DONE`).

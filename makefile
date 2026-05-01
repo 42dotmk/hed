@@ -39,7 +39,7 @@ PLUGIN_OBJECTS = $(patsubst $(PLUGINS_DIR)/%.c,$(BUILD_DIR)/plugins/%.o,$(PLUGIN
 OBJECTS = $(CORE_OBJECTS) $(PLUGIN_OBJECTS)
 
 
-.PHONY: all clean run test test_args ts-langs strip_build
+.PHONY: all clean run test test_args ts-langs strip_build install uninstall publish fmt tags
 
 all: $(TARGET) $(TSI)
 
@@ -71,13 +71,28 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 $(TSI): ts/ts_lang_install.c
 	$(CC) -Wall -Wextra -O2 -I/usr/include -o $@ $<
 
-publish:
-	@echo "Publishing hed and tsi to /usr/local/bin/"
-	$(MAKE) install
+# Where `make install` puts the symlinks. Override with:
+#   make install INSTALL_DIR=/some/other/dir
+INSTALL_DIR ?= $(HOME)/.local/bin
 
+# Symlink build/hed and build/tsi into INSTALL_DIR. Symlinks rather than
+# copies so subsequent rebuilds (incl. :reload from inside the editor)
+# update the installed binary automatically.
 install: $(TARGET) $(TSI)
+	@mkdir -p $(INSTALL_DIR)
+	ln -sf $(abspath $(TARGET)) $(INSTALL_DIR)/hed
+	ln -sf $(abspath $(TSI))    $(INSTALL_DIR)/tsi
+	@echo "Symlinked hed and tsi -> $(INSTALL_DIR)"
+
+# System-wide install (kept for releases / packaging).
+publish: $(TARGET) $(TSI)
+	@echo "Publishing hed and tsi to /usr/local/bin/"
 	cp $(TARGET) /usr/local/bin/hed
 	cp $(TSI) /usr/local/bin/tsi
+
+uninstall:
+	rm -f $(INSTALL_DIR)/hed $(INSTALL_DIR)/tsi
+	@echo "Removed hed and tsi symlinks from $(INSTALL_DIR)"
 
 ts-langs: $(BUILD_DIR)
 	@echo "Tree-sitter source files:"

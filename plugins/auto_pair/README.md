@@ -1,19 +1,23 @@
 # auto_pair
 
-When the user types an opening bracket or quote in insert mode, automatically
-inserts the matching closing one and steps the cursor back so they can keep
-typing inside the pair.
+Auto-inserts the closing half of a pair when you type the opening
+half — `(`, `[`, `{`, `"`, `'`, `` ` `` — and steps the cursor over
+the close character if you're already sitting on it.
 
-Pairs handled: `()`, `[]`, `<>`, `{}`, `""`, `''`, `` `` ``.
+## Behavior
 
-## Hook
+| You type | Result |
+|---|---|
+| `(` `[` `{` | Inserts pair, cursor between |
+| `"` `'` `` ` `` (and you're not on a matching close) | Inserts pair, cursor between |
+| `"` `'` `` ` `` (and the next char already matches) | Cursor steps over the existing close |
+| `<BS>` on an opener whose close is to the right | Deletes both halves |
 
-`HOOK_CHAR_INSERT` in `MODE_INSERT`, all filetypes.
+Active in INSERT mode only. Policy-free: no special handling for
+strings inside comments or escaped characters — if you don't want a
+pair, just press Backspace.
 
-## Enable
+## Disable
 
-In `src/config.c`'s `config_init()`:
-
-```c
-plugin_load(&plugin_auto_pair, 1);
-```
+Set `plugin_load(&plugin_auto_pair, …)` to `0` in `src/config.c` and
+`:reload`.

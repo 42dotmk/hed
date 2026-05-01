@@ -1,70 +1,65 @@
 # vscode_keybinds
 
-VSCode-flavored keymap. Modeless (always-insert) with the standard
-Ctrl-key bindings VSCode users expect.
+VSCode-flavored keymap. Modeless — the editor stays in INSERT
+permanently.
 
-## ⚠️ Caveats
+Not loaded by default. Switch at runtime with `:keymap vscode`, or
+pre-load it in `src/config.c` by setting
+`plugin_load(&plugin_vscode_keybinds, 1);`.
 
-VSCode is a GUI app — it gets a richer set of modifier combinations than
-a terminal can deliver. Three things that don't translate cleanly:
+## File / buffer
 
-1. **Ctrl+Shift+P** (command palette) — most terminals send the same
-   bytes for `Ctrl+P` and `Ctrl+Shift+P`, so the palette uses `<M-p>`
-   (Alt+P) instead.
-2. **Ctrl+/** (toggle comment) — `Ctrl+/` is byte 0x1F, outside the
-   Ctrl+letter range our keybind layer encodes. Mapped to `<M-/>` instead.
-3. **Ctrl+\\** (split editor) — no Ctrl form available. Mapped to `<M-\\>`.
+| Key | Action |
+|---|---|
+| `Ctrl+S` | Save (`:w`) |
+| `Ctrl+N` | New empty buffer (`:new`) |
+| `Ctrl+O` `Ctrl+P` | File picker (`:fzf`) |
+| `Ctrl+W` | Close window |
 
-## Bindings provided
+## Edit
 
-### File / window
-| VSCode | hed binding | Action |
-|---|---|---|
-| `Ctrl+S` | `C-s` | save |
-| `Ctrl+N` | `C-n` | new buffer |
-| `Ctrl+O` | `C-o` | open file (fzf) |
-| `Ctrl+P` | `C-p` | quick open (fzf) |
-| `Ctrl+W` | `C-w` | close window |
-| `Ctrl+Shift+P` | `M-p` | command palette |
-| `Ctrl+\\` | `M-\\` | split editor right |
-| (none) | `M--` | split editor down |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | `M-n` / `M-N` | next / prev buffer |
+| Key | Action |
+|---|---|
+| `Ctrl+Z` `Ctrl+Y` | Undo / redo |
+| `Ctrl+X` `Ctrl+C` `Ctrl+V` | Cut / copy / paste (line-wise without selection, region-wise with) |
 
-### Edit
-| VSCode | hed | Action |
-|---|---|---|
-| `Ctrl+Z` | `C-z` | undo |
-| `Ctrl+Y` | `C-y` | redo |
-| `Ctrl+X` | `C-x` | cut line / cut selection |
-| `Ctrl+C` | `C-c` | copy line / copy selection |
-| `Ctrl+V` | `C-v` | paste |
-| `Ctrl+/` | `M-/` | toggle comment |
-| `Esc` | `Esc` | cancel selection |
+## Find & navigate
 
-### Find / navigate
-| VSCode | hed | Action |
-|---|---|---|
-| `Ctrl+F` | `C-f` | find in file |
-| `Ctrl+G` | `C-g` | search prompt (goto-line stand-in) |
-| `Ctrl+D` | `C-d` | select next occurrence |
-| `Home` / `End` | `Home` / `End` | beginning / end of line |
+| Key | Action |
+|---|---|
+| `Ctrl+F` | Search (`:ssearch`) |
+| `Ctrl+G` | Go to line / motion (`:goto`) |
+| `Ctrl+D` | Find next occurrence of word under cursor |
 
-## Conflicts with vim_keybinds
+## Selection
 
-Both want `<C-d>` (vim: scroll), `<C-n>` / `<C-p>` (vim: quickfix nav),
-`<C-o>` (vim: jump back), `<C-v>` (vim: visual-block). Don't enable both;
-swap via the `keymap` plugin (or just edit `config.c`).
+| Key | Action |
+|---|---|
+| `Shift+Up/Down/Left/Right` | Extend selection |
+| `Ctrl+Shift+Left` `Ctrl+Shift+Right` | Extend by word |
+| `Shift+Home` `Shift+End` | Extend to line start / end |
 
-## Enable
+## Word motion
 
-In `src/config.c`'s `config_init()`:
+| Key | Action |
+|---|---|
+| `Ctrl+Left` `Ctrl+Right` | Move by word |
 
-```c
-plugin_load(&plugin_vscode_keybinds, 1);
-// remove or comment out plugin_load(&plugin_vim_keybinds, 1);
-```
+## Command palette
 
-If you want runtime swap, load it via the keymap plugin (see
-`plugins/keymap/README.md`) — but that plugin currently knows only
-about `vim` and `emacs`. Extend the `apply()` function there to add a
-`vscode` case.
+`F1` or `Alt+P` — opens hed's command picker (same as `:c`).
+
+> Why not `Ctrl+Shift+P`? Most terminals can't deliver the
+> Ctrl+Shift modifier combination — that's an xterm-protocol
+> limitation. `F1` and `Alt+P` are the closest universally-routable
+> alternatives.
+
+## Notes
+
+The plugin sets `ed_set_modeless(1)` on init so every `:` command
+that would normally drop you into NORMAL keeps you in INSERT.
+
+If you're missing something — multi-cursor, jump-to-symbol — that's
+because hed's core doesn't support it yet, not because the keybind
+is missing. Treat this keymap as a familiar surface, not as a full
+VSCode replica.

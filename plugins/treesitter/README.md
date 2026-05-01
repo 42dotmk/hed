@@ -1,41 +1,75 @@
 # treesitter
 
-Tree-sitter syntax highlighting. Grammars are `.so` files loaded
-dynamically from `$HED_TS_PATH` (defaults to `~/.config/hed/ts/` and
-the in-tree `ts-langs/`). Each buffer gets its own `TSState*` in
-`buf->ts_internal`. Highlight queries come from
-`queries/<lang>/highlights.scm`.
-
-Filetype detection is in `buf_detect_filetype()` (`src/buf/buffer.c`).
-The plugin auto-loads the matching grammar on buffer open.
+Syntax highlighting via tree-sitter. Grammars are `.so` files loaded
+on demand with `dlopen` — the editor binary doesn't bundle any
+particular language; you pick what you want.
 
 ## Commands
 
-- `:ts on|off|auto` — toggle highlighting (auto = detect by extension)
-- `:tslang <name>` — force a language for the current buffer
-- `:tsi <lang>` — install a grammar from GitHub (clones
-  `tree-sitter-<lang>`, builds `<lang>.so`, copies it to `ts-langs/`)
+| Command | Action |
+|---|---|
+| `:ts on` `:ts off` `:ts auto` | Enable / disable / auto-detect highlighting per buffer |
+| `:tslang <name>` | Force a language for the current buffer |
+| `:tsi <name>` | Install a tree-sitter grammar |
 
-## How core sees it
+Auto-detection uses the buffer's filetype (file extension or
+shebang). When it fires, the plugin tries to `dlopen` a grammar
+called `tree_sitter_<name>` from the configured grammar directory.
 
-Core code (`src/buf/buffer.c`, `src/terminal.c`) calls `ts_is_enabled`,
-`ts_buffer_autoload`, `ts_buffer_reparse` through **weak symbols**.
-When this plugin is built, the refs resolve to the real functions;
-when it isn't (e.g., `make PLUGINS_DIR=...` pointing at a set without
-treesitter), the refs are NULL and core skips the calls — no crash,
-no missing-symbol link errors.
+## Where grammars live
 
-## Library dependency
-
-`libtree-sitter` is currently linked unconditionally by the Makefile.
-If you build without this plugin, the dependency is unused — annoying
-but harmless. Making the link conditional on the plugin's presence
-would need a Makefile tweak.
-
-## Enable
-
-In `src/config.c`'s `config_init()`:
-
-```c
-plugin_load(&plugin_treesitter, 1);
 ```
+~/.config/hed/ts/<lang>.so
+```
+
+This is what `tsi` writes to. The library is the compiled grammar
+for `tree-sitter-<lang>` (e.g., `tree-sitter-c`,
+`tree-sitter-python`).
+
+## Installing a grammar
+
+The bundled `tsi` helper clones the upstream `tree-sitter-<lang>`
+repository, builds the parser as a shared library, and drops the
+result into `~/.config/hed/ts/`.
+
+From the shell:
+
+```bash
+tsi python
+tsi c
+tsi rust
+```
+
+Or from inside hed:
+
+```
+:tsi python
+```
+
+After `:tsi`, run `:tslang python` (or just open a Python file with
+`:ts auto`) to start highlighting.
+
+`tsi` needs `git`, a C compiler (`cc`), and network access. The
+shared library is built with the same C runtime as hed, so the
+grammar runs against the statically linked tree-sitter runtime
+shipped in the editor binary.
+
+## Highlight queries
+
+Color decisions come from the queries under
+[`queries/<lang>/highlights.scm`](../../queries/) in this repository
+— the same files used by neovim's tree-sitter plugin. If you write
+your own queries, drop them at `~/.config/hed/ts/queries/<lang>/`
+and they take precedence.
+
+## Notes
+
+- The vendored tree-sitter runtime is statically linked into hed —
+  no `libtree-sitter` system package needed.
+- A grammar `.so` only works against a tree-sitter runtime version
+  it was compiled for. If `:ts auto` reports a load failure after a
+  `tsi`, the grammar's tree-sitter version drifted from the one
+  bundled in this build — `:tsi <lang>` again to recompile against
+  the current runtime.
+- Build hed without highlighting at all: `make WITH_TREESITTER=0`.
+  The editor compiles cleanly without the plugin or the runtime.

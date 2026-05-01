@@ -1,21 +1,30 @@
 # smart_indent
 
-When the user inserts a newline in insert mode, copy the previous line's
-leading whitespace onto the new line so indentation persists naturally.
+Carries indentation onto new lines. When you press `<Enter>` in
+INSERT mode, the new line starts with the same leading whitespace
+(spaces and tabs) as the line you came from.
 
-Whitespace is replicated **byte for byte** — if the previous line was
-indented with tabs, the new line gets tabs; spaces, spaces; mixed
-("\\t\\t  "), the same mix. No tab→space normalization.
+## Behavior
 
-## Hook
+- Mirrors leading whitespace exactly — if the previous line started
+  with two tabs and four spaces, the new line does too.
+- After `{`, `[`, `(` at the end of the previous line: adds one
+  level of additional indent on top of the carried indent.
+- After a closing brace at the start of the new line (e.g., you type
+  `}` on a freshly auto-indented line): nothing — current behavior
+  doesn't dedent. Type `<BS>` to clean up.
 
-`HOOK_CHAR_INSERT` in `MODE_INSERT`, all filetypes. Activates only when
-the inserted character is `\n`.
+## Notes
 
-## Enable
+The indent unit is a single tab character. If you use spaces, the
+carry-over still works (it copies whatever was there) but the extra
+level after `{`/`[`/`(` is a tab. If you want spaces-only, edit
+`plugins/smart_indent/smart_indent.c`.
 
-In `src/config.c`'s `config_init()`:
+The plugin hooks `HOOK_LINE_INSERT` (newline) — it does not run for
+re-indenting on `<Tab>` mid-line, paste, or block edits.
 
-```c
-plugin_load(&plugin_smart_indent, 1);
-```
+## Disable
+
+Set `plugin_load(&plugin_smart_indent, …)` to `0` in `src/config.c`
+and `:reload`.

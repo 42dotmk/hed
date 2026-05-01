@@ -1,180 +1,229 @@
-# HED
+# hed
 
-Modal terminal editor written in C11. hed keeps a small core but ships
-useful modern tools: tree-sitter highlights, fuzzy file/search pickers,
-ripgrep-backed quickfix lists, window splits, tmux runner support, and
-an explicit C API for adding commands, keybindings, and hooks.
+A small, hackable terminal editor written in C.
 
-> **hed is intended to be built from source.** The editor is composed
-> of a minimal **core** plus a collection of **plugins** — without the
-> plugins, even basic editing is unusable. Everything user-facing —
-> keymaps, the command set, file browser, formatter, clipboard, LSP,
-> tree-sitter, runner pane, auto-pair, smart indent — lives in
-> `plugins/<name>/`. Your configuration is itself a C file
-> (`src/config.c`) where you decide which plugins load and which
-> overrides win. You have complete freedom to fork, swap, rip out, or
-> add new plugins; rebuild with `make`, then `:reload` from inside hed
-> to pick up changes without restarting your session.
+Modal by default, but ships Emacs and VSCode keymaps you can swap to
+at runtime. Tree-sitter highlights, ripgrep / fzf integrations,
+window splits, tmux runner pane, OSC 52 clipboard, LSP. Every
+user-facing feature is a plugin you can rip out, fork, or replace.
 
-## Highlights
+---
 
-- Normal / Insert / Command plus Visual (char + block) modes with
-  Vim-like motions and operators, undo/redo, registers, and shared
-  clipboard across buffers.
-- Three swappable keymaps out of the box: Vim (default), Emacs,
-  VSCode. Switch at runtime with `:keymap <name>`.
-- Unlimited buffers and multiple windows with vertical/horizontal
-  splits; quickfix pane stays in sync with the cursor for previews.
-- Search stack: `/` and `*` for intra-file search, ripgrep
-  integrations (`:rg`, `:ssearch`, `:rgword`) that populate quickfix,
-  and jump list navigation.
-- Tree-sitter highlighting with grammars loaded on demand via
-  `dlopen`; runtime toggle and per-buffer language selection.
-- Fuzzy tools: `:fzf` file picker, `:recent` recent files, `:c`
-  command picker, optional `bat` previews.
-- Integrations: tmux runner pane, lazygit wrapper, shell passthrough,
-  formatter hook, OSC 52 system clipboard over SSH.
+## Install in 10 seconds
 
-## Build from source (the recommended path)
-
-```bash
-git clone --recursive https://github.com/42dotmk/hed.git
-cd hed
-make            # builds build/hed and build/tsi
-./build/hed [file ...]
-```
-
-If you cloned without `--recursive`:
-
-```bash
-git submodule update --init --recursive
-```
-
-The makefile auto-discovers `*.c` recursively under `src/` and
-`plugins/`. To use a plugin set living outside the repo:
-
-```bash
-make PLUGINS_DIR=$HOME/my-hed-plugins
-```
-
-After editing `src/config.c` (or any plugin), run `:reload` from
-inside hed to rebuild and restart the running editor.
-
-Targets:
-
-```bash
-make            # build
-make run        # build then run
-make clean      # remove build artifacts
-make test       # Unity unit tests
-make tags       # ctags -R
-make install    # copy build/hed and build/tsi to /usr/local/bin
-```
-
-Outputs: `build/hed` (editor) and `build/tsi` (tree-sitter grammar
-installer). Use `-c "<command>"` to run a `:` command at startup,
-e.g., `./build/hed -c "e other.txt"`. Logs go to `.hedlog`.
-
-### Source build requirements
-
-- gcc or clang (C11), `make`, POSIX terminal
-- `libdl` (always available on Linux)
-- The vendored tree-sitter runtime is included as a submodule under
-  `vendor/tree-sitter` and built into a static archive — **no
-  `libtree-sitter` system package required.**
-
-Optional runtime tools (each plugin degrades cleanly if its tool is
-missing):
-
-- `ripgrep` — `:rg`, `:ssearch`, `:rgword`
-- `fzf` — `:fzf`, `:recent`, `:c`, history fzf
-- `git` + `cc` — needed by `tsi` to build new tree-sitter grammars
-- `tmux`, `lazygit`, `bat`, `ctags`,
-  `clang-format` / `rustfmt` / `prettier` / `black` / `gofmt`
-
-## Install (prebuilt binary)
-
-If you'd rather skip the build step, a Linux x86_64 binary is
-attached to each release:
+One line, prebuilt Linux x86_64 binary:
 
 ```bash
 curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
 ```
 
-The script drops `hed` and `tsi` into `~/.local/bin`, offers to
-download portable static `fzf` and `ripgrep` binaries into the same
-directory, and lets you multi-select tree-sitter grammars to install
-up front. Override the destination with `HED_INSTALL_DIR=...`.
+The installer asks two things:
 
-The published binary statically links the tree-sitter runtime;
-grammars are loaded on demand via `dlopen`.
+1. **Source or binary?** Binary is faster (one download, ready to
+   run). Source clones the repo into `~/.local/share/hed`, builds it,
+   and symlinks `hed` and `tsi` into `~/.local/bin` — pick this if
+   you want to hack on plugins.
+2. **Optional tools?** Offers to download portable static `fzf` and
+   `ripgrep` binaries into the same `~/.local/bin`, then lets you
+   pick tree-sitter grammars to install for syntax highlighting.
+
+No `sudo`. No package manager. Everything ends up under
+`~/.local/`.
+
+After install, make sure `~/.local/bin` is on your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then run `hed` and you're in.
+
+---
+
+## Build from source manually
+
+If you want to skip the installer:
+
+```bash
+git clone --recursive https://github.com/42dotmk/hed.git
+cd hed
+make
+./build/hed
+```
+
+If you forgot `--recursive`:
+
+```bash
+git submodule update --init --recursive
+```
+
+Targets:
+
+```bash
+make           # build build/hed and build/tsi
+make install   # symlink build/hed and build/tsi into ~/.local/bin
+make run       # build then run
+make clean     # remove build/
+make test      # Unity unit tests
+```
+
+`make install` symlinks rather than copies — rebuilds (`make`,
+`:reload`) update the installed binary automatically.
+
+### Build requirements
+
+- gcc or clang, C11
+- POSIX terminal, libdl
+
+The vendored tree-sitter runtime is included as a submodule under
+`vendor/tree-sitter` and statically linked. **No `libtree-sitter`
+system package required.**
+
+### Optional runtime tools
+
+Each integration degrades cleanly if its tool is missing:
+
+| Tool | Used by |
+|---|---|
+| `ripgrep` | `:rg`, `:ssearch`, `:rgword` |
+| `fzf` | `:fzf`, `:recent`, `:c`, history pickers |
+| `tmux` | runner pane (`:tmux_toggle`, `:tmux_send_line`) |
+| `lazygit` | `:git` |
+| `bat` | fzf previews |
+| `ctags` | `:tag` |
+| `clang-format` / `rustfmt` / `prettier` / `black` / `gofmt` / `shfmt` | `:fmt` |
+| `git`, `cc` | `tsi` (tree-sitter grammar installer) |
+
+---
+
+## Highlights
+
+- Vim-like modal editing by default, with full operator + text-object
+  composition (`diw`, `ci(`, `ya"`, `>i{`, …) and the usual undo /
+  redo, registers, macros, and search stack.
+- **Three swappable keymaps**: Vim (default), Emacs (modeless,
+  `C-a/C-e/C-x` cluster), VSCode (modeless, `Ctrl+S/Z/F/D`,
+  shift-arrow selection). Toggle at runtime with `:keymap`.
+- **Tree-sitter highlighting** for any language you install via
+  `tsi`. Grammars load on demand with `dlopen`.
+- **Fuzzy pickers**: `:fzf` files, `:recent` recent, `:c` commands,
+  history fzf, jump-list fzf — all powered by `fzf`.
+- **ripgrep + quickfix**: `:rg`, `:rgword`, `:ssearch` populate a
+  quickfix buffer with live preview as the cursor moves.
+- **Splits & windows**: vertical / horizontal splits, window focus
+  navigation, modal floating windows.
+- **tmux runner pane**: send the paragraph under your cursor to a
+  shell pane next door.
+- **System clipboard over SSH** via OSC 52 — no `xclip`, `pbcopy`, or
+  `wl-copy` shelling out.
+- **`:reload`** rebuilds the editor and execs the new binary in
+  place, restoring all open buffers.
+- **No flicker** on terminals that support DEC mode 2026 (kitty,
+  alacritty, wezterm, foot, ghostty).
+
+---
 
 ## Plugins
 
 The core editor knows about buffers, windows, terminal I/O, the
-keybind dispatcher, the command registry, and the hook system. **All
-user-visible behavior is delivered by plugins.** Each plugin is a
-self-contained directory under `plugins/` with its own README.
+keybind dispatcher, the command registry, and the hook system.
+**Every user-facing feature is a plugin** in `plugins/<name>/`.
+Each has its own README; here's the catalogue:
 
 | Plugin | What it does |
 |---|---|
-| [`core`](plugins/core/README.md) | Default `:` command set (`:q`, `:w`, `:e`, `:bn`, `:bp`, `:fzf`, `:rg`, `:goto`, `:plugins`, …) and a few editor-wide hooks. |
-| [`vim_keybinds`](plugins/vim_keybinds/README.md) | Default Vim-style modal keymap: hjkl motion, operators, text objects, visual modes, macros. |
-| [`emacs_keybinds`](plugins/emacs_keybinds/README.md) | Emacs-flavored keymap. Modeless (always-insert), `C-a`/`C-e`/`C-x` cluster, `M-` bindings, shift-arrow selection. |
-| [`vscode_keybinds`](plugins/vscode_keybinds/README.md) | VSCode-flavored keymap. Modeless. `Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D`, shift-arrow selection. |
-| [`keymap`](plugins/keymap/README.md) | Runtime keymap swap. `:keymap <name>`, `:keymap-toggle`. |
-| [`treesitter`](plugins/treesitter/README.md) | Syntax highlighting via tree-sitter. Grammars are `.so` files loaded with `dlopen`. |
-| [`clipboard`](plugins/clipboard/README.md) | Mirrors yanks into the system clipboard via OSC 52 — works over SSH, no `xclip`. |
-| [`dired`](plugins/dired/README.md) | Oil.nvim-style directory browser. Edit a directory listing as if it were a file. |
-| [`tmux`](plugins/tmux/README.md) | Runner pane integration. `:tmux_toggle`, `:tmux_send`, send-paragraph-under-cursor. |
-| [`fmt`](plugins/fmt/README.md) | `:fmt` runs an external formatter against the buffer, then reloads it. Filetype-dispatched. |
-| [`auto_pair`](plugins/auto_pair/README.md) | Auto-insert matching `()` / `[]` / `{}` / quotes in insert mode. |
-| [`smart_indent`](plugins/smart_indent/README.md) | Carry indentation onto new lines. |
-| [`quickfix_preview`](plugins/quickfix_preview/README.md) | Live-preview the quickfix entry under the cursor. |
-| [`viewmd`](plugins/viewmd/README.md) | Markdown live preview. |
-| [`lsp`](plugins/lsp/README.md) | LSP client integration (work in progress). |
-| [`example`](plugins/example/README.md) | Starter template — copy and rename to make your own. |
+| [`core`](plugins/core/README.md) | Default `:` command set (`:q`, `:w`, `:e`, `:bn`, `:fzf`, `:rg`, …) |
+| [`vim_keybinds`](plugins/vim_keybinds/README.md) | Default modal Vim keymap |
+| [`emacs_keybinds`](plugins/emacs_keybinds/README.md) | Modeless Emacs keymap (`C-a/C-e`, `M-x`, `C-x` cluster) |
+| [`vscode_keybinds`](plugins/vscode_keybinds/README.md) | Modeless VSCode keymap (`Ctrl+S`, shift-arrow selection) |
+| [`keymap`](plugins/keymap/README.md) | `:keymap` and `:keymap-toggle` for runtime swap |
+| [`treesitter`](plugins/treesitter/README.md) | Syntax highlighting; grammars via `dlopen` |
+| [`clipboard`](plugins/clipboard/README.md) | OSC 52 yank to system clipboard (works over SSH) |
+| [`dired`](plugins/dired/README.md) | oil.nvim-style directory browser |
+| [`tmux`](plugins/tmux/README.md) | Runner pane integration |
+| [`fmt`](plugins/fmt/README.md) | `:fmt` runs an external formatter on the buffer |
+| [`auto_pair`](plugins/auto_pair/README.md) | Auto-insert matching brackets and quotes |
+| [`smart_indent`](plugins/smart_indent/README.md) | Carry indent onto new lines |
+| [`quickfix_preview`](plugins/quickfix_preview/README.md) | Live preview of the quickfix entry under the cursor |
+| [`viewmd`](plugins/viewmd/README.md) | Markdown live preview in the browser |
+| [`scratch`](plugins/scratch/README.md) | `:scratch` ephemeral unnamed buffer |
+| [`sed`](plugins/sed/README.md) | `:sed <expr>` pipes the buffer through external sed |
+| [`reload`](plugins/reload/README.md) | `:reload` rebuilds and execs the new binary |
+| [`session`](plugins/session/README.md) | Save / restore the open-buffer list per cwd |
+| [`lsp`](plugins/lsp/README.md) | LSP client (work in progress) |
+| [`example`](plugins/example/README.md) | Starter template — copy and rename for your own |
 
-To add your own:
-
-```bash
-cp -r plugins/example plugins/myplugin
-# rename `example` → `myplugin` in the source files,
-# add `plugin_load(&plugin_myplugin, 1);` in src/config.c,
-# then make.
-```
+---
 
 ## Configuration
 
 All user-facing customization lives in `src/config.c`:
 
-- The `plugin_load(&plugin_foo, enabled)` calls determine which
-  plugins are active. Pass `0` instead of `1` to register but not
-  enable a plugin (useful for keymaps that you swap to at runtime).
-- Personal overrides go after the plugin manifest. Keybinds are
-  last-write-wins on `(mode, sequence, filetype)` tuples — your
-  bindings beat plugin defaults.
+```c
+void config_init(void) {
+    plugin_load(&plugin_core,             1);
+    plugin_load(&plugin_vim_keybinds,     1);
+    plugin_load(&plugin_emacs_keybinds,   0);  // registered, swappable
+    plugin_load(&plugin_vscode_keybinds,  0);
+    plugin_load(&plugin_treesitter,       1);
+    plugin_load(&plugin_clipboard,        1);
+    /* ... */
 
-Edit, run `make`, and `:reload` from inside hed to pick up changes.
+    /* Personal overrides — last-write-wins, beats plugin defaults. */
+    cmapn(" ff", "fzf");
+    cmapn(" rr", "reload");
+    /* ... */
+}
+```
 
-## Project Layout
+Edit, run `make`, and `:reload` from inside the editor to pick up
+the changes — no need to quit and relaunch.
+
+### Adding your own plugin
+
+```bash
+cp -r plugins/example plugins/myplugin
+# rename example → myplugin in the source files
+# add plugin_load(&plugin_myplugin, 1) to src/config.c
+make
+```
+
+See [`plugins/example/README.md`](plugins/example/README.md) for the
+full recipe and the plugin contract.
+
+### Out-of-tree plugins
+
+Keep your plugin set anywhere on disk and point the build at it:
+
+```bash
+make PLUGINS_DIR=$HOME/my-hed-plugins
+```
+
+---
+
+## Project layout
 
 ```
 src/                 # core editor (buffers, windows, terminal,
                      # commands, keybinds, hooks, undo, fold, …)
-plugins/             # all user-facing functionality (see above)
+plugins/             # all user-facing functionality (see catalogue above)
 vendor/tree-sitter/  # vendored runtime, statically linked
 ts/                  # tsi (grammar installer) source
-ts-langs/            # built grammar .so files (cached)
-queries/             # highlight queries by language
+queries/             # tree-sitter highlight queries by language
 test/                # Unity unit tests
 ```
 
+---
+
 ## Troubleshooting
 
-- Logs: `tail -f .hedlog` while hed runs; clear with `:logclear`.
-- `:plugins` lists everything currently loaded; `:keybinds` lists
-  every binding registered for the current mode.
-- If `fzf` / `ripgrep` / `tmux` / `lazygit` are missing, the related
-  commands fail with a status-line message and the rest of the editor
-  keeps working.
+- **Logs**: `~/.cache/hed/<encoded-cwd>/log`. Tail it while hed runs;
+  clear with `:logclear`.
+- **`:plugins`** lists everything currently loaded.
+- **`:keybinds`** lists every binding registered for the active
+  mode.
+- If `fzf`, `ripgrep`, `tmux`, or `lazygit` are missing, related
+  commands fail with a status-line message and the rest of the
+  editor keeps working.
+- If `:reload` fails to rebuild, the error goes to the status line
+  — open `~/.cache/hed/<encoded-cwd>/log` for the full output.

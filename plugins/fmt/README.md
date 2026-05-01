@@ -1,43 +1,41 @@
 # fmt
 
-`:fmt` — run an external formatter against the current buffer, then reload
-the file from disk to pick up the changes. Formatter is selected by the
-buffer's filetype.
+`:fmt` runs an external formatter against the current buffer's file
+on disk, then reloads the buffer to pick up the result. Filetype-
+dispatched: the formatter is selected based on the buffer's filetype.
 
-## Built-in rules
+## Default formatter table
 
-| Filetype | Command |
+| Filetype | Tool |
 |---|---|
 | `c`, `cpp` | `clang-format -i` |
 | `rust` | `rustfmt` |
 | `go` | `gofmt -w` |
 | `python` | `black` |
-| `javascript`, `typescript`, `html`, `css`, `markdown` | `prettier --write` |
-| `json` | `prettier --parser json --write` |
+| `javascript`, `typescript`, `json`, `html`, `css`, `markdown` | `prettier --write` |
+| `shell` | `shfmt -w` |
+| `lua` | `stylua` |
 
-If the buffer has no filename or the filetype isn't in the table, `:fmt`
-prints a status message and does nothing.
+If the formatter for your filetype isn't installed, `:fmt` reports a
+status-line error and leaves the buffer alone.
 
-## Caveats
+## Usage
 
-- Treated as save+reload — your changes are written to disk before the
-  formatter runs.
-- Does NOT integrate with the undo stack. After `:fmt`, undoing brings
-  back the pre-format file but only down to the last save snapshot.
-- Raw mode is temporarily disabled around the `system()` call so the
-  formatter can write to stdout/stderr without interfering with hed's
-  rendering.
-
-## Adding a new formatter
-
-Edit the `rules[]` table in `fmt.c`. `%s` in the template is replaced
-with the shell-escaped buffer path. PRs welcome to make this data-driven
-via config (e.g., a `:setformatter <ft> <cmd>` command).
-
-## Enable
-
-In `src/config.c`'s `config_init()`:
-
-```c
-plugin_load(&plugin_fmt, 1);
 ```
+:fmt              # format current buffer
+```
+
+A typical workflow: bind it to a key and call before saving. With
+the default leader cluster, `<space>cf` is wired to `:fmt`.
+
+## Notes
+
+`fmt` writes the buffer to disk first (if dirty), then runs the
+formatter on the on-disk file, then reloads. If the formatter
+doesn't support `--write`-style in-place editing, this plugin won't
+work for it as-is — patch the formatter table in
+`plugins/fmt/fmt.c` if you need a different invocation pattern.
+
+The formatter table is hardcoded (see the project roadmap — making
+it user-configurable is on the list). To add a filetype, edit the
+table and rebuild.

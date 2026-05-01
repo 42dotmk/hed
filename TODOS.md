@@ -27,7 +27,7 @@ Extend the modals API, and provide this as plugins
 ## [TODO] Better window resizing
    Add keybindings
    
-## [TODO] Persisting open buffers on reload
+## [DONE] Persisting open buffers on reload
 on :reload i would like to reopen the files that were opened
 Keeping track of the list of open buffers at the current directory
 Ideation

@@ -1,37 +1,33 @@
 # clipboard
 
-Mirrors yank operations into the system clipboard using the OSC 52 terminal
-escape sequence. Wraps `kb_yank_line`, `kb_operator_yank`, and
-`kb_visual_yank_selection` so any `y`, `yy`, or visual-mode `y` also pushes
-the unnamed register to the OS clipboard.
+Mirrors yanks into the system clipboard via OSC 52 — the terminal
+escape sequence that ships clipboard data over your existing TTY.
+Works over plain SSH with no `xclip`, `pbcopy`, or `wl-copy`
+shelling out.
 
-## Why OSC 52
+## What it overrides
 
-No external tools (`pbcopy`/`xclip`/`wl-copy`) needed. The terminal emulator
-performs the clipboard write, so it works transparently over SSH.
+| Keybind | Mode | Action |
+|---|---|---|
+| `y` | NORMAL | Yank operator (operator + text object) — also copies to system clipboard |
+| `yy` | NORMAL | Yank line — also copies to system clipboard |
+| `y` | VISUAL | Yank selection — also copies to system clipboard |
 
-## Requirements
+These shadow the default vim_keybinds yanks. Local registers are still
+populated as normal; the plugin just additionally pushes a base64-
+encoded OSC 52 sequence to the terminal.
 
-- A terminal that supports OSC 52 with clipboard writes enabled.
-  Tested: kitty, WezTerm, Alacritty, foot, iTerm2, Ghostty.
-  Not supported: Apple Terminal, older GNOME Terminal.
-- Inside tmux, add to `~/.tmux.conf`:
+## Terminal support
 
-  ```tmux
-  set -g set-clipboard on
-  ```
+OSC 52 needs to be enabled on your terminal. Most modern terminals
+support it out of the box: alacritty, kitty, wezterm, foot, ghostty,
+iTerm2, Windows Terminal. tmux requires `set -g set-clipboard on`.
 
-## Limitations
+If your terminal doesn't honor OSC 52, the yank still goes to hed's
+internal registers (so `p` works as expected); it just doesn't reach
+the system clipboard.
 
-- Some terminals cap OSC 52 payload size (kitty default ~75KB; others a few KB).
-  Large yanks may be silently truncated by the terminal.
-- One-way: this plugin only writes to the clipboard. Pasting from the system
-  clipboard still uses the platform's normal terminal paste (Ctrl+Shift+V etc).
+## Disable
 
-## Enable
-
-In `src/config.c`'s `user_hooks_init()`:
-
-```c
-plugin_enable("clipboard");
-```
+Set `plugin_load(&plugin_clipboard, …)` to `0` in `src/config.c` and
+`:reload`.

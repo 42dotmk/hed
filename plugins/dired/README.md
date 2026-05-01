@@ -1,37 +1,42 @@
 # dired
 
-Activates the directory browser (oil.nvim-like). The implementation lives in
-`src/dired.{c,h}` because core code (`buf/buffer.c`, `commands/commands_buffer.c`)
-calls into it when a directory path is opened. This plugin owns just the
-activation layer: keybinds + lifecycle hooks.
+A directory browser inspired by `oil.nvim`: opening a directory drops
+you into a buffer where each line is a directory entry. Navigate with
+your normal motions, hit `<CR>` to descend or open a file.
 
-## What gets activated
+## Usage
 
-- `dired_hooks_init()` — buffer lifecycle + keypress hooks scoped to the
-  `dired` filetype (close/cleanup, scroll behavior, etc).
-- Normal-mode keybinds in dired buffers:
-  - `<CR>` — open file or descend into directory
-  - `-` — go to parent directory
-  - `~` — return to original (origin) directory
-  - `cd` — chdir to current dired path
+```
+:e .              # open current directory in dired
+:e some/dir       # open a specific directory
+```
+
+Any time `:e` is given a directory, dired claims the open via the
+`HOOK_BUFFER_OPEN_PRE` intercept and renders the listing instead of
+core's default file-open path.
+
+## Keybinds (NORMAL mode, dired buffer only)
+
+| Key | Action |
+|---|---|
+| `<CR>` | Open the entry under the cursor (file or subdir) |
+| `-` | Go to parent directory |
+| `~` | Go to `$HOME` |
+| `cd` | Change hed's cwd to this directory |
+
+`hjkl`, `gg`, `G`, search, etc. all work — it's a normal buffer.
+
+## Display
+
+Each line renders as `<type-marker> <name>`:
+
+- `d` — directory
+- `l` — symlink (target shown after `->`)
+- ` ` — regular file
+
+Hidden entries (starting with `.`) are shown.
 
 ## Notes
 
-- Opening a directory (`:e .`, `:e /path/to/dir`, `./build/hed .`) is handled
-  by the core editor, not this plugin. The plugin only wires up navigation
-  once the dired buffer exists.
-- The `<CR>`, `-`, `~`, `cd` keybinds are global — they only do anything
-  meaningful when the current buffer's filetype is `dired`. The implementation
-  early-returns otherwise.
-
-## Enable
-
-In `src/config.c`'s `user_hooks_init()`:
-
-```c
-plugin_enable("dired");
-```
-
-Disable by removing that line. Without the plugin, opening a directory still
-loads a dired buffer (core behavior), but you'll have no keybinds to navigate
-inside it.
+The dired buffer is read-only — you can't rename or delete entries by
+editing the listing (yet). Use `:shell` for filesystem operations.
