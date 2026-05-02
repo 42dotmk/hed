@@ -92,8 +92,8 @@ static void dired_clear_buffer(Buffer *buf) {
     free(buf->rows);
     buf->rows = NULL;
     buf->num_rows = 0;
-    buf->cursor.x = 0;
-    buf->cursor.y = 0;
+    buf->cursor->x = 0;
+    buf->cursor->y = 0;
 }
 
 typedef struct {

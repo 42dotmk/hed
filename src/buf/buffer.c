@@ -54,8 +54,17 @@ static void buf_init(Buffer *buf) {
         return;
     buf->rows = NULL;
     buf->num_rows = 0;
-    buf->cursor.x = 0;
-    buf->cursor.y = 0;
+    buf->all_cursors = (CursorVec){0};
+    buf->cursor = NULL;
+    /* Always start with one active cursor at (0,0). */
+    Cursor *c0 = calloc(1, sizeof(Cursor));
+    if (c0) {
+        vec_push_typed(&buf->all_cursors, Cursor *, c0);
+        if (buf->all_cursors.len == 1)
+            buf->cursor = c0;
+        else
+            free(c0); /* push failed (OOM) — caller will see cursor=NULL */
+    }
     buf->filename = NULL;
     buf->title = strdup("[No Name]");
     if (!buf->title)
@@ -188,8 +197,8 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
         Buffer *cur = buf_cur();
         Window *win = window_cur();
         if (cur && cur->filename) {
-            int cx = win ? win->cursor.x : cur->cursor.x;
-            int cy = win ? win->cursor.y : cur->cursor.y;
+            int cx = win ? win->cursor.x : cur->cursor->x;
+            int cy = win ? win->cursor.y : cur->cursor->y;
             jump_list_add(&E.jump_list, cur->filename, cx, cy);
         }
     }
@@ -230,8 +239,8 @@ EdError buf_switch(int index) {
     E.current_buffer = index;
     if (win){
         win->buffer_index = index;
-		win->cursor.x = buf->cursor.x;
-		win->cursor.y = buf->cursor.y;
+		win->cursor.x = buf->cursor->x;
+		win->cursor.y = buf->cursor->y;
 	}
 
     /* Fire hook */
@@ -313,6 +322,11 @@ EdError buf_close(int index) {
     free(buf->filename);
     free(buf->title);
     free(buf->filetype);
+    for (size_t i = 0; i < buf->all_cursors.len; i++)
+        free(buf->all_cursors.data[i]);
+    free(buf->all_cursors.data);
+    buf->all_cursors = (CursorVec){0};
+    buf->cursor = NULL;
     fold_list_free(&buf->folds);
     undo_state_free(&buf->undo);
 
@@ -626,8 +640,8 @@ void buf_reload(Buffer *buf) {
     buf->rows = NULL;
     buf->num_rows = 0;
     /* reset scroll will be handled by window */
-    buf->cursor.x = 0;
-    buf->cursor.y = 0;
+    buf->cursor->x = 0;
+    buf->cursor->y = 0;
 
     /* Clear folds */
     fold_list_free(&buf->folds);

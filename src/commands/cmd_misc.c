@@ -345,8 +345,8 @@ void cmd_jumplist_fzf(const char *args) {
     if (buf) {
         int row = (line < buf->num_rows) ? line : buf->num_rows - 1;
         if (row < 0) row = 0;
-        buf->cursor.y = row;
-        buf->cursor.x = col;
+        buf->cursor->y = row;
+        buf->cursor->x = col;
         if (win) { win->cursor.y = row; win->cursor.x = col; }
     }
     fzf_free(sel, cnt);

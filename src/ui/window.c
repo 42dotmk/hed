@@ -50,7 +50,7 @@ void win_attach_buf(Window *win, Buffer *buf) {
     if (!BOUNDS_CHECK(idx, E.buffers.len))
         return; /* Extra safety check */
     win->buffer_index = idx;
-    win->cursor = buf->cursor;
+    if (buf->cursor) win->cursor = *buf->cursor;
     if (win->focus) {
         E.current_buffer = idx;
     }

@@ -542,8 +542,8 @@ static void jump_save_current(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!buf || !buf->filename) return;
-    int cx = win ? win->cursor.x : buf->cursor.x;
-    int cy = win ? win->cursor.y : buf->cursor.y;
+    int cx = win ? win->cursor.x : buf->cursor->x;
+    int cy = win ? win->cursor.y : buf->cursor->y;
     jump_list_add(&E.jump_list, buf->filename, cx, cy);
 }
 
@@ -937,8 +937,8 @@ static void kb_jump(int direction) {
     if (buf) {
         int row = (cursor_y < buf->num_rows) ? cursor_y : buf->num_rows - 1;
         if (row < 0) row = 0;
-        buf->cursor.y = row;
-        buf->cursor.x = cursor_x;
+        buf->cursor->y = row;
+        buf->cursor->x = cursor_x;
         if (win) {
             win->cursor.y = row;
             win->cursor.x = cursor_x;
@@ -982,8 +982,8 @@ static void goto_line_or(int fallback_y) {
         jump_save_current();
     win->cursor.y = target;
     win->cursor.x = 0;
-    buf->cursor.y = target;
-    buf->cursor.x = 0;
+    buf->cursor->y = target;
+    buf->cursor->x = 0;
 }
 
 void kb_goto_file_start(void) { goto_line_or(0); }

@@ -23,7 +23,11 @@ typedef enum {
 typedef struct Buffer {
     Row *rows;
     int num_rows;
-    Cursor cursor;
+    /* all_cursors holds every cursor (incl. the active one) as heap-
+     * allocated entries, so plugins/collab layers can keep stable
+     * Cursor* refs. cursor points to one element of all_cursors.data. */
+    CursorVec all_cursors;
+    Cursor *cursor;
     char *cursor_style;
 
     char *filename;

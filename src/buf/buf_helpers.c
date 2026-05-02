@@ -16,15 +16,15 @@ void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
 /*** Cursor movement helpers ***/
 
 static inline void cur_sync_from_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) {
-        buf->cursor.x = win->cursor.x;
-        buf->cursor.y = win->cursor.y;
+    if (PTR_VALID(buf) && PTR_VALID(win) && PTR_VALID(buf->cursor)) {
+        buf->cursor->x = win->cursor.x;
+        buf->cursor->y = win->cursor.y;
     }
 }
 static inline void cur_sync_to_window(Buffer *buf, Window *win) {
-    if (PTR_VALID(buf) && PTR_VALID(win)) {
-        win->cursor.x = buf->cursor.x;
-        win->cursor.y = buf->cursor.y;
+    if (PTR_VALID(buf) && PTR_VALID(win) && PTR_VALID(buf->cursor)) {
+        win->cursor.x = buf->cursor->x;
+        win->cursor.y = buf->cursor->y;
     }
 }
 
@@ -160,17 +160,17 @@ static void cursor_from_visual(Buffer *buf, Window *win, int target_visual,
 
 void buf_cursor_move_top(void) {
     CURSOR_OP({
-        buf->cursor.y = 0;
-        buf->cursor.x = 0;
+        buf->cursor->y = 0;
+        buf->cursor->x = 0;
     });
 }
 
 void buf_cursor_move_bottom(void) {
     CURSOR_OP({
-        buf->cursor.y = buf->num_rows - 1;
-        if (buf->cursor.y < 0)
-            buf->cursor.y = 0;
-        buf->cursor.x = 0;
+        buf->cursor->y = buf->num_rows - 1;
+        if (buf->cursor->y < 0)
+            buf->cursor->y = 0;
+        buf->cursor->x = 0;
     });
 }
 
@@ -975,16 +975,16 @@ void buf_find_matching_bracket(void) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
     cur_sync_from_window(buf, win);
-    if (!BOUNDS_CHECK(buf->cursor.y, buf->num_rows)) {
+    if (!BOUNDS_CHECK(buf->cursor->y, buf->num_rows)) {
         cur_sync_to_window(buf, win);
         return;
     }
 
-    Row *row = &buf->rows[buf->cursor.y];
-    if (buf->cursor.x >= (int)row->chars.len)
+    Row *row = &buf->rows[buf->cursor->y];
+    if (buf->cursor->x >= (int)row->chars.len)
         return;
 
-    char ch = row->chars.data[buf->cursor.x];
+    char ch = row->chars.data[buf->cursor->x];
     char match;
     int direction;
 
@@ -1010,8 +1010,8 @@ void buf_find_matching_bracket(void) {
     }
 
     int depth = 1;
-    int y = buf->cursor.y;
-    int x = buf->cursor.x + direction;
+    int y = buf->cursor->y;
+    int x = buf->cursor->x + direction;
 
     /* Search for matching bracket */
     while (y >= 0 && y < buf->num_rows) {
@@ -1025,8 +1025,8 @@ void buf_find_matching_bracket(void) {
                 depth--;
                 if (depth == 0) {
                     /* Found match */
-                    buf->cursor.y = y;
-                    buf->cursor.x = x;
+                    buf->cursor->y = y;
+                    buf->cursor->x = x;
                     cur_sync_to_window(buf, win);
                     return;
                 }

@@ -433,8 +433,8 @@ static void lsp_handle_definition_result(cJSON *result) {
     buf_open_or_switch(path, true);
     Buffer *buf = buf_cur();
     if (buf) {
-        buf->cursor.y = line < buf->num_rows ? line : buf->num_rows - 1;
-        buf->cursor.x = col;
+        buf->cursor->y = line < buf->num_rows ? line : buf->num_rows - 1;
+        buf->cursor->x = col;
     }
     ed_set_status_message("LSP: jumped to %s:%d", path, line + 1);
 }
