@@ -352,6 +352,143 @@ EdError buf_close(int index) {
     return ED_OK;
 }
 
+/*** Multi-cursor list management ***/
+
+Cursor *buf_cursor_add(Buffer *buf, int y, int x) {
+    if (!buf) return NULL;
+    Cursor *c = calloc(1, sizeof(Cursor));
+    if (!c) return NULL;
+    c->x = x;
+    c->y = y;
+    vec_push_typed(&buf->all_cursors, Cursor *, c);
+    /* vec_push_typed has no return value — detect failure by checking
+     * the tail. If the new entry isn't at len-1, the push failed. */
+    if (buf->all_cursors.len == 0 ||
+        buf->all_cursors.data[buf->all_cursors.len - 1] != c) {
+        free(c);
+        return NULL;
+    }
+    return c;
+}
+
+int buf_cursor_remove(Buffer *buf, Cursor *c) {
+    if (!buf || !c) return 0;
+    if (c == buf->cursor) return 0;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        if (buf->all_cursors.data[i] == c) {
+            free(c);
+            for (size_t j = i; j + 1 < buf->all_cursors.len; j++)
+                buf->all_cursors.data[j] = buf->all_cursors.data[j + 1];
+            buf->all_cursors.len--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void buf_cursor_clear_extras(Buffer *buf) {
+    if (!buf || !buf->cursor) return;
+    /* Keep only buf->cursor; free everything else. */
+    Cursor *keep = buf->cursor;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        if (buf->all_cursors.data[i] != keep)
+            free(buf->all_cursors.data[i]);
+    }
+    buf->all_cursors.data[0] = keep;
+    buf->all_cursors.len = 1;
+}
+
+int buf_cursor_set_active(Buffer *buf, Cursor *c) {
+    if (!buf || !c) return 0;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        if (buf->all_cursors.data[i] == c) {
+            buf->cursor = c;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int buf_cursor_count(const Buffer *buf) {
+    return buf ? (int)buf->all_cursors.len : 0;
+}
+
+void buf_cursor_sync_from_window(Buffer *buf) {
+    Window *win = window_cur();
+    if (!buf || !win || !buf->cursor) return;
+    /* Only sync when the focused window shows this buffer. */
+    if (win->buffer_index < 0 || win->buffer_index >= (int)E.buffers.len)
+        return;
+    if (&E.buffers.data[win->buffer_index] != buf) return;
+    buf->cursor->x = win->cursor.x;
+    buf->cursor->y = win->cursor.y;
+}
+
+/*** Auto-shift helpers — applied to non-active cursors after edits.
+ * The active cursor (buf->cursor) is updated separately via
+ * buf_cursor_sync_from_window(). ***/
+
+static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
+    if (!buf) return;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (c == buf->cursor) continue;
+        if (c->y == iy && c->x >= ix) c->x++;
+    }
+}
+
+static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
+    if (!buf) return;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (c == buf->cursor) continue;
+        if (c->y == iy && c->x > ix) c->x--;
+    }
+}
+
+static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
+    if (!buf) return;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (c == buf->cursor) continue;
+        if (c->y > iy) {
+            c->y++;
+        } else if (c->y == iy && c->x >= ix) {
+            c->y++;
+            c->x -= ix;
+        }
+    }
+}
+
+static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
+    if (!buf) return;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (c == buf->cursor) continue;
+        if (c->y == iy) {
+            c->y--;
+            c->x += join_at;
+        } else if (c->y > iy) {
+            c->y--;
+        }
+    }
+}
+
+static void cursors_after_delete_line(Buffer *buf, int iy) {
+    if (!buf) return;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (c == buf->cursor) continue;
+        if (c->y > iy) {
+            c->y--;
+        } else if (c->y == iy) {
+            /* Row gone; cursor lands on what's now at iy (or clamps). */
+            if (c->y >= buf->num_rows) c->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+            c->x = 0;
+        }
+    }
+}
+
 /*** Row operations ***/
 
 /* Insert a row into a specific buffer (no window/state changes) */
@@ -446,6 +583,8 @@ void buf_insert_char_in(Buffer *buf, int c) {
     int x0 = win->cursor.x;
     buf_row_insert_char_in(buf, &buf->rows[y0], x0, c);
     win->cursor.x = x0 + 1;
+    buf_cursor_sync_from_window(buf);
+    cursors_after_insert_char(buf, y0, x0);
 }
 
 void buf_insert_newline_in(Buffer *buf) {
@@ -481,6 +620,8 @@ void buf_insert_newline_in(Buffer *buf) {
      * insert the missing row so cursor always points to a valid line. */
     if (win->cursor.y >= buf->num_rows)
         buf_row_insert_in(buf, win->cursor.y, "", 0);
+    buf_cursor_sync_from_window(buf);
+    cursors_after_insert_newline(buf, y0, x0);
 }
 
 void buf_del_char_in(Buffer *buf) {
@@ -509,12 +650,16 @@ void buf_del_char_in(Buffer *buf) {
         hook_fire_char(HOOK_CHAR_DELETE, &event);
 
         win->cursor.x = x - 1;
+        buf_cursor_sync_from_window(buf);
+        cursors_after_delete_char(buf, y, x - 1);
     } else {
         int prev_len = buf->rows[y - 1].chars.len;
         win->cursor.x = prev_len;
         buf_row_append_in(buf, &buf->rows[y - 1], &row->chars);
         buf_row_del_in(buf, y);
         win->cursor.y = y - 1;
+        buf_cursor_sync_from_window(buf);
+        cursors_after_join_lines(buf, y, prev_len);
     }
 }
 
@@ -539,6 +684,7 @@ void buf_delete_line_in(Buffer *buf) {
                            buf->rows[win->cursor.y].chars.len};
     hook_fire_line(HOOK_LINE_DELETE, &event);
 
+    int deleted_y = win->cursor.y;
     buf_row_del_in(buf, win->cursor.y);
     if (buf->num_rows == 0) {
         buf_row_insert_in(buf, 0, "", 0);
@@ -548,6 +694,8 @@ void buf_delete_line_in(Buffer *buf) {
         win->cursor.y = buf->num_rows - 1;
     }
     win->cursor.x = 0;
+    buf_cursor_sync_from_window(buf);
+    cursors_after_delete_line(buf, deleted_y);
 }
 void buf_yank_line_in(Buffer *buf) {
     WIN(win)

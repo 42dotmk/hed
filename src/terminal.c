@@ -667,6 +667,45 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     }
 }
 
+/* Overlay reverse-video cells at every non-active cursor's on-screen
+ * position. Wrap mode is handled with the no-wrap mapping; positions
+ * may be slightly off in wrap mode but won't crash. */
+static void draw_extra_cursors_win(Abuf *ab, const Window *win) {
+    if (!win) return;
+    if (E.buffers.len == 0) return;
+    if (win->buffer_index < 0 || win->buffer_index >= (int)E.buffers.len) return;
+    Buffer *buf = &E.buffers.data[win->buffer_index];
+    if (!buf || buf->all_cursors.len <= 1) return;
+
+    int gutter = window_gutter_width(win, win->height);
+    int margin = gutter ? (gutter + 1) : 0;
+    int content_cols = win->width - margin;
+    if (content_cols <= 0) return;
+
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        Cursor *c = buf->all_cursors.data[i];
+        if (!c || c == buf->cursor) continue;
+        if (c->y < 0 || c->y >= buf->num_rows) continue;
+        if (c->y < win->row_offset || c->y >= win->row_offset + win->height)
+            continue;
+        Row *row = &buf->rows[c->y];
+        int rx = buf_row_cx_to_rx(row, c->x);
+        if (rx < win->col_offset || rx >= win->col_offset + content_cols)
+            continue;
+        int y_screen = (c->y - win->row_offset) + win->top;
+        int x_screen = (rx - win->col_offset) + win->left + margin;
+        ansi_move(ab, y_screen, x_screen);
+        ansi_invert_on(ab);
+        char ch = ' ';
+        if (c->x >= 0 && c->x < (int)row->chars.len) {
+            unsigned char raw = (unsigned char)row->chars.data[c->x];
+            ch = raw < 0x20 ? ' ' : (char)raw;
+        }
+        ab_append_ch(ab, ch);
+        ansi_sgr_reset(ab);
+    }
+}
+
 static void win_draw_modal_border(Abuf *ab, Window *win) {
     if (!win || !win->is_modal)
         return;
@@ -757,6 +796,7 @@ void ed_render_frame(void) {
     /* Draw all windows */
     for (int wi = 0; wi < (int)E.windows.len; ++wi) {
         ed_draw_rows_win(&ab, &E.windows.data[wi]);
+        draw_extra_cursors_win(&ab, &E.windows.data[wi]);
     }
     if (E.wlayout_root) {
         wlayout_draw_decorations(&ab, E.wlayout_root);

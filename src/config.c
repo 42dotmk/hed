@@ -10,6 +10,7 @@
 #include "fmt/fmt.h"
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
+#include "multicursor/multicursor.h"
 #include "plugin.h"
 #include "quickfix_preview/quickfix_preview.h"
 #include "reload/reload.h"
@@ -43,6 +44,7 @@ void config_init(void) {
     plugin_load(&plugin_sed,              1);
     plugin_load(&plugin_reload,           1);
     plugin_load(&plugin_session,          1);
+    plugin_load(&plugin_multicursor,      1);
 
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");

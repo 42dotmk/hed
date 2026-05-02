@@ -66,4 +66,18 @@ void buf_yank_line_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);
+
+/* Multi-cursor API. all_cursors always has >= 1 entry; buf->cursor
+ * always points to one of them. Adding/removing extras leaves
+ * buf->cursor itself untouched unless the caller passes it in. */
+Cursor *buf_cursor_add(Buffer *buf, int y, int x);  /* heap entry, stable ptr */
+int     buf_cursor_remove(Buffer *buf, Cursor *c);  /* fails if c is active */
+void    buf_cursor_clear_extras(Buffer *buf);       /* keep only active */
+int     buf_cursor_set_active(Buffer *buf, Cursor *c);
+int     buf_cursor_count(const Buffer *buf);
+
+/* Sync the active cursor's stored position from the focused window's
+ * cursor. Edit primitives call this after mutating win->cursor so
+ * buf->cursor stays in step. */
+void    buf_cursor_sync_from_window(Buffer *buf);
 #endif
