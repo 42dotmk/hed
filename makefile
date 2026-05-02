@@ -1,6 +1,10 @@
 CC=LD_LIBRARY_PATH=/usr/lib gcc
 BASE_CFLAGS = $(shell cat compile_flags.txt | tr '\n' ' ')
-CFLAGS = $(BASE_CFLAGS)
+# -MMD -MP emits .d depfiles next to each .o so header changes trigger
+# rebuilds of the right translation units. Without this, a struct
+# change in a header silently leaves stale .o files at incompatible
+# layouts and the linked binary segfaults at runtime.
+CFLAGS = $(BASE_CFLAGS) -MMD -MP
 
 SRC_DIR = src
 BUILD_DIR = build
@@ -51,6 +55,9 @@ $(BUILD_DIR):
 
 $(TARGET): $(OBJECTS) $(TS_DEPS)
 	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) $(TS_LDFLAGS)
+
+# Pull in auto-generated header dependencies (created by -MMD).
+-include $(OBJECTS:.o=.d)
 
 
 $(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(BUILD_DIR)
