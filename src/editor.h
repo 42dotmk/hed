@@ -149,6 +149,10 @@ extern Ed E;
 /* Input handling */
 int ed_read_key(void);
 void ed_process_keypress(void);
+/* Run the per-mode dispatch for one key (the part of ed_process_keypress
+ * after HOOK_KEYPRESS). Plugins use this to replay a key at multiple
+ * cursors without firing HOOK_KEYPRESS again. */
+void ed_dispatch_key(int c);
 void ed_move_cursor(int key);
 void ed_process_command(void);
 

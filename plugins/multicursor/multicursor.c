@@ -1,25 +1,24 @@
 /* multicursor: synchronized edits at multiple cursors.
  *
  * Adds extra cursors via :mc_add_below / :mc_add_above (or leader
- * keys). When the user types or backspaces in insert mode, the active
- * cursor's edit is mirrored at every extra cursor.
- *
- * The core auto-shifts non-active cursors as the buffer mutates
- * (see buf/buffer.c cursors_after_*). This plugin's job is just to
- * replay the same key at each extra so they all see the same edit.
+ * keys). When extras exist, every keypress runs the full dispatch
+ * once per cursor: the active first, then each extra (descending
+ * (y,x) order so earlier positions don't shift under later edits).
+ * Per-cursor dispatch restores the pre-keypress mode + key-sequence
+ * state, so multi-key sequences (operators, leader bindings) and
+ * mode changes (i/a/o/Esc) all replicate correctly.
  */
 
 #include "hed.h"
 #include "multicursor/multicursor.h"
 #include <stdlib.h>
 
-/* Re-entrancy guard: set while replaying so our own hook doesn't
- * recurse on the replayed edit's hook firing. */
+/* Re-entrancy guard: set while replaying so our own HOOK_KEYPRESS
+ * doesn't recurse on the per-cursor dispatch. */
 static int in_replay = 0;
 
-/* Sort cursor pointers descending by (y, x). Editing at later
- * positions first means earlier (unprocessed) positions don't shift,
- * so each replay lands at the cursor's intended column. */
+/* Sort cursor pointers descending by (y, x). Editing later positions
+ * first means earlier (unprocessed) positions don't shift. */
 static int cursor_pos_cmp_desc(const void *a, const void *b) {
     const Cursor *ca = *(const Cursor *const *)a;
     const Cursor *cb = *(const Cursor *const *)b;
@@ -27,57 +26,82 @@ static int cursor_pos_cmp_desc(const void *a, const void *b) {
     return cb->x - ca->x;
 }
 
-typedef enum { MC_OP_INSERT_CHAR, MC_OP_DELETE_CHAR } McOp;
+/* Run ed_dispatch_key(c) at every cursor. The active goes first;
+ * each subsequent dispatch starts from the same pre-keypress state
+ * (mode + key-sequence buffer), so e.g. `i` enters insert mode at
+ * each cursor instead of typing 'i' as a literal at the second one. */
+static void on_keypress(HookKeyEvent *event) {
+    if (in_replay || !event) return;
+    Buffer *buf = buf_cur();
+    if (!buf || buf_cursor_count(buf) <= 1) return;
 
-static void replay_at_extras(Buffer *buf, McOp op, int c) {
-    Window *win = window_cur();
-    if (!buf || !win || !buf->cursor) return;
-    if (buf->all_cursors.len <= 1) return;
+    int n = buf_cursor_count(buf);
+    Cursor **all = malloc(sizeof(Cursor *) * (size_t)n);
+    if (!all) return;
+    for (int i = 0; i < n; i++) all[i] = buf->all_cursors.data[i];
+    qsort(all, (size_t)n, sizeof(Cursor *), cursor_pos_cmp_desc);
 
-    Cursor *active = buf->cursor;
-    int n_extras = (int)buf->all_cursors.len - 1;
-    Cursor **extras = malloc(sizeof(Cursor *) * (size_t)n_extras);
-    if (!extras) return;
+    KeybindState saved_kb;
+    keybind_state_save(&saved_kb);
+    int saved_mode = E.mode;
+    int c = event->key;
 
-    int j = 0;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        if (buf->all_cursors.data[i] != active)
-            extras[j++] = buf->all_cursors.data[i];
-    }
-    qsort(extras, (size_t)n_extras, sizeof(Cursor *), cursor_pos_cmp_desc);
+    Cursor *original_active = buf->cursor;
 
     in_replay = 1;
-    for (int i = 0; i < n_extras; i++) {
-        buf->cursor = extras[i];
-        win->cursor.x = extras[i]->x;
-        win->cursor.y = extras[i]->y;
-        switch (op) {
-        case MC_OP_INSERT_CHAR: buf_insert_char_in(buf, c); break;
-        case MC_OP_DELETE_CHAR: buf_del_char_in(buf); break;
+    for (int i = 0; i < n; i++) {
+        /* The active cursor's count may have changed (e.g., the user
+         * triggered :mc_clear which removes everything but active).
+         * Bail out if the snapshot is no longer valid. */
+        if ((int)buf->all_cursors.len < n) break;
+
+        if (i > 0) {
+            /* Restore pre-keypress dispatch state for this replay so
+             * each cursor sees the same starting conditions. */
+            keybind_state_load(&saved_kb);
+            E.mode = saved_mode;
         }
-        /* sync handled by the edit primitive itself */
+
+        buf->cursor = all[i];
+        Window *win = window_cur();
+        if (win) {
+            win->cursor.x = all[i]->x;
+            win->cursor.y = all[i]->y;
+        }
+
+        ed_dispatch_key(c);
+
+        if (win) {
+            all[i]->x = win->cursor.x;
+            all[i]->y = win->cursor.y;
+        }
     }
     in_replay = 0;
 
-    buf->cursor = active;
-    win->cursor.x = active->x;
-    win->cursor.y = active->y;
-    free(extras);
-}
+    /* Restore the user's primary cursor as visually active. If the
+     * active was destroyed by an mc_* command during dispatch, fall
+     * back to whatever's at all_cursors[0]. */
+    Cursor *restore_to = NULL;
+    for (size_t i = 0; i < buf->all_cursors.len; i++) {
+        if (buf->all_cursors.data[i] == original_active) {
+            restore_to = original_active;
+            break;
+        }
+    }
+    if (!restore_to && buf->all_cursors.len > 0)
+        restore_to = buf->all_cursors.data[0];
+    if (restore_to) {
+        buf->cursor = restore_to;
+        Window *win = window_cur();
+        if (win) {
+            win->cursor.x = restore_to->x;
+            win->cursor.y = restore_to->y;
+        }
+    }
 
-static void on_char_insert(const HookCharEvent *e) {
-    if (in_replay || !e || !e->buf) return;
-    replay_at_extras(e->buf, MC_OP_INSERT_CHAR, e->c);
+    free(all);
+    event->consumed = 1;
 }
-
-static void on_char_delete(const HookCharEvent *e) {
-    if (in_replay || !e || !e->buf) return;
-    replay_at_extras(e->buf, MC_OP_DELETE_CHAR, 0);
-}
-
-/* Clear extras when switching buffers — the per-buffer state stays,
- * but we don't want stale extras leaking across save/reload either.
- * For now keep them; users explicitly clear with :mc_clear. */
 
 /* --- Commands --- */
 
@@ -146,14 +170,13 @@ static int multicursor_init(void) {
     cmd("mc_clear",     cmd_mc_clear,     "multicursor: keep only active cursor");
     cmd("mc_count",     cmd_mc_count,     "multicursor: show cursor count");
 
-    /* Vim leader cluster. <space>md / <space>mu add cursors; <space>mc clears. */
     mapn(" md", kb_mc_add_below, "multicursor: add cursor below");
     mapn(" mu", kb_mc_add_above, "multicursor: add cursor above");
     mapn(" mc", kb_mc_clear,     "multicursor: clear extras");
 
-    /* Replay character-level edits at every extra cursor. */
-    hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_char_insert);
-    hook_register_char(HOOK_CHAR_DELETE, MODE_INSERT, "*", on_char_delete);
+    /* Single keypress hook handles every mode and every key — the
+     * dispatch is replayed at each cursor with restored state. */
+    hook_register_key(HOOK_KEYPRESS, on_keypress);
 
     return 0;
 }

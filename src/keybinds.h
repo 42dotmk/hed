@@ -67,6 +67,19 @@ bool keybind_process(int key, int mode);
  */
 void keybind_clear_buffer(void);
 
+/* Snapshot/restore of dispatch state (key sequence buffer, pending count).
+ * Used by the multicursor plugin to replay a single keypress at every
+ * cursor with the same starting state. */
+typedef struct KeybindState {
+    char key_buffer[16]; /* matches KEY_BUFFER_SIZE in keybinds.c */
+    int  key_buffer_len;
+    int  pending_count;
+    int  have_count;
+} KeybindState;
+
+void keybind_state_save(KeybindState *out);
+void keybind_state_load(const KeybindState *in);
+
 /**
  * Get the total number of registered keybindings
  */

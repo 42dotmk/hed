@@ -131,6 +131,22 @@ void keybind_init(void) {
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
 }
 
+void keybind_state_save(KeybindState *out) {
+    if (!out) return;
+    memcpy(out->key_buffer, key_buffer, sizeof(out->key_buffer));
+    out->key_buffer_len = key_buffer_len;
+    out->pending_count  = pending_count;
+    out->have_count     = have_count;
+}
+
+void keybind_state_load(const KeybindState *in) {
+    if (!in) return;
+    memcpy(key_buffer, in->key_buffer, sizeof(key_buffer));
+    key_buffer_len = in->key_buffer_len;
+    pending_count  = in->pending_count;
+    have_count     = in->have_count;
+}
+
 /* Drop any prior keybind with the same (mode, sequence, filetype) tuple so
  * that the latest registration wins. Lets users override plugin defaults. */
 static void remove_duplicate(int mode, const char *sequence,

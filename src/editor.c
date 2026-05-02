@@ -286,12 +286,9 @@ static void handle_visual_mode_keypress(int c, Buffer *buf) {
     keybind_process(c, MODE_NORMAL);
 }
 
-/* Main keypress dispatcher - delegates to mode-specific handlers */
-void ed_process_keypress(void) {
-    int c = ed_read_key();
-    HookKeyEvent kev = { c, 0 };
-    hook_fire_key(HOOK_KEYPRESS, &kev);
-    if (kev.consumed) return;
+/* Per-mode dispatch for one key. Public so plugins (e.g., multicursor)
+ * can replay a key at multiple cursors without re-firing HOOK_KEYPRESS. */
+void ed_dispatch_key(int c) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
 
@@ -330,6 +327,15 @@ void ed_process_keypress(void) {
         HookCursorEvent ev = {buf, old_x, old_y, win->cursor.x, win->cursor.y};
         hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
     }
+}
+
+/* Main keypress dispatcher - delegates to mode-specific handlers */
+void ed_process_keypress(void) {
+    int c = ed_read_key();
+    HookKeyEvent kev = { c, 0 };
+    hook_fire_key(HOOK_KEYPRESS, &kev);
+    if (kev.consumed) return;
+    ed_dispatch_key(c);
 }
 
 
