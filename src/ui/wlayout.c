@@ -500,3 +500,61 @@ int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta) {
     parent->weight[pos] = w;
     return 1;
 }
+
+int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
+                       WSplitDir dir, int delta) {
+    if (!root || dir == WL_SINGLE || delta == 0)
+        return 0;
+    WLayoutNode *leaf = wlayout_find_leaf_by_index(root, leaf_index);
+    if (!leaf)
+        return 0;
+    /* Walk upward to the nearest ancestor with the requested split
+     * direction. Track which child subtree we came from at each step. */
+    WLayoutNode *child = leaf;
+    WLayoutNode *parent = leaf->parent;
+    while (parent && parent->dir != dir) {
+        child = parent;
+        parent = parent->parent;
+    }
+    if (!parent || parent->nchildren < 2)
+        return 0;
+    int pos = -1;
+    for (int i = 0; i < parent->nchildren; i++) {
+        if (parent->child[i] == child) {
+            pos = i;
+            break;
+        }
+    }
+    if (pos < 0)
+        return 0;
+    /* Pick a neighbor to absorb the inverse delta: prefer the next
+     * sibling, fall back to the previous one for the last child. */
+    int neighbor = (pos + 1 < parent->nchildren) ? pos + 1 : pos - 1;
+    if (neighbor < 0)
+        return 0;
+    /* Read each child's actual rendered size from the previous layout
+     * pass, then make weights absolute so subsequent compute_node
+     * reproduces those sizes exactly. The two participating children
+     * shift by ±delta; everyone else stays put. */
+    for (int i = 0; i < parent->nchildren; i++) {
+        if (!parent->child[i]) {
+            parent->weight[i] = 1;
+            continue;
+        }
+        int sz = (dir == WL_VERTICAL) ? parent->child[i]->width
+                                       : parent->child[i]->height;
+        if (sz < 1)
+            sz = 1;
+        parent->weight[i] = sz;
+    }
+    /* Clamp delta so neither participant drops below 1 cell. */
+    if (delta > 0 && delta > parent->weight[neighbor] - 1)
+        delta = parent->weight[neighbor] - 1;
+    if (delta < 0 && -delta > parent->weight[pos] - 1)
+        delta = -(parent->weight[pos] - 1);
+    if (delta == 0)
+        return 0;
+    parent->weight[pos]      += delta;
+    parent->weight[neighbor] -= delta;
+    return 1;
+}

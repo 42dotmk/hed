@@ -67,4 +67,13 @@ void wlayout_set_thickness_all(WLayoutNode *root, int thickness);
 
 /* Adjust weight of the split containing the given leaf index by delta. */
 int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta);
+
+/* Resize the focused leaf along a specific split axis by `delta` cells
+ * (positive grows, negative shrinks). Walks upward from the leaf to the
+ * nearest ancestor whose direction matches `dir`, then transfers `delta`
+ * cells between the focused subtree and an adjacent sibling. Operates
+ * on the sizes from the most recent layout pass, so the move is exact.
+ * Returns 1 on success, 0 if no matching ancestor or no room to move. */
+int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
+                       WSplitDir dir, int delta);
 #endif /* WLAYOUT_H */
