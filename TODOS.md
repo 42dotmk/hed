@@ -33,3 +33,6 @@ Keeping track of the list of open buffers at the current directory
 Ideation
 
 ## [DONE] Imports sanitization
+
+## [IN-PROGRESS] Multicursor support
+
