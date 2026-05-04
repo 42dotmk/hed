@@ -99,6 +99,10 @@ static int vim_keybinds_init(void) {
     mapn("<C-o>", kb_jump_backward, "jump back");
     mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
     mapn(">>", buf_indent_line, "indent");
+    mapn("<Right>", kb_win_grow_width,    "grow window width");
+    mapn("<Left>",  kb_win_shrink_width,  "shrink window width");
+    mapn("<Down>",  kb_win_grow_height,   "grow window height");
+    mapn("<Up>",    kb_win_shrink_height, "shrink window height");
     mapn("A", kb_end_append, "append eol");
     mapn("I", kb_start_insert, "insert bol");
     mapn("J", buf_join_lines, "join lines");

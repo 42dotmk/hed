@@ -37,6 +37,12 @@ void cmd_wright(const char *args);
 void cmd_wup(const char *args);
 void cmd_wdown(const char *args);
 
+/* Window resize. Each takes an optional positive cell count (default 5). */
+void cmd_wgrowwidth(const char *args);
+void cmd_wshrinkwidth(const char *args);
+void cmd_wgrowheight(const char *args);
+void cmd_wshrinkheight(const char *args);
+
 /* Quickfix */
 void cmd_copen(const char *args);
 void cmd_cclose(const char *args);

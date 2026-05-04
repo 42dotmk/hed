@@ -12,6 +12,7 @@
 #include "lib/errors.h"
 #include "utils/fzf.h"
 #include "terminal.h"
+#include "ui/wlayout.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -1160,4 +1161,21 @@ void kb_del_win(char direction) {
     }
     cmd_wclose(NULL);
 }
+
+/* Default cell delta for keybind-driven window resizing. Commands take
+ * an explicit count argument; keybinds use this fixed step. */
+#define WIN_RESIZE_STEP 5
+
+void win_resize_cells(WSplitDir dir, int delta) {
+    if (!E.wlayout_root || E.windows.len <= 1)
+        return;
+    if (E.modal_window && E.modal_window->visible)
+        return;
+    wlayout_resize_dir(E.wlayout_root, E.current_window, dir, delta);
+}
+
+void kb_win_grow_width(void)    { win_resize_cells(WL_VERTICAL,   +WIN_RESIZE_STEP); }
+void kb_win_shrink_width(void)  { win_resize_cells(WL_VERTICAL,   -WIN_RESIZE_STEP); }
+void kb_win_grow_height(void)   { win_resize_cells(WL_HORIZONTAL, +WIN_RESIZE_STEP); }
+void kb_win_shrink_height(void) { win_resize_cells(WL_HORIZONTAL, -WIN_RESIZE_STEP); }
 

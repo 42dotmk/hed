@@ -114,6 +114,14 @@ void kb_del_down(void);
 void kb_del_left(void);
 void kb_del_right(void);
 
+/* Resize the focused window inside its enclosing split.
+ * Width: target the nearest left/right (vertical) ancestor split.
+ * Height: target the nearest top/bottom (horizontal) ancestor split. */
+void kb_win_grow_width(void);
+void kb_win_shrink_width(void);
+void kb_win_grow_height(void);
+void kb_win_shrink_height(void);
+
 void kb_start_insert(void);
 void kb_end_append(void);
 

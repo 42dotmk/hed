@@ -9,8 +9,13 @@
 #include "commands/commands_ui.h"
 #include "commands/cmd_util.h"
 #include "editor.h"
+#include "ui/wlayout.h"
 #include <stdlib.h>
 #include <string.h>
+
+/* Defined in keybinds_builtins.c — guards against modal/single-window
+ * cases, then dispatches to wlayout_resize_dir on the focused leaf. */
+extern void win_resize_cells(WSplitDir dir, int delta);
 
 /* ============================================
  * WINDOW MANAGEMENT COMMANDS
@@ -54,6 +59,29 @@ void cmd_wup(const char *args) {
 void cmd_wdown(const char *args) {
     (void)args;
     windows_focus_down();
+}
+
+static int parse_resize_count(const char *args) {
+    int n = parse_int_default(args, 5);
+    if (n < 1)
+        n = 1;
+    return n;
+}
+
+void cmd_wgrowwidth(const char *args) {
+    win_resize_cells(WL_VERTICAL, +parse_resize_count(args));
+}
+
+void cmd_wshrinkwidth(const char *args) {
+    win_resize_cells(WL_VERTICAL, -parse_resize_count(args));
+}
+
+void cmd_wgrowheight(const char *args) {
+    win_resize_cells(WL_HORIZONTAL, +parse_resize_count(args));
+}
+
+void cmd_wshrinkheight(const char *args) {
+    win_resize_cells(WL_HORIZONTAL, -parse_resize_count(args));
 }
 
 void cmd_new(const char *args) {

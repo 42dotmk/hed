@@ -150,6 +150,10 @@ static void register_commands(void) {
     cmd("wj", cmd_wdown, "focus window down");
     cmd("wk", cmd_wup, "focus window up");
     cmd("wl", cmd_wright, "focus window right");
+    cmd("wgrowwidth",    cmd_wgrowwidth,    "grow window width by N (default 5)");
+    cmd("wshrinkwidth",  cmd_wshrinkwidth,  "shrink window width by N (default 5)");
+    cmd("wgrowheight",   cmd_wgrowheight,   "grow window height by N (default 5)");
+    cmd("wshrinkheight", cmd_wshrinkheight, "shrink window height by N (default 5)");
     cmd("modal", cmd_modal_from_current, "convert current window to modal");
     cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");
     cmd("foldnew", cmd_fold_new, "create fold region");
