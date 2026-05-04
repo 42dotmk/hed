@@ -3,8 +3,130 @@
 #include <stdarg.h>
 #include <sys/wait.h>
 
-static char tmux_pane_id[64] = {0};
-static int tmux_pane_id_set = 0;
+/* ---- Named-pane registry ------------------------------------------------
+ *
+ * Each registered pane gets a slot tracking its name, spawn command, and
+ * the tmux pane id once created. History is currently scoped to the
+ * runner pane only (it backs :tmux_send completion in command_mode.c) —
+ * if a future caller needs per-pane history this can be lifted into the
+ * slot.
+ */
+
+#define TMUX_PANES_MAX        8
+#define TMUX_PANE_NAME_MAX    32
+#define TMUX_PANE_SPAWN_MAX   256
+#define TMUX_PANE_ID_MAX      64
+
+typedef struct {
+    char         name[TMUX_PANE_NAME_MAX];
+    char         spawn_cmd[TMUX_PANE_SPAWN_MAX];
+    char         pane_id[TMUX_PANE_ID_MAX];
+    int          pane_id_set;
+    int          in_use;
+    TmuxSplitDir dir;
+} TmuxPaneSlot;
+
+static TmuxPaneSlot tmux_panes[TMUX_PANES_MAX];
+
+/* The most recently focused/opened pane name. Falls back to "runner",
+ * which the tmux plugin always registers. */
+static char tmux_last_focused[TMUX_PANE_NAME_MAX] = "runner";
+
+static void tmux_set_last_focused(const char *name) {
+    if (!name || !*name)
+        return;
+    snprintf(tmux_last_focused, sizeof(tmux_last_focused), "%s", name);
+}
+
+const char *tmux_last_focused_pane(void) { return tmux_last_focused; }
+
+static TmuxPaneSlot *tmux_pane_find(const char *name) {
+    if (!name || !*name)
+        return NULL;
+    for (int i = 0; i < TMUX_PANES_MAX; i++) {
+        if (tmux_panes[i].in_use && strcmp(tmux_panes[i].name, name) == 0)
+            return &tmux_panes[i];
+    }
+    return NULL;
+}
+
+static TmuxPaneSlot *tmux_pane_find_or_warn(const char *name) {
+    TmuxPaneSlot *slot = tmux_pane_find(name);
+    if (!slot)
+        ed_set_status_message("tmux: pane '%s' not registered",
+                              name ? name : "(null)");
+    return slot;
+}
+
+int tmux_pane_register(const char *name, const char *spawn_cmd,
+                       TmuxSplitDir dir) {
+    if (!name || !*name)
+        return 0;
+    if (strlen(name) >= TMUX_PANE_NAME_MAX) {
+        ed_set_status_message("tmux: pane name '%s' too long", name);
+        return 0;
+    }
+
+    TmuxPaneSlot *slot = tmux_pane_find(name);
+    if (!slot) {
+        for (int i = 0; i < TMUX_PANES_MAX; i++) {
+            if (!tmux_panes[i].in_use) {
+                slot = &tmux_panes[i];
+                break;
+            }
+        }
+        if (!slot) {
+            ed_set_status_message("tmux: pane registry full");
+            return 0;
+        }
+        slot->in_use = 1;
+        snprintf(slot->name, sizeof(slot->name), "%s", name);
+        slot->pane_id[0] = '\0';
+        slot->pane_id_set = 0;
+    }
+    snprintf(slot->spawn_cmd, sizeof(slot->spawn_cmd), "%s",
+             spawn_cmd ? spawn_cmd : "");
+    slot->dir = dir;
+    return 1;
+}
+
+int tmux_pane_attach(const char *name, const char *pane_id) {
+    if (!name || !*name || !pane_id || !*pane_id)
+        return 0;
+    if (strlen(pane_id) >= TMUX_PANE_ID_MAX) {
+        ed_set_status_message("tmux: pane id '%s' too long", pane_id);
+        return 0;
+    }
+    TmuxPaneSlot *slot = tmux_pane_find(name);
+    if (!slot) {
+        if (!tmux_pane_register(name, NULL, TMUX_SPLIT_BELOW))
+            return 0;
+        slot = tmux_pane_find(name);
+        if (!slot)
+            return 0;
+    }
+    snprintf(slot->pane_id, sizeof(slot->pane_id), "%s", pane_id);
+    slot->pane_id_set = 1;
+    ed_set_status_message("tmux: attached %s -> %s", slot->name, slot->pane_id);
+    return 1;
+}
+
+int tmux_pane_list(const char **out, int max) {
+    if (!out || max <= 0)
+        return 0;
+    int n = 0;
+    for (int i = 0; i < TMUX_PANES_MAX && n < max; i++) {
+        if (tmux_panes[i].in_use)
+            out[n++] = tmux_panes[i].name;
+    }
+    return n;
+}
+
+static char tmux_split_flag(TmuxSplitDir dir) {
+    return dir == TMUX_SPLIT_RIGHT ? 'h' : 'v';
+}
+
+/* ---- Runner-pane history (used by :tmux_send completion) --------------- */
 
 #define TMUX_HISTORY_MAX 64
 static char *tmux_history[TMUX_HISTORY_MAX];
@@ -125,8 +247,10 @@ int tmux_history_browse_down(char *out, int out_cap, int *restored) {
     return 1;
 }
 
+/* ---- tmux helpers ------------------------------------------------------- */
+
 static int tmux_systemf(const char *fmt, ...) {
-    char cmd[256];
+    char cmd[512];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(cmd, sizeof(cmd), fmt, ap);
@@ -146,10 +270,9 @@ int tmux_is_available(void) {
     return (tmux && *tmux) ? 1 : 0;
 }
 
-/* Check whether our cached pane id still refers to an existing pane
- * (in any window of the current session). */
-static int tmux_pane_exists(void) {
-    if (!tmux_pane_id_set || !tmux_pane_id[0])
+/* Check whether a slot's cached pane id still refers to a live tmux pane. */
+static int tmux_pane_alive(TmuxPaneSlot *slot) {
+    if (!slot || !slot->pane_id_set || !slot->pane_id[0])
         return 0;
 
     char **lines = NULL;
@@ -160,37 +283,36 @@ static int tmux_pane_exists(void) {
 
     int found = 0;
     for (int i = 0; i < count; i++) {
-        if (lines[i] && strcmp(lines[i], tmux_pane_id) == 0) {
+        if (lines[i] && strcmp(lines[i], slot->pane_id) == 0) {
             found = 1;
             break;
         }
     }
     term_cmd_free(lines, count);
     if (!found) {
-        tmux_pane_id_set = 0;
-        tmux_pane_id[0] = '\0';
+        slot->pane_id_set = 0;
+        slot->pane_id[0] = '\0';
     }
     return found;
 }
 
-int tmux_ensure_pane(void) {
-    if (!tmux_is_available()) {
-        ed_set_status_message("tmux: not inside tmux session");
-        return 0;
+static int tmux_pane_create(TmuxPaneSlot *slot) {
+    char split_cmd[512];
+    char flag = tmux_split_flag(slot->dir);
+    if (slot->spawn_cmd[0]) {
+        char esc[TMUX_PANE_SPAWN_MAX + 16];
+        shell_escape_single(slot->spawn_cmd, esc, sizeof(esc));
+        snprintf(split_cmd, sizeof(split_cmd),
+                 "tmux split-window -%c -d -P -F '#{pane_id}' %s", flag, esc);
+    } else {
+        snprintf(split_cmd, sizeof(split_cmd),
+                 "tmux split-window -%c -d -P -F '#{pane_id}'", flag);
     }
 
-    /* Reuse existing runner pane if it is still alive. */
-    if (tmux_pane_exists()) {
-        return 1;
-    }
-
-    /* Create a new vertical split in the CURRENT window and capture its
-     * pane_id. Use -d so tmux keeps focus in the editor pane. */
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux split-window -v -d -P -F '#{pane_id}'", &lines,
-                      &count)) {
-        ed_set_status_message("tmux: failed to create pane");
+    if (!term_cmd_run(split_cmd, &lines, &count)) {
+        ed_set_status_message("tmux: failed to create %s pane", slot->name);
         return 0;
     }
     if (count <= 0 || !lines[0] || !lines[0][0]) {
@@ -199,12 +321,26 @@ int tmux_ensure_pane(void) {
         return 0;
     }
 
-    snprintf(tmux_pane_id, sizeof(tmux_pane_id), "%s", lines[0]);
-    tmux_pane_id_set = 1;
+    snprintf(slot->pane_id, sizeof(slot->pane_id), "%s", lines[0]);
+    slot->pane_id_set = 1;
     term_cmd_free(lines, count);
 
-    ed_set_status_message("tmux: opened runner pane %s", tmux_pane_id);
+    tmux_set_last_focused(slot->name);
+    ed_set_status_message("tmux: opened %s pane %s", slot->name, slot->pane_id);
     return 1;
+}
+
+int tmux_pane_ensure(const char *name) {
+    if (!tmux_is_available()) {
+        ed_set_status_message("tmux: not inside tmux session");
+        return 0;
+    }
+    TmuxPaneSlot *slot = tmux_pane_find_or_warn(name);
+    if (!slot)
+        return 0;
+    if (tmux_pane_alive(slot))
+        return 1;
+    return tmux_pane_create(slot);
 }
 
 /* Get the current window id into out/outsz. Returns 1 on success, 0 on failure.
@@ -261,15 +397,18 @@ static int tmux_get_pane_window_id(const char *pane_id, char *out,
     return found;
 }
 
-int tmux_toggle_pane(void) {
+int tmux_pane_toggle(const char *name) {
     if (!tmux_is_available()) {
         ed_set_status_message("tmux: not inside tmux session");
         return 0;
     }
+    TmuxPaneSlot *slot = tmux_pane_find_or_warn(name);
+    if (!slot)
+        return 0;
 
     /* No cached/valid pane – create one attached to this window. */
-    if (!tmux_pane_exists()) {
-        return tmux_ensure_pane();
+    if (!tmux_pane_alive(slot)) {
+        return tmux_pane_create(slot);
     }
 
     /* Pane exists somewhere: toggle between visible in this window and "hidden"
@@ -277,7 +416,7 @@ int tmux_toggle_pane(void) {
     char cur_wid[64] = {0};
     char pane_wid[64] = {0};
     if (!tmux_get_current_window_id(cur_wid, sizeof(cur_wid)) ||
-        !tmux_get_pane_window_id(tmux_pane_id, pane_wid, sizeof(pane_wid))) {
+        !tmux_get_pane_window_id(slot->pane_id, pane_wid, sizeof(pane_wid))) {
         ed_set_status_message("tmux: failed to query pane/window");
         return 0;
     }
@@ -285,81 +424,148 @@ int tmux_toggle_pane(void) {
     if (strcmp(cur_wid, pane_wid) == 0) {
         /* Currently visible in this window -> hide by breaking into its own
          * window. */
-        int status = tmux_systemf("tmux break-pane -dP -s %s", tmux_pane_id);
+        int status = tmux_systemf("tmux break-pane -dP -s %s", slot->pane_id);
         if (status != 0) {
             /* Fallback: if breaking fails, try killing the pane so next toggle
              * recreates it. */
             int kill_status =
-                tmux_systemf("tmux kill-pane -t %s", tmux_pane_id);
-            tmux_pane_id_set = 0;
-            tmux_pane_id[0] = '\0';
+                tmux_systemf("tmux kill-pane -t %s", slot->pane_id);
+            slot->pane_id_set = 0;
+            slot->pane_id[0] = '\0';
             if (kill_status == 0) {
                 ed_set_status_message(
-                    "tmux: runner pane closed (break failed: %d)", status);
+                    "tmux: %s pane closed (break failed: %d)", slot->name,
+                    status);
                 return 1;
             }
-            ed_set_status_message("tmux: failed to hide pane %s (status %d)",
-                                  tmux_pane_id, status);
+            ed_set_status_message("tmux: failed to hide %s pane (status %d)",
+                                  slot->name, status);
             return 0;
         }
-        ed_set_status_message("tmux: hid runner pane");
+        ed_set_status_message("tmux: hid %s pane", slot->name);
         return 1;
     } else {
         /* Pane is in another window -> show by joining it into this window. */
-        int status = tmux_systemf("tmux join-pane -v -d -s %s", tmux_pane_id);
+        int status = tmux_systemf("tmux join-pane -%c -d -s %s",
+                                  tmux_split_flag(slot->dir), slot->pane_id);
         if (status != 0) {
-            ed_set_status_message("tmux: failed to show pane %s (status %d)",
-                                  tmux_pane_id, status);
+            ed_set_status_message("tmux: failed to show %s pane (status %d)",
+                                  slot->name, status);
             return 0;
         }
-        ed_set_status_message("tmux: showed runner pane");
+        tmux_set_last_focused(slot->name);
+        ed_set_status_message("tmux: showed %s pane", slot->name);
         return 1;
     }
 }
 
-int tmux_kill_pane(void) {
+int tmux_pane_focus(const char *name) {
     if (!tmux_is_available()) {
         ed_set_status_message("tmux: not inside tmux session");
         return 0;
     }
-    if (!tmux_pane_exists()) {
-        ed_set_status_message("tmux: no runner pane");
+    TmuxPaneSlot *slot = tmux_pane_find_or_warn(name);
+    if (!slot)
         return 0;
+
+    if (!tmux_pane_alive(slot)) {
+        if (!tmux_pane_create(slot))
+            return 0;
+    } else {
+        char cur_wid[64] = {0};
+        char pane_wid[64] = {0};
+        if (tmux_get_current_window_id(cur_wid, sizeof(cur_wid)) &&
+            tmux_get_pane_window_id(slot->pane_id, pane_wid,
+                                    sizeof(pane_wid)) &&
+            strcmp(cur_wid, pane_wid) != 0) {
+            int status =
+                tmux_systemf("tmux join-pane -%c -d -s %s",
+                             tmux_split_flag(slot->dir), slot->pane_id);
+            if (status != 0) {
+                ed_set_status_message(
+                    "tmux: failed to show %s pane (status %d)", slot->name,
+                    status);
+                return 0;
+            }
+        }
     }
 
-    int status = tmux_systemf("tmux kill-pane -t %s", tmux_pane_id);
+    int status = tmux_systemf("tmux select-pane -t %s", slot->pane_id);
     if (status != 0) {
-        ed_set_status_message("tmux: failed to kill pane %s (status %d)",
-                              tmux_pane_id, status);
+        ed_set_status_message("tmux: failed to focus %s pane (status %d)",
+                              slot->name, status);
         return 0;
     }
-    tmux_pane_id_set = 0;
-    tmux_pane_id[0] = '\0';
-    ed_set_status_message("tmux: killed runner pane");
+    tmux_set_last_focused(slot->name);
+    ed_set_status_message("tmux: focused %s pane", slot->name);
     return 1;
 }
 
-int tmux_send_command(const char *cmd) {
+int tmux_pane_kill(const char *name) {
+    if (!tmux_is_available()) {
+        ed_set_status_message("tmux: not inside tmux session");
+        return 0;
+    }
+    TmuxPaneSlot *slot = tmux_pane_find_or_warn(name);
+    if (!slot)
+        return 0;
+    if (!tmux_pane_alive(slot)) {
+        ed_set_status_message("tmux: no %s pane", slot->name);
+        return 0;
+    }
+
+    int status = tmux_systemf("tmux kill-pane -t %s", slot->pane_id);
+    if (status != 0) {
+        ed_set_status_message("tmux: failed to kill %s pane (status %d)",
+                              slot->name, status);
+        return 0;
+    }
+    slot->pane_id_set = 0;
+    slot->pane_id[0] = '\0';
+    ed_set_status_message("tmux: killed %s pane", slot->name);
+    return 1;
+}
+
+int tmux_pane_send(const char *name, const char *cmd) {
     if (!cmd || !*cmd) {
         ed_set_status_message("tmux: empty command");
         return 0;
     }
-    if (!tmux_ensure_pane()) {
-        /* tmux_ensure_pane already set an error status message. */
+    if (!tmux_pane_ensure(name)) {
+        /* tmux_pane_ensure already set an error status message. */
         return 0;
     }
+    TmuxPaneSlot *slot = tmux_pane_find(name);
+    if (!slot)
+        return 0;
 
     char esc[1024];
     shell_escape_single(cmd, esc, sizeof(esc));
 
     int status =
-        tmux_systemf("tmux send-keys -t %s %s Enter", tmux_pane_id, esc);
+        tmux_systemf("tmux send-keys -t %s %s Enter", slot->pane_id, esc);
     if (status != 0) {
         ed_set_status_message("tmux: send-keys failed (status %d)", status);
         return 0;
     }
 
-    tmux_history_add(cmd);
-    ed_set_status_message("tmux: sent to pane %s", tmux_pane_id);
+    /* History tracking is runner-pane only for now (it feeds :tmux_send
+     * completion). Other panes get send without history. */
+    if (strcmp(slot->name, "runner") == 0)
+        tmux_history_add(cmd);
+
+    ed_set_status_message("tmux: sent to %s pane %s", slot->name,
+                          slot->pane_id);
     return 1;
 }
+
+int tmux_pane_send_focused(const char *cmd) {
+    return tmux_pane_send(tmux_last_focused_pane(), cmd);
+}
+
+/* ---- Single-pane convenience API (operates on "runner") ---------------- */
+
+int tmux_ensure_pane(void)              { return tmux_pane_ensure("runner"); }
+int tmux_toggle_pane(void)              { return tmux_pane_toggle("runner"); }
+int tmux_kill_pane(void)                { return tmux_pane_kill("runner"); }
+int tmux_send_command(const char *cmd)  { return tmux_pane_send("runner", cmd); }
