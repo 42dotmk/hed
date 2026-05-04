@@ -3,6 +3,7 @@
 #include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
+#include "claude/claude.h"
 #include "clipboard/clipboard.h"
 #include "core/core.h"
 #include "dired/dired_plugin.h"
@@ -39,6 +40,7 @@ void config_init(void) {
     plugin_load(&plugin_smart_indent,     1);
     plugin_load(&plugin_fmt,              1);
     plugin_load(&plugin_tmux,             1);
+    plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
     plugin_load(&plugin_scratch,          1);
     plugin_load(&plugin_sed,              1);
@@ -81,6 +83,7 @@ void config_init(void) {
     cmapn(" wk", "wk");
     cmapn(" wl", "wl");
     cmapn(" ts", "tmux_send_line");
+    cmapn(" ai", "claude_toggle");
     mapn(" dl", kb_del_right, "del win right");
     mapn(" dh", kb_del_left, "del win left");
     mapn(" dj", kb_del_down, "del win down");
