@@ -78,6 +78,9 @@ static int vim_keybinds_init(void) {
     mapv("<Right>", kb_move_right, "right");
     mapv("y", kb_visual_yank_selection, "yank");
     mapv("d", kb_visual_delete_selection, "delete");
+    mapv("x",  kb_visual_delete_selection, "delete selection");
+    mapvl("x", kb_visual_delete_selection, "delete selection");
+    mapvb("x", kb_visual_delete_selection, "delete selection");
     mapv("v", kb_visual_escape, "exit visual");
     mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
     mapv("<Esc>", kb_visual_escape, "exit visual");
