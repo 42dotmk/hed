@@ -104,6 +104,12 @@ Each integration degrades cleanly if its tool is missing:
 - **Three swappable keymaps**: Vim (default), Emacs (modeless,
   `C-a/C-e/C-x` cluster), VSCode (modeless, `Ctrl+S/Z/F/D`,
   shift-arrow selection). Toggle at runtime with `:keymap`.
+- **whichkey hints**: pause partway through a chord (e.g. after
+  `<space>`) and a sorted, 1–4-column table of completions appears
+  in the message bar. Toggle with `<space>th`.
+- **Multiple cursors**: `:mc_add_below` / `:mc_add_above` add extra
+  cursors that mirror every subsequent keystroke through the full
+  dispatch pipeline.
 - **Tree-sitter highlighting** for any language you install via
   `tsi`. Grammars load on demand with `dlopen`.
 - **Fuzzy pickers**: `:fzf` files, `:recent` recent, `:c` commands,
@@ -137,10 +143,13 @@ Each has its own README; here's the catalogue:
 | [`emacs_keybinds`](plugins/emacs_keybinds/README.md) | Modeless Emacs keymap (`C-a/C-e`, `M-x`, `C-x` cluster) |
 | [`vscode_keybinds`](plugins/vscode_keybinds/README.md) | Modeless VSCode keymap (`Ctrl+S`, shift-arrow selection) |
 | [`keymap`](plugins/keymap/README.md) | `:keymap` and `:keymap-toggle` for runtime swap |
+| [`whichkey`](plugins/whichkey/README.md) | While a multi-key chord is in progress, list the candidate completions in a 1–4 column table |
+| [`multicursor`](plugins/multicursor/README.md) | Extra cursors that mirror every keypress (`:mc_add_below`, `:mc_add_above`) |
 | [`treesitter`](plugins/treesitter/README.md) | Syntax highlighting; grammars via `dlopen` |
 | [`clipboard`](plugins/clipboard/README.md) | OSC 52 yank to system clipboard (works over SSH) |
 | [`dired`](plugins/dired/README.md) | oil.nvim-style directory browser |
 | [`tmux`](plugins/tmux/README.md) | Runner pane integration |
+| [`claude`](plugins/claude/README.md) | Toggle a tmux pane running Claude Code (rides the tmux pane registry) |
 | [`fmt`](plugins/fmt/README.md) | `:fmt` runs an external formatter on the buffer |
 | [`auto_pair`](plugins/auto_pair/README.md) | Auto-insert matching brackets and quotes |
 | [`smart_indent`](plugins/smart_indent/README.md) | Carry indent onto new lines |
