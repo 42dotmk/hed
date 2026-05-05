@@ -16,8 +16,7 @@
 #include "config.h"
 #include "macros.h"
 #include <dirent.h>
-#include <limits.h>
-#include <linux/limits.h>
+#include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
