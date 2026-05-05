@@ -144,6 +144,7 @@ extern Ed E;
 
 /* Input handling */
 int ed_read_key(void);
+/* Pure key parser lives in input.h (`ed_parse_key_from_fd`). */
 void ed_process_keypress(void);
 /* Run the per-mode dispatch for one key (the part of ed_process_keypress
  * after HOOK_KEYPRESS). Plugins use this to replay a key at multiple
