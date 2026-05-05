@@ -20,6 +20,7 @@ void kb_delete_line(void);
 void kb_delete_to_line_end(void);
 void kb_yank_line(void);
 void kb_paste(void);
+void kb_paste_before(void);
 void kb_delete_char(void);
 /* Operator functions (wait for text object input) */
 void kb_operator_delete(void);

@@ -393,6 +393,11 @@ void kb_paste(void) {
     paste_from_register(buf, '"', true);
 }
 
+void kb_paste_before(void) {
+	BUFWIN(buf, win)
+    paste_from_register(buf, '"', false);
+}
+
 /* ========================================================================
  * Operator Functions (blocking text object composition)
  * ======================================================================== */
@@ -665,10 +670,10 @@ void kb_insert_escape(void) {
 void kb_search_prompt(void) { ed_search_prompt(); }
 
 /* Normal mode - cursor movement */
-void kb_move_left(void) { ed_move_cursor(KEY_ARROW_LEFT); }
-void kb_move_right(void) { ed_move_cursor(KEY_ARROW_RIGHT); }
-void kb_move_up(void) { ed_move_cursor(KEY_ARROW_UP); }
-void kb_move_down(void) { ed_move_cursor(KEY_ARROW_DOWN); }
+void kb_move_left(void) { buf_move_cursor_key(KEY_ARROW_LEFT); }
+void kb_move_right(void) { buf_move_cursor_key(KEY_ARROW_RIGHT); }
+void kb_move_up(void) { buf_move_cursor_key(KEY_ARROW_UP); }
+void kb_move_down(void) { buf_move_cursor_key(KEY_ARROW_DOWN); }
 
 /* Apply a text-object motion to the active window's cursor. Used by
  * the modeless keymap plugins (emacs, vscode) so they don't have to

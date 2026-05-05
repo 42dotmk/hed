@@ -35,6 +35,11 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
                     sstr_append_char(&result, '\n');
                 }
             }
+            /* Trailing newline marks the yank as line-wise so paste
+             * inserts as new lines (matches vim yy/p semantics). */
+            if (yd->type == SEL_VISUAL_LINE) {
+                sstr_append_char(&result, '\n');
+            }
             break;
 
         case SEL_VISUAL_BLOCK:
@@ -218,6 +223,10 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
 
     size_t start = 0;
     size_t len = reg->len;
+    /* Trailing newline marks a line-wise yank — treat it as a terminator,
+     * not as a separator that introduces an extra empty line. */
+    int has_trailing_nl = (len > 0 && reg->data[len - 1] == '\n');
+    if (has_trailing_nl) len--;
     int insert_row = at;
     for (size_t i = 0; i <= len; i++) {
         if (i == len || reg->data[i] == '\n') {

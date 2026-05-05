@@ -51,6 +51,7 @@ static int set_selection(TextSelection *sel, TextPos start, TextPos end,
     sel->start = start;
     sel->end = end;
     sel->cursor = cursor;
+    sel->type = SEL_VISUAL;
     return 1;
 }
 
@@ -633,7 +634,9 @@ int textobj_line(Buffer *buf, int line, int col, TextSelection *sel) {
     int x = clamp_col(row, col);
     int len = (int)row->chars.len;
     TextPos cursor = {y, x};
-    return set_selection(sel, (TextPos){y, 0}, (TextPos){y, len}, cursor);
+    int ok = set_selection(sel, (TextPos){y, 0}, (TextPos){y, len}, cursor);
+    if (ok) sel->type = SEL_VISUAL_LINE;
+    return ok;
 }
 
 int textobj_brackets(Buffer *buf, int line, int col, TextSelection *sel) {

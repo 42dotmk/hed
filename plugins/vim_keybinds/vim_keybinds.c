@@ -125,7 +125,8 @@ static int vim_keybinds_init(void) {
     mapn("gF", kb_search_file_under_cursor, "search file");
     mapn("i", kb_enter_insert_mode, "insert");
     mapn("n", kb_search_next, "next match");
-    mapn("p", kb_paste, "paste");
+    mapn("p", kb_paste, "paste after");
+    mapn("P", kb_paste_before, "paste before");
     mapn("r", kb_replace_char, "replace char");
     mapn("x", kb_delete_char, "del char");
     mapn("yy", kb_yank_line, "yank line");

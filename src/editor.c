@@ -101,10 +101,6 @@ int ed_read_key(void) {
     return key;
 }
 
-void ed_move_cursor(int key) {
-    (void)key;
-    buf_move_cursor_key(key);
-}
 
 static void handle_edit_mode_keypress(int c) {
     if (keybind_process(c, E.mode))
