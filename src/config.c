@@ -24,6 +24,7 @@
 #include "viewmd/viewmd_plugin.h"
 #include "vim_keybinds/vim_keybinds.h"
 #include "vscode_keybinds/vscode_keybinds.h"
+#include "whichkey/whichkey.h"
 
 void config_init(void) {
     plugin_load(&plugin_core,             1);
@@ -47,6 +48,7 @@ void config_init(void) {
     plugin_load(&plugin_reload,           1);
     plugin_load(&plugin_session,          1);
     plugin_load(&plugin_multicursor,      1);
+    plugin_load(&plugin_whichkey,         1);
 
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");

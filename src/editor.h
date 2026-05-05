@@ -92,7 +92,7 @@ typedef struct {
     int relative_line_numbers; /* 0=absolute only, 1=relative (abs on current)
                                 */
 
-    char status_msg[256];
+    char status_msg[4096];
 
     SizedStr search_query;
     int search_is_regex; /* 1=regex search, 0=literal */

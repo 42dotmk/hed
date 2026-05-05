@@ -81,6 +81,27 @@ void hook_register_simple(HookType type, HookSimpleCallback callback) {
     hook_push(type, -1, "*", (void *)callback);
 }
 
+void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb) {
+    hook_push(type, -1, "*", (void *)cb);
+}
+
+void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb) {
+    hook_push(type, -1, "*", (void *)cb);
+}
+
+int hook_unregister(HookType type, void *callback) {
+    if (type >= HOOK_TYPE_COUNT) return 0;
+    int removed = 0;
+    for (ptrdiff_t i = arrlen(hooks[type]) - 1; i >= 0; i--) {
+        if (hooks[type][i].callback == callback) {
+            free(hooks[type][i].filetype);
+            arrdel(hooks[type], i);
+            removed++;
+        }
+    }
+    return removed;
+}
+
 void hook_fire_char(HookType type, const HookCharEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
@@ -142,6 +163,23 @@ void hook_fire_simple(HookType type) {
         return;
     for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
         ((HookSimpleCallback)hooks[type][i].callback)();
+    }
+}
+
+void hook_fire_keybind_feed(HookType type, const HookKeybindFeedEvent *event) {
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookKeybindFeedCallback)hooks[type][i].callback)(event);
+    }
+}
+
+void hook_fire_keybind_invoke(HookType type,
+                              const HookKeybindInvokeEvent *event) {
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookKeybindInvokeCallback)hooks[type][i].callback)(event);
     }
 }
 

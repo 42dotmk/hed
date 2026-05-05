@@ -1,6 +1,7 @@
 #ifndef KEYBINDS_H
 #define KEYBINDS_H
 #include "editor.h"
+#include "commands.h"
 #include <stdbool.h>
 
 /* Keybinding callback signature */
@@ -60,6 +61,83 @@ void keybind_register_command_ft(int mode, const char *sequence,
  * @return 1 if keybind was matched and executed, 0 if not matched
  */
 bool keybind_process(int key, int mode);
+
+/* ------------------------------------------------------------------ */
+/* Two-phase API: feed a key, then optionally invoke the exact match. */
+/* keybind_process() is a thin wrapper around feed + invoke that      */
+/* preserves the legacy single-call dispatch.                         */
+/* ------------------------------------------------------------------ */
+
+/* A single keybinding visible to a feed result. Pointers reference
+ * registry-owned storage and stay valid until the binding is replaced
+ * via re-registration; do not free them. The callback/command_callback
+ * fields are the invoke handle — pass a view to keybind_invoke(). */
+typedef struct KeybindMatchView {
+    const char     *sequence;
+    const char     *desc;
+    int             mode;
+    bool            is_command;        /* runs a :command instead of a callback */
+    bool            filetype_specific; /* registered with a non-NULL filetype */
+    /* Invoke handle. Treat as opaque from the UI side. */
+    KeybindCallback callback;
+    CommandCallback command_callback;
+    const char     *cmdline;           /* for command bindings (== desc); NULL otherwise */
+} KeybindMatchView;
+
+typedef struct KeybindFeedResult {
+    /* Sequence accumulated so far (NUL-terminated, possibly empty). */
+    const char *active_sequence;
+    int         active_len;
+
+    /* Numeric prefix typed so far (Vim-style count). Meaningful only
+     * when has_count is true. */
+    int  count;
+    bool has_count;
+
+    /* True when active_sequence is itself a registered keybinding —
+     * pass exact_match to keybind_invoke() to execute it. */
+    bool exact;
+    KeybindMatchView exact_match; /* valid iff exact */
+
+    /* True when at least one *other* registered keybinding has
+     * active_sequence as a strict prefix (more keys could complete
+     * a different binding). */
+    bool partial;
+
+    /* The key was swallowed as part of the numeric prefix and the
+     * sequence buffer is still empty. matches is empty in this case
+     * to avoid dumping the entire keymap. */
+    bool consumed_count_only;
+
+    /* Single unmapped key in NORMAL mode: keybind_process() falls
+     * back to operator_move. Exposed here so callers driving the
+     * API directly can decide for themselves. */
+    bool fallback_textobj;
+
+    /* stb_ds dynamic array of all matches for the current
+     * active_sequence (empty when active_sequence is empty). Includes
+     * both the exact match and sequences still waiting to complete.
+     * Free with keybind_feed_result_free. */
+    KeybindMatchView *matches;
+} KeybindFeedResult;
+
+/* Feed one key into the dispatcher. Updates the internal sequence
+ * buffer and numeric prefix and returns a snapshot of the resulting
+ * state. Does NOT run any callback. */
+KeybindFeedResult keybind_feed(int key, int mode);
+
+/* Free the matches array attached to a feed result. */
+void keybind_feed_result_free(KeybindFeedResult *r);
+
+/* Execute a specific keybinding `repeat` times. Stateless: does not
+ * read or modify the sequence buffer or the numeric prefix; the
+ * caller decides which binding to run and how many times. Updates
+ * the `.` register so a subsequent dot-repeat can replay the
+ * sequence. `repeat` is clamped to >= 1.
+ *
+ * Typical use: pass &result.exact_match from a feed result, with
+ * `repeat = result.has_count ? result.count : 1`. */
+void keybind_invoke(const KeybindMatchView *match, int repeat);
 
 /**
  * Clear the current key sequence buffer

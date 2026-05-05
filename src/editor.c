@@ -122,6 +122,7 @@ static void handle_edit_mode_keypress(int c) {
     case MODE_VISUAL:
     case MODE_NORMAL:
         keybind_process(c, MODE_NORMAL);
+
         return;
 
     case MODE_COMMAND:

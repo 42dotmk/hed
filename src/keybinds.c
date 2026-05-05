@@ -1,6 +1,7 @@
 #include "keybinds.h"
 #include "editor.h"
 #include "commands.h"
+#include "hooks.h"
 #include "lib/log.h"
 #include "stb_ds.h"
 #include <stdio.h>
@@ -14,7 +15,7 @@
 #include <time.h>
 
 #define KEY_BUFFER_SIZE 16
-#define SEQUENCE_TIMEOUT_MS 1000
+#define SEQUENCE_TIMEOUT_MS 5000
 
 /* Keybinding entry */
 typedef struct {
@@ -285,8 +286,27 @@ int keybind_get_and_clear_pending_count(void) {
     return count;
 }
 
-/* Process a key press through the keybinding system */
-bool keybind_process(int key, int mode) {
+/* Build a view onto a registry entry for callers. */
+static KeybindMatchView make_view(const Keybind *kb) {
+    bool is_command = kb->command_callback != NULL;
+    KeybindMatchView v = {
+        .sequence          = kb->sequence,
+        .desc              = kb->desc,
+        .mode              = kb->mode,
+        .is_command        = is_command,
+        .filetype_specific = kb->filetype != NULL,
+        .callback          = kb->callback,
+        .command_callback  = kb->command_callback,
+        .cmdline           = is_command ? kb->desc : NULL,
+    };
+    return v;
+}
+
+/* Feed one key into the dispatcher. Mutates the sequence buffer and
+ * count state, but never runs a callback. */
+KeybindFeedResult keybind_feed(int key, int mode) {
+    KeybindFeedResult r = {0};
+
     /* Numeric prefix only applies in normal mode */
     if (mode != MODE_NORMAL) {
         pending_count = 0;
@@ -298,49 +318,58 @@ bool keybind_process(int key, int mode) {
         keybind_clear_buffer();
     }
 
-    /* Update timestamp */
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
 
-    /* Numeric prefix handling (normal mode, idle buffer) */
-    if (mode == MODE_NORMAL && key_buffer_len == 0) {
-        if (key >= '0' && key <= '9') {
-            if (have_count || key != '0') {
-                int digit = key - '0';
-                pending_count = pending_count * 10 + digit;
-                if (pending_count > 1000000) {
-                    pending_count = 1000000;
-                    log_msg("Warning: numeric prefix capped at 1,000,000");
-                }
-                have_count = true;
-                return true;
-            }
+    /* Numeric prefix: consumed before any sequence char is appended. */
+    if (mode == MODE_NORMAL && key_buffer_len == 0 &&
+        key >= '0' && key <= '9' && (have_count || key != '0')) {
+        int digit = key - '0';
+        pending_count = pending_count * 10 + digit;
+        if (pending_count > 1000000) {
+            pending_count = 1000000;
+            log_msg("Warning: numeric prefix capped at 1,000,000");
         }
+        have_count = true;
+
+        r.active_sequence     = key_buffer; /* still empty */
+        r.active_len          = 0;
+        r.count               = pending_count;
+        r.has_count           = true;
+        r.consumed_count_only = true;
+
+        HookKeybindFeedEvent ev = {
+            .active_sequence     = r.active_sequence,
+            .active_len          = r.active_len,
+            .count               = r.count,
+            .has_count           = r.has_count,
+            .consumed_count_only = true,
+        };
+        hook_fire_keybind_feed(HOOK_KEYBIND_FEED, &ev);
+        return r;
     }
 
     /* Convert key to string and append to buffer */
     char key_str[128];
     key_to_string(key, key_str, sizeof(key_str));
 
-    /* Append to buffer if there's space */
     if (key_buffer_len + strlen(key_str) < KEY_BUFFER_SIZE - 1) {
         EdError err = safe_strcat(key_buffer, key_str, KEY_BUFFER_SIZE);
         if (err != ED_OK) {
-            /* Shouldn't happen due to check above, but handle gracefully */
             keybind_clear_buffer();
             safe_strcpy(key_buffer, key_str, KEY_BUFFER_SIZE);
         }
         key_buffer_len = strlen(key_buffer);
     } else {
-        /* Buffer full, clear and start over */
         keybind_clear_buffer();
         safe_strcpy(key_buffer, key_str, KEY_BUFFER_SIZE);
         key_buffer_len = strlen(key_buffer);
     }
 
-    /* Check for exact matches — filetype-specific takes priority over global */
-    int exact_match    = -1; /* best global match */
-    int exact_ft_match = -1; /* best filetype-specific match */
-    int partial_match  = 0;
+    /* Scan registry. Filetype-specific matches take priority over global
+     * for the same sequence. Collect every (still-reachable) match —
+     * exact or partial — for the caller to display. */
+    int exact_global = -1;
+    int exact_ft     = -1;
 
     const char *cur_ft = NULL;
     {
@@ -351,64 +380,117 @@ bool keybind_process(int key, int mode) {
     for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
         if (keybinds[i].mode != mode) continue;
 
-        if (strcmp(keybinds[i].sequence, key_buffer) == 0) {
-            if (keybinds[i].filetype == NULL) {
-                if (exact_match < 0) exact_match = (int)i; /* keep first global */
-            } else if (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0) {
-                exact_ft_match = (int)i; /* filetype match wins immediately */
-                break;
+        bool ft_applicable =
+            keybinds[i].filetype == NULL ||
+            (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0);
+        if (!ft_applicable) continue;
+
+        bool is_exact = strcmp(keybinds[i].sequence, key_buffer) == 0;
+        bool is_prefix =
+            !is_exact &&
+            strncmp(keybinds[i].sequence, key_buffer, key_buffer_len) == 0;
+
+        if (is_exact) {
+            if (keybinds[i].filetype) {
+                exact_ft = (int)i;
+            } else if (exact_global < 0) {
+                exact_global = (int)i; /* keep first global */
             }
-            /* filetype set but doesn't match current — skip */
-            continue;
         }
 
-        /* Partial match: include if global or filetype matches */
-        if (strncmp(keybinds[i].sequence, key_buffer, key_buffer_len) == 0) {
-            if (keybinds[i].filetype == NULL ||
-                (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0))
-                partial_match = 1;
+        if (is_exact || is_prefix) {
+            arrput(r.matches, make_view(&keybinds[i]));
         }
     }
 
-    int use_match = exact_ft_match >= 0 ? exact_ft_match : exact_match;
+    int exact_idx = exact_ft >= 0 ? exact_ft : exact_global;
 
-    /* Exact match found - execute action */
-    if (use_match >= 0) {
-        int repeat = have_count ? pending_count : 1;
-        if (repeat < 1) repeat = 1;
-        if (keybinds[use_match].callback) {
-            for (int r = 0; r < repeat; r++) {
-                keybinds[use_match].callback();
-                if (!have_count) break;
-            }
-        } else if (keybinds[use_match].command_callback) {
-            for (int r = 0; r < repeat; r++) {
-                keybinds[use_match].command_callback(keybinds[use_match].desc);
-                if (!have_count) break;
-            }
-        }
-        regs_set_dot(key_buffer, key_buffer_len);
+    r.active_sequence = key_buffer;
+    r.active_len      = key_buffer_len;
+    r.count           = pending_count;
+    r.has_count       = have_count;
+    r.exact           = exact_idx >= 0;
+    if (r.exact) {
+        r.exact_match = make_view(&keybinds[exact_idx]);
+    }
+    /* "Partial" = at least one *other* sequence could still be completed.
+     * If only the exact match itself is in the list, there's no point
+     * waiting for more keys. */
+    r.partial = arrlen(r.matches) > (r.exact ? 1 : 0);
+
+    /* Single unmapped key in NORMAL: caller may want operator_move. */
+    if (!r.exact && !r.partial && mode == MODE_NORMAL && key_buffer_len == 1) {
+        r.fallback_textobj = true;
+    }
+
+    HookKeybindFeedEvent ev = {
+        .active_sequence     = r.active_sequence,
+        .active_len          = r.active_len,
+        .count               = r.count,
+        .has_count           = r.has_count,
+        .exact               = r.exact,
+        .partial             = r.partial,
+        .consumed_count_only = r.consumed_count_only,
+        .matches             = r.matches,
+        .match_count         = (int)arrlen(r.matches),
+    };
+    hook_fire_keybind_feed(HOOK_KEYBIND_FEED, &ev);
+
+    return r;
+}
+
+void keybind_feed_result_free(KeybindFeedResult *r) {
+    if (!r) return;
+    arrfree(r->matches);
+    r->matches = NULL;
+}
+
+void keybind_invoke(const KeybindMatchView *m, int repeat) {
+    if (!m) return;
+    if (repeat < 1) repeat = 1;
+
+    HookKeybindInvokeEvent ev = { .match = m, .repeat = repeat };
+    hook_fire_keybind_invoke(HOOK_KEYBIND_INVOKE, &ev);
+
+    if (m->callback) {
+        for (int i = 0; i < repeat; i++) m->callback();
+    } else if (m->command_callback) {
+        for (int i = 0; i < repeat; i++) m->command_callback(m->cmdline);
+    } else {
+        return;
+    }
+
+    /* Record the invoked sequence in the . register so dot-repeat
+     * can replay it. */
+    if (m->sequence) {
+        regs_set_dot(m->sequence, strlen(m->sequence));
+    }
+}
+
+/* Legacy single-call dispatch: feed + invoke on exact match, with
+ * the NORMAL-mode single-key textobj fallback. */
+bool keybind_process(int key, int mode) {
+    KeybindFeedResult r = keybind_feed(key, mode);
+    bool handled = false;
+
+    if (r.exact) {
+        int repeat = r.has_count ? r.count : 1;
+        keybind_invoke(&r.exact_match, repeat);
         keybind_clear_buffer();
-        return true;
-    }
-
-    /* Partial match - wait for more keys */
-    if (partial_match) {
-        return true; /* Consumed the key, waiting for more */
-    }
-
-    /* No match - try text object movement fallback in normal mode */
-    if (mode == MODE_NORMAL && key_buffer_len == 1) {
-        /* Single unmapped key in normal mode - try as text object movement */
+        handled = true;
+    } else if (r.partial || r.consumed_count_only) {
+        handled = true;
+    } else if (r.fallback_textobj) {
         int fallback_key = key_buffer[0];
         keybind_clear_buffer();
         kb_operator_move(fallback_key);
-        return true; /* Handled by fallback */
+        handled = true;
+    } else {
+        keybind_clear_buffer();
     }
 
-    /* No match and no fallback - clear buffer and return 0 (not handled) */
-    keybind_clear_buffer();
-    return false;
+    keybind_feed_result_free(&r);
+    return handled;
 }
 
 /* ========================================================================
