@@ -34,5 +34,10 @@ Ideation
 
 ## [DONE] Imports sanitization
 
+## [DONE] Replace vector.h/c with stb_ds.h
+No need to maintain this, stb_ds is much better and has more funcitonality already
+
+
+
 ## [IN-PROGRESS] Multicursor support
 

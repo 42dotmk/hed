@@ -1,9 +1,5 @@
 CC=LD_LIBRARY_PATH=/usr/lib gcc
 BASE_CFLAGS = $(shell cat compile_flags.txt | tr '\n' ' ')
-# -MMD -MP emits .d depfiles next to each .o so header changes trigger
-# rebuilds of the right translation units. Without this, a struct
-# change in a header silently leaves stale .o files at incompatible
-# layouts and the linked binary segfaults at runtime.
 CFLAGS = $(BASE_CFLAGS) -MMD -MP
 
 SRC_DIR = src
@@ -18,13 +14,12 @@ TS_LIB_A   := $(BUILD_DIR)/libtree-sitter.a
 TARGET = $(BUILD_DIR)/hed
 TSI    = $(BUILD_DIR)/tsi
 
+INSTALL_DIR ?= $(HOME)/.local/bin
+
 # Core sources: everything under src/ except the in-tree plugins subtree.
 CORE_SOURCES = $(shell find $(SRC_DIR) -type f -name "*.c" -not -path "$(SRC_DIR)/plugins/*")
 PLUGIN_SOURCES = $(shell find $(PLUGINS_DIR) -type f -name "*.c" 2>/dev/null)
 
-# Optional plugin filtering / library linking.
-# -rdynamic exports ts_* symbols from the binary so dlopen'd grammar .so
-# files can resolve them against our statically linked runtime.
 ifeq ($(WITH_TREESITTER),1)
 TS_LDFLAGS  := $(TS_LIB_A) -ldl -rdynamic
 TS_DEPS     := $(TS_LIB_A)
@@ -78,20 +73,13 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 $(TSI): ts/ts_lang_install.c
 	$(CC) -Wall -Wextra -O2 -I/usr/include -o $@ $<
 
-# Where `make install` puts the symlinks. Override with:
-#   make install INSTALL_DIR=/some/other/dir
-INSTALL_DIR ?= $(HOME)/.local/bin
 
-# Symlink build/hed and build/tsi into INSTALL_DIR. Symlinks rather than
-# copies so subsequent rebuilds (incl. :reload from inside the editor)
-# update the installed binary automatically.
 install: $(TARGET) $(TSI)
 	@mkdir -p $(INSTALL_DIR)
 	ln -sf $(abspath $(TARGET)) $(INSTALL_DIR)/hed
 	ln -sf $(abspath $(TSI))    $(INSTALL_DIR)/tsi
 	@echo "Symlinked hed and tsi -> $(INSTALL_DIR)"
 
-# System-wide install (kept for releases / packaging).
 publish: $(TARGET) $(TSI)
 	@echo "Publishing hed and tsi to /usr/local/bin/"
 	cp $(TARGET) /usr/local/bin/hed
@@ -117,8 +105,7 @@ fmt:
 	clang-format -i $(SOURCES) $(HEADERS)
 
 tags:
-	ctags -R --languages=C src $(PLUGINS_DIR)
-
+	ctags -R --languages=C $(SRC_DIR) $(PLUGINS_DIR)
 
 run: $(TARGET)
 	./$(TARGET)
