@@ -7,8 +7,8 @@ EdError session_save(const char *path) {
     FILE *f = fopen(path, "w");
     if (!f) return ED_ERR_INVALID_INDEX;
 
-    for (size_t i = 0; i < E.buffers.len; i++) {
-        const Buffer *b = &E.buffers.data[i];
+    for (size_t i = 0; i < arrlen(E.buffers); i++) {
+        const Buffer *b = &E.buffers[i];
         if (!b->filename || !*b->filename) continue;
         const char *prefix = ((int)i == E.current_buffer) ? "* " : "  ";
         fprintf(f, "%s%s\n", prefix, b->filename);
@@ -41,8 +41,8 @@ EdError session_restore(const char *path) {
 
     /* Close any empty, unnamed placeholder buffer left from startup.
      * Closing shifts higher indices down, so adjust target. */
-    for (size_t i = 0; i < E.buffers.len; ) {
-        Buffer *b = &E.buffers.data[i];
+    for (size_t i = 0; i < arrlen(E.buffers); ) {
+        Buffer *b = &E.buffers[i];
         if ((!b->filename || !*b->filename) && b->num_rows == 0 && !b->dirty) {
             if ((int)i < target) target--;
             else if ((int)i == target) target = -1;
@@ -52,7 +52,7 @@ EdError session_restore(const char *path) {
         i++;
     }
 
-    if (target >= 0 && target < (int)E.buffers.len) {
+    if (target >= 0 && target < (int)arrlen(E.buffers)) {
         buf_switch(target);
     }
     return ED_OK;

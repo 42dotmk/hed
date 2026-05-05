@@ -193,9 +193,9 @@ void window_scroll(Window *win) {
     Buffer *buf = NULL;
     if (!win)
         return;
-    if (E.buffers.len > 0 && win->buffer_index >= 0 &&
-        win->buffer_index < (int)E.buffers.len)
-        buf = &E.buffers.data[win->buffer_index];
+    if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
     if (!buf || !win)
         return;
 
@@ -284,9 +284,9 @@ static int window_gutter_width(const Window *win, int view_rows) {
         return 0;
     /* Auto line-number mode: use current window's buffer for width calc */
     Buffer *buf = NULL;
-    if (E.buffers.len > 0 && win->buffer_index >= 0 &&
-        win->buffer_index < (int)E.buffers.len)
-        buf = &E.buffers.data[win->buffer_index];
+    if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
     int maxline = 1;
     if (buf && buf->num_rows > 0) {
         if (E.relative_line_numbers) {
@@ -419,9 +419,9 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     Buffer *buf = NULL;
     assert(win!=NULL);
-    if (E.buffers.len > 0 && win->buffer_index >= 0 &&
-        win->buffer_index < (int)E.buffers.len)
-        buf = &E.buffers.data[win->buffer_index];
+    if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0; /* number + space */
     int content_cols = win->width - margin;
@@ -672,18 +672,18 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
  * may be slightly off in wrap mode but won't crash. */
 static void draw_extra_cursors_win(Abuf *ab, const Window *win) {
     if (!win) return;
-    if (E.buffers.len == 0) return;
-    if (win->buffer_index < 0 || win->buffer_index >= (int)E.buffers.len) return;
-    Buffer *buf = &E.buffers.data[win->buffer_index];
-    if (!buf || buf->all_cursors.len <= 1) return;
+    if (arrlen(E.buffers) == 0) return;
+    if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers)) return;
+    Buffer *buf = &E.buffers[win->buffer_index];
+    if (!buf || arrlen(buf->all_cursors) <= 1) return;
 
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0;
     int content_cols = win->width - margin;
     if (content_cols <= 0) return;
 
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (!c || c == buf->cursor) continue;
         if (c->y < 0 || c->y >= buf->num_rows) continue;
         if (c->y < win->row_offset || c->y >= win->row_offset + win->height)
@@ -739,8 +739,8 @@ static void win_draw_modal_border(Abuf *ab, Window *win) {
     ab_append_str(ab, "┘");
 
     /* Draw bottom label from buf->title if set */
-    if (win->buffer_index >= 0 && win->buffer_index < (int)E.buffers.len) {
-        Buffer *buf = &E.buffers.data[win->buffer_index];
+    if (win->buffer_index >= 0 && win->buffer_index < (int)arrlen(E.buffers)) {
+        Buffer *buf = &E.buffers[win->buffer_index];
         if (buf->title) {
             int label_len = (int)strlen(buf->title);
             if (label_len > width - 4)
@@ -786,17 +786,17 @@ void ed_render_frame(void) {
 
     /* Reparse tree-sitter for any window whose buffer changed since last draw */
     if (ts_is_enabled && ts_is_enabled() && ts_buffer_reparse) {
-        for (int wi = 0; wi < (int)E.windows.len; ++wi) {
-            int bi = E.windows.data[wi].buffer_index;
-            if (bi >= 0 && bi < (int)E.buffers.len)
-                ts_buffer_reparse(&E.buffers.data[bi]);
+        for (int wi = 0; wi < (int)arrlen(E.windows); ++wi) {
+            int bi = E.windows[wi].buffer_index;
+            if (bi >= 0 && bi < (int)arrlen(E.buffers))
+                ts_buffer_reparse(&E.buffers[bi]);
         }
     }
 
     /* Draw all windows */
-    for (int wi = 0; wi < (int)E.windows.len; ++wi) {
-        ed_draw_rows_win(&ab, &E.windows.data[wi]);
-        draw_extra_cursors_win(&ab, &E.windows.data[wi]);
+    for (int wi = 0; wi < (int)arrlen(E.windows); ++wi) {
+        ed_draw_rows_win(&ab, &E.windows[wi]);
+        draw_extra_cursors_win(&ab, &E.windows[wi]);
     }
     if (E.wlayout_root) {
         wlayout_draw_decorations(&ab, E.wlayout_root);
@@ -810,9 +810,9 @@ void ed_render_frame(void) {
     draw_message_bar(&ab, &lo);
 
     Buffer *buf = NULL;
-    if (E.buffers.len > 0 && win->buffer_index >= 0 &&
-        win->buffer_index < (int)E.buffers.len)
-        buf = &E.buffers.data[win->buffer_index];
+    if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0;
     int cur_row;

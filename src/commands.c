@@ -1,46 +1,38 @@
 #include "commands.h"
-#include "lib/strutil.h"
+#include "stb_ds.h"
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_COMMANDS 256
-
 /* Global command storage - exposed for cmd_search and cmd_misc */
-Command commands[MAX_COMMANDS];
-int command_count = 0;
+Command *commands = NULL;
 
-/* Initialize command system */
 void command_init(void) {
-    command_count = 0;
+    /* arrfree(NULL) is a no-op; safe even on first call. */
+    arrfree(commands);
+    commands = NULL;
 }
 
-/* Register a command */
-void command_register(const char *name, CommandCallback callback,  const char *desc) {
-    if (command_count >= MAX_COMMANDS)
-        return;
-
+void command_register(const char *name, CommandCallback callback,
+                      const char *desc) {
     char *name_copy = strdup(name);
     if (!name_copy)
-        return; /* OOM: fail gracefully */
+        return;
 
     char *desc_copy = NULL;
     if (desc) {
         desc_copy = strdup(desc);
         if (!desc_copy) {
             free(name_copy);
-            return; /* OOM: cleanup and fail */
+            return;
         }
     }
 
-    commands[command_count].name = name_copy;
-    commands[command_count].callback = callback;
-    commands[command_count].desc = desc_copy;
-    command_count++;
+    Command cmd = {.name = name_copy, .callback = callback, .desc = desc_copy};
+    arrput(commands, cmd);
 }
 
-/* Execute a command by name */
 int command_execute(const char *name, const char *args) {
-    for (int i = 0; i < command_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
         if (commands[i].name && strcmp(commands[i].name, name) == 0) {
             if (commands[i].callback) {
                 commands[i].callback(args);
@@ -51,7 +43,6 @@ int command_execute(const char *name, const char *args) {
     return 0;
 }
 
-/* Helper to invoke a command programmatically */
 int command_invoke(const char *name, const char *args) {
     return command_execute(name, args);
 }

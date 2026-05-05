@@ -8,11 +8,11 @@ static void cursor_hook(const HookCursorEvent *event) {
     Buffer *buf = event->buf;
     if (!buf->filetype || strcmp(buf->filetype, "quickfix") != 0) return;
 
-    if (E.qf.items.len == 0) return;
+    if (arrlen(E.qf.items) == 0) return;
 
     int row = event->new_y;
     if (row < 0) row = 0;
-    if (row >= (int)E.qf.items.len) row = (int)E.qf.items.len - 1;
+    if (row >= (int)arrlen(E.qf.items)) row = (int)arrlen(E.qf.items) - 1;
 
     E.qf.sel = row;
     qf_update_view(&E.qf);

@@ -22,7 +22,7 @@
 #include "lib/sizedstr.h"
 #include "lib/strutil.h"
 #include "lib/theme.h"
-#include "lib/vector.h"
+#include "stb_ds.h"
 
 /* Core modules */
 #include "commands.h"

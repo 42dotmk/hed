@@ -38,7 +38,7 @@ void cmd_buffer_prev(const char *args) {
 void cmd_buffer_list(const char *args) {
     (void)args;
 
-    if (E.buffers.len == 0) {
+    if (arrlen(E.buffers) == 0) {
         ed_set_status_message("No buffers");
         return;
     }
@@ -49,9 +49,9 @@ void cmd_buffer_list(const char *args) {
 
     off += snprintf(cmd + off, sizeof(cmd) - off, "printf '");
 
-    for (int i = 0; i < (int)E.buffers.len && off < (int)sizeof(cmd) - 200;
+    for (int i = 0; i < (int)arrlen(E.buffers) && off < (int)sizeof(cmd) - 200;
          i++) {
-        Buffer *buf = &E.buffers.data[i];
+        Buffer *buf = &E.buffers[i];
         const char *name = buf->title;
         char marker = (i == E.current_buffer) ? '*' : ' ';
         char dirty_marker = buf->dirty ? '+' : ' ';
@@ -74,7 +74,7 @@ void cmd_buffer_list(const char *args) {
         }
 
         /* Add newline separator */
-        if (i < (int)E.buffers.len - 1) {
+        if (i < (int)arrlen(E.buffers) - 1) {
             cmd[off++] = '\\';
             cmd[off++] = 'n';
         }
@@ -106,7 +106,7 @@ void cmd_buffer_list(const char *args) {
                 atoi(picked + 1) - 1; /* Convert 1-indexed to 0-indexed */
         }
 
-        if (buffer_idx >= 0 && buffer_idx < (int)E.buffers.len) {
+        if (buffer_idx >= 0 && buffer_idx < (int)arrlen(E.buffers)) {
             buf_switch(buffer_idx);
         } else {
             ed_set_status_message("Invalid buffer selection");
@@ -164,7 +164,7 @@ void cmd_buffer_delete(const char *args) {
 
 void cmd_buffers(const char *args) {
     (void)args;
-    if (E.buffers.len <= 0) {
+    if (arrlen(E.buffers) <= 0) {
         ed_set_status_message("no buffers");
         return;
     }
@@ -173,13 +173,13 @@ void cmd_buffers(const char *args) {
     size_t off = 0;
     off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
                     "printf '%%s\t%%s\t%%s\t%%s\\n' ");
-    for (int i = 0; i < (int)E.buffers.len; i++) {
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
         char idxs[16];
         snprintf(idxs, sizeof(idxs), "%d", i + 1);
-        const char *nm = E.buffers.data[i].title;
-        const char *mod = (E.buffers.data[i].dirty ? "*" : "-");
+        const char *nm = E.buffers[i].title;
+        const char *mod = (E.buffers[i].dirty ? "*" : "-");
         char lines[32];
-        snprintf(lines, sizeof(lines), "%d", E.buffers.data[i].num_rows);
+        snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
         char eidx[32], enam[512], emod[8], elines[32];
         shell_escape_single(idxs, eidx, sizeof(eidx));
         shell_escape_single(nm, enam, sizeof(enam));
@@ -223,7 +223,7 @@ void cmd_buffers(const char *args) {
     if (tab)
         *tab = '\0';
     int idx = atoi(picked);
-    if (idx < 1 || idx > (int)E.buffers.len) {
+    if (idx < 1 || idx > (int)arrlen(E.buffers)) {
         fzf_free(sel, cnt);
         ed_set_status_message("buffers: invalid");
         return;

@@ -1167,7 +1167,7 @@ void kb_del_win(char direction) {
 #define WIN_RESIZE_STEP 5
 
 void win_resize_cells(WSplitDir dir, int delta) {
-    if (!E.wlayout_root || E.windows.len <= 1)
+    if (!E.wlayout_root || arrlen(E.windows) <= 1)
         return;
     if (E.modal_window && E.modal_window->visible)
         return;

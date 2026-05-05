@@ -261,8 +261,8 @@ static void compute_node(WLayoutNode *node, int top, int left, int height,
 
     if (node->dir == WL_SINGLE) {
         /* Assign geometry to the target leaf */
-        if (node->leaf_index >= 0 && node->leaf_index < (int)E.windows.len) {
-            Window *w = &E.windows.data[node->leaf_index];
+        if (node->leaf_index >= 0 && node->leaf_index < (int)arrlen(E.windows)) {
+            Window *w = &E.windows[node->leaf_index];
             w->top = itop;
             w->left = ileft;
             w->height = iheight;

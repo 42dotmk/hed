@@ -97,7 +97,7 @@ void cmd_list_commands(const char *args) {
     size_t off = 0;
     off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
 
-    for (int i = 0; i < command_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
         const char *nm = commands[i].name ? commands[i].name : "";
         const char *ds = commands[i].desc ? commands[i].desc : "";
         char en[256], ed[512];
@@ -127,7 +127,7 @@ void cmd_list_commands(const char *args) {
     }
 
     fzf_free(sel, cnt);
-    ed_set_status_message("commands: %d total", command_count);
+    ed_set_status_message("commands: %td total", arrlen(commands));
 }
 
 void cmd_list_keybinds(const char *args) {
@@ -282,7 +282,7 @@ void cmd_history_fzf(const char *args) {
 
 void cmd_jumplist_fzf(const char *args) {
     (void)args;
-    int jlen = (int)E.jump_list.entries.len;
+    int jlen = (int)arrlen(E.jump_list.entries);
     if (jlen == 0) {
         ed_set_status_message("Jump list is empty");
         return;
@@ -298,7 +298,7 @@ void cmd_jumplist_fzf(const char *args) {
     }
     /* Most recent first */
     for (int i = jlen - 1; i >= 0; i--) {
-        JumpEntry *e = &E.jump_list.entries.data[i];
+        JumpEntry *e = &E.jump_list.entries[i];
         if (e->filepath)
             fprintf(fp, "%s:%d:%d\n", e->filepath, e->cursor_y + 1, e->cursor_x + 1);
     }

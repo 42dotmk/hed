@@ -110,10 +110,10 @@ Window *winmodal_current(void) {
 
 Window *winmodal_from_current(void) {
     /* Get the current window from layout */
-    if (E.windows.len == 0)
+    if (arrlen(E.windows) == 0)
         return NULL;
 
-    Window *current = &E.windows.data[E.current_window];
+    Window *current = &E.windows[E.current_window];
 
     /* Create a new modal with the window's content */
     Window *modal = malloc(sizeof(Window));
@@ -166,25 +166,25 @@ void winmodal_to_layout(Window *modal) {
 
     /* Find the window in E.windows that was detached (visible=0) */
     /* and restore it with the modal's state */
-    for (int i = 0; i < (int)E.windows.len; i++) {
-        if (!E.windows.data[i].visible &&
-            E.windows.data[i].buffer_index == modal->buffer_index) {
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        if (!E.windows[i].visible &&
+            E.windows[i].buffer_index == modal->buffer_index) {
             /* Restore window state from modal */
-            E.windows.data[i].cursor = modal->cursor;
-            E.windows.data[i].row_offset = modal->row_offset;
-            E.windows.data[i].col_offset = modal->col_offset;
-            E.windows.data[i].wrap = modal->wrap;
-            E.windows.data[i].sel = modal->sel;
-            E.windows.data[i].gutter_mode = modal->gutter_mode;
-            E.windows.data[i].gutter_fixed_width = modal->gutter_fixed_width;
+            E.windows[i].cursor = modal->cursor;
+            E.windows[i].row_offset = modal->row_offset;
+            E.windows[i].col_offset = modal->col_offset;
+            E.windows[i].wrap = modal->wrap;
+            E.windows[i].sel = modal->sel;
+            E.windows[i].gutter_mode = modal->gutter_mode;
+            E.windows[i].gutter_fixed_width = modal->gutter_fixed_width;
 
             /* Mark as visible again */
-            E.windows.data[i].visible = 1;
-            E.windows.data[i].is_modal = 0;
+            E.windows[i].visible = 1;
+            E.windows[i].is_modal = 0;
 
             /* Make it the current window */
             E.current_window = i;
-            E.windows.data[i].focus = 1;
+            E.windows[i].focus = 1;
 
             break;
         }

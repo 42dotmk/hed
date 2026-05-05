@@ -10,7 +10,7 @@
 #include "utils/quickfix.h"
 #include "utils/recent_files.h"
 #include "lib/sizedstr.h"
-#include "lib/vector.h"
+#include "stb_ds.h"
 #include "ui/window.h"
 
 #define HED_VERSION "0.2.0"
@@ -75,15 +75,11 @@ typedef enum {
     MODE_VISUAL_BLOCK
 } EditorMode;
 
-/* Typed vectors for editor arrays */
-VEC_DEFINE(BufferVec, Buffer);
-VEC_DEFINE(WindowVec, Window);
-
 /* Editor configuration - global state */
 typedef struct {
     EditorMode mode;
-    BufferVec buffers; /* Growable buffer array */
-    WindowVec windows; /* Growable window array */
+    Buffer *buffers; /* stb_ds dynamic array */
+    Window *windows; /* stb_ds dynamic array */
     int current_buffer;
     int current_window;
 

@@ -19,7 +19,7 @@ typedef struct {
     int is_dir;
 } DiredSnapshotEntry;
 
-VEC_DEFINE(DiredSnapshotVec, DiredSnapshotEntry);
+typedef DiredSnapshotEntry *DiredSnapshotVec;
 
 typedef struct {
     Buffer *buf;
@@ -29,8 +29,8 @@ typedef struct {
     uint32_t next_id;
 } DiredState;
 
-VEC_DEFINE(DiredStateVec, DiredState);
-static DiredStateVec dired_states;
+typedef DiredState *DiredStateVec;
+static DiredStateVec dired_states = NULL;
 
 static void dired_copy(char *dst, size_t dstsz, const char *src) {
     if (!dst || dstsz == 0)
@@ -45,33 +45,33 @@ static void dired_copy(char *dst, size_t dstsz, const char *src) {
 static DiredState *dired_state_find(Buffer *buf, size_t *out_idx) {
     if (!buf)
         return NULL;
-    return vec_find(&dired_states, DiredState, (__elem->buf == buf), out_idx);
+    for (ptrdiff_t i = 0; i < arrlen(dired_states); i++) {
+        if (dired_states[i].buf == buf) {
+            if (out_idx) *out_idx = (size_t)i;
+            return &dired_states[i];
+        }
+    }
+    if (out_idx) *out_idx = (size_t)-1;
+    return NULL;
 }
 
 static DiredState *dired_state_create(Buffer *buf, const char *dir) {
     if (!buf || !dir)
         return NULL;
 
-    size_t old_len = dired_states.len;
     DiredState st = {.buf = buf};
     dired_copy(st.origin, sizeof(st.origin), dir);
     dired_copy(st.cwd, sizeof(st.cwd), dir);
     st.next_id = 1;
-    vec_push_typed(&dired_states, DiredState, st);
-
-    if (dired_states.len == old_len)
-        return NULL;
-
-    return &dired_states.data[dired_states.len - 1];
+    arrput(dired_states, st);
+    return &dired_states[arrlen(dired_states) - 1];
 }
 
 static void dired_state_free(DiredState *st) {
     if (!st)
         return;
-    free(st->snapshot.data);
-    st->snapshot.data = NULL;
-    st->snapshot.len = 0;
-    st->snapshot.cap = 0;
+    arrfree(st->snapshot);
+    st->snapshot = NULL;
 }
 
 static void dired_state_remove(Buffer *buf) {
@@ -80,7 +80,7 @@ static void dired_state_remove(Buffer *buf) {
     if (!st || idx == (size_t)-1)
         return;
     dired_state_free(st);
-    vec_remove(&dired_states, DiredState, idx);
+    arrdel(dired_states, idx);
 }
 
 static void dired_clear_buffer(Buffer *buf) {
@@ -264,14 +264,14 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     dired_clear_buffer(buf);
 
     /* Reset snapshot for the new listing */
-    vec_clear(&st->snapshot);
+    arrsetlen(st->snapshot, 0);
     st->next_id = 1;
 
     for (size_t i = 0; i < count; i++) {
         uint32_t id = st->next_id++;
         DiredSnapshotEntry snap = {.id = id, .is_dir = entries[i].is_dir};
         dired_copy(snap.name, sizeof(snap.name), entries[i].name);
-        vec_push_typed(&st->snapshot, DiredSnapshotEntry, snap);
+        arrput(st->snapshot, snap);
 
         char line[PATH_MAX];
         snprintf(line, sizeof(line), "/%04x/ %s%s", id, entries[i].name,
@@ -283,7 +283,7 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     dired_copy(st->cwd, sizeof(st->cwd), target);
     buf->dirty = 0;
     Window *win = window_cur();
-    if (win && win->buffer_index == (int)(buf - E.buffers.data)) {
+    if (win && win->buffer_index == (int)(buf - E.buffers)) {
         win->cursor.x = 0;
         win->cursor.y = 0;
         win->row_offset = 0;
@@ -313,7 +313,7 @@ void dired_open(const char *path) {
     int existing = buf_find_by_filename(resolved);
     if (existing >= 0) {
         buf_switch(existing);
-        DiredState *st = dired_state_find(&E.buffers.data[existing], NULL);
+        DiredState *st = dired_state_find(&E.buffers[existing], NULL);
         if (st)
             dired_list_dir(st, st->cwd);
         return;
@@ -325,7 +325,7 @@ void dired_open(const char *path) {
         return;
     }
 
-    Buffer *buf = &E.buffers.data[idx];
+    Buffer *buf = &E.buffers[idx];
     free(buf->title);
     buf->title = strdup("dired");
     free(buf->filetype);
@@ -461,7 +461,7 @@ typedef struct {
     char tmp_name[PATH_MAX];  /* used by two-pass rename */
 } DiredOp;
 
-VEC_DEFINE(DiredOpVec, DiredOp);
+typedef DiredOp *DiredOpVec;
 
 typedef struct {
     int has_id;
@@ -471,14 +471,14 @@ typedef struct {
     int row;
 } DiredCurrent;
 
-VEC_DEFINE(DiredCurrentVec, DiredCurrent);
+typedef DiredCurrent *DiredCurrentVec;
 
 static int dired_find_snapshot_by_id(DiredState *st, uint32_t id,
                                      size_t *out_idx) {
-    for (size_t i = 0; i < st->snapshot.len; i++) {
-        if (st->snapshot.data[i].id == id) {
+    for (ptrdiff_t i = 0; i < arrlen(st->snapshot); i++) {
+        if (st->snapshot[i].id == id) {
             if (out_idx)
-                *out_idx = i;
+                *out_idx = (size_t)i;
             return 1;
         }
     }
@@ -501,35 +501,35 @@ static int dired_collect_current(DiredState *st, DiredCurrentVec *out) {
                 row + 1);
             return -1;
         }
-        vec_push_typed(out, DiredCurrent, c);
+        arrput(*out, c);
     }
 
     /* Reject duplicate IDs (e.g. user copy-pasted a line) */
-    for (size_t i = 0; i < out->len; i++) {
-        if (!out->data[i].has_id)
+    for (ptrdiff_t i = 0; i < arrlen(*out); i++) {
+        if (!(*out)[i].has_id)
             continue;
-        for (size_t j = i + 1; j < out->len; j++) {
-            if (!out->data[j].has_id)
+        for (ptrdiff_t j = i + 1; j < arrlen(*out); j++) {
+            if (!(*out)[j].has_id)
                 continue;
-            if (out->data[i].id == out->data[j].id) {
+            if ((*out)[i].id == (*out)[j].id) {
                 ed_set_status_message(
                     "dired: duplicate id /%04x/ on lines %d and %d — "
                     "remove the prefix from one of them",
-                    out->data[i].id, out->data[i].row + 1,
-                    out->data[j].row + 1);
+                    (*out)[i].id, (*out)[i].row + 1,
+                    (*out)[j].row + 1);
                 return -1;
             }
         }
     }
 
     /* Reject duplicate final names */
-    for (size_t i = 0; i < out->len; i++) {
-        for (size_t j = i + 1; j < out->len; j++) {
-            if (strcmp(out->data[i].name, out->data[j].name) == 0) {
+    for (ptrdiff_t i = 0; i < arrlen(*out); i++) {
+        for (ptrdiff_t j = i + 1; j < arrlen(*out); j++) {
+            if (strcmp((*out)[i].name, (*out)[j].name) == 0) {
                 ed_set_status_message(
                     "dired: duplicate name '%s' on lines %d and %d",
-                    out->data[i].name, out->data[i].row + 1,
-                    out->data[j].row + 1);
+                    (*out)[i].name, (*out)[i].row + 1,
+                    (*out)[j].row + 1);
                 return -1;
             }
         }
@@ -541,8 +541,8 @@ static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
                             DiredOpVec *ops) {
     /* Mark each snapshot entry as matched/unmatched */
     char *matched = NULL;
-    if (st->snapshot.len > 0) {
-        matched = calloc(st->snapshot.len, 1);
+    if (arrlen(st->snapshot) > 0) {
+        matched = calloc(arrlen(st->snapshot), 1);
         if (!matched) {
             ed_set_status_message("dired: out of memory");
             return -1;
@@ -550,11 +550,11 @@ static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
     }
 
     /* Pass 1: classify each current row */
-    for (size_t i = 0; i < current->len; i++) {
-        DiredCurrent *c = &current->data[i];
+    for (ptrdiff_t i = 0; i < arrlen(*current); i++) {
+        DiredCurrent *c = &(*current)[i];
         size_t snap_idx = (size_t)-1;
         if (c->has_id && dired_find_snapshot_by_id(st, c->id, &snap_idx)) {
-            DiredSnapshotEntry *snap = &st->snapshot.data[snap_idx];
+            DiredSnapshotEntry *snap = &st->snapshot[snap_idx];
             matched[snap_idx] = 1;
             if (strcmp(snap->name, c->name) == 0 && snap->is_dir == c->is_dir) {
                 /* Unchanged */
@@ -570,24 +570,24 @@ static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
             DiredOp op = {.kind = DIRED_OP_RENAME, .is_dir = snap->is_dir};
             dired_copy(op.src_name, sizeof(op.src_name), snap->name);
             dired_copy(op.dst_name, sizeof(op.dst_name), c->name);
-            vec_push_typed(ops, DiredOp, op);
+            arrput(*ops, op);
         } else {
             /* No id, or unknown id → treat as a new file/dir to create */
             DiredOp op = {.kind = DIRED_OP_CREATE, .is_dir = c->is_dir};
             dired_copy(op.dst_name, sizeof(op.dst_name), c->name);
-            vec_push_typed(ops, DiredOp, op);
+            arrput(*ops, op);
         }
     }
 
     /* Pass 2: any unmatched snapshot entry was deleted */
-    for (size_t i = 0; i < st->snapshot.len; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(st->snapshot); i++) {
         if (matched[i])
             continue;
         DiredOp op = {.kind = DIRED_OP_DELETE,
-                      .is_dir = st->snapshot.data[i].is_dir};
+                      .is_dir = st->snapshot[i].is_dir};
         dired_copy(op.src_name, sizeof(op.src_name),
-                   st->snapshot.data[i].name);
-        vec_push_typed(ops, DiredOp, op);
+                   st->snapshot[i].name);
+        arrput(*ops, op);
     }
 
     free(matched);
@@ -600,8 +600,8 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
     int applied = 0;
 
     /* Pass 1: source → temp */
-    for (size_t i = 0; i < ops->len; i++) {
-        DiredOp *op = &ops->data[i];
+    for (size_t i = 0; i < arrlen(*ops); i++) {
+        DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_RENAME)
             continue;
         snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%zu",
@@ -623,8 +623,8 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
     }
 
     /* Pass 2: temp → destination */
-    for (size_t i = 0; i < ops->len; i++) {
-        DiredOp *op = &ops->data[i];
+    for (size_t i = 0; i < arrlen(*ops); i++) {
+        DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_RENAME)
             continue;
         if (!op->tmp_name[0])
@@ -658,8 +658,8 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
 
 static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) {
     int applied = 0;
-    for (size_t i = 0; i < ops->len; i++) {
-        DiredOp *op = &ops->data[i];
+    for (size_t i = 0; i < arrlen(*ops); i++) {
+        DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_DELETE)
             continue;
         char path[PATH_MAX];
@@ -694,8 +694,8 @@ static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) 
 
 static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) {
     int applied = 0;
-    for (size_t i = 0; i < ops->len; i++) {
-        DiredOp *op = &ops->data[i];
+    for (size_t i = 0; i < arrlen(*ops); i++) {
+        DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_CREATE)
             continue;
         char path[PATH_MAX];
@@ -745,8 +745,8 @@ static struct {
 static void dired_render_plan(Buffer *buf, const char *cwd,
                               const DiredOpVec *ops, int *out_max_w) {
     int n_create = 0, n_rename = 0, n_delete = 0;
-    for (size_t i = 0; i < ops->len; i++) {
-        switch (ops->data[i].kind) {
+    for (size_t i = 0; i < arrlen(*ops); i++) {
+        switch ((*ops)[i].kind) {
         case DIRED_OP_CREATE: n_create++; break;
         case DIRED_OP_RENAME: n_rename++; break;
         case DIRED_OP_DELETE: n_delete++; break;
@@ -770,8 +770,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
 
     if (n_create > 0) {
         APPEND("CREATE (%d):", n_create);
-        for (size_t i = 0; i < ops->len; i++) {
-            const DiredOp *op = &ops->data[i];
+        for (size_t i = 0; i < arrlen(*ops); i++) {
+            const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_CREATE) continue;
             APPEND("  + %s%s", op->dst_name, op->is_dir ? "/" : "");
         }
@@ -779,8 +779,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     }
     if (n_rename > 0) {
         APPEND("RENAME (%d):", n_rename);
-        for (size_t i = 0; i < ops->len; i++) {
-            const DiredOp *op = &ops->data[i];
+        for (size_t i = 0; i < arrlen(*ops); i++) {
+            const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_RENAME) continue;
             APPEND("  ~ %s -> %s", op->src_name, op->dst_name);
         }
@@ -788,8 +788,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     }
     if (n_delete > 0) {
         APPEND("DELETE (%d):", n_delete);
-        for (size_t i = 0; i < ops->len; i++) {
-            const DiredOp *op = &ops->data[i];
+        for (size_t i = 0; i < arrlen(*ops); i++) {
+            const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_DELETE) continue;
             APPEND("  - %s%s", op->src_name, op->is_dir ? "/" : "");
         }
@@ -805,15 +805,15 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
 }
 
 static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
-    int dired_idx = (int)(st->buf - E.buffers.data);
+    int dired_idx = (int)(st->buf - E.buffers);
 
     int buf_idx = -1;
     if (buf_new(NULL, &buf_idx) != ED_OK) {
         ed_set_status_message("dired: confirm modal: buf_new failed");
-        free(ops.data);
+        arrfree(ops);
         return 0;
     }
-    Buffer *cb = &E.buffers.data[buf_idx];
+    Buffer *cb = &E.buffers[buf_idx];
     free(cb->filename); cb->filename = NULL;
     free(cb->title); cb->title = strdup("dired confirm");
     free(cb->filetype); cb->filetype = strdup("dired_confirm");
@@ -834,7 +834,7 @@ static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
     if (!modal) {
         cb->dirty = 0;
         buf_close(buf_idx);
-        free(ops.data);
+        arrfree(ops);
         ed_set_status_message("dired: confirm modal: winmodal_create failed");
         return 0;
     }
@@ -871,16 +871,16 @@ static void dired_dismiss_pending(int do_apply) {
     }
 
     /* Closing the confirm buffer shifts higher indices down by one. */
-    if (confirm_idx >= 0 && confirm_idx < (int)E.buffers.len) {
-        E.buffers.data[confirm_idx].dirty = 0;
+    if (confirm_idx >= 0 && confirm_idx < (int)arrlen(E.buffers)) {
+        E.buffers[confirm_idx].dirty = 0;
         buf_close(confirm_idx);
         if (dired_idx > confirm_idx)
             dired_idx--;
     }
 
     Buffer *dbuf = NULL;
-    if (dired_idx >= 0 && dired_idx < (int)E.buffers.len) {
-        Buffer *cand = &E.buffers.data[dired_idx];
+    if (dired_idx >= 0 && dired_idx < (int)arrlen(E.buffers)) {
+        Buffer *cand = &E.buffers[dired_idx];
         if (cand->filetype && strcmp(cand->filetype, "dired") == 0)
             dbuf = cand;
     }
@@ -903,7 +903,7 @@ static void dired_dismiss_pending(int do_apply) {
         ed_set_status_message("dired: cancelled");
     }
 
-    free(ops.data);
+    arrfree(ops);
 }
 
 int dired_handle_save(Buffer *buf) {
@@ -922,25 +922,25 @@ int dired_handle_save(Buffer *buf) {
         return 1;
     }
 
-    DiredCurrentVec current = {0};
-    DiredOpVec ops = {0};
+    DiredCurrentVec current = NULL;
+    DiredOpVec ops = NULL;
 
     if (dired_collect_current(st, &current) != 0) {
-        free(current.data);
-        free(ops.data);
+        arrfree(current);
+        arrfree(ops);
         return 1;
     }
 
     if (dired_build_plan(st, &current, &ops) != 0) {
-        free(current.data);
-        free(ops.data);
+        arrfree(current);
+        arrfree(ops);
         return 1;
     }
 
-    free(current.data);
+    arrfree(current);
 
-    if (ops.len == 0) {
-        free(ops.data);
+    if (arrlen(ops) == 0) {
+        arrfree(ops);
         buf->dirty = 0;
         ed_set_status_message("dired: no changes");
         return 1;
@@ -974,8 +974,8 @@ static void dired_keypress_hook(HookKeyEvent *event) {
     case 'j':
     case KEY_ARROW_DOWN: {
         int idx = modal->buffer_index;
-        if (idx >= 0 && idx < (int)E.buffers.len) {
-            Buffer *cb = &E.buffers.data[idx];
+        if (idx >= 0 && idx < (int)arrlen(E.buffers)) {
+            Buffer *cb = &E.buffers[idx];
             int max_off = cb->num_rows - modal->height;
             if (max_off < 0) max_off = 0;
             if (modal->row_offset < max_off) modal->row_offset++;
@@ -1000,7 +1000,7 @@ static void dired_on_buffer_close(HookBufferEvent *event) {
     /* If the dired buffer being closed is the one with a pending plan,
      * cancel without applying — keeps state consistent. */
     if (dired_pending.active) {
-        int idx = (int)(event->buf - E.buffers.data);
+        int idx = (int)(event->buf - E.buffers);
         if (idx == dired_pending.dired_buf_idx)
             dired_dismiss_pending(0);
     }

@@ -100,8 +100,8 @@ void cmd_new(const char *args) {
 
     /* Attach the new buffer to the current (new) window */
     Window *win = window_cur();
-    if (win && new_buf_idx < (int)E.buffers.len) {
-        Buffer *buf = &E.buffers.data[new_buf_idx];
+    if (win && new_buf_idx < (int)arrlen(E.buffers)) {
+        Buffer *buf = &E.buffers[new_buf_idx];
         win_attach_buf(win, buf);
     }
 }
@@ -188,7 +188,7 @@ void cmd_cadd(const char *args) {
 
 void cmd_cnext(const char *args) {
     (void)args;
-    if (E.qf.items.len == 0) {
+    if (arrlen(E.qf.items) == 0) {
         ed_set_status_message("Quickfix empty");
         return;
     }
@@ -198,7 +198,7 @@ void cmd_cnext(const char *args) {
 
 void cmd_cprev(const char *args) {
     (void)args;
-    if (E.qf.items.len == 0) {
+    if (arrlen(E.qf.items) == 0) {
         ed_set_status_message("Quickfix empty");
         return;
     }
@@ -210,7 +210,7 @@ void cmd_copenidx(const char *args) {
     int idx = parse_int_default(args, 1);
     if (idx <= 0)
         idx = 1;
-    if (idx > (int)E.qf.items.len)
-        idx = (int)E.qf.items.len;
+    if (idx > (int)arrlen(E.qf.items))
+        idx = (int)arrlen(E.qf.items);
     qf_open_idx(&E.qf, idx - 1);
 }

@@ -17,7 +17,7 @@ void cmd_cpick(const char *args) {
     off +=
         snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
 
-    for (int i = 0; i < command_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
         const char *nm = commands[i].name ? commands[i].name : "";
         const char *ds = commands[i].desc ? commands[i].desc : "";
         char en[256], ed[512];
@@ -179,9 +179,9 @@ void cmd_ssearch(const char *args) {
     }
     fzf_free(sel, cnt);
 
-    if (E.qf.items.len > 0) {
+    if (arrlen(E.qf.items) > 0) {
         qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("ssearch: %zu item(s)", E.qf.items.len);
+        ed_set_status_message("ssearch: %td item(s)", arrlen(E.qf.items));
     } else {
         ed_set_status_message("ssearch: no parsed selections");
     }
@@ -299,9 +299,9 @@ void cmd_rg(const char *args) {
     }
     fzf_free(sel, cnt);
 
-    if (E.qf.items.len > 0) {
+    if (arrlen(E.qf.items) > 0) {
         qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("rg: %zu items", E.qf.items.len);
+        ed_set_status_message("rg: %td items", arrlen(E.qf.items));
     } else {
         ed_set_status_message("rg: no parsed selections");
     }

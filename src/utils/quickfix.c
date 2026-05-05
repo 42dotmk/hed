@@ -12,8 +12,8 @@
 
 /* Find the index of the quickfix buffer (if any). */
 static int qf_find_buffer_index(void) {
-    for (int i = 0; i < (int)E.buffers.len; i++) {
-        Buffer *b = &E.buffers.data[i];
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        Buffer *b = &E.buffers[i];
         if (!b)
             continue;
         if (b->filetype && strcmp(b->filetype, QF_BUFFER_FILETYPE) == 0 &&
@@ -37,7 +37,7 @@ Buffer *qf_get_buffer(Qf *qf) {
     int idx = qf_find_buffer_index();
     if (idx < 0)
         return NULL;
-    return &E.buffers.data[idx];
+    return &E.buffers[idx];
 }
 
 Buffer *qf_get_or_create_buffer(Qf *qf) {
@@ -50,9 +50,9 @@ Buffer *qf_get_or_create_buffer(Qf *qf) {
         ed_set_status_message("Quickfix: failed to create buffer");
         return NULL;
     }
-    if (!BOUNDS_CHECK(idx, E.buffers.len))
+    if (!BOUNDS_CHECK(idx, arrlen(E.buffers)))
         return NULL;
-    buf = &E.buffers.data[idx];
+    buf = &E.buffers[idx];
 
     if (buf->title)
         free(buf->title);
@@ -76,7 +76,7 @@ static void qf_update_window_view(Qf *qf) {
     int buf_index = qf_find_buffer_index();
     if (buf_index < 0)
         return;
-    Buffer *buf = &E.buffers.data[buf_index];
+    Buffer *buf = &E.buffers[buf_index];
     if (!buf)
         return;
 
@@ -107,8 +107,8 @@ static void qf_update_window_view(Qf *qf) {
 
     int cursor_row = (sel < 0) ? 0 : sel;
 
-    for (int wi = 0; wi < (int)E.windows.len; wi++) {
-        Window *w = &E.windows.data[wi];
+    for (int wi = 0; wi < (int)arrlen(E.windows); wi++) {
+        Window *w = &E.windows[wi];
         if (w->buffer_index == buf_index && w->is_quickfix) {
             w->cursor.y = cursor_row;
             w->cursor.x = 0;
@@ -173,9 +173,9 @@ static void qf_sync_buffer(Qf *qf) {
     buf->num_rows = 0;
 
     /* Rebuild from items */
-    int sel = (qf->sel >= 0 && qf->sel < (int)qf->items.len) ? qf->sel : -1;
-    for (int i = 0; i < (int)qf->items.len; i++) {
-        const QfItem *it = &qf->items.data[i];
+    int sel = (qf->sel >= 0 && qf->sel < (int)arrlen(qf->items)) ? qf->sel : -1;
+    for (int i = 0; i < (int)arrlen(qf->items); i++) {
+        const QfItem *it = &qf->items[i];
         char line[512];
         int l;
         if (it->filename && it->filename[0]) {
@@ -218,20 +218,16 @@ void qf_init(Qf *qf) {
     qf->height = 8;
     qf->sel = 0;
     qf->scroll = 0;
-    qf->items.data = NULL;
-    qf->items.len = 0;
-    qf->items.cap = 0;
+    qf->items = NULL;
 }
 
 void qf_free(Qf *qf) {
     if (!qf)
         return;
-    for (size_t i = 0; i < qf->items.len; i++)
-        qf_item_free(&qf->items.data[i]);
-    free(qf->items.data);
-    qf->items.data = NULL;
-    qf->items.len = 0;
-    qf->items.cap = 0;
+    for (ptrdiff_t i = 0; i < arrlen(qf->items); i++)
+        qf_item_free(&qf->items[i]);
+    arrfree(qf->items);
+    qf->items = NULL;
 }
 
 void qf_open(Qf *qf, int height) {
@@ -250,8 +246,8 @@ void qf_open(Qf *qf, int height) {
 
     /* Try to find an existing quickfix window showing this buffer */
     int qf_win_idx = -1;
-    for (int wi = 0; wi < (int)E.windows.len; wi++) {
-        Window *w = &E.windows.data[wi];
+    for (int wi = 0; wi < (int)arrlen(E.windows); wi++) {
+        Window *w = &E.windows[wi];
         if (w->buffer_index == buf_index && w->is_quickfix) {
             qf_win_idx = wi;
             break;
@@ -273,26 +269,26 @@ void qf_open(Qf *qf, int height) {
         }
         w->is_quickfix = 1;
         win_attach_buf(w, buf);
-        buf_index = (int)(buf - E.buffers.data);
-        qf_win_idx = (int)(w - E.windows.data);
+        buf_index = (int)(buf - E.buffers);
+        qf_win_idx = (int)(w - E.windows);
     }
 
     /* Focus the quickfix window */
-    if (qf_win_idx >= 0 && qf_win_idx < (int)E.windows.len) {
-        for (int i = 0; i < (int)E.windows.len; i++) {
-            E.windows.data[i].focus = 0;
+    if (qf_win_idx >= 0 && qf_win_idx < (int)arrlen(E.windows)) {
+        for (int i = 0; i < (int)arrlen(E.windows); i++) {
+            E.windows[i].focus = 0;
         }
         E.current_window = qf_win_idx;
-        E.windows.data[qf_win_idx].focus = 1;
-        if (BOUNDS_CHECK(buf_index, E.buffers.len)) {
+        E.windows[qf_win_idx].focus = 1;
+        if (BOUNDS_CHECK(buf_index, arrlen(E.buffers))) {
             E.current_buffer = buf_index;
         }
     }
 
     qf->open = 1;
     qf->focus = 0;
-    if (qf->sel >= (int)qf->items.len)
-        qf->sel = qf->items.len ? (int)qf->items.len - 1 : 0;
+    if (qf->sel >= (int)arrlen(qf->items))
+        qf->sel = arrlen(qf->items) ? (int)arrlen(qf->items) - 1 : 0;
     qf_update_window_view(qf);
 }
 
@@ -304,10 +300,10 @@ void qf_close(Qf *qf) {
         /* Close any windows that are marked as quickfix and show this buffer.
          * Iterate from the end since windows_close_current() shifts the array.
          */
-        for (int wi = (int)E.windows.len - 1; wi >= 0; wi--) {
-            if (wi >= (int)E.windows.len)
+        for (int wi = (int)arrlen(E.windows) - 1; wi >= 0; wi--) {
+            if (wi >= (int)arrlen(E.windows))
                 continue;
-            Window *w = &E.windows.data[wi];
+            Window *w = &E.windows[wi];
             if (w->is_quickfix && w->buffer_index == buf_index) {
                 int prev = E.current_window;
                 E.current_window = wi;
@@ -315,7 +311,7 @@ void qf_close(Qf *qf) {
                 /* windows_close_current() may change E.current_window; that's
                  * fine. */
                 if (prev == wi && E.current_window == wi &&
-                    E.windows.len == 1) {
+                    arrlen(E.windows) == 1) {
                     /* Can't close the last window; stop trying. */
                     break;
                 }
@@ -347,9 +343,9 @@ void qf_blur(Qf *qf) {
 void qf_clear(Qf *qf) {
     if (!qf)
         return;
-    for (size_t i = 0; i < qf->items.len; i++)
-        qf_item_free(&qf->items.data[i]);
-    qf->items.len = 0;
+    for (ptrdiff_t i = 0; i < arrlen(qf->items); i++)
+        qf_item_free(&qf->items[i]);
+    arrsetlen(qf->items, 0);
     qf->sel = 0;
     qf->scroll = 0;
     if (qf->open)
@@ -360,36 +356,27 @@ int qf_add(Qf *qf, const char *filename, int line, int col, const char *text) {
     if (!qf)
         return -1;
 
-    size_t old_len = qf->items.len;
     QfItem item = {
         .text = text ? strdup(text) : strdup(""),
         .filename = filename ? strdup(filename) : NULL,
         .line = line,
         .col = col
     };
-    vec_push_typed(&qf->items, QfItem, item);
-
-    /* Check if push succeeded */
-    if (qf->items.len == old_len) {
-        /* Push failed - clean up allocated memory */
-        free(item.text);
-        free(item.filename);
-        return -1;
-    }
+    arrput(qf->items, item);
 
     if (qf->open)
         qf_sync_buffer(qf);
-    return (int)qf->items.len - 1;
+    return (int)arrlen(qf->items) - 1;
 }
 
 void qf_move(Qf *qf, int delta) {
-    if (!qf || qf->items.len == 0)
+    if (!qf || arrlen(qf->items) == 0)
         return;
     int ns = qf->sel + delta;
     if (ns < 0)
         ns = 0;
-    if (ns >= (int)qf->items.len)
-        ns = (int)qf->items.len - 1;
+    if (ns >= (int)arrlen(qf->items))
+        ns = (int)arrlen(qf->items) - 1;
     qf->sel = ns;
     qf_update_window_view(qf);
 }
@@ -402,9 +389,9 @@ void qf_move(Qf *qf, int delta) {
  *   split from the quickfix window and use the window above as the target,
  *   keeping the quickfix pane below. */
 static int qf_pick_target_window_index(void) {
-    if (E.windows.len == 0)
+    if (arrlen(E.windows) == 0)
         return -1;
-    if (!BOUNDS_CHECK(E.current_window, E.windows.len))
+    if (!BOUNDS_CHECK(E.current_window, arrlen(E.windows)))
         return -1;
 
     Window *cur = window_cur();
@@ -427,10 +414,10 @@ static int qf_pick_target_window_index(void) {
     int best_idx = -1;
     int best_bottom = -1;
 
-    for (int i = 0; i < (int)E.windows.len; i++) {
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
         if (i == cur_idx)
             continue;
-        Window *w = &E.windows.data[i];
+        Window *w = &E.windows[i];
         if (w->is_quickfix)
             continue;
 
@@ -452,10 +439,10 @@ static int qf_pick_target_window_index(void) {
     }
 
     /* Fallback: use any non-quickfix window. */
-    for (int i = 0; i < (int)E.windows.len; i++) {
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
         if (i == cur_idx)
             continue;
-        if (!E.windows.data[i].is_quickfix) {
+        if (!E.windows[i].is_quickfix) {
             return i;
         }
     }
@@ -465,15 +452,15 @@ static int qf_pick_target_window_index(void) {
      * the one above, and the new window as the quickfix pane below. */
     int prev_idx = cur_idx;
     windows_split_horizontal();
-    if (!BOUNDS_CHECK(prev_idx, E.windows.len))
+    if (!BOUNDS_CHECK(prev_idx, arrlen(E.windows)))
         return prev_idx;
 
-    int new_idx = (int)E.windows.len - 1;
-    if (!BOUNDS_CHECK(new_idx, E.windows.len))
+    int new_idx = (int)arrlen(E.windows) - 1;
+    if (!BOUNDS_CHECK(new_idx, arrlen(E.windows)))
         return prev_idx;
 
-    Window *top = &E.windows.data[prev_idx];
-    Window *bottom = &E.windows.data[new_idx];
+    Window *top = &E.windows[prev_idx];
+    Window *bottom = &E.windows[new_idx];
 
     /* Ensure the bottom window remains the quickfix pane. */
     bottom->is_quickfix = 1;
@@ -485,15 +472,15 @@ static int qf_pick_target_window_index(void) {
 
 /* Focus the given window index and sync E.current_buffer. */
 static void qf_focus_window_index(int idx) {
-    if (!BOUNDS_CHECK(idx, E.windows.len))
+    if (!BOUNDS_CHECK(idx, arrlen(E.windows)))
         return;
-    for (int i = 0; i < (int)E.windows.len; i++) {
-        E.windows.data[i].focus = 0;
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        E.windows[i].focus = 0;
     }
     E.current_window = idx;
-    E.windows.data[idx].focus = 1;
-    int bi = E.windows.data[idx].buffer_index;
-    if (BOUNDS_CHECK(bi, E.buffers.len)) {
+    E.windows[idx].focus = 1;
+    int bi = E.windows[idx].buffer_index;
+    if (BOUNDS_CHECK(bi, arrlen(E.buffers))) {
         E.current_buffer = bi;
     }
 }
@@ -519,9 +506,9 @@ static void qf_jump_to_internal(const QfItem *it, int focus_target) {
         /* Preview: keep quickfix focused, but temporarily treat the
          * target window as current for buffer operations. */
         E.current_window = target_idx;
-        if (BOUNDS_CHECK(target_idx, E.windows.len)) {
-            int bi = E.windows.data[target_idx].buffer_index;
-            if (BOUNDS_CHECK(bi, E.buffers.len)) {
+        if (BOUNDS_CHECK(target_idx, arrlen(E.windows))) {
+            int bi = E.windows[target_idx].buffer_index;
+            if (BOUNDS_CHECK(bi, arrlen(E.buffers))) {
                 E.current_buffer = bi;
             }
         }
@@ -559,23 +546,23 @@ static void qf_jump_to_internal(const QfItem *it, int focus_target) {
 }
 
 void qf_open_selected(Qf *qf) {
-    if (!qf || qf->items.len == 0)
+    if (!qf || arrlen(qf->items) == 0)
         return;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items.data[qf->sel], 1);
+    qf_jump_to_internal(&qf->items[qf->sel], 1);
 }
 
 void qf_preview_selected(Qf *qf) {
-    if (!qf || qf->items.len == 0)
+    if (!qf || arrlen(qf->items) == 0)
         return;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items.data[qf->sel], 0);
+    qf_jump_to_internal(&qf->items[qf->sel], 0);
 }
 
 void qf_open_idx(Qf *qf, int idx) {
-    if (!qf || idx < 0 || idx >= (int)qf->items.len)
+    if (!qf || idx < 0 || idx >= (int)arrlen(qf->items))
         return;
     qf->sel = idx;
     qf_update_window_view(qf);
-    qf_jump_to_internal(&qf->items.data[idx], 1);
+    qf_jump_to_internal(&qf->items[idx], 1);
 }

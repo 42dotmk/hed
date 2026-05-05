@@ -8,3 +8,4 @@
 -Ivendor/tree-sitter/lib/include
 -Isrc
 -Iplugins
+-Ivendor

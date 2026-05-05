@@ -28,8 +28,8 @@ static void lsp_hook_keypress(HookKeyEvent *event) {
     if (!modal) return;
 
     int     idx  = modal->buffer_index;
-    Buffer *mbuf = (idx >= 0 && idx < (int)E.buffers.len)
-                   ? &E.buffers.data[idx] : NULL;
+    Buffer *mbuf = (idx >= 0 && idx < (int)arrlen(E.buffers))
+                   ? &E.buffers[idx] : NULL;
     if (!mbuf || !mbuf->readonly) return;
 
     int key = event->key;

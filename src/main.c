@@ -64,20 +64,20 @@ int main(int argc, char *argv[]) {
     enable_raw_mode();
     log_msg("Before ed_init, file_count=%d", file_count);
     ed_init(file_count == 0);
-    log_msg("After ed_init, buffers.len=%zu, windows.len=%zu", E.buffers.len, E.windows.len);
+    log_msg("After ed_init, buffers.len=%zu, windows.len=%zu", arrlen(E.buffers), arrlen(E.windows));
 
     for (int i = 0; i < file_count; i++) {
         log_msg("Opening file %d: %s", i, file_args[i]);
         buf_open_or_switch(file_args[i], true);
-        log_msg("After opening file %d, buffers.len=%zu", i, E.buffers.len);
+        log_msg("After opening file %d, buffers.len=%zu", i, arrlen(E.buffers));
     }
 
     free(file_args);
 
     /* If no buffers ended up being created (e.g., all opens failed), ensure one
      * exists. */
-    log_msg("Checking buffer count: %zu", E.buffers.len);
-    if (E.buffers.len == 0) {
+    log_msg("Checking buffer count: %zu", arrlen(E.buffers));
+    if (arrlen(E.buffers) == 0) {
         log_msg("Creating empty buffer");
         int empty_idx = -1;
         if (buf_new(NULL, &empty_idx) == ED_OK) {
@@ -90,8 +90,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Focus the most recently opened buffer */
-    if (E.buffers.len > 0) {
-        int last_idx = (int)E.buffers.len - 1;
+    if (arrlen(E.buffers) > 0) {
+        int last_idx = (int)arrlen(E.buffers) - 1;
         E.current_buffer = last_idx;
         Window *win = window_cur();
         if (win)

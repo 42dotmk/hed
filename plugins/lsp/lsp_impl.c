@@ -225,8 +225,8 @@ static void lsp_send_initialized(LspServer *srv) {
 }
 
 static void lsp_notify_existing_buffers(LspServer *srv) {
-    for (size_t i = 0; i < E.buffers.len; i++) {
-        Buffer *buf = &E.buffers.data[i];
+    for (size_t i = 0; i < arrlen(E.buffers); i++) {
+        Buffer *buf = &E.buffers[i];
         if (buf && buf->filetype && buf->filename &&
             strcmp(buf->filetype, srv->lang) == 0)
             lsp_on_buffer_open(buf);
@@ -303,7 +303,7 @@ static void lsp_show_popup(const char *title, const char *text) {
     /* Create scratch buffer — no filename (no top title), title = src label */
     int     buf_idx = -1;
     if (buf_new(NULL, &buf_idx) != ED_OK) return;
-    Buffer *buf = &E.buffers.data[buf_idx];
+    Buffer *buf = &E.buffers[buf_idx];
     free(buf->filename); buf->filename = NULL;
     free(buf->title);
     buf->title = src_label[0] ? strdup(src_label) : NULL;

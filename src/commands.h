@@ -1,6 +1,8 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+#include "stb_ds.h"
+
 /* Command callback signature */
 typedef void (*CommandCallback)(const char *args);
 
@@ -13,9 +15,9 @@ typedef struct {
 
 /* Built-in command declarations live in commands/cmd_builtins.h */
 
-/* Global command storage (for internal use by command modules) */
-extern Command commands[];
-extern int command_count;
+/* Global command storage (for internal use by command modules).
+ * stb_ds dynamic array; use arrlen(commands) for the count. */
+extern Command *commands;
 
 /* Command API */
 

@@ -2,6 +2,7 @@
 #include "editor.h"
 #include "commands.h"
 #include "lib/log.h"
+#include "stb_ds.h"
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -12,7 +13,6 @@
 #include "keybinds_builtins.h"
 #include <time.h>
 
-#define MAX_KEYBINDS 256
 #define KEY_BUFFER_SIZE 16
 #define SEQUENCE_TIMEOUT_MS 1000
 
@@ -26,9 +26,8 @@ typedef struct {
     char *filetype; /* NULL = global; non-NULL = filetype-specific */
 } Keybind;
 
-/* Global keybinding storage */
-static Keybind keybinds[MAX_KEYBINDS];
-static int keybind_count = 0;
+/* Global keybinding storage (stb_ds dynamic array) */
+static Keybind *keybinds = NULL;
 
 /* Input buffer for multi-key sequences */
 static char key_buffer[KEY_BUFFER_SIZE];
@@ -125,7 +124,8 @@ static int timeout_exceeded(void) {
  * config_init() (see src/config.c). Registration uses last-write-wins,
  * so the order in config_init determines precedence. */
 void keybind_init(void) {
-    keybind_count = 0;
+    arrfree(keybinds);
+    keybinds = NULL;
     key_buffer_len = 0;
     key_buffer[0] = '\0';
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
@@ -151,7 +151,7 @@ void keybind_state_load(const KeybindState *in) {
  * that the latest registration wins. Lets users override plugin defaults. */
 static void remove_duplicate(int mode, const char *sequence,
                              const char *filetype) {
-    for (int i = 0; i < keybind_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
         if (keybinds[i].mode != mode) continue;
         if (strcmp(keybinds[i].sequence, sequence) != 0) continue;
         int same_ft =
@@ -163,10 +163,7 @@ static void remove_duplicate(int mode, const char *sequence,
         free(keybinds[i].sequence);
         free(keybinds[i].desc);
         free(keybinds[i].filetype);
-        for (int j = i; j < keybind_count - 1; j++) {
-            keybinds[j] = keybinds[j + 1];
-        }
-        keybind_count--;
+        arrdel(keybinds, i);
         return; /* invariant: at most one match exists */
     }
 }
@@ -174,28 +171,30 @@ static void remove_duplicate(int mode, const char *sequence,
 /* Register a keybinding */
 void keybind_register(int mode, const char *sequence,
                       KeybindCallback callback, const char *desc) {
-    if (keybind_count >= MAX_KEYBINDS) return;
     remove_duplicate(mode, sequence, NULL);
-    keybinds[keybind_count].sequence         = strdup(sequence);
-    keybinds[keybind_count].callback         = callback;
-    keybinds[keybind_count].mode             = mode;
-    keybinds[keybind_count].command_callback = NULL;
-    keybinds[keybind_count].desc             = desc ? strdup(desc) : NULL;
-    keybinds[keybind_count].filetype         = NULL;
-    keybind_count++;
+    Keybind kb = {
+        .sequence         = strdup(sequence),
+        .callback         = callback,
+        .command_callback = NULL,
+        .mode             = mode,
+        .desc             = desc ? strdup(desc) : NULL,
+        .filetype         = NULL,
+    };
+    arrput(keybinds, kb);
 }
 
 void keybind_register_ft(int mode, const char *sequence, const char *filetype,
                          KeybindCallback callback, const char *desc) {
-    if (keybind_count >= MAX_KEYBINDS) return;
     remove_duplicate(mode, sequence, filetype);
-    keybinds[keybind_count].sequence         = strdup(sequence);
-    keybinds[keybind_count].callback         = callback;
-    keybinds[keybind_count].mode             = mode;
-    keybinds[keybind_count].command_callback = NULL;
-    keybinds[keybind_count].desc             = desc ? strdup(desc) : NULL;
-    keybinds[keybind_count].filetype         = filetype ? strdup(filetype) : NULL;
-    keybind_count++;
+    Keybind kb = {
+        .sequence         = strdup(sequence),
+        .callback         = callback,
+        .command_callback = NULL,
+        .mode             = mode,
+        .desc             = desc ? strdup(desc) : NULL,
+        .filetype         = filetype ? strdup(filetype) : NULL,
+    };
+    arrput(keybinds, kb);
 }
 
 static void kb_run_command(const char *cmdline) {
@@ -222,28 +221,30 @@ static void kb_run_command(const char *cmdline) {
 
 void keybind_register_command(int mode, const char *sequence,
                               const char *cmdline) {
-    if (keybind_count >= MAX_KEYBINDS) return;
     remove_duplicate(mode, sequence, NULL);
-    keybinds[keybind_count].sequence         = strdup(sequence);
-    keybinds[keybind_count].callback         = NULL;
-    keybinds[keybind_count].command_callback = kb_run_command;
-    keybinds[keybind_count].mode             = mode;
-    keybinds[keybind_count].desc             = cmdline ? strdup(cmdline) : strdup("");
-    keybinds[keybind_count].filetype         = NULL;
-    keybind_count++;
+    Keybind kb = {
+        .sequence         = strdup(sequence),
+        .callback         = NULL,
+        .command_callback = kb_run_command,
+        .mode             = mode,
+        .desc             = cmdline ? strdup(cmdline) : strdup(""),
+        .filetype         = NULL,
+    };
+    arrput(keybinds, kb);
 }
 
 void keybind_register_command_ft(int mode, const char *sequence,
                                   const char *filetype, const char *cmdline) {
-    if (keybind_count >= MAX_KEYBINDS) return;
     remove_duplicate(mode, sequence, filetype);
-    keybinds[keybind_count].sequence         = strdup(sequence);
-    keybinds[keybind_count].callback         = NULL;
-    keybinds[keybind_count].command_callback = kb_run_command;
-    keybinds[keybind_count].mode             = mode;
-    keybinds[keybind_count].desc             = cmdline ? strdup(cmdline) : strdup("");
-    keybinds[keybind_count].filetype         = filetype ? strdup(filetype) : NULL;
-    keybind_count++;
+    Keybind kb = {
+        .sequence         = strdup(sequence),
+        .callback         = NULL,
+        .command_callback = kb_run_command,
+        .mode             = mode,
+        .desc             = cmdline ? strdup(cmdline) : strdup(""),
+        .filetype         = filetype ? strdup(filetype) : NULL,
+    };
+    arrput(keybinds, kb);
 }
 
 /* Clear the key buffer */
@@ -256,12 +257,12 @@ void keybind_clear_buffer(void) {
 
 /* Get the total number of registered keybindings */
 int keybind_get_count(void) {
-    return keybind_count;
+    return (int)arrlen(keybinds);
 }
 
 /* Get keybinding info at the given index */
 int keybind_get_at(int index, const char **sequence, const char **desc, int *mode) {
-    if (index < 0 || index >= keybind_count)
+    if (index < 0 || (ptrdiff_t)index >= arrlen(keybinds))
         return 0;
 
     if (sequence)
@@ -347,14 +348,14 @@ bool keybind_process(int key, int mode) {
         if (cb) cur_ft = cb->filetype;
     }
 
-    for (int i = 0; i < keybind_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
         if (keybinds[i].mode != mode) continue;
 
         if (strcmp(keybinds[i].sequence, key_buffer) == 0) {
             if (keybinds[i].filetype == NULL) {
-                if (exact_match < 0) exact_match = i; /* keep first global */
+                if (exact_match < 0) exact_match = (int)i; /* keep first global */
             } else if (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0) {
-                exact_ft_match = i; /* filetype match wins immediately */
+                exact_ft_match = (int)i; /* filetype match wins immediately */
                 break;
             }
             /* filetype set but doesn't match current — skip */

@@ -3,11 +3,10 @@
 
 /* Recent files tracking - no duplicates, newest first */
 
-#include "lib/vector.h"
-VEC_DEFINE(RecentFileItems, char *);
+#include "stb_ds.h"
 
 typedef struct {
-    RecentFileItems items; /* newest at index 0 */
+    char **items; /* stb_ds dynamic array; newest at index 0 */
 } RecentFiles;
 
 /* Initialize and load from file */

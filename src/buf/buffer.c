@@ -6,7 +6,7 @@
 #include "terminal.h"
 #include "lib/log.h"
 #include "lib/strutil.h"
-#include "lib/vector.h"
+#include "stb_ds.h"
 #include "utils/recent_files.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,17 +31,17 @@ void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
 void buf_row_del_char_in(Buffer *buf, Row *row, int at);
 
 Buffer *buf_cur(void) {
-    if (E.buffers.len == 0)
+    if (arrlen(E.buffers) == 0)
         return NULL;
-    return &E.buffers.data[E.current_buffer];
+    return &E.buffers[E.current_buffer];
 }
 
 int buf_find_by_filename(const char *filename) {
     if (!filename)
         return -1;
-    for (int i = 0; i < (int)E.buffers.len; i++) {
-        if (E.buffers.data[i].filename &&
-            strcmp(E.buffers.data[i].filename, filename) == 0) {
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        if (E.buffers[i].filename &&
+            strcmp(E.buffers[i].filename, filename) == 0) {
             return i;
         }
     }
@@ -54,16 +54,13 @@ static void buf_init(Buffer *buf) {
         return;
     buf->rows = NULL;
     buf->num_rows = 0;
-    buf->all_cursors = (CursorVec){0};
+    buf->all_cursors = NULL;
     buf->cursor = NULL;
     /* Always start with one active cursor at (0,0). */
     Cursor *c0 = calloc(1, sizeof(Cursor));
     if (c0) {
-        vec_push_typed(&buf->all_cursors, Cursor *, c0);
-        if (buf->all_cursors.len == 1)
-            buf->cursor = c0;
-        else
-            free(c0); /* push failed (OOM) — caller will see cursor=NULL */
+        arrput(buf->all_cursors, c0);
+        buf->cursor = c0;
     }
     buf->filename = NULL;
     buf->title = strdup("[No Name]");
@@ -84,43 +81,36 @@ EdError buf_new(const char *filename, int *out_idx) {
         return ED_ERR_INVALID_ARG;
     *out_idx = -1;
 
-    /* Ensure capacity for new buffer */
-    if (!vec_reserve_typed(&E.buffers, E.buffers.len + 1, sizeof(Buffer))) {
-        return ED_ERR_NOMEM;
-    }
-
-    int idx = E.buffers.len++;
-    Buffer *buf = &E.buffers.data[idx];
+    /* Append a default-initialized slot, then fill it in place. On any
+     * error we arrpop to roll back the slot. */
+    Buffer slot = {0};
+    arrput(E.buffers, slot);
+    int idx = (int)arrlen(E.buffers) - 1;
+    Buffer *buf = &E.buffers[idx];
     buf_init(buf);
 
-    /* Apply filename/title and detect filetype */
     if (filename && *filename) {
-        /* Replace default title */
         free(buf->title);
         buf->title = strdup(filename);
         if (!buf->title) {
-            /* OOM on title allocation - cleanup and fail */
-            buf->title = NULL;
-            E.buffers.len--; /* Rollback buffer creation */
+            (void)arrpop(E.buffers);
             return ED_ERR_NOMEM;
         }
 
         buf->filename = strdup(filename);
         if (!buf->filename) {
-            /* OOM on filename allocation - cleanup and fail */
             free(buf->title);
             buf->title = NULL;
-            E.buffers.len--; /* Rollback buffer creation */
+            (void)arrpop(E.buffers);
             return ED_ERR_NOMEM;
         }
     }
 
     buf->filetype = path_detect_filetype(filename);
     if (!buf->filetype) {
-        /* OOM on filetype allocation - cleanup and fail */
         free(buf->title);
         free(buf->filename);
-        E.buffers.len--; /* Rollback buffer creation */
+        (void)arrpop(E.buffers);
         return ED_ERR_NOMEM;
     }
 
@@ -139,7 +129,7 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     EdError err = buf_new(filename, &idx);
     if (err != ED_OK)
         return err;
-    Buffer *buf = &E.buffers.data[idx];
+    Buffer *buf = &E.buffers[idx];
 
     FILE *fp = fopen(filename, "r");
     if (!fp) {
@@ -229,7 +219,7 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
 
 /* Switch to a buffer by index and return EdError status */
 EdError buf_switch(int index) {
-    if (!BOUNDS_CHECK(index, E.buffers.len)) {
+    if (!BOUNDS_CHECK(index, arrlen(E.buffers))) {
         return ED_ERR_INVALID_INDEX;
     }
 
@@ -251,13 +241,13 @@ EdError buf_switch(int index) {
 }
 
 void buf_next(void) {
-    if (E.buffers.len <= 1)
+    if (arrlen(E.buffers) <= 1)
         return;
 
     /* Record current position before switching */
     Window *win = window_cur();
 
-    E.current_buffer = (E.current_buffer + 1) % E.buffers.len;
+    E.current_buffer = (E.current_buffer + 1) % arrlen(E.buffers);
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
@@ -274,13 +264,13 @@ void buf_next(void) {
 }
 
 void buf_prev(void) {
-    if (E.buffers.len <= 1)
+    if (arrlen(E.buffers) <= 1)
         return;
 
     /* Record current position before switching */
     Window *win = window_cur();
 
-    E.current_buffer = (E.current_buffer - 1 + E.buffers.len) % E.buffers.len;
+    E.current_buffer = (E.current_buffer - 1 + arrlen(E.buffers)) % arrlen(E.buffers);
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
@@ -298,11 +288,11 @@ void buf_prev(void) {
 
 /* Close a buffer by index and return EdError status */
 EdError buf_close(int index) {
-    if (!BOUNDS_CHECK(index, E.buffers.len)) {
+    if (!BOUNDS_CHECK(index, arrlen(E.buffers))) {
         return ED_ERR_INVALID_INDEX;
     }
 
-    Buffer *buf = &E.buffers.data[index];
+    Buffer *buf = &E.buffers[index];
 
     if (buf->dirty) {
         return ED_ERR_BUFFER_DIRTY;
@@ -322,21 +312,17 @@ EdError buf_close(int index) {
     free(buf->filename);
     free(buf->title);
     free(buf->filetype);
-    for (size_t i = 0; i < buf->all_cursors.len; i++)
-        free(buf->all_cursors.data[i]);
-    free(buf->all_cursors.data);
-    buf->all_cursors = (CursorVec){0};
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++)
+        free(buf->all_cursors[i]);
+    arrfree(buf->all_cursors);
+    buf->all_cursors = NULL;
     buf->cursor = NULL;
     fold_list_free(&buf->folds);
     undo_state_free(&buf->undo);
 
-    /* Shift buffers down */
-    for (int i = index; i < (int)E.buffers.len - 1; i++) {
-        E.buffers.data[i] = E.buffers.data[i + 1];
-    }
-    E.buffers.len--;
+    arrdel(E.buffers, index);
 
-    if (E.buffers.len == 0) {
+    if (arrlen(E.buffers) == 0) {
         /* Create an empty buffer */
         int idx;
         EdError err = buf_new(NULL, &idx);
@@ -345,8 +331,8 @@ EdError buf_close(int index) {
         }
         /* If buffer creation fails, editor will be in an invalid state, but
          * better than crashing */
-    } else if (E.current_buffer >= (int)E.buffers.len) {
-        E.current_buffer = (int)E.buffers.len - 1;
+    } else if (E.current_buffer >= (int)arrlen(E.buffers)) {
+        E.current_buffer = (int)arrlen(E.buffers) - 1;
     }
 
     return ED_OK;
@@ -360,26 +346,17 @@ Cursor *buf_cursor_add(Buffer *buf, int y, int x) {
     if (!c) return NULL;
     c->x = x;
     c->y = y;
-    vec_push_typed(&buf->all_cursors, Cursor *, c);
-    /* vec_push_typed has no return value — detect failure by checking
-     * the tail. If the new entry isn't at len-1, the push failed. */
-    if (buf->all_cursors.len == 0 ||
-        buf->all_cursors.data[buf->all_cursors.len - 1] != c) {
-        free(c);
-        return NULL;
-    }
+    arrput(buf->all_cursors, c);
     return c;
 }
 
 int buf_cursor_remove(Buffer *buf, Cursor *c) {
     if (!buf || !c) return 0;
     if (c == buf->cursor) return 0;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        if (buf->all_cursors.data[i] == c) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        if (buf->all_cursors[i] == c) {
             free(c);
-            for (size_t j = i; j + 1 < buf->all_cursors.len; j++)
-                buf->all_cursors.data[j] = buf->all_cursors.data[j + 1];
-            buf->all_cursors.len--;
+            arrdel(buf->all_cursors, i);
             return 1;
         }
     }
@@ -388,20 +365,19 @@ int buf_cursor_remove(Buffer *buf, Cursor *c) {
 
 void buf_cursor_clear_extras(Buffer *buf) {
     if (!buf || !buf->cursor) return;
-    /* Keep only buf->cursor; free everything else. */
     Cursor *keep = buf->cursor;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        if (buf->all_cursors.data[i] != keep)
-            free(buf->all_cursors.data[i]);
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        if (buf->all_cursors[i] != keep)
+            free(buf->all_cursors[i]);
     }
-    buf->all_cursors.data[0] = keep;
-    buf->all_cursors.len = 1;
+    buf->all_cursors[0] = keep;
+    arrsetlen(buf->all_cursors, 1);
 }
 
 int buf_cursor_set_active(Buffer *buf, Cursor *c) {
     if (!buf || !c) return 0;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        if (buf->all_cursors.data[i] == c) {
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        if (buf->all_cursors[i] == c) {
             buf->cursor = c;
             return 1;
         }
@@ -410,16 +386,16 @@ int buf_cursor_set_active(Buffer *buf, Cursor *c) {
 }
 
 int buf_cursor_count(const Buffer *buf) {
-    return buf ? (int)buf->all_cursors.len : 0;
+    return buf ? (int)arrlen(buf->all_cursors) : 0;
 }
 
 void buf_cursor_sync_from_window(Buffer *buf) {
     Window *win = window_cur();
     if (!buf || !win || !buf->cursor) return;
     /* Only sync when the focused window shows this buffer. */
-    if (win->buffer_index < 0 || win->buffer_index >= (int)E.buffers.len)
+    if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers))
         return;
-    if (&E.buffers.data[win->buffer_index] != buf) return;
+    if (&E.buffers[win->buffer_index] != buf) return;
     buf->cursor->x = win->cursor.x;
     buf->cursor->y = win->cursor.y;
 }
@@ -430,8 +406,8 @@ void buf_cursor_sync_from_window(Buffer *buf) {
 
 static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy && c->x >= ix) c->x++;
     }
@@ -439,8 +415,8 @@ static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy && c->x > ix) c->x--;
     }
@@ -448,8 +424,8 @@ static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y > iy) {
             c->y++;
@@ -462,8 +438,8 @@ static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy) {
             c->y--;
@@ -476,8 +452,8 @@ static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
 
 static void cursors_after_delete_line(Buffer *buf, int iy) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        Cursor *c = buf->all_cursors.data[i];
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y > iy) {
             c->y--;

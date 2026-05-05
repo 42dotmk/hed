@@ -10,8 +10,8 @@
 #define SCRATCH_TITLE "[scratch]"
 
 static int scratch_find_buf(void) {
-    for (int i = 0; i < (int)E.buffers.len; i++) {
-        const char *t = E.buffers.data[i].title;
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        const char *t = E.buffers[i].title;
         if (t && strcmp(t, SCRATCH_TITLE) == 0)
             return i;
     }
@@ -25,7 +25,7 @@ static int scratch_find_or_create_buf(void) {
     int new_idx = -1;
     if (buf_new(NULL, &new_idx) != ED_OK) return -1;
 
-    Buffer *b = &E.buffers.data[new_idx];
+    Buffer *b = &E.buffers[new_idx];
     free(b->filename); b->filename = NULL;
     free(b->title);    b->title    = strdup(SCRATCH_TITLE);
     b->dirty = 0;
@@ -33,8 +33,8 @@ static int scratch_find_or_create_buf(void) {
 }
 
 static int scratch_find_window(int buf_idx) {
-    for (int i = 0; i < (int)E.windows.len; i++) {
-        Window *w = &E.windows.data[i];
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        Window *w = &E.windows[i];
         if (w->visible && !w->is_modal && w->buffer_index == buf_idx)
             return i;
     }
@@ -53,8 +53,8 @@ static void cmd_scratch(const char *args) {
     int win_idx = scratch_find_window(buf_idx);
     if (win_idx >= 0) {
         if (win_idx != E.current_window) {
-            E.windows.data[E.current_window].focus = 0;
-            E.windows.data[win_idx].focus = 1;
+            E.windows[E.current_window].focus = 0;
+            E.windows[win_idx].focus = 1;
             E.current_window = win_idx;
             E.current_buffer = buf_idx;
         }
@@ -63,8 +63,8 @@ static void cmd_scratch(const char *args) {
 
     windows_split_vertical();
     Window *w = window_cur();
-    if (w) win_attach_buf(w, &E.buffers.data[buf_idx]);
-    E.buffers.data[buf_idx].dirty = 0;
+    if (w) win_attach_buf(w, &E.buffers[buf_idx]);
+    E.buffers[buf_idx].dirty = 0;
 }
 
 static int scratch_init(void) {

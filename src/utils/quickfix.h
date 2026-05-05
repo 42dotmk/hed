@@ -10,8 +10,7 @@ typedef struct {
     int col;        /* 1-based, optional (0 if unknown) */
 } QfItem;
 
-#include "lib/vector.h"
-VEC_DEFINE(QfItemVec, QfItem);
+#include "stb_ds.h"
 
 typedef struct {
     int open;   /* 0/1 */
@@ -19,7 +18,7 @@ typedef struct {
     int height; /* number of lines used for the pane */
     int sel;    /* selected index (0-based) */
     int scroll; /* first visible index */
-    QfItemVec items;
+    QfItem *items; /* stb_ds dynamic array */
 } Qf;
 
 /* Quickfix buffer helpers

@@ -20,9 +20,9 @@ static void cmd_ts(const char *args) {
     }
     if (strcmp(args, "on") == 0) {
         ts_set_enabled(1);
-        for (int i = 0; i < (int)E.buffers.len; i++) {
-            ts_buffer_autoload(&E.buffers.data[i]);
-            ts_buffer_reparse(&E.buffers.data[i]);
+        for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+            ts_buffer_autoload(&E.buffers[i]);
+            ts_buffer_reparse(&E.buffers[i]);
         }
         ed_set_status_message("ts: on");
     } else if (strcmp(args, "off") == 0) {

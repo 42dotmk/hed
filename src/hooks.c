@@ -1,9 +1,8 @@
 #include "hooks.h"
 #include "editor.h"
+#include "stb_ds.h"
 #include <stdlib.h>
 #include <string.h>
-
-#define MAX_HOOKS_PER_TYPE 16
 
 /* Hook entry - stores callback with its filters */
 typedef struct {
@@ -12,130 +11,84 @@ typedef struct {
     char *filetype; /* Filter by filetype, "*" for all */
 } HookEntry;
 
-/* Hook callback storage */
-typedef struct {
-    HookEntry entries[MAX_HOOKS_PER_TYPE];
-    int count;
-} HookList;
-
-static HookList hooks[HOOK_TYPE_COUNT];
+/* Per-type stb_ds dynamic array of HookEntry. */
+static HookEntry *hooks[HOOK_TYPE_COUNT];
 
 /* Helper: check if hook should fire based on filters */
 static int hook_should_fire(const HookEntry *entry, int current_mode,
                             const char *current_filetype) {
-    /* Check mode filter */
     if (entry->mode != current_mode) {
         return 0;
     }
-
-    /* Check filetype filter */
     if (strcmp(entry->filetype, "*") != 0) {
         if (!current_filetype ||
             strcmp(entry->filetype, current_filetype) != 0) {
             return 0;
         }
     }
-
     return 1;
 }
 
-/* Initialize hook system */
 void hook_init(void) {
     for (int i = 0; i < HOOK_TYPE_COUNT; i++) {
-        hooks[i].count = 0;
+        arrfree(hooks[i]);
+        hooks[i] = NULL;
     }
-
 }
 
-/* Registration functions */
-void hook_register_char(HookType type, int mode, const char *filetype,
-                        HookCharCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
-        return;
-    }
+/* Shared registration: append a new HookEntry. Returns 0 on OOM/invalid. */
+static int hook_push(HookType type, int mode, const char *filetype,
+                     void *callback) {
+    if (type >= HOOK_TYPE_COUNT)
+        return 0;
     char *ft_copy = strdup(filetype);
     if (!ft_copy)
-        return; /* OOM: fail gracefully */
+        return 0;
+    HookEntry e = {.callback = callback, .mode = mode, .filetype = ft_copy};
+    arrput(hooks[type], e);
+    return 1;
+}
 
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = ft_copy;
+void hook_register_char(HookType type, int mode, const char *filetype,
+                        HookCharCallback callback) {
+    hook_push(type, mode, filetype, (void *)callback);
 }
 
 void hook_register_line(HookType type, int mode, const char *filetype,
                         HookLineCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
-        return;
-    }
-    char *ft_copy = strdup(filetype);
-    if (!ft_copy)
-        return; /* OOM: fail gracefully */
-
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = ft_copy;
+    hook_push(type, mode, filetype, (void *)callback);
 }
 
 void hook_register_buffer(HookType type, int mode, const char *filetype,
                           HookBufferCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
-        return;
-    }
-    char *ft_copy = strdup(filetype);
-    if (!ft_copy)
-        return; /* OOM: fail gracefully */
-
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = ft_copy;
+    hook_push(type, mode, filetype, (void *)callback);
 }
 
 void hook_register_mode(HookType type, HookModeCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
-        return;
-    }
-    char *ft_copy = strdup("*");
-    if (!ft_copy)
-        return; /* OOM: fail gracefully */
-
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode =
-        -1; /* Mode change hooks don't filter by mode */
-    hooks[type].entries[idx].filetype = ft_copy;
+    hook_push(type, -1, "*", (void *)callback);
 }
 
 void hook_register_cursor(HookType type, int mode, const char *filetype,
                           HookCursorCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE) {
-        return;
-    }
-    char *ft_copy = strdup(filetype);
-    if (!ft_copy)
-        return; /* OOM: fail gracefully */
-
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode = mode;
-    hooks[type].entries[idx].filetype = ft_copy;
+    hook_push(type, mode, filetype, (void *)callback);
 }
 
-/* Hook firing functions */
+void hook_register_key(HookType type, HookKeyCallback callback) {
+    hook_push(type, -1, "*", (void *)callback);
+}
+
+void hook_register_simple(HookType type, HookSimpleCallback callback) {
+    hook_push(type, -1, "*", (void *)callback);
+}
+
 void hook_fire_char(HookType type, const HookCharEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
-
     const char *filetype =
         (event->buf && event->buf->filetype) ? event->buf->filetype : "txt";
-
-    for (int i = 0; i < hooks[type].count; i++) {
-        if (hook_should_fire(&hooks[type].entries[i], E.mode, filetype)) {
-            HookCharCallback cb =
-                (HookCharCallback)hooks[type].entries[i].callback;
-            cb(event);
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        if (hook_should_fire(&hooks[type][i], E.mode, filetype)) {
+            ((HookCharCallback)hooks[type][i].callback)(event);
         }
     }
 }
@@ -143,15 +96,11 @@ void hook_fire_char(HookType type, const HookCharEvent *event) {
 void hook_fire_line(HookType type, const HookLineEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
-
     const char *filetype =
         (event->buf && event->buf->filetype) ? event->buf->filetype : "txt";
-
-    for (int i = 0; i < hooks[type].count; i++) {
-        if (hook_should_fire(&hooks[type].entries[i], E.mode, filetype)) {
-            HookLineCallback cb =
-                (HookLineCallback)hooks[type].entries[i].callback;
-            cb(event);
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        if (hook_should_fire(&hooks[type][i], E.mode, filetype)) {
+            ((HookLineCallback)hooks[type][i].callback)(event);
         }
     }
 }
@@ -159,16 +108,11 @@ void hook_fire_line(HookType type, const HookLineEvent *event) {
 void hook_fire_buffer(HookType type, HookBufferEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
-
     const char *filetype =
         (event->buf && event->buf->filetype) ? event->buf->filetype : "txt";
-
-    for (int i = 0; i < hooks[type].count; i++) {
-        if (hook_should_fire(&hooks[type].entries[i], E.mode, filetype)) {
-            HookBufferCallback cb =
-                (HookBufferCallback)hooks[type].entries[i].callback;
-            cb(event);
-            /* For *_PRE intercept hooks, stop after first claim. */
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        if (hook_should_fire(&hooks[type][i], E.mode, filetype)) {
+            ((HookBufferCallback)hooks[type][i].callback)(event);
             if (event->consumed)
                 return;
         }
@@ -178,66 +122,37 @@ void hook_fire_buffer(HookType type, HookBufferEvent *event) {
 void hook_fire_mode(HookType type, const HookModeEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
-
-    /* Mode change hooks always fire (mode=-1 in registration) */
-    for (int i = 0; i < hooks[type].count; i++) {
-        HookModeCallback cb = (HookModeCallback)hooks[type].entries[i].callback;
-        cb(event);
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookModeCallback)hooks[type][i].callback)(event);
     }
-}
-
-void hook_register_key(HookType type, HookKeyCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE)
-        return;
-    char *ft_copy = strdup("*");
-    if (!ft_copy) return;
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode     = -1;
-    hooks[type].entries[idx].filetype = ft_copy;
 }
 
 void hook_fire_key(HookType type, HookKeyEvent *event) {
-    if (type >= HOOK_TYPE_COUNT) return;
-    for (int i = 0; i < hooks[type].count; i++) {
-        HookKeyCallback cb = (HookKeyCallback)hooks[type].entries[i].callback;
-        cb(event);
-        if (event->consumed) return; /* stop at first consumer */
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookKeyCallback)hooks[type][i].callback)(event);
+        if (event->consumed)
+            return;
     }
 }
 
-void hook_register_simple(HookType type, HookSimpleCallback callback) {
-    if (type >= HOOK_TYPE_COUNT || hooks[type].count >= MAX_HOOKS_PER_TYPE)
-        return;
-    char *ft_copy = strdup("*");
-    if (!ft_copy) return;
-    int idx = hooks[type].count++;
-    hooks[type].entries[idx].callback = (void *)callback;
-    hooks[type].entries[idx].mode     = -1;
-    hooks[type].entries[idx].filetype = ft_copy;
-}
-
 void hook_fire_simple(HookType type) {
-    if (type >= HOOK_TYPE_COUNT) return;
-    for (int i = 0; i < hooks[type].count; i++) {
-        HookSimpleCallback cb =
-            (HookSimpleCallback)hooks[type].entries[i].callback;
-        cb();
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookSimpleCallback)hooks[type][i].callback)();
     }
 }
 
 void hook_fire_cursor(HookType type, const HookCursorEvent *event) {
     if (type >= HOOK_TYPE_COUNT)
         return;
-
     const char *filetype =
         (event->buf && event->buf->filetype) ? event->buf->filetype : "txt";
-
-    for (int i = 0; i < hooks[type].count; i++) {
-        if (hook_should_fire(&hooks[type].entries[i], E.mode, filetype)) {
-            HookCursorCallback cb =
-                (HookCursorCallback)hooks[type].entries[i].callback;
-            cb(event);
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        if (hook_should_fire(&hooks[type][i], E.mode, filetype)) {
+            ((HookCursorCallback)hooks[type][i].callback)(event);
         }
     }
 }

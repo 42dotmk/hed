@@ -125,7 +125,7 @@ static int cmdcomp_complete_cmdname(void) {
     /* Filter command list by prefix. */
     int matches[256];
     int n = 0;
-    for (int i = 0; i < command_count && n < (int)(sizeof(matches)/sizeof(matches[0])); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(commands) && n < (ptrdiff_t)(sizeof(matches)/sizeof(matches[0])); i++) {
         if (commands[i].name && strncmp(commands[i].name, prefix, (size_t)plen) == 0)
             matches[n++] = i;
     }

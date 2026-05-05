@@ -6,26 +6,26 @@
 #include "assert.h"
 
 void windows_init(void) {
-    vec_push_typed(&E.windows, Window, (Window){0});
+    arrput(E.windows, ((Window){0}));
     E.current_window = 0;
     E.window_layout = 0;
-    E.windows.data[0].top = 1;
-    E.windows.data[0].left = 1;
-    E.windows.data[0].height = E.screen_rows; /* content rows (set in ed_init) */
-    E.windows.data[0].width = E.screen_cols;
-    E.windows.data[0].buffer_index = E.current_buffer;
-    E.windows.data[0].focus = 1;
-    E.windows.data[0].is_quickfix = 0;
-    E.windows.data[0].is_modal = 0;
-    E.windows.data[0].visible = 1;
-    E.windows.data[0].row_offset = 0;
-    E.windows.data[0].col_offset = 0;
-    E.windows.data[0].wrap = E.default_wrap;
-    E.windows.data[0].cursor.x = 0;
-    E.windows.data[0].cursor.y = 0;
-    E.windows.data[0].gutter_mode = 0;
-    E.windows.data[0].gutter_fixed_width = 0;
-    E.windows.data[0].sel.type = SEL_NONE;
+    E.windows[0].top = 1;
+    E.windows[0].left = 1;
+    E.windows[0].height = E.screen_rows; /* content rows (set in ed_init) */
+    E.windows[0].width = E.screen_cols;
+    E.windows[0].buffer_index = E.current_buffer;
+    E.windows[0].focus = 1;
+    E.windows[0].is_quickfix = 0;
+    E.windows[0].is_modal = 0;
+    E.windows[0].visible = 1;
+    E.windows[0].row_offset = 0;
+    E.windows[0].col_offset = 0;
+    E.windows[0].wrap = E.default_wrap;
+    E.windows[0].cursor.x = 0;
+    E.windows[0].cursor.y = 0;
+    E.windows[0].gutter_mode = 0;
+    E.windows[0].gutter_fixed_width = 0;
+    E.windows[0].sel.type = SEL_NONE;
 }
 
 /* Update geometry for the single main window. (unused) */
@@ -35,19 +35,19 @@ Window *window_cur(void) {
     if (E.modal_window && E.modal_window->visible)
         return E.modal_window;
 
-    if (E.windows.len == 0)
+    if (arrlen(E.windows) == 0)
         return NULL;
-    return &E.windows.data[E.current_window];
+    return &E.windows[E.current_window];
 }
 
 void win_attach_buf(Window *win, Buffer *buf) {
     if (!PTR_VALID(win) || !PTR_VALID(buf))
         return;
     /* Validate buf is actually from E.buffers array */
-    if (buf < E.buffers.data || buf >= E.buffers.data + E.buffers.len)
+    if (buf < E.buffers || buf >= E.buffers + arrlen(E.buffers))
         return;
-    int idx = (int)(buf - E.buffers.data);
-    if (!BOUNDS_CHECK(idx, E.buffers.len))
+    int idx = (int)(buf - E.buffers);
+    if (!BOUNDS_CHECK(idx, arrlen(E.buffers)))
         return; /* Extra safety check */
     win->buffer_index = idx;
     if (buf->cursor) win->cursor = *buf->cursor;
@@ -59,14 +59,14 @@ void win_attach_buf(Window *win, Buffer *buf) {
 void windows_split_vertical(void) {
     WIN(win)
     int prev_idx = E.current_window;
-    int new_idx = E.windows.len;
-    vec_push_typed(&E.windows, Window, *win);
+    int new_idx = arrlen(E.windows);
+    arrput(E.windows, *win);
 
-    E.windows.data[prev_idx].focus = 0;
-    E.windows.data[new_idx].focus = 1;
-    E.windows.data[new_idx].sel.type = SEL_NONE;
+    E.windows[prev_idx].focus = 0;
+    E.windows[new_idx].focus = 1;
+    E.windows[new_idx].sel.type = SEL_NONE;
     E.current_window = new_idx;
-    E.current_buffer = vec_get(&E.windows, Window, new_idx)->buffer_index;
+    E.current_buffer = E.windows[new_idx].buffer_index;
 
     if (!E.wlayout_root) {
         E.wlayout_root = wlayout_init_root(0);
@@ -89,14 +89,14 @@ void windows_split_vertical(void) {
 void windows_split_horizontal(void) {
     WIN(win)
     int prev_idx = E.current_window;
-    int new_idx = E.windows.len;
+    int new_idx = arrlen(E.windows);
 
-    vec_push_typed(&E.windows, Window, *win);
-    E.windows.data[prev_idx].focus = 0;
-    E.windows.data[new_idx].focus = 1;
-    E.windows.data[new_idx].sel.type = SEL_NONE;
+    arrput(E.windows, *win);
+    E.windows[prev_idx].focus = 0;
+    E.windows[new_idx].focus = 1;
+    E.windows[new_idx].sel.type = SEL_NONE;
     E.current_window = new_idx;
-    E.current_buffer = E.windows.data[new_idx].buffer_index;
+    E.current_buffer = E.windows[new_idx].buffer_index;
     if (!E.wlayout_root) {
         E.wlayout_root = wlayout_init_root(0);
     }
@@ -109,34 +109,34 @@ void windows_split_horizontal(void) {
 }
 
 void windows_focus_next(void) {
-    if (E.windows.len <= 1)
+    if (arrlen(E.windows) <= 1)
         return;
-    E.windows.data[E.current_window].focus = 0;
-    E.current_window = (E.current_window + 1) % E.windows.len;
-    E.windows.data[E.current_window].focus = 1;
+    E.windows[E.current_window].focus = 0;
+    E.current_window = (E.current_window + 1) % arrlen(E.windows);
+    E.windows[E.current_window].focus = 1;
     /* Sync current buffer with focused window */
-    E.current_buffer = E.windows.data[E.current_window].buffer_index;
+    E.current_buffer = E.windows[E.current_window].buffer_index;
 }
 
 static void windows_focus_set(int idx) {
-    if (!BOUNDS_CHECK(idx, E.windows.len))
+    if (!BOUNDS_CHECK(idx, arrlen(E.windows)))
         return;
-    for (int i = 0; i < (int)E.windows.len; i++) {
-        E.windows.data[i].focus = 0;
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        E.windows[i].focus = 0;
     }
     E.current_window = idx;
-    E.windows.data[idx].focus = 1;
-    E.current_buffer = E.windows.data[idx].buffer_index;
+    E.windows[idx].focus = 1;
+    E.current_buffer = E.windows[idx].buffer_index;
 }
 
 /* Find neighbor window index in a given direction relative to current.
  * dir: 0=left, 1=right, 2=up, 3=down. Returns -1 if none. */
 static int windows_find_neighbor(int dir) {
-    if (E.windows.len <= 1)
+    if (arrlen(E.windows) <= 1)
         return -1;
-    if (!BOUNDS_CHECK(E.current_window, E.windows.len))
+    if (!BOUNDS_CHECK(E.current_window, arrlen(E.windows)))
         return -1;
-    Window *cur = &E.windows.data[E.current_window];
+    Window *cur = &E.windows[E.current_window];
 
     int cur_top = cur->top;
     int cur_left = cur->left;
@@ -146,10 +146,10 @@ static int windows_find_neighbor(int dir) {
     int best = -1;
     int best_metric = 0;
 
-    for (int i = 0; i < (int)E.windows.len; i++) {
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
         if (i == E.current_window)
             continue;
-        Window *w = &E.windows.data[i];
+        Window *w = &E.windows[i];
         int w_top = w->top;
         int w_left = w->left;
         int w_bottom = w->top + w->height - 1;
@@ -243,7 +243,7 @@ void windows_close_current(void) {
 		 winmodal_destroy(winmodal_current());
 		return;
 	}
-    if (E.windows.len <= 1) {
+    if (arrlen(E.windows) <= 1) {
         ed_set_status_message("only one window");
         return;
     }
@@ -252,21 +252,17 @@ void windows_close_current(void) {
     if (E.wlayout_root) {
         E.wlayout_root = wlayout_close_leaf(E.wlayout_root, idx);
     }
-    /* Shift windows array down and update indices in layout tree */
-    for (int i = idx; i < (int)E.windows.len - 1; i++) {
-        E.windows.data[i] = E.windows.data[i + 1];
-    }
-    E.windows.len--;
+    arrdel(E.windows, idx);
     if (E.wlayout_root)
         wlayout_reindex_after_close(E.wlayout_root, idx);
-    if (E.current_window >= (int)E.windows.len)
-        E.current_window = E.windows.len - 1;
+    if (E.current_window >= (int)arrlen(E.windows))
+        E.current_window = arrlen(E.windows) - 1;
     /* Focus the resulting window */
-    for (int i = 0; i < (int)E.windows.len; i++)
-        E.windows.data[i].focus = 0;
+    for (int i = 0; i < (int)arrlen(E.windows); i++)
+        E.windows[i].focus = 0;
     if (E.current_window >= 0) {
-        E.windows.data[E.current_window].focus = 1;
-        E.current_buffer = E.windows.data[E.current_window].buffer_index;
+        E.windows[E.current_window].focus = 1;
+        E.current_buffer = E.windows[E.current_window].buffer_index;
     }
-    ed_set_status_message("closed window (%d remaining)", E.windows.len);
+    ed_set_status_message("closed window (%d remaining)", arrlen(E.windows));
 }

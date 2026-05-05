@@ -38,7 +38,7 @@ static void on_keypress(HookKeyEvent *event) {
     int n = buf_cursor_count(buf);
     Cursor **all = malloc(sizeof(Cursor *) * (size_t)n);
     if (!all) return;
-    for (int i = 0; i < n; i++) all[i] = buf->all_cursors.data[i];
+    for (int i = 0; i < n; i++) all[i] = buf->all_cursors[i];
     qsort(all, (size_t)n, sizeof(Cursor *), cursor_pos_cmp_desc);
 
     KeybindState saved_kb;
@@ -53,7 +53,7 @@ static void on_keypress(HookKeyEvent *event) {
         /* The active cursor's count may have changed (e.g., the user
          * triggered :mc_clear which removes everything but active).
          * Bail out if the snapshot is no longer valid. */
-        if ((int)buf->all_cursors.len < n) break;
+        if ((int)arrlen(buf->all_cursors) < n) break;
 
         if (i > 0) {
             /* Restore pre-keypress dispatch state for this replay so
@@ -82,14 +82,14 @@ static void on_keypress(HookKeyEvent *event) {
      * active was destroyed by an mc_* command during dispatch, fall
      * back to whatever's at all_cursors[0]. */
     Cursor *restore_to = NULL;
-    for (size_t i = 0; i < buf->all_cursors.len; i++) {
-        if (buf->all_cursors.data[i] == original_active) {
+    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        if (buf->all_cursors[i] == original_active) {
             restore_to = original_active;
             break;
         }
     }
-    if (!restore_to && buf->all_cursors.len > 0)
-        restore_to = buf->all_cursors.data[0];
+    if (!restore_to && arrlen(buf->all_cursors) > 0)
+        restore_to = buf->all_cursors[0];
     if (restore_to) {
         buf->cursor = restore_to;
         Window *win = window_cur();

@@ -9,11 +9,10 @@ typedef struct {
     int cursor_y;
 } JumpEntry;
 
-#include "lib/vector.h"
-VEC_DEFINE(JumpEntryVec, JumpEntry);
+#include "stb_ds.h"
 
 typedef struct {
-    JumpEntryVec entries;
+    JumpEntry *entries; /* stb_ds dynamic array */
     int current; /* Current position in the list (-1 if not navigating) */
 } JumpList;
 
