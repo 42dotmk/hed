@@ -3,21 +3,19 @@
 #include "hooks.h"
 #include "commands.h"
 #include "terminal.h"
+#include "select_loop.h"
 #include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include "macros.h"
 #include "lib/file_helpers.h"
-#include <sys/select.h>
 
-/* Weak refs to the LSP plugin's fd-pump entry points. If the plugin
- * isn't linked into this build (e.g., PLUGINS_DIR omits it), these
- * resolve to NULL and the main loop skips the calls. */
-extern void lsp_fill_fdset(fd_set *set, int *max_fd) __attribute__((weak));
-extern void lsp_handle_readable(const fd_set *set) __attribute__((weak));
+static void on_stdin_readable(int fd, void *ud) {
+    (void)fd; (void)ud;
+    ed_process_keypress();
+}
 
 
 int main(int argc, char *argv[]) {
@@ -128,6 +126,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    ed_loop_register("stdin", STDIN_FILENO, on_stdin_readable, NULL);
+
     hook_fire_simple(HOOK_STARTUP_DONE);
 
     while (1) {
@@ -138,26 +138,8 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(STDIN_FILENO, &rfds);
-        int maxfd = STDIN_FILENO;
-
-        /* Let LSP plugin (if present) add its server fds to the set. */
-        if (lsp_fill_fdset) lsp_fill_fdset(&rfds, &maxfd);
-
-        int rc = select(maxfd + 1, &rfds, NULL, NULL, NULL);
-        if (rc == -1) {
-            if (errno == EINTR)
-                continue;
+        if (ed_loop_select_once() < 0)
             die("select");
-        }
-
-        if (lsp_handle_readable) lsp_handle_readable(&rfds);
-
-        if (FD_ISSET(STDIN_FILENO, &rfds)) {
-            ed_process_keypress();
-        }
     }
 
     return 0;

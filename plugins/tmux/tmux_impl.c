@@ -143,7 +143,7 @@ __attribute__((unused)) static void tmux_history_clear(void) {
     tmux_history_len = 0;
 }
 
-void tmux_history_reset_browse(void) {
+static void tmux_history_reset_browse(void) {
     tmux_hist_idx = -1;
     tmux_hist_saved_len = 0;
     tmux_hist_saved[0] = '\0';

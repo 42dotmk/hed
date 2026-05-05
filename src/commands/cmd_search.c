@@ -6,6 +6,7 @@
 #include "terminal.h"
 #include "commands/cmd_util.h"
 #include "utils/fzf.h"
+#include "prompt.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,19 +63,22 @@ void cmd_cpick(const char *args) {
     if (tab)
         *tab = '\0';
 
-    /* Pre-fill command line and stay in command mode */
-    ed_set_mode(MODE_COMMAND);
-    E.command_len = 0;
-    size_t ll = strlen(picked);
-    size_t maxcopy = sizeof(E.command_buf) - 2;
-    if (ll > maxcopy)
-        ll = maxcopy;
-    memcpy(E.command_buf, picked, ll);
-    E.command_len = (int)ll;
-    E.command_buf[E.command_len++] = ' ';
-    E.command_buf[E.command_len] = '\0';
-    ed_set_status_message(":%s", E.command_buf);
-    E.stay_in_command = 1;
+    /* Pre-fill the active : prompt with "<picked> " and keep it open
+     * for the user to type arguments. cmd_cpick is only ever called
+     * from within an active colon prompt (Tab→fzf escalation, or via
+     * the :c command), so prompt_current() is non-NULL here. */
+    Prompt *p = prompt_current();
+    if (p) {
+        size_t ll = strlen(picked);
+        if (ll + 1 >= sizeof(p->buf)) ll = sizeof(p->buf) - 2;
+        char tmp[PROMPT_BUF_CAP];
+        memcpy(tmp, picked, ll);
+        tmp[ll]   = ' ';
+        tmp[ll+1] = '\0';
+        prompt_set_text(p, tmp, (int)ll + 1);
+        ed_set_status_message(":%s", p->buf);
+        prompt_keep_open();
+    }
     fzf_free(sel, cnt);
 }
 

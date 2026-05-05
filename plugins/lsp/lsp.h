@@ -2,7 +2,6 @@
 #define LSP_H
 
 #include "buf/buffer.h"
-#include <sys/select.h>
 
 typedef struct LspServer LspServer;
 
@@ -10,9 +9,8 @@ typedef struct LspServer LspServer;
 void lsp_init(void);
 void lsp_shutdown(void);
 
-/* select() integration: add LSP fds and dispatch readable events */
-void lsp_fill_fdset(fd_set *set, int *max_fd);
-void lsp_handle_readable(const fd_set *set);
+/* fd readiness is handled inside the plugin via ed_loop_register; no
+ * select-loop entry points are exported. */
 
 /* Buffer lifecycle — called from hooks */
 void lsp_on_buffer_open(Buffer *buf);

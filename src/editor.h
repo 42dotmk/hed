@@ -93,8 +93,6 @@ typedef struct {
                                 */
 
     char status_msg[256];
-    char command_buf[128];
-    int command_len;
 
     SizedStr search_query;
     int search_is_regex; /* 1=regex search, 0=literal */
@@ -104,23 +102,10 @@ typedef struct {
     CmdHistory history;
     RecentFiles recent_files;
     JumpList jump_list;
-    int stay_in_command;
     int default_wrap;   /* 0=unwrap windows by default, 1=wrap */
     int expand_tab;     /* 0=insert '\t', 1=insert spaces */
     int tab_size;       /* visual tab size (defaults to TAB_STOP) */
     char cwd[PATH_MAX]; /* editor working directory (logical cwd) */
-    struct {
-        char **items;
-        int count;
-        int index;
-        char base[256];
-        char prefix[128];
-        int active; /* 1 when a completion set is active */
-        /* 0=none/path, 1=command-name with multiple candidates pending.
-         * Set after first Tab on the command-name token when >1 match
-         * remains. A second Tab in this state fires fzf. */
-        int cmdname_pending;
-    } cmd_complete;
 
     /* Macro replay queue - simulates keyboard input */
     struct {
@@ -136,7 +121,6 @@ typedef struct {
         char register_name;   /* Register being recorded to (a-z) */
         char last_played;     /* Last register played with @ (for @@) */
     } macro_recording;
-    int search_prompt_active; /* 1 while interactive / search prompt is open */
 } Ed;
 
 /* Global editor state */
@@ -151,7 +135,6 @@ void ed_process_keypress(void);
  * cursors without firing HOOK_KEYPRESS again. */
 void ed_dispatch_key(int c);
 void ed_move_cursor(int key);
-void ed_process_command(void);
 
 void ed_set_mode(EditorMode new_mode);
 

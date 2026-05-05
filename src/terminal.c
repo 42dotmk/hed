@@ -4,6 +4,7 @@
 #include "utils/bottom_ui.h"
 #include "buf/buffer.h"
 #include "editor.h"
+#include "prompt.h"
 #include "utils/fold.h"
 #include "hooks.h"
 #include "lib/safe_string.h"
@@ -817,9 +818,11 @@ void ed_render_frame(void) {
     int margin = gutter ? (gutter + 1) : 0;
     int cur_row;
     int cur_col;
-    if (E.mode == MODE_COMMAND) {
+    Prompt *pr = prompt_current();
+    if (pr) {
         cur_row = lo.cmd_row;
-        cur_col = 2 + E.command_len; /* ':' + content */
+        const char *label = pr->vt->label ? pr->vt->label(pr) : "";
+        cur_col = 1 + (int)strlen(label) + pr->len;
     } else {
         if (!buf || win->cursor.y >= buf->num_rows) {
             cur_row = win->top;

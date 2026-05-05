@@ -13,6 +13,7 @@
 #include "utils/ctags.h"
 #include "utils/fold.h"
 #include "utils/fzf.h"
+#include "prompt.h"
 #include "fold_methods/fold_methods.h"
 #include "keybinds.h"
 #include "commands/cmd_util.h"
@@ -266,17 +267,14 @@ void cmd_history_fzf(const char *args) {
         return;
     }
 
-    /* Prefill command buffer with selection and stay in command mode */
-    ed_set_mode(MODE_COMMAND);
-    E.command_len = 0;
-    size_t ll = strlen(sel[0]);
-    if (ll > sizeof(E.command_buf) - 1)
-        ll = sizeof(E.command_buf) - 1;
-    memcpy(E.command_buf, sel[0], ll);
-    E.command_len = (int)ll;
-    E.command_buf[E.command_len] = '\0';
-    ed_set_status_message(":%s", E.command_buf);
-    E.stay_in_command = 1;
+    /* Prefill the active : prompt with the picked history line and
+     * keep it open for further editing. */
+    Prompt *p = prompt_current();
+    if (p) {
+        prompt_set_text(p, sel[0], (int)strlen(sel[0]));
+        ed_set_status_message(":%s", p->buf);
+        prompt_keep_open();
+    }
     fzf_free(sel, cnt);
 }
 

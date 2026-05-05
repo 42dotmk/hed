@@ -1,37 +1,32 @@
 #ifndef COMMAND_MODE_H
 #define COMMAND_MODE_H
 
-/* Command-line mode processing and completion */
+#include "prompt.h"
 
-/**
- * Handle keypress in command mode.
- * Processes input for command-line editing, history navigation,
- * and command execution.
+/*
+ * The ":" prompt and the "/" search prompt.
+ *
+ * Both are PromptVTable instances; this header just exposes the entry
+ * points used by keymaps, builtins and plugins.
  */
-void command_mode_handle_keypress(int c);
 
-/**
- * Start interactive search prompt.
- * Enters a special command-line mode for entering search queries.
- */
+/* Open the ":" command prompt (same effect as pressing `:` in vim). */
+void cmd_prompt_open(void);
+
+/* Open the "/" interactive search prompt. */
 void ed_search_prompt(void);
 
-/**
- * Process and execute the current command in the command buffer.
- * Parses the command name and arguments, executes the command,
- * and handles mode transitions.
+/*
+ * Plugin hook: register a history navigation function for the ":"
+ * prompt. Called on Up/Down arrow before the built-in command-history
+ * fallback. Returns 1 if the hook handled the navigation (its caller
+ * will skip later hooks), 0 to fall through to the next hook /
+ * command-history. The hook may rewrite p->buf via prompt_set_text.
+ *
+ * Used by the tmux plugin to splice tmux-send history into the prompt
+ * when the user is editing a `tmux_send ...` command.
  */
-void ed_process_command(void);
-
-/**
- * Clear the command-line completion state.
- */
-void cmdcomp_clear(void);
-
-/**
- * Cycle to the next completion candidate.
- * If completion is not active, builds the completion list first.
- */
-void cmdcomp_next(void);
+typedef int (*CmdPromptHistoryHook)(Prompt *p, int dir, void *ud);
+void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud);
 
 #endif /* COMMAND_MODE_H */

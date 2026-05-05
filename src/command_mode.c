@@ -3,17 +3,13 @@
 #include "registers.h"
 #include "lib/safe_string.h"
 #include "lib/log.h"
+#include "lib/strutil.h"
 #include "terminal.h"
 #include "command_mode.h"
 #include "commands/cmd_search.h"
+#include "prompt.h"
+#include "stb_ds.h"
 
-/* Weak refs to the tmux plugin's history nav (skipped when not linked). */
-extern int  tmux_history_browse_up(const char *args, int args_len,
-                                   char *out, int out_cap)
-    __attribute__((weak));
-extern int  tmux_history_browse_down(char *out, int out_cap, int *restored)
-    __attribute__((weak));
-extern void tmux_history_reset_browse(void) __attribute__((weak));
 #include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
@@ -24,122 +20,116 @@ extern void tmux_history_reset_browse(void) __attribute__((weak));
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* --- Command-line (:) mode handling --- */
+/* ===========================================================================
+ * The ":" prompt
+ *
+ * Vtable layout: on_key delegates to prompt_default_on_key, which calls
+ *   complete()  on Tab,
+ *   history()   on Up/Down arrow,
+ *   on_submit() on Enter, on_cancel() on Esc.
+ *
+ * Storage lives in the Prompt itself (p->buf/p->len). State specific to
+ * the colon prompt — file-path completion candidates and a "command-name
+ * pending fzf escalation" flag — lives in CmdPromptState attached via
+ * p->state.
+ * =========================================================================== */
 
-static int command_tmux_history_nav(int direction) {
-    const char *cmd = "tmux_send";
-    size_t plen = strlen(cmd);
-    if ((size_t)E.command_len < plen)
-        return 0;
-    if (strncmp(E.command_buf, cmd, plen) != 0)
-        return 0;
-    if ((size_t)E.command_len > plen && E.command_buf[plen] != ' ')
-        return 0;
+typedef struct {
+    char **items;
+    int    count;
+    int    index;
+    char   base[256];
+    char   prefix[128];
+    int    active;
+    /* 0 = none/path mode; 1 = command-name with multiple candidates and
+     * a pending fzf escalation on the next Tab. */
+    int    cmdname_pending;
+} CmdComp;
 
-    const char *args = E.command_buf + plen;
-    if (*args == ' ')
-        args++;
-    int args_len = E.command_len - (int)(args - E.command_buf);
+typedef struct {
+    CmdComp comp;
+} CmdPromptState;
 
-    if (!tmux_history_browse_up || !tmux_history_browse_down)
-        return 0;
-    char candidate[512];
-    int ok =
-        (direction < 0)
-            ? tmux_history_browse_up(args, args_len, candidate,
-                                     (int)sizeof(candidate))
-            : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
-    if (!ok)
-        return 0;
+static CmdPromptState g_cmd_state;
 
-    int n = snprintf(E.command_buf, sizeof(E.command_buf), "tmux_send%s%s",
-                     candidate[0] ? " " : "", candidate);
-    if (n < 0)
-        n = 0;
-    if (n >= (int)sizeof(E.command_buf))
-        n = (int)sizeof(E.command_buf) - 1;
-    E.command_buf[n] = '\0';
-    E.command_len = n;
+/* History hook registry — plugins (e.g. tmux) plug in here. */
+typedef struct { CmdPromptHistoryHook fn; void *ud; } HistoryHook;
+static HistoryHook *g_history_hooks = NULL;
+
+void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud) {
+    HistoryHook h = { fn, ud };
+    arrput(g_history_hooks, h);
+}
+
+/* ----- completion: file-path and command-name ---------------------------- */
+
+static void cmdcomp_clear(CmdComp *c) {
+    if (c->items) {
+        for (int i = 0; i < c->count; i++) free(c->items[i]);
+        free(c->items);
+    }
+    c->items           = NULL;
+    c->count           = 0;
+    c->index           = 0;
+    c->base[0]         = '\0';
+    c->prefix[0]       = '\0';
+    c->active          = 0;
+    c->cmdname_pending = 0;
+}
+
+static int cmdcomp_is_cmdname_position(Prompt *p) {
+    for (int i = 0; i < p->len; i++)
+        if (p->buf[i] == ' ') return 0;
     return 1;
 }
 
-/* --- Command-line (:) file path completion --- */
-
-void cmdcomp_clear(void) {
-    if (E.cmd_complete.items) {
-        for (int i = 0; i < E.cmd_complete.count; i++)
-            free(E.cmd_complete.items[i]);
-        free(E.cmd_complete.items);
+/* Replace the leading token in p->buf with `replacement`. Optionally append
+ * a trailing space. Refuses to truncate if the result would overflow. */
+static void cmdcomp_replace_first_token(Prompt *p, const char *replacement,
+                                         int add_space) {
+    int tok_end = p->len;
+    for (int i = 0; i < p->len; i++) {
+        if (p->buf[i] == ' ') { tok_end = i; break; }
     }
-    E.cmd_complete.items = NULL;
-    E.cmd_complete.count = 0;
-    E.cmd_complete.index = 0;
-    E.cmd_complete.base[0] = '\0';
-    E.cmd_complete.prefix[0] = '\0';
-    E.cmd_complete.active = 0;
-    E.cmd_complete.cmdname_pending = 0;
-}
-
-/* Returns 1 iff the buffer is still on the command-name token (no space
- * typed yet). When true, Tab should complete a command name. */
-static int cmdcomp_is_cmdname_position(void) {
-    for (int i = 0; i < E.command_len; i++) {
-        if (E.command_buf[i] == ' ') return 0;
-    }
-    return 1;
-}
-
-/* Replace the leading token in command_buf with `replacement`. If
- * `add_space` is non-zero and the token currently has no trailing space,
- * append one. */
-static void cmdcomp_replace_first_token(const char *replacement, int add_space) {
-    int tok_end = E.command_len;
-    for (int i = 0; i < E.command_len; i++) {
-        if (E.command_buf[i] == ' ') { tok_end = i; break; }
-    }
-    int rlen = (int)strlen(replacement);
-    int extra = add_space ? 1 : 0;
-    int tail = E.command_len - tok_end;
+    int rlen    = (int)strlen(replacement);
+    int extra   = add_space ? 1 : 0;
+    int tail    = p->len - tok_end;
     int new_len = rlen + extra + tail;
-    if (new_len >= (int)sizeof(E.command_buf))
-        return; /* refuse to truncate */
-    memmove(E.command_buf + rlen + extra,
-            E.command_buf + tok_end,
-            (size_t)tail);
-    memcpy(E.command_buf, replacement, (size_t)rlen);
-    if (add_space) E.command_buf[rlen] = ' ';
-    E.command_len = new_len;
-    E.command_buf[E.command_len] = '\0';
+    if (new_len >= (int)sizeof(p->buf)) return;
+    memmove(p->buf + rlen + extra, p->buf + tok_end, (size_t)tail);
+    memcpy(p->buf, replacement, (size_t)rlen);
+    if (add_space) p->buf[rlen] = ' ';
+    p->len = new_len;
+    p->buf[p->len] = '\0';
+    p->cursor = p->len;
 }
 
-/* Tab completion for the command name (first token).
- * Returns 1 if the buffer changed; 0 otherwise. Sets cmdname_pending
- * when >1 match remains (so the next Tab can escalate to fzf). */
-static int cmdcomp_complete_cmdname(void) {
+static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
     char prefix[128];
-    int plen = E.command_len;
+    int plen = p->len;
     if (plen >= (int)sizeof(prefix)) plen = (int)sizeof(prefix) - 1;
-    memcpy(prefix, E.command_buf, (size_t)plen);
+    memcpy(prefix, p->buf, (size_t)plen);
     prefix[plen] = '\0';
 
-    /* Filter command list by prefix. */
     int matches[256];
     int n = 0;
-    for (ptrdiff_t i = 0; i < arrlen(commands) && n < (ptrdiff_t)(sizeof(matches)/sizeof(matches[0])); i++) {
-        if (commands[i].name && strncmp(commands[i].name, prefix, (size_t)plen) == 0)
-            matches[n++] = i;
+    for (ptrdiff_t i = 0; i < arrlen(commands)
+                       && n < (ptrdiff_t)(sizeof(matches)/sizeof(matches[0])); i++) {
+        if (commands[i].name &&
+            strncmp(commands[i].name, prefix, (size_t)plen) == 0)
+            matches[n++] = (int)i;
     }
     if (n == 0) {
         ed_set_status_message("no matching commands");
-        E.cmd_complete.cmdname_pending = 0;
+        c->cmdname_pending = 0;
         return 0;
     }
     if (n == 1) {
-        cmdcomp_replace_first_token(commands[matches[0]].name, 1);
-        E.cmd_complete.cmdname_pending = 0;
+        cmdcomp_replace_first_token(p, commands[matches[0]].name, 1);
+        c->cmdname_pending = 0;
         return 1;
     }
-    /* >1 match: extend to longest common prefix among matches. */
+    /* >1 match: extend to longest common prefix. */
     const char *first = commands[matches[0]].name;
     int lcp_len = (int)strlen(first);
     for (int i = 1; i < n; i++) {
@@ -154,64 +144,55 @@ static int cmdcomp_complete_cmdname(void) {
         if (lcp_len >= (int)sizeof(lcp)) lcp_len = (int)sizeof(lcp) - 1;
         memcpy(lcp, first, (size_t)lcp_len);
         lcp[lcp_len] = '\0';
-        cmdcomp_replace_first_token(lcp, 0);
+        cmdcomp_replace_first_token(p, lcp, 0);
         changed = 1;
     }
-    /* Mark pending so next Tab opens fzf. */
-    E.cmd_complete.cmdname_pending = 1;
+    c->cmdname_pending = 1;
     ed_set_status_message("%d matches — Tab again for fzf", n);
     return changed;
 }
 
-static void cmdcomp_apply_token(const char *replacement) {
-    int len = E.command_len;
+static void cmdcomp_apply_token(Prompt *p, const char *replacement) {
+    int len = p->len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (E.command_buf[i] == ' ') {
-            start = i + 1;
-            break;
-        }
+        if (p->buf[i] == ' ') { start = i + 1; break; }
     }
     int rlen = (int)strlen(replacement);
-    if (start + rlen >= (int)sizeof(E.command_buf))
-        rlen = (int)sizeof(E.command_buf) - 1 - start;
-    memcpy(E.command_buf + start, replacement, (size_t)rlen);
-    E.command_len = start + rlen;
-    E.command_buf[E.command_len] = '\0';
+    if (start + rlen >= (int)sizeof(p->buf))
+        rlen = (int)sizeof(p->buf) - 1 - start;
+    memcpy(p->buf + start, replacement, (size_t)rlen);
+    p->len         = start + rlen;
+    p->buf[p->len] = '\0';
+    p->cursor      = p->len;
 }
 
-static void cmdcomp_build(void) {
-    cmdcomp_clear();
+static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
+    cmdcomp_clear(c);
     const char *home = getenv("HOME");
-    int len = E.command_len;
+    int len   = p->len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (E.command_buf[i] == ' ') {
-            start = i + 1;
-            break;
-        }
+        if (p->buf[i] == ' ') { start = i + 1; break; }
     }
     char token[PATH_MAX];
-    int tlen = len - start;
-    if (tlen < 0)
-        tlen = 0;
-    if (tlen > (int)sizeof(token) - 1)
-        tlen = (int)sizeof(token) - 1;
-    memcpy(token, E.command_buf + start, (size_t)tlen);
+    int  tlen = len - start;
+    if (tlen < 0) tlen = 0;
+    if (tlen > (int)sizeof(token) - 1) tlen = (int)sizeof(token) - 1;
+    memcpy(token, p->buf + start, (size_t)tlen);
     token[tlen] = '\0';
-    /* Only start completion if token begins with '.', '~', or '/' */
-    if (tlen == 0)
-        return;
+    if (tlen == 0) return;
     char first = token[0];
     if (!(first == '.' || first == '~' || first == '/'))
         return;
+
     char full[PATH_MAX];
     if (token[0] == '~' && home) {
         if (token[1] == '/' || token[1] == '\0')
             snprintf(full, sizeof(full), "%s/%s", home,
                      token[1] ? token + 2 - 1 : "");
         else
-            snprintf(full, sizeof(full), "%s", token); /* unsupported ~user */
+            snprintf(full, sizeof(full), "%s", token);
     } else {
         snprintf(full, sizeof(full), "%s", token);
     }
@@ -220,266 +201,232 @@ static void cmdcomp_build(void) {
     char pref[PATH_MAX];
     if (slash) {
         size_t blen = (size_t)(slash - full + 1);
-        if (blen >= sizeof(base))
-            blen = sizeof(base) - 1;
-        memcpy(base, full, blen);
-        base[blen] = '\0';
+        if (blen >= sizeof(base)) blen = sizeof(base) - 1;
+        memcpy(base, full, blen); base[blen] = '\0';
         snprintf(pref, sizeof(pref), "%s", slash + 1);
     } else {
         base[0] = '\0';
         snprintf(pref, sizeof(pref), "%s", full);
     }
     DIR *d = opendir(base[0] ? base : ".");
-    if (!d)
-        return;
+    if (!d) return;
     struct dirent *de;
-    int cap = 0;
-    int count = 0;
-    char **items = NULL;
+    int     cap   = 0;
+    int     count = 0;
+    char  **items = NULL;
     while ((de = readdir(d)) != NULL) {
         const char *name = de->d_name;
-        if (name[0] == '.' && pref[0] != '.')
-            continue;
-        if (strncmp(name, pref, strlen(pref)) != 0)
-            continue;
+        if (name[0] == '.' && pref[0] != '.') continue;
+        if (strncmp(name, pref, strlen(pref)) != 0) continue;
         int isdir = 0;
 #ifdef DT_DIR
-        if (de->d_type == DT_DIR)
-            isdir = 1;
+        if (de->d_type == DT_DIR) isdir = 1;
         if (de->d_type == DT_UNKNOWN)
 #endif
         {
             char path[PATH_MAX];
             snprintf(path, sizeof(path), "%s%s", base[0] ? base : "", name);
             struct stat st;
-            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
-                isdir = 1;
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) isdir = 1;
         }
         char cand[PATH_MAX];
-        /* Include base path so tokens like "src/" complete to "src/<entry>" */
-        snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name,
-                 isdir ? "/" : "");
+        snprintf(cand, sizeof(cand), "%s%s%s",
+                 base[0] ? base : "", name, isdir ? "/" : "");
         if (count + 1 > cap) {
             cap = cap ? cap * 2 : 16;
             char **new_items = realloc(items, (size_t)cap * sizeof(char *));
             if (!new_items) {
-                /* OOM: cleanup and abort completion */
-                for (int i = 0; i < count; i++)
-                    free(items[i]);
-                free(items);
-                closedir(d);
-                return;
+                for (int i = 0; i < count; i++) free(items[i]);
+                free(items); closedir(d); return;
             }
             items = new_items;
         }
         char *cand_copy = strdup(cand);
         if (!cand_copy) {
-            /* OOM: cleanup and abort completion */
-            for (int i = 0; i < count; i++)
-                free(items[i]);
-            free(items);
-            closedir(d);
-            return;
+            for (int i = 0; i < count; i++) free(items[i]);
+            free(items); closedir(d); return;
         }
         items[count++] = cand_copy;
     }
     closedir(d);
-    if (count == 0) {
-        free(items);
-        return;
-    }
-    E.cmd_complete.items = items;
-    E.cmd_complete.count = count;
-    E.cmd_complete.index = 0;
-    snprintf(E.cmd_complete.base, sizeof(E.cmd_complete.base), "%s", base);
-    snprintf(E.cmd_complete.prefix, sizeof(E.cmd_complete.prefix), "%s", pref);
-    E.cmd_complete.active = 1;
-    cmdcomp_apply_token(items[0]);
+    if (count == 0) { free(items); return; }
+    c->items  = items;
+    c->count  = count;
+    c->index  = 0;
+    snprintf(c->base,   sizeof(c->base),   "%s", base);
+    snprintf(c->prefix, sizeof(c->prefix), "%s", pref);
+    c->active = 1;
+    cmdcomp_apply_token(p, items[0]);
     ed_set_status_message("%d matches", count);
 }
 
-void cmdcomp_next(void) {
-    if (!E.cmd_complete.active || E.cmd_complete.count == 0) {
-        cmdcomp_build();
+static void cmdcomp_next(Prompt *p, CmdComp *c) {
+    if (!c->active || c->count == 0) {
+        cmdcomp_build_filepath(p, c);
         return;
     }
-    E.cmd_complete.index = (E.cmd_complete.index + 1) % E.cmd_complete.count;
-    cmdcomp_apply_token(E.cmd_complete.items[E.cmd_complete.index]);
+    c->index = (c->index + 1) % c->count;
+    cmdcomp_apply_token(p, c->items[c->index]);
 }
 
-static void ed_start_search(Buffer *buf) {
-    if (!PTR_VALID(buf))
-        return;
+/* ----- vtable hooks ----------------------------------------------------- */
 
-    /* Save current mode and enter command mode for visual feedback */
-    EditorMode saved_mode = E.mode;
-    ed_set_mode(MODE_COMMAND);
-    E.command_len = 0;
-    E.search_prompt_active = 1;
-    ed_set_status_message("/");
-    ed_render_frame();
+static const char *colon_label(Prompt *p) { (void)p; return ":"; }
 
-    /* Read search query interactively */
-    int search_len = 0;
-    char search_buf[80];
-    int use_regex = 1; /* default: regex search */
-    search_buf[0] = '\0';
-
-    ed_set_status_message("/%.*s", search_len, search_buf);
-    ed_render_frame();
-    while (1) {
-        int k = ed_read_key();
-
-        if (k == '\r') {
-            /* Execute search */
-            break;
+static void colon_complete(Prompt *p) {
+    CmdPromptState *s = p->state;
+    if (cmdcomp_is_cmdname_position(p)) {
+        if (s->comp.cmdname_pending) {
+            /* Second Tab on the command name: hand off to fzf, seeded
+             * with the partial typed so far. cmd_cpick re-fills the
+             * prompt and calls prompt_keep_open(). */
+            char query[128];
+            int n = p->len;
+            if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
+            memcpy(query, p->buf, (size_t)n);
+            query[n] = '\0';
+            cmdcomp_clear(&s->comp);
+            cmd_cpick(query);
+        } else {
+            cmdcomp_complete_cmdname(p, &s->comp);
         }
-
-        if (k == '\x1b') {
-            /* Cancel search */
-            E.search_prompt_active = 0;
-            ed_set_mode(saved_mode);
-            return;
-        }
-
-        if (k == CTRL_KEY('r')) {
-            use_regex = !use_regex;
-        } else if (k == KEY_DELETE && search_len > 0) {
-            search_len--;
-        } else if (!iscntrl(k) && k >= 0 && search_len < 79) {
-            search_buf[search_len++] = (char)k;
-        }
-
-        search_buf[search_len] = '\0';
-        ed_set_status_message("/%.*s", search_len, search_buf);
-        ed_render_frame();
+    } else {
+        cmdcomp_next(p, &s->comp);
     }
+}
 
-    /* Update global search query and find in buffer */
+static void colon_history(Prompt *p, int dir) {
+    CmdPromptState *s = p->state;
+    cmdcomp_clear(&s->comp);
+
+    /* Plugin hooks first; first non-zero wins. */
+    for (ptrdiff_t i = 0; i < arrlen(g_history_hooks); i++) {
+        if (g_history_hooks[i].fn(p, dir, g_history_hooks[i].ud))
+            return;
+    }
+    /* Built-in command-history fallback. */
+    if (dir < 0) {
+        char out[PROMPT_BUF_CAP];
+        if (hist_browse_up(&E.history, p->buf, p->len, out, (int)sizeof(out))) {
+            prompt_set_text(p, out, (int)strlen(out));
+        } else {
+            ed_set_status_message("No history match");
+        }
+    } else {
+        char out[PROMPT_BUF_CAP];
+        int restored = 0;
+        if (hist_browse_down(&E.history, out, (int)sizeof(out), &restored)) {
+            prompt_set_text(p, out, (int)strlen(out));
+        }
+    }
+}
+
+static PromptResult colon_on_key(Prompt *p, int key) {
+    CmdPromptState *s = p->state;
+    /* Any printable / backspace key invalidates the active completion
+     * candidate set. The default handler doesn't know the prompt has
+     * completion state, so reset it eagerly here. */
+    if (key != '\t' && key != KEY_ARROW_UP && key != KEY_ARROW_DOWN &&
+        key != '\r' && key != '\x1b') {
+        cmdcomp_clear(&s->comp);
+        hist_reset_browse(&E.history);
+    }
+    return prompt_default_on_key(p, key);
+}
+
+static void colon_on_submit(Prompt *p, const char *line, int len) {
+    if (len == 0) return; /* dispatcher will close */
+
+    /* Parse "name args" — split on first space (in a stack copy so we
+     * don't mutate p->buf, since commands may want to read the full line). */
+    char work[PROMPT_BUF_CAP];
+    if (len >= (int)sizeof(work)) len = (int)sizeof(work) - 1;
+    memcpy(work, line, (size_t)len);
+    work[len] = '\0';
+
+    char *space    = strchr(work, ' ');
+    char *cmd_name = work;
+    char *cmd_args = NULL;
+    if (space) { *space = '\0'; cmd_args = space + 1; }
+
+    log_msg(":%s%s%s", cmd_name, cmd_args ? " " : "", cmd_args ? cmd_args : "");
+    if (!command_execute(cmd_name, cmd_args)) {
+        ed_set_status_message("Unknown command: %s", line);
+        return;
+    }
+    /* Save full line (with args) to history. */
+    regs_set_cmd(line, (size_t)len);
+    hist_add(&E.history, line);
+    /* If the command called prompt_keep_open(), the dispatcher will
+     * not close — leaving us in MODE_COMMAND with the prefilled buf. */
+}
+
+static void colon_on_cancel(Prompt *p) {
+    CmdPromptState *s = p->state;
+    cmdcomp_clear(&s->comp);
+    hist_reset_browse(&E.history);
+}
+
+static const PromptVTable colon_vt = {
+    .label     = colon_label,
+    .on_key    = colon_on_key,
+    .on_submit = colon_on_submit,
+    .on_cancel = colon_on_cancel,
+    .complete  = colon_complete,
+    .history   = colon_history,
+};
+
+void cmd_prompt_open(void) {
+    /* Reset state for a fresh prompt instance. */
+    cmdcomp_clear(&g_cmd_state.comp);
+    prompt_open(&colon_vt, &g_cmd_state);
+}
+
+/* ===========================================================================
+ * The "/" search prompt
+ *
+ * Far simpler: no completion, no history, just line editing plus a
+ * Ctrl-R toggle for regex/literal search mode. Submit fires the search.
+ * =========================================================================== */
+
+typedef struct { int use_regex; } SearchState;
+static SearchState g_search_state;
+
+static const char *search_label(Prompt *p) {
+    SearchState *s = p->state;
+    return s->use_regex ? "/" : "/(lit) ";
+}
+
+static PromptResult search_on_key(Prompt *p, int key) {
+    SearchState *s = p->state;
+    if (key == CTRL_KEY('r')) {
+        s->use_regex = !s->use_regex;
+        return PROMPT_CONTINUE;
+    }
+    return prompt_default_on_key(p, key);
+}
+
+static void search_on_submit(Prompt *p, const char *line, int len) {
+    SearchState *s = p->state;
+    Buffer *buf = buf_cur();
+    if (!buf) return;
     sstr_free(&E.search_query);
-    E.search_query = sstr_from(search_buf, search_len);
-    E.search_is_regex = use_regex;
-    E.search_prompt_active = 0;
-    E.mode = saved_mode;
+    E.search_query    = sstr_from(line, (size_t)len);
+    E.search_is_regex = s->use_regex;
     buf_find_in(buf);
 }
 
+static const PromptVTable search_vt = {
+    .label     = search_label,
+    .on_key    = search_on_key,
+    .on_submit = search_on_submit,
+    .on_cancel = NULL,
+    .complete  = NULL,
+    .history   = NULL,
+};
+
 void ed_search_prompt(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-    ed_start_search(buf);
-}
-
-void command_mode_handle_keypress(int c) {
-    if (c == '\r') {
-        ed_process_command();
-    } else if (c == '\x1b') {
-        E.mode = MODE_NORMAL;
-        E.command_len = 0;
-        hist_reset_browse(&E.history);
-        if (tmux_history_reset_browse) tmux_history_reset_browse();
-        cmdcomp_clear();
-    } else if (c == KEY_DELETE || c == CTRL_KEY('h')) {
-        if (E.command_len > 0)
-            E.command_len--;
-        hist_reset_browse(&E.history);
-        if (tmux_history_reset_browse) tmux_history_reset_browse();
-        cmdcomp_clear();
-    } else if (c == KEY_ARROW_UP) {
-        if (command_tmux_history_nav(-1)) {
-            cmdcomp_clear();
-        } else {
-            if (tmux_history_reset_browse) tmux_history_reset_browse();
-            if (hist_browse_up(&E.history, E.command_buf, E.command_len,
-                               E.command_buf, (int)sizeof(E.command_buf))) {
-                E.command_len = (int)strlen(E.command_buf);
-            } else {
-                ed_set_status_message("No history match");
-            }
-            cmdcomp_clear();
-        }
-    } else if (c == KEY_ARROW_DOWN) {
-        int restored = 0;
-        if (command_tmux_history_nav(1)) {
-            cmdcomp_clear();
-        } else {
-            if (tmux_history_reset_browse) tmux_history_reset_browse();
-            if (hist_browse_down(&E.history, E.command_buf,
-                                 (int)sizeof(E.command_buf), &restored)) {
-                E.command_len = (int)strlen(E.command_buf);
-            }
-            cmdcomp_clear();
-        }
-    } else if (c == '\t') {
-        if (cmdcomp_is_cmdname_position()) {
-            if (E.cmd_complete.cmdname_pending) {
-                /* Second Tab on the command name: hand off to fzf, seeded
-                 * with the partial typed so far. cmd_cpick re-enters
-                 * command mode with the picked command pre-filled. */
-                char query[128];
-                int n = E.command_len;
-                if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
-                memcpy(query, E.command_buf, (size_t)n);
-                query[n] = '\0';
-                cmdcomp_clear();
-                cmd_cpick(query);
-            } else {
-                cmdcomp_complete_cmdname();
-            }
-        } else {
-            cmdcomp_next();
-        }
-    } else if (!iscntrl(c) && c < 128) {
-        if (E.command_len < (int)sizeof(E.command_buf) - 1) {
-            E.command_buf[E.command_len++] = c;
-        }
-        hist_reset_browse(&E.history);
-        if (tmux_history_reset_browse) tmux_history_reset_browse();
-        cmdcomp_clear();
-    }
-}
-
-void ed_process_command(void) {
-    if (E.command_len == 0) {
-        ed_set_mode(MODE_NORMAL);
-        return;
-    }
-
-    E.command_buf[E.command_len] = '\0';
-
-    /* Parse command name and arguments */
-    char *space = strchr(E.command_buf, ' ');
-    char *cmd_name = E.command_buf;
-    char *cmd_args = NULL;
-
-    if (space) {
-        *space = '\0'; /* Split command name and args */
-        cmd_args = space + 1;
-    }
-
-    /* Execute command */
-    log_msg(":%s%s%s", cmd_name, cmd_args ? " " : "", cmd_args ? cmd_args : "");
-    if (!command_execute(cmd_name, cmd_args)) {
-        if (space)
-            *space = ' ';
-        ed_set_status_message("Unknown command: %s", E.command_buf);
-    } else {
-        if (space)
-            *space = ' '; /* restore full "cmd args" before saving to history */
-        regs_set_cmd(E.command_buf, strlen(E.command_buf));
-        hist_add(&E.history, E.command_buf);
-    }
-
-    if (E.stay_in_command) {
-        E.stay_in_command = 0; /* consume flag: remain in command mode */
-        /* do not clear command buffer; command likely prefilled it */
-        E.mode = MODE_COMMAND;
-    } else {
-        ed_set_mode(MODE_NORMAL);
-        E.command_len = 0;
-        hist_reset_browse(&E.history);
-        if (tmux_history_reset_browse) tmux_history_reset_browse();
-        cmdcomp_clear();
-    }
+    if (!buf_cur()) return;
+    g_search_state.use_regex = 1;
+    prompt_open(&search_vt, &g_search_state);
 }

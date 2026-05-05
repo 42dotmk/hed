@@ -1,10 +1,11 @@
 #include "utils/bottom_ui.h"
 #include "lib/ansi.h"
 #include "editor.h"
+#include "prompt.h"
 #include "terminal.h"
 
 int ui_message_lines_needed(void) {
-    if (E.mode == MODE_COMMAND && !E.search_prompt_active)
+    if (prompt_active())
         return 1;
     const char *s = E.status_msg;
     int cols = E.screen_cols > 0 ? E.screen_cols : 80;
@@ -44,7 +45,7 @@ void layout_compute(Layout *lo) {
     lo->status_row = lo->content_rows + 1;
     lo->qf_rows = qf_rows; /* informational only now */
     lo->qf_header_row = 0; /* drawing handled via layout */
-    lo->msg_lines = (E.mode == MODE_COMMAND) ? 1 : needed;
+    lo->msg_lines = prompt_active() ? 1 : needed;
     /* Command/message row sits directly below status bar; quickfix is part of
      * content now */
     lo->cmd_row = lo->status_row + 1;
@@ -76,15 +77,19 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
 }
 
 void draw_message_bar(Abuf *ab, const Layout *lo) {
-    if (E.mode == MODE_COMMAND && !E.search_prompt_active) {
+    Prompt *pr = prompt_current();
+    if (pr) {
         ansi_move(ab, lo->cmd_row, 1);
         ansi_clear_eol(ab);
-        ab_append(ab, ":", 1);
-        int msglen = E.command_len;
-        if (msglen > lo->term_cols - 1)
-            msglen = lo->term_cols - 1;
-        if (msglen > 0)
-            ab_append(ab, E.command_buf, msglen);
+        const char *label = pr->vt->label ? pr->vt->label(pr) : "";
+        int label_len = (int)strlen(label);
+        int avail = lo->term_cols;
+        if (label_len > avail) label_len = avail;
+        ab_append(ab, label, label_len);
+        avail -= label_len;
+        int msglen = pr->len;
+        if (msglen > avail) msglen = avail;
+        if (msglen > 0) ab_append(ab, pr->buf, msglen);
         return;
     }
     const char *s = E.status_msg;

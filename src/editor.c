@@ -1,6 +1,8 @@
 #include "editor.h"
 #include "input.h"
 #include "hooks.h"
+#include "prompt.h"
+#include "select_loop.h"
 #include "keybinds.h"
 #include "terminal.h"
 #include "buf/buf_helpers.h"
@@ -104,35 +106,31 @@ void ed_move_cursor(int key) {
     buf_move_cursor_key(key);
 }
 
-/* Mode-specific keypress handlers (refactored for clarity and maintainability)
- */
-
-static void handle_insert_mode_keypress(int c) {
-	BUFWIN(buf, win);
+static void handle_edit_mode_keypress(int c) {
     if (keybind_process(c, E.mode))
         return;
-    if (!iscntrl(c)) {
-        buf_insert_char_in(buf, c);
-	    HookCharEvent event = {buf, win->cursor.x, win->cursor.y, c};
-	    hook_fire_char(HOOK_CHAR_INSERT, &event);
+    switch (E.mode) {
+    case MODE_INSERT:
+        if (!iscntrl(c)) {
+            BUFWIN(buf, win);
+            buf_insert_char_in(buf, c);
+            HookCharEvent event = {buf, win->cursor.x, win->cursor.y, c};
+            hook_fire_char(HOOK_CHAR_INSERT, &event);
+        }
+        return;
+    case MODE_VISUAL_LINE:
+    case MODE_VISUAL_BLOCK:
+        if (keybind_process(c, MODE_VISUAL))
+            return;
+        /* fallthrough */
+    case MODE_VISUAL:
+    case MODE_NORMAL:
+        keybind_process(c, MODE_NORMAL);
+        return;
+
+    case MODE_COMMAND:
+        return;
     }
-}
-
-static void handle_normal_mode_keypress(int c, Buffer *buf) {
-    (void)buf;
-    keybind_process(c, E.mode);
-}
-
-static void handle_visual_mode_keypress(int c, Buffer *buf) {
-    (void)buf;
-    /* Fall back through MODE_VISUAL so visual_line/visual_block only need
-     * to register the keys whose behaviour actually differs. */
-    if (keybind_process(c, E.mode))
-        return;
-    else if ((E.mode == MODE_VISUAL_LINE || E.mode == MODE_VISUAL_BLOCK) &&
-        keybind_process(c, MODE_VISUAL))
-        return;
-    keybind_process(c, MODE_NORMAL);
 }
 
 /* Per-mode dispatch for one key. Public so plugins (e.g., multicursor)
@@ -147,26 +145,11 @@ void ed_dispatch_key(int c) {
     int old_x = win ? win->cursor.x : 0;
     int old_y = win ? win->cursor.y : 0;
 
-    switch (E.mode) {
-    case MODE_COMMAND:
-        command_mode_handle_keypress(c);
-        break;
-    case MODE_INSERT:
-        handle_insert_mode_keypress(c);
-        break;
-    case MODE_NORMAL:
-        handle_normal_mode_keypress(c, buf);
-        break;
-    case MODE_VISUAL:
-    case MODE_VISUAL_LINE:
-    case MODE_VISUAL_BLOCK:
-        handle_visual_mode_keypress(c, buf);
-        break;
-    }
+    if (prompt_active())
+        prompt_handle_key(c);
+    else
+        handle_edit_mode_keypress(c);
 
-    /* Fire cursor-move hook if cursor changed position */
-    /* some command may have changed the win and buf, so we need to get them
-     * again */
     win = window_cur();
     buf = buf_cur();
     
@@ -193,9 +176,7 @@ void ed_init_state() {
     E.screen_rows = 0;
     E.screen_cols = 0;
     E.status_msg[0] = '\0';
-    E.command_len = 0;
     E.mode = MODE_NORMAL;
-    E.stay_in_command = 0;
     E.show_line_numbers = 0;
     E.relative_line_numbers = 0;
     E.default_wrap = 0;
@@ -204,7 +185,6 @@ void ed_init_state() {
     E.cwd[0] = '\0';
     E.search_query = sstr_new();
     E.search_is_regex = 1;
-    E.search_prompt_active = 0;
 }
 
 void ed_init(int create_default_buffer) {
@@ -228,6 +208,7 @@ void ed_init(int create_default_buffer) {
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
     macro_init();
+    ed_loop_init();
 
     /* All subsystems are ready — let the user wire up their config. */
     config_init();

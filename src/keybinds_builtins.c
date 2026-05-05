@@ -320,9 +320,7 @@ void kb_append_mode(void) {
 }
 
 void kb_enter_command_mode(void) {
-    extern Ed E;
-    ed_set_mode(MODE_COMMAND);
-    E.command_len = 0;
+    cmd_prompt_open();
 }
 
 void kb_visual_toggle(void) {

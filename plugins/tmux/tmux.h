@@ -89,9 +89,8 @@ int tmux_toggle_pane(void);
 int tmux_kill_pane(void);
 int tmux_send_command(const char *cmd);
 
-/* tmux command history helpers (for :tmux_send browsing). Scoped to the
- * runner pane. */
-void tmux_history_reset_browse(void);
+/* tmux command history helpers, used by the colon-prompt history hook
+ * registered from this plugin's init(). Scoped to the runner pane. */
 int tmux_history_browse_up(const char *current_args, int current_len, char *out,
                            int out_cap);
 int tmux_history_browse_down(char *out, int out_cap, int *restored);

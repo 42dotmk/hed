@@ -843,7 +843,8 @@ void buf_change_to_line_end(void) {
 }
 
 void buf_move_cursor_key(int key) {
-	BUFWIN(buf, win);
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
     Row *row = (win->cursor.y >= 0 && win->cursor.y < buf->num_rows)
                    ? &buf->rows[win->cursor.y]
                    : NULL;

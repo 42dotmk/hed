@@ -1,6 +1,7 @@
 #include "hed.h"
 #include "lsp.h"
 #include "json_helpers.h"
+#include "select_loop.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/select.h>
@@ -526,7 +527,10 @@ void lsp_init(void) {
     log_msg("LSP: init");
 }
 
+static void lsp_on_readable(int fd, void *ud);
+
 static void lsp_close_fds(LspServer *srv) {
+    if (srv->from_fd >= 0) ed_loop_unregister(srv->from_fd);
     if (srv->to_fd >= 0) close(srv->to_fd);
     if (srv->from_fd >= 0 && srv->from_fd != srv->to_fd) close(srv->from_fd);
     srv->to_fd = srv->from_fd = -1;
@@ -546,76 +550,64 @@ void lsp_shutdown(void) {
     g_servers_count = 0;
 }
 
-void lsp_fill_fdset(fd_set *set, int *max_fd) {
-    for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-        LspServer *srv = g_servers[i];
-        if (!srv || srv->from_fd < 0) continue;
-        FD_SET(srv->from_fd, set);
-        if (srv->from_fd > *max_fd) *max_fd = srv->from_fd;
+static void lsp_on_readable(int fd, void *ud) {
+    LspServer *srv = ud;
+    if (!srv || srv->from_fd != fd) return;
+
+    int space = LSP_READ_BUF_SIZE - srv->read_buf_len;
+    if (space <= 0) { srv->read_buf_len = 0; return; }
+
+    ssize_t n = read(srv->from_fd, srv->read_buf + srv->read_buf_len, (size_t)space);
+    if (n <= 0) {
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+        log_msg("LSP[%s]: disconnected", srv->lang);
+        /* close fds but keep the server record so the user can reconnect */
+        lsp_close_fds(srv);
+        srv->initialized = 0;
+        ed_set_status_message("LSP[%s]: disconnected", srv->lang);
+        return;
     }
-}
+    srv->read_buf_len += (int)n;
 
-void lsp_handle_readable(const fd_set *set) {
-    for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-        LspServer *srv = g_servers[i];
-        if (!srv || srv->from_fd < 0) continue;
-        if (!FD_ISSET(srv->from_fd, set)) continue;
-
-        int space = LSP_READ_BUF_SIZE - srv->read_buf_len;
-        if (space <= 0) { srv->read_buf_len = 0; continue; }
-
-        ssize_t n = read(srv->from_fd, srv->read_buf + srv->read_buf_len, (size_t)space);
-        if (n <= 0) {
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-            log_msg("LSP[%s]: disconnected", srv->lang);
-            /* close fds but keep the server record so the user can reconnect */
-            lsp_close_fds(srv);
-            srv->initialized = 0;
-            ed_set_status_message("LSP[%s]: disconnected", srv->lang);
-            continue;
+    /* Parse and dispatch complete messages */
+    while (srv->read_buf_len > 0) {
+        if (srv->content_length < 0) {
+            char *hend = strstr(srv->read_buf, "\r\n\r\n");
+            if (!hend) break;
+            char *cl = strstr(srv->read_buf, "Content-Length:");
+            if (!cl || cl > hend) { srv->read_buf_len = 0; break; }
+            srv->content_length = atoi(cl + 15);
+            int hlen = (int)(hend - srv->read_buf) + 4;
+            memmove(srv->read_buf, hend + 4, (size_t)(srv->read_buf_len - hlen));
+            srv->read_buf_len -= hlen;
+            free(srv->msg_body);
+            srv->msg_body     = malloc((size_t)srv->content_length + 1);
+            srv->msg_body_len = 0;
         }
-        srv->read_buf_len += (int)n;
 
-        /* Parse and dispatch complete messages */
-        while (srv->read_buf_len > 0) {
-            if (srv->content_length < 0) {
-                char *hend = strstr(srv->read_buf, "\r\n\r\n");
-                if (!hend) break;
-                char *cl = strstr(srv->read_buf, "Content-Length:");
-                if (!cl || cl > hend) { srv->read_buf_len = 0; break; }
-                srv->content_length = atoi(cl + 15);
-                int hlen = (int)(hend - srv->read_buf) + 4;
-                memmove(srv->read_buf, hend + 4, (size_t)(srv->read_buf_len - hlen));
-                srv->read_buf_len -= hlen;
+        if (srv->content_length >= 0 && srv->msg_body) {
+            int need   = srv->content_length - srv->msg_body_len;
+            int avail  = srv->read_buf_len;
+            int copy   = need < avail ? need : avail;
+            memcpy(srv->msg_body + srv->msg_body_len, srv->read_buf, (size_t)copy);
+            srv->msg_body_len += copy;
+            memmove(srv->read_buf, srv->read_buf + copy,
+                    (size_t)(srv->read_buf_len - copy));
+            srv->read_buf_len -= copy;
+
+            if (srv->msg_body_len >= srv->content_length) {
+                srv->msg_body[srv->content_length] = '\0';
+                lsp_handle_message(srv, srv->msg_body, srv->content_length);
                 free(srv->msg_body);
-                srv->msg_body     = malloc((size_t)srv->content_length + 1);
+                srv->msg_body     = NULL;
                 srv->msg_body_len = 0;
+                srv->content_length = -1;
             }
-
-            if (srv->content_length >= 0 && srv->msg_body) {
-                int need   = srv->content_length - srv->msg_body_len;
-                int avail  = srv->read_buf_len;
-                int copy   = need < avail ? need : avail;
-                memcpy(srv->msg_body + srv->msg_body_len, srv->read_buf, (size_t)copy);
-                srv->msg_body_len += copy;
-                memmove(srv->read_buf, srv->read_buf + copy,
-                        (size_t)(srv->read_buf_len - copy));
-                srv->read_buf_len -= copy;
-
-                if (srv->msg_body_len >= srv->content_length) {
-                    srv->msg_body[srv->content_length] = '\0';
-                    lsp_handle_message(srv, srv->msg_body, srv->content_length);
-                    free(srv->msg_body);
-                    srv->msg_body     = NULL;
-                    srv->msg_body_len = 0;
-                    srv->content_length = -1;
-                }
-            }
-
-            if (srv->content_length < 0 && srv->read_buf_len == 0) break;
-            /* If we didn't make progress, stop to avoid infinite loop */
-            if (srv->content_length >= 0 && srv->read_buf_len == 0) break;
         }
+
+        if (srv->content_length < 0 && srv->read_buf_len == 0) break;
+        /* If we didn't make progress, stop to avoid infinite loop */
+        if (srv->content_length >= 0 && srv->read_buf_len == 0) break;
     }
 }
 
@@ -922,6 +914,8 @@ int lsp_cmd_connect(const char *lang, const char *to_addr,
         ed_set_status_message("LSP[%s]: connection failed (check log)", lang);
         goto fail;
     }
+
+    ed_loop_register(srv->lang, srv->from_fd, lsp_on_readable, srv);
 
     lsp_send_initialize(srv);
     ed_set_status_message("LSP[%s]: connecting...", lang);

@@ -4,12 +4,17 @@ CFLAGS = $(BASE_CFLAGS) -MMD -MP
 
 SRC_DIR = src
 BUILD_DIR = build
+VENDOR_BUILD_DIR = vendor/build
 PLUGINS_DIR ?= plugins
 WITH_TREESITTER ?= 1
 
+# The tree-sitter runtime is a frozen vendored amalgam; building it is the
+# single biggest cost in a clean build (~3s of a ~10s build). Park its
+# archive under vendor/build/ so `make clean` doesn't nuke it. Use
+# `make distclean` to force a rebuild (e.g. after changing CFLAGS).
 TS_DIR     := vendor/tree-sitter
 TS_LIB_DIR := $(TS_DIR)/lib
-TS_LIB_A   := $(BUILD_DIR)/libtree-sitter.a
+TS_LIB_A   := $(VENDOR_BUILD_DIR)/libtree-sitter.a
 
 TARGET = $(BUILD_DIR)/hed
 TSI    = $(BUILD_DIR)/tsi
@@ -38,7 +43,7 @@ PLUGIN_OBJECTS = $(patsubst $(PLUGINS_DIR)/%.c,$(BUILD_DIR)/plugins/%.o,$(PLUGIN
 OBJECTS = $(CORE_OBJECTS) $(PLUGIN_OBJECTS)
 
 
-.PHONY: all clean run test test_args ts-langs strip_build install uninstall publish fmt tags
+.PHONY: all clean distclean run test test_args ts-langs strip_build install uninstall publish fmt tags
 
 all: $(TARGET) $(TSI)
 
@@ -48,6 +53,9 @@ test:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
+$(VENDOR_BUILD_DIR):
+	mkdir -p $(VENDOR_BUILD_DIR)
+
 $(TARGET): $(OBJECTS) $(TS_DEPS)
 	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) $(TS_LDFLAGS)
 
@@ -55,11 +63,11 @@ $(TARGET): $(OBJECTS) $(TS_DEPS)
 -include $(OBJECTS:.o=.d)
 
 
-$(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(BUILD_DIR)
+$(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(VENDOR_BUILD_DIR)
 	$(CC) -O2 -std=c11 -fPIC -D_GNU_SOURCE \
 	    -I$(TS_LIB_DIR)/include -I$(TS_LIB_DIR)/src \
-	    -c $< -o $(BUILD_DIR)/ts-lib.o
-	$(AR) rcs $@ $(BUILD_DIR)/ts-lib.o
+	    -c $< -o $(VENDOR_BUILD_DIR)/ts-lib.o
+	$(AR) rcs $@ $(VENDOR_BUILD_DIR)/ts-lib.o
 
 
 $(BUILD_DIR)/plugins/%.o: $(PLUGINS_DIR)/%.c
@@ -100,6 +108,12 @@ strip_build: $(BUILD_DIR) $(TARGET) $(TSI) ts-langs
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Also drops the vendored tree-sitter archive. Use this after changing
+# the compiler or CFLAGS — Make doesn't track flag changes, so a stale
+# libtree-sitter.a built with different flags would otherwise persist.
+distclean: clean
+	rm -rf $(VENDOR_BUILD_DIR)
 
 fmt:
 	clang-format -i $(SOURCES) $(HEADERS)
