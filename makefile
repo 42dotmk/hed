@@ -26,7 +26,7 @@ CORE_SOURCES = $(shell find $(SRC_DIR) -type f -name "*.c" -not -path "$(SRC_DIR
 PLUGIN_SOURCES = $(shell find $(PLUGINS_DIR) -type f -name "*.c" 2>/dev/null)
 
 ifeq ($(WITH_TREESITTER),1)
-TS_LDFLAGS  := $(TS_LIB_A) -ldl -rdynamic
+TS_LDFLAGS  := $(TS_LIB_A) -ldl
 TS_DEPS     := $(TS_LIB_A)
 else
 PLUGIN_SOURCES := $(filter-out $(PLUGINS_DIR)/treesitter/%,$(PLUGIN_SOURCES))
@@ -103,6 +103,8 @@ ts-langs: $(BUILD_DIR)
 	cp -rf ts-langs/* ~/.config/hed/ts/
 
 strip_build: $(BUILD_DIR) $(TARGET) $(TSI) ts-langs
+	@# Strip debug/symbol tables from the final binaries
+	strip --strip-all $(TARGET) $(TSI)
 	@# Keep only final binaries in $(BUILD_DIR)
 	@find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name 'hed' ! -name 'tsi' -exec rm -rf {} +
 
