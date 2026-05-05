@@ -23,7 +23,8 @@ typedef struct {
     KeybindCallback callback;
     CommandCallback command_callback; /* optional: invoked with cmdline */
     int mode;
-    char *desc;     /* stores command line when using command_callback */
+    char *desc;     /* short human-readable description (may be NULL) */
+    char *cmdline;  /* command line for command bindings (NULL otherwise) */
     char *filetype; /* NULL = global; non-NULL = filetype-specific */
 } Keybind;
 
@@ -163,6 +164,7 @@ static void remove_duplicate(int mode, const char *sequence,
 
         free(keybinds[i].sequence);
         free(keybinds[i].desc);
+        free(keybinds[i].cmdline);
         free(keybinds[i].filetype);
         arrdel(keybinds, i);
         return; /* invariant: at most one match exists */
@@ -179,6 +181,7 @@ void keybind_register(int mode, const char *sequence,
         .command_callback = NULL,
         .mode             = mode,
         .desc             = desc ? strdup(desc) : NULL,
+        .cmdline          = NULL,
         .filetype         = NULL,
     };
     arrput(keybinds, kb);
@@ -193,6 +196,7 @@ void keybind_register_ft(int mode, const char *sequence, const char *filetype,
         .command_callback = NULL,
         .mode             = mode,
         .desc             = desc ? strdup(desc) : NULL,
+        .cmdline          = NULL,
         .filetype         = filetype ? strdup(filetype) : NULL,
     };
     arrput(keybinds, kb);
@@ -221,28 +225,31 @@ static void kb_run_command(const char *cmdline) {
 }
 
 void keybind_register_command(int mode, const char *sequence,
-                              const char *cmdline) {
+                              const char *cmdline, const char *desc) {
     remove_duplicate(mode, sequence, NULL);
     Keybind kb = {
         .sequence         = strdup(sequence),
         .callback         = NULL,
         .command_callback = kb_run_command,
         .mode             = mode,
-        .desc             = cmdline ? strdup(cmdline) : strdup(""),
+        .desc             = (desc && *desc) ? strdup(desc) : NULL,
+        .cmdline          = cmdline ? strdup(cmdline) : strdup(""),
         .filetype         = NULL,
     };
     arrput(keybinds, kb);
 }
 
 void keybind_register_command_ft(int mode, const char *sequence,
-                                  const char *filetype, const char *cmdline) {
+                                  const char *filetype, const char *cmdline,
+                                  const char *desc) {
     remove_duplicate(mode, sequence, filetype);
     Keybind kb = {
         .sequence         = strdup(sequence),
         .callback         = NULL,
         .command_callback = kb_run_command,
         .mode             = mode,
-        .desc             = cmdline ? strdup(cmdline) : strdup(""),
+        .desc             = (desc && *desc) ? strdup(desc) : NULL,
+        .cmdline          = cmdline ? strdup(cmdline) : strdup(""),
         .filetype         = filetype ? strdup(filetype) : NULL,
     };
     arrput(keybinds, kb);
@@ -297,7 +304,7 @@ static KeybindMatchView make_view(const Keybind *kb) {
         .filetype_specific = kb->filetype != NULL,
         .callback          = kb->callback,
         .command_callback  = kb->command_callback,
-        .cmdline           = is_command ? kb->desc : NULL,
+        .cmdline           = is_command ? kb->cmdline : NULL,
     };
     return v;
 }

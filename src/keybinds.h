@@ -45,13 +45,17 @@ void keybind_register_ft(int mode, const char *sequence, const char *filetype,
  * @param mode     Editor mode (MODE_NORMAL, MODE_INSERT, etc.)
  * @param sequence Key sequence (e.g., "ff", "<C-r>")
  * @param cmdline  Command string to invoke (e.g., "echo Hello" or "rg TODO")
+ * @param desc     Human-readable short description (may be NULL — UIs that
+ *                 want a description can fall back to the command's own
+ *                 description from the command registry).
  */
 void keybind_register_command(int mode, const char *sequence,
-                              const char *cmdline);
+                              const char *cmdline, const char *desc);
 
 /* Filetype-specific command keybinding variant. */
 void keybind_register_command_ft(int mode, const char *sequence,
-                                  const char *filetype, const char *cmdline);
+                                  const char *filetype, const char *cmdline,
+                                  const char *desc);
 
 /**
  * Process a key press through the keybinding system
@@ -222,14 +226,14 @@ int textobj_lookup(const char *keys, struct Buffer *buf, int line, int col,
 #define mapi(x, y, d)    keybind_register(MODE_INSERT, x, y, d)
 #define mapvb(x, y, d)   keybind_register(MODE_VISUAL_BLOCK, x, y, d)
 #define mapvl(x, y, d)   keybind_register(MODE_VISUAL_LINE, x, y, d)
-#define cmapn(x, y)      keybind_register_command(MODE_NORMAL, x, y)
-#define cmapv(x, y)      keybind_register_command(MODE_VISUAL, x, y)
-#define cmapi(x, y)      keybind_register_command(MODE_INSERT, x, y)
+#define cmapn(x, y, d)   keybind_register_command(MODE_NORMAL, x, y, d)
+#define cmapv(x, y, d)   keybind_register_command(MODE_VISUAL, x, y, d)
+#define cmapi(x, y, d)   keybind_register_command(MODE_INSERT, x, y, d)
 #define mapn_ft(ft, x, y, d)  keybind_register_ft(MODE_NORMAL, x, ft, y, d)
 #define mapi_ft(ft, x, y, d)  keybind_register_ft(MODE_INSERT, x, ft, y, d)
 #define mapv_ft(ft, x, y, d)  keybind_register_ft(MODE_VISUAL, x, ft, y, d)
-#define cmapn_ft(ft, x, y)    keybind_register_command_ft(MODE_NORMAL, x, ft, y)
-#define cmapi_ft(ft, x, y)    keybind_register_command_ft(MODE_INSERT, x, ft, y)
-#define cmapv_ft(ft, x, y)    keybind_register_command_ft(MODE_VISUAL, x, ft, y)
+#define cmapn_ft(ft, x, y, d)  keybind_register_command_ft(MODE_NORMAL, x, ft, y, d)
+#define cmapi_ft(ft, x, y, d)  keybind_register_command_ft(MODE_INSERT, x, ft, y, d)
+#define cmapv_ft(ft, x, y, d)  keybind_register_command_ft(MODE_VISUAL, x, ft, y, d)
 
 #endif // KEYBINDS_H

@@ -46,3 +46,13 @@ int command_execute(const char *name, const char *args) {
 int command_invoke(const char *name, const char *args) {
     return command_execute(name, args);
 }
+
+const char *command_find_desc(const char *name) {
+    if (!name) return NULL;
+    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
+        if (commands[i].name && strcmp(commands[i].name, name) == 0) {
+            return commands[i].desc;
+        }
+    }
+    return NULL;
+}

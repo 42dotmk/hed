@@ -53,15 +53,15 @@ static int vim_keybinds_init(void) {
     mapi("<Right>", kb_move_right, "move right");
     mapn("/", kb_search_prompt, "search");
 
-    cmapn("O", "new_line_above");
-    cmapn("o", "new_line");
-    cmapn("U", "redo");
-    cmapn("u", "undo");
-    cmapn(".", "repeat");
-    cmapn("q", "record");
-    cmapn("@", "play");
-    cmapn("ZQ", "q!");
-    cmapn("ZZ", "wq");
+    cmapn("O",  "new_line_above", "new line above");
+    cmapn("o",  "new_line",       "new line below");
+    cmapn("U",  "redo",            "redo");
+    cmapn("u",  "undo",            "undo");
+    cmapn(".",  "repeat",          "repeat last edit");
+    cmapn("q",  "record",          "record macro");
+    cmapn("@",  "play",            "play macro");
+    cmapn("ZQ", "q!",              "quit (force)");
+    cmapn("ZZ", "wq",              "save and quit");
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
     mapn("*", kb_find_under_cursor, "find word");
@@ -110,7 +110,7 @@ static int vim_keybinds_init(void) {
     mapn("I", kb_start_insert, "insert bol");
     mapn("J", buf_join_lines, "join lines");
     mapn("a", kb_append_mode, "append");
-    cmapn("<C-r>", "redo");
+    cmapn("<C-r>", "redo", "redo");
 
     /* Operator keybindings - wait for text object input */
     mapn("d", kb_operator_delete, "delete operator");

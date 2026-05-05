@@ -60,16 +60,16 @@ static int emacs_keybinds_init(void) {
     mapv("<C-g>", kb_visual_escape, "cancel selection");
 
     /* C-x prefix cluster */
-    cmapi("<C-x><C-s>", "w");
-    cmapi("<C-x><C-c>", "q");
-    cmapi("<C-x><C-f>", "fzf");
-    cmapi("<C-x>b",     "fzf");
-    cmapi("<C-x>k",     "bd");
-    cmapi("<C-x>0",     "wclose");
-    cmapi("<C-x>2",     "split");
-    cmapi("<C-x>3",     "vsplit");
-    cmapi("<C-x>o",     "wfocus");
-    cmapi("<C-x>u",     "undo");
+    cmapi("<C-x><C-s>", "w",      "save");
+    cmapi("<C-x><C-c>", "q",      "quit");
+    cmapi("<C-x><C-f>", "fzf",    "find files");
+    cmapi("<C-x>b",     "fzf",    "switch buffer");
+    cmapi("<C-x>k",     "bd",     "kill buffer");
+    cmapi("<C-x>0",     "wclose", "close window");
+    cmapi("<C-x>2",     "split",  "split horizontal");
+    cmapi("<C-x>3",     "vsplit", "split vertical");
+    cmapi("<C-x>o",     "wfocus", "other window");
+    cmapi("<C-x>u",     "undo",   "undo");
 
     /* Meta bindings (real M-keys via input layer) */
     mapi("<M-x>",  kb_enter_command_mode,  "M-x (command mode)");

@@ -53,6 +53,12 @@ int command_execute(const char *name, const char *args);
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);
 
+/* Look up a registered command's description by name. Returns the
+ * description string (registry-owned) or NULL if not found / no
+ * description. Used by UIs (e.g. whichkey) that want to fall back
+ * to the command's own desc when a keybinding wasn't given one. */
+const char *command_find_desc(const char *name);
+
 /* Convenience macro — used by plugins and config.c */
 #define cmd(name, cb, desc) command_register(name, cb, desc)
 
