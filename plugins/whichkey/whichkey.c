@@ -137,49 +137,71 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
     int cells = n < max_cells ? n : max_cells;
     if (cells < n) truncated = 1;
 
-    for (int i = 0; i < cells; i++) {
-        const KeybindMatchView *m = sorted[i];
-        const char *tail = m->sequence + prefix_len;
-        const char *desc = m->desc;
+    /* Column-major layout: items fill the first column top-to-bottom,
+     * then the second, etc. Reading down a column gives an
+     * alphabetical run, so visual order matches the sort. */
+    int nrows = (cells + ncols - 1) / ncols;
+    if (nrows < 1) nrows = 1;
 
-        /* Fall back to the underlying command's description when the
-         * keybinding itself doesn't carry one (typical for cmap*
-         * bindings registered without a desc). */
-        char cmdname[64];
-        if ((!desc || !*desc) && m->is_command && m->cmdline) {
-            const char *p = m->cmdline;
-            while (*p == ' ' || *p == '\t' || *p == ':') p++;
-            const char *end = p;
-            while (*end && *end != ' ' && *end != '\t') end++;
-            size_t len = (size_t)(end - p);
-            if (len > 0 && len < sizeof(cmdname)) {
-                memcpy(cmdname, p, len);
-                cmdname[len] = '\0';
-                const char *cdesc = command_find_desc(cmdname);
-                if (cdesc && *cdesc) desc = cdesc;
+    for (int r = 0; r < nrows; r++) {
+        for (int c = 0; c < ncols; c++) {
+            int idx = c * nrows + r;
+            int last_col = (c == ncols - 1);
+
+            if (idx >= cells) {
+                /* No item for this slot — pad so the columns stay
+                 * aligned on shorter trailing rows. */
+                if (off + (size_t)col_w + 4 > outsz) {
+                    truncated = 1;
+                    break;
+                }
+                off += (size_t)snprintf(out + off, outsz - off,
+                                        " %-*s %-*s", tail_w, "", desc_w, "");
+            } else {
+                const KeybindMatchView *m = sorted[idx];
+                const char *tail = m->sequence + prefix_len;
+                const char *desc = m->desc;
+
+                /* Fall back to the underlying command's description
+                 * when the keybinding itself doesn't carry one
+                 * (typical for cmap* bindings registered without a
+                 * desc). */
+                char cmdname[64];
+                if ((!desc || !*desc) && m->is_command && m->cmdline) {
+                    const char *p = m->cmdline;
+                    while (*p == ' ' || *p == '\t' || *p == ':') p++;
+                    const char *end = p;
+                    while (*end && *end != ' ' && *end != '\t') end++;
+                    size_t len = (size_t)(end - p);
+                    if (len > 0 && len < sizeof(cmdname)) {
+                        memcpy(cmdname, p, len);
+                        cmdname[len] = '\0';
+                        const char *cdesc = command_find_desc(cmdname);
+                        if (cdesc && *cdesc) desc = cdesc;
+                    }
+                }
+                if (!desc) desc = m->cmdline ? m->cmdline : "";
+
+                if (off + (size_t)col_w + 4 > outsz) {
+                    truncated = 1;
+                    break;
+                }
+
+                char tbuf[64], dbuf[256];
+                snprintf(tbuf, sizeof(tbuf), "%.*s", tail_w, tail);
+                snprintf(dbuf, sizeof(dbuf), "%.*s", desc_w, desc);
+
+                off += (size_t)snprintf(out + off, outsz - off,
+                                        " %-*s %-*s", tail_w, tbuf, desc_w, dbuf);
+            }
+
+            if (last_col) {
+                if (off < outsz) out[off++] = '\n';
+            } else {
+                off += (size_t)snprintf(out + off, outsz - off, "%s", COL_SEP);
             }
         }
-        if (!desc) desc = m->cmdline ? m->cmdline : "";
-
-        if (off + (size_t)col_w + 4 > outsz) {
-            truncated = 1;
-            break;
-        }
-
-        char tbuf[64], dbuf[256];
-        snprintf(tbuf, sizeof(tbuf), "%.*s", tail_w, tail);
-        snprintf(dbuf, sizeof(dbuf), "%.*s", desc_w, desc);
-
-        off += (size_t)snprintf(out + off, outsz - off,
-                                " %-*s %-*s", tail_w, tbuf, desc_w, dbuf);
-
-        int col_idx = i % ncols;
-        int last_col = (col_idx == ncols - 1) || (i == cells - 1);
-        if (last_col) {
-            if (off < outsz) out[off++] = '\n';
-        } else {
-            off += (size_t)snprintf(out + off, outsz - off, "%s", COL_SEP);
-        }
+        if (truncated) break;
     }
     free(sorted);
 
