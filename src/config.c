@@ -48,7 +48,7 @@ void config_init(void) {
     plugin_load(&plugin_reload,           1);
     plugin_load(&plugin_session,          1);
     plugin_load(&plugin_multicursor,      1);
-    plugin_load(&plugin_whichkey,         1);
+    plugin_load(&plugin_whichkey,         0);
 
     cmapn("  ", "fzf");
     cmapn(" bb", "ls");

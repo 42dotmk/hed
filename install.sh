@@ -18,17 +18,25 @@ REPO="42dotmk/hed"
 INSTALL_DIR="${HED_INSTALL_DIR:-$HOME/.local/bin}"
 SOURCE_DIR="${HED_SOURCE_DIR:-$HOME/.local/share/hed}"
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+OS_RAW="$(uname -s)"
+ARCH_RAW="$(uname -m)"
 
-case "$OS" in
-    Linux) ;;
-    *) echo "Unsupported OS: $OS (only Linux is supported by the installer)" >&2; exit 1 ;;
+case "$OS_RAW" in
+    Linux)  OS_TAG="linux"  ;;
+    Darwin) OS_TAG="darwin" ;;
+    *) echo "Unsupported OS: $OS_RAW (Linux and macOS supported)" >&2; exit 1 ;;
 esac
 
-case "$ARCH" in
-    x86_64|amd64) ARCH="x86_64" ;;
-    *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+# Normalise the architecture for the various asset URLs further down.
+# - HED_ARCH       : tag used by the hed release assets (x86_64 / arm64)
+# - FZF_ARCH       : fzf's tarball convention (amd64 / arm64)
+# - RG_TRIPLE_ARCH : ripgrep's target-triple prefix (x86_64 / aarch64)
+case "$ARCH_RAW" in
+    x86_64|amd64)
+        HED_ARCH="x86_64"; FZF_ARCH="amd64"; RG_TRIPLE_ARCH="x86_64" ;;
+    arm64|aarch64)
+        HED_ARCH="arm64";  FZF_ARCH="arm64"; RG_TRIPLE_ARCH="aarch64" ;;
+    *) echo "Unsupported architecture: $ARCH_RAW" >&2; exit 1 ;;
 esac
 
 if command -v curl >/dev/null 2>&1; then
@@ -48,16 +56,25 @@ mkdir -p "$INSTALL_DIR"
 
 MODE="${HED_INSTALL_MODE:-}"
 if [ -z "$MODE" ]; then
+    # Default to source on platforms where prebuilt binaries may not
+    # be published yet. Linux/x86_64 has been the canonical release
+    # target; everything else falls back to source.
+    if [ "$OS_TAG" = "linux" ] && [ "$HED_ARCH" = "x86_64" ]; then
+        DEFAULT_MODE="binary"; DEFAULT_CHOICE=1
+    else
+        DEFAULT_MODE="source"; DEFAULT_CHOICE=2
+    fi
     echo
     echo "Install hed from:"
-    echo "  1) binary  — prebuilt Linux x86_64 release (fastest)"
+    echo "  1) binary  — prebuilt ${OS_TAG}-${HED_ARCH} release (fastest, if published)"
     echo "  2) source  — clone repo to $SOURCE_DIR, build with make"
     echo
-    printf "Choice [1/2] (default: 1): "
-    read -r reply </dev/tty || reply="1"
+    printf "Choice [1/2] (default: %d): " "$DEFAULT_CHOICE"
+    read -r reply </dev/tty || reply=""
     case "$reply" in
+        1|b|bin|binary) MODE="binary" ;;
         2|s|src|source) MODE="source" ;;
-        *)              MODE="binary" ;;
+        *)              MODE="$DEFAULT_MODE" ;;
     esac
 fi
 
@@ -66,10 +83,16 @@ fi
 install_binary() {
     local base="https://github.com/${REPO}/releases/latest/download"
     for bin in hed tsi; do
-        local url="${base}/${bin}-linux-${ARCH}"
+        local url="${base}/${bin}-${OS_TAG}-${HED_ARCH}"
         local dest="${INSTALL_DIR}/${bin}"
         echo "Downloading ${bin} -> ${dest}"
-        $DL "${dest}.tmp" "$url"
+        if ! $DL "${dest}.tmp" "$url"; then
+            echo "Failed to download ${bin} for ${OS_TAG}-${HED_ARCH}." >&2
+            echo "Release may not publish a binary for this platform yet —" >&2
+            echo "rerun and pick (2) source, or set HED_INSTALL_MODE=source." >&2
+            rm -f "${dest}.tmp"
+            exit 1
+        fi
         chmod +x "${dest}.tmp"
         mv "${dest}.tmp" "${dest}"
     done
@@ -107,7 +130,7 @@ install_source() {
     fi
 
     echo "Building..."
-    make -C "$SOURCE_DIR" -j"$(nproc 2>/dev/null || echo 4)"
+    make -C "$SOURCE_DIR" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
     echo "Symlinking binaries into $INSTALL_DIR"
     ln -sf "$SOURCE_DIR/build/hed" "$INSTALL_DIR/hed"
@@ -143,7 +166,7 @@ install_fzf() {
     trap "rm -rf '$tmp'" RETURN
     echo "Downloading fzf ${tag}"
     $DL "$tmp/fzf.tgz" \
-        "https://github.com/junegunn/fzf/releases/download/${tag}/fzf-${ver}-linux_amd64.tar.gz"
+        "https://github.com/junegunn/fzf/releases/download/${tag}/fzf-${ver}-${OS_TAG}_${FZF_ARCH}.tar.gz"
     tar -xzf "$tmp/fzf.tgz" -C "$tmp" fzf
     chmod +x "$tmp/fzf"
     mv "$tmp/fzf" "$INSTALL_DIR/fzf"
@@ -151,11 +174,15 @@ install_fzf() {
 }
 
 install_ripgrep() {
-    local tag tmp inner
+    local tag tmp inner triple
     tag=$(latest_tag BurntSushi/ripgrep) || { echo "Could not resolve ripgrep release tag." >&2; return 1; }
     tmp=$(mktemp -d)
     trap "rm -rf '$tmp'" RETURN
-    inner="ripgrep-${tag}-x86_64-unknown-linux-musl"
+    case "$OS_TAG" in
+        linux)  triple="${RG_TRIPLE_ARCH}-unknown-linux-musl" ;;
+        darwin) triple="${RG_TRIPLE_ARCH}-apple-darwin" ;;
+    esac
+    inner="ripgrep-${tag}-${triple}"
     echo "Downloading ripgrep ${tag}"
     $DL "$tmp/rg.tgz" \
         "https://github.com/BurntSushi/ripgrep/releases/download/${tag}/${inner}.tar.gz"

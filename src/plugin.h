@@ -44,6 +44,12 @@ int plugin_disable(const Plugin *p);
 /* Print all loaded plugins and their enabled state to status / log. */
 void plugin_list(void);
 
+/* Iteration API for UIs that want to enumerate the plugin registry
+ * (e.g. fzf-based pickers). */
+int plugin_get_count(void);
+int plugin_get_at(int index, const char **name, const char **desc,
+                  int *enabled);
+
 /* Command callback: ":plugins" — calls plugin_list(). */
 void cmd_plugins(const char *args);
 
