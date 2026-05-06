@@ -1,5 +1,12 @@
 #include "hed.h"
 #include "lsp.h"
+#include "lsp_hooks.h"
+
+/* The popup modal we own. Set by lsp_popup_track() right after the
+ * modal is shown; cleared when we tear it down. */
+static Window *lsp_popup = NULL;
+
+void lsp_popup_track(Window *modal) { lsp_popup = modal; }
 
 static void lsp_hook_buffer_open(HookBufferEvent *event) {
     if (event) lsp_on_buffer_open(event->buf);
@@ -25,18 +32,19 @@ static void lsp_hook_mode_change(const HookModeEvent *event) {
 /* Dismiss or scroll a read-only popup modal on keypress. */
 static void lsp_hook_keypress(HookKeyEvent *event) {
     Window *modal = winmodal_current();
-    if (!modal) return;
+    if (!modal || modal != lsp_popup) return;
 
     int     idx  = modal->buffer_index;
     Buffer *mbuf = (idx >= 0 && idx < (int)arrlen(E.buffers))
                    ? &E.buffers[idx] : NULL;
-    if (!mbuf || !mbuf->readonly) return;
+    if (!mbuf) { lsp_popup = NULL; return; }
 
     int key = event->key;
     if (key == '\x1b' || key == 'q') {
         winmodal_destroy(modal);
         mbuf->dirty = 0;
         buf_close(idx);
+        lsp_popup = NULL;
     } else if (key == 'j' || key == KEY_ARROW_DOWN) {
         int max_off = mbuf->num_rows - modal->height;
         if (max_off < 0) max_off = 0;

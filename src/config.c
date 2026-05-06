@@ -1,5 +1,4 @@
 #include "config.h"
-#include "commands.h"
 #include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
@@ -16,6 +15,7 @@
 #include "quickfix_preview/quickfix_preview.h"
 #include "reload/reload.h"
 #include "scratch/scratch.h"
+#include "selectlist/selectlist.h"
 #include "sed/sed_plugin.h"
 #include "session/session_plugin.h"
 #include "smart_indent/smart_indent.h"
@@ -45,13 +45,13 @@ void config_init(void) {
     plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
     plugin_load(&plugin_scratch,          1);
+    plugin_load(&plugin_selectlist,       1);
     plugin_load(&plugin_sed,              1);
     plugin_load(&plugin_reload,           1);
     plugin_load(&plugin_session,          1);
     plugin_load(&plugin_multicursor,      1);
     plugin_load(&plugin_whichkey,         1);
     plugin_load(&plugin_yazi,             1);
-
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");

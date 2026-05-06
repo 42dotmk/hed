@@ -66,6 +66,25 @@ void cmd_lsp_connect(const char *args) {
     }
 }
 
+/* :lsp_start [lang]
+ * Spawn a server from the registry. If lang is omitted, use the
+ * current buffer's filetype. Root is auto-detected from the buffer's
+ * filename, falling back to E.cwd. */
+void cmd_lsp_start(const char *args) {
+    char lang[64] = {0};
+    next_token(skip_ws(args ? args : ""), lang, sizeof(lang));
+
+    Buffer *buf = buf_cur();
+    const char *use_lang = lang[0] ? lang
+                          : (buf && buf->filetype ? buf->filetype : NULL);
+    if (!use_lang) {
+        ed_set_status_message("LSP: usage: lsp_start <lang>  (no filetype on current buffer)");
+        return;
+    }
+    const char *hint = (buf && buf->filename) ? buf->filename : NULL;
+    lsp_cmd_start(use_lang, hint);
+}
+
 /* :lsp_disconnect <lang> */
 void cmd_lsp_disconnect(const char *args) {
     char lang[64] = {0};
@@ -102,4 +121,10 @@ void cmd_lsp_completion(const char *args) {
     Buffer *buf = buf_cur();
     if (!buf) { ed_set_status_message("LSP: no buffer"); return; }
     lsp_request_completion(buf, buf->cursor->y, buf->cursor->x);
+}
+
+/* :lsp_diagnostics — dump the stored diagnostics into the quickfix list. */
+void cmd_lsp_diagnostics(const char *args) {
+    (void)args;
+    lsp_cmd_diagnostics();
 }

@@ -2,8 +2,6 @@
 #define EDITOR_H
 
 #include <limits.h>
-#include "lib/path_limits.h"
-
 #include "buf/buffer.h"
 #include "utils/history.h"
 #include "utils/jump_list.h"

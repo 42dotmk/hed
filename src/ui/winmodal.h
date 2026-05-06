@@ -24,6 +24,24 @@
  */
 Window *winmodal_create(int x, int y, int width, int height);
 
+/* Anchor preference for winmodal_create_anchored().
+ *   WMODAL_BELOW — place below the anchor row; flip above only if no room.
+ *   WMODAL_ABOVE — place above the anchor row; flip below only if no room.
+ *   WMODAL_AUTO  — pick whichever side has more room. */
+typedef enum {
+    WMODAL_BELOW = 0,
+    WMODAL_ABOVE = 1,
+    WMODAL_AUTO  = 2,
+} WModalAnchor;
+
+/* Create a modal anchored at a screen cell (1-based). The modal is placed
+ * just below or above the anchor row depending on `prefer` and available
+ * space. `x` is clamped to keep the modal on screen; `height` may be
+ * shrunk to fit. */
+Window *winmodal_create_anchored(int anchor_x, int anchor_y,
+                                 int width, int height,
+                                 WModalAnchor prefer);
+
 /**
  * Show a modal window
  * Makes the modal visible and blocks input to other windows
