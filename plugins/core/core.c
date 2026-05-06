@@ -71,6 +71,47 @@ static void cmd_goto(const char *args) {
     }
 }
 
+/* :vt-demo [text] — toggle a demo virtual-text suffix on the current
+ * row. With no arg, the second invocation clears it. With an arg, the
+ * suffix is replaced and re-shown. Useful for poking the renderer
+ * without spinning up a real provider. */
+static void cmd_vt_demo(const char *args) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win) return;
+
+    static int ns = -1;
+    if (ns < 0) ns = vtext_ns_create("vt-demo");
+    if (ns < 0) {
+        ed_set_status_message("vt-demo: cannot create namespace");
+        return;
+    }
+
+    int line = win->cursor.y;
+    if (line < 0 || line >= buf->num_rows) {
+        ed_set_status_message("vt-demo: cursor not on a buffer line");
+        return;
+    }
+
+    const char *text = (args && *args) ? args : "  \xe2\x86\x90 virtual";
+    if (!args || !*args) {
+        /* No-arg toggle: clear if any mark exists for this ns + line. */
+        int dropped = vtext_clear_line(buf, ns, line);
+        if (dropped > 0) {
+            ed_set_status_message("vt-demo: cleared on line %d", line + 1);
+            return;
+        }
+    } else {
+        vtext_clear_line(buf, ns, line);
+    }
+
+    if (vtext_set_eol(buf, ns, line, text, strlen(text), COLOR_COMMENT) == 0) {
+        ed_set_status_message("vt-demo: set on line %d", line + 1);
+    } else {
+        ed_set_status_message("vt-demo: failed to set");
+    }
+}
+
 /* :modeless on|off|toggle — toggle the global "always-insert" redirect.
  * When on, NORMAL mode is unreachable. */
 static void cmd_modeless(const char *args) {
@@ -164,6 +205,7 @@ static void register_commands(void) {
     cmd("plugins",  cmd_plugins,  "list loaded plugins");
     cmd("goto",     cmd_goto,     "goto <line> | <motion> [count]");
     cmd("modeless", cmd_modeless, "modeless on|off|toggle");
+    cmd("vt-demo",  cmd_vt_demo,  "toggle demo virtual text on current line");
 }
 
 static void register_hooks(void) {
