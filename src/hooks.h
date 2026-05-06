@@ -152,10 +152,16 @@ void hook_register_simple(HookType type, HookSimpleCallback callback);
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb);
 void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb);
 
+/* Generic function-pointer alias. The hook table stores callbacks as
+ * `void (*)(void)` so dispatch casts stay function-pointer-to-function-
+ * pointer, which is C11-clean. Callers cast their typed callback to
+ * HookFn before passing to hook_unregister. */
+typedef void (*HookFn)(void);
+
 /* Remove every registration of `callback` from the given hook type.
  * Match is by callback pointer; mode/filetype filters are ignored.
  * Returns the number of entries removed. */
-int hook_unregister(HookType type, void *callback);
+int hook_unregister(HookType type, HookFn callback);
 
 /* Hook firing functions */
 void hook_fire_char(HookType type, const HookCharEvent *event);

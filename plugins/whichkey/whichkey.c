@@ -46,8 +46,8 @@ static void wk_subscribe(void) {
 }
 
 static void wk_unsubscribe(void) {
-    hook_unregister(HOOK_KEYBIND_FEED, (void *)on_feed);
-    hook_unregister(HOOK_KEYBIND_INVOKE, (void *)on_invoke);
+    hook_unregister(HOOK_KEYBIND_FEED, (HookFn)on_feed);
+    hook_unregister(HOOK_KEYBIND_INVOKE, (HookFn)on_invoke);
 }
 
 /* qsort isn't reentrant in standard C; stash the prefix length the

@@ -4,9 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Hook entry - stores callback with its filters */
+/* Hook entry - stores callback with its filters. The callback is held
+ * as HookFn (a generic function pointer) so dispatch casts stay
+ * function-pointer-to-function-pointer, which C11 permits even under
+ * -pedantic. Storing as `void *` would trip -Wpedantic at every cast
+ * site. HookFn is declared in hooks.h. */
 typedef struct {
-    void *callback;
+    HookFn callback;
     int mode;       /* EditorMode - filter by mode */
     char *filetype; /* Filter by filetype, "*" for all */
 } HookEntry;
@@ -40,7 +44,7 @@ void hook_init(void) {
 
 /* Shared registration: append a new HookEntry. Returns 0 on OOM/invalid. */
 static int hook_push(HookType type, int mode, const char *filetype,
-                     void *callback) {
+                     HookFn callback) {
     if (type >= HOOK_TYPE_COUNT)
         return 0;
     char *ft_copy = strdup(filetype);
@@ -53,45 +57,45 @@ static int hook_push(HookType type, int mode, const char *filetype,
 
 void hook_register_char(HookType type, int mode, const char *filetype,
                         HookCharCallback callback) {
-    hook_push(type, mode, filetype, (void *)callback);
+    hook_push(type, mode, filetype, (HookFn)callback);
 }
 
 void hook_register_line(HookType type, int mode, const char *filetype,
                         HookLineCallback callback) {
-    hook_push(type, mode, filetype, (void *)callback);
+    hook_push(type, mode, filetype, (HookFn)callback);
 }
 
 void hook_register_buffer(HookType type, int mode, const char *filetype,
                           HookBufferCallback callback) {
-    hook_push(type, mode, filetype, (void *)callback);
+    hook_push(type, mode, filetype, (HookFn)callback);
 }
 
 void hook_register_mode(HookType type, HookModeCallback callback) {
-    hook_push(type, -1, "*", (void *)callback);
+    hook_push(type, -1, "*", (HookFn)callback);
 }
 
 void hook_register_cursor(HookType type, int mode, const char *filetype,
                           HookCursorCallback callback) {
-    hook_push(type, mode, filetype, (void *)callback);
+    hook_push(type, mode, filetype, (HookFn)callback);
 }
 
 void hook_register_key(HookType type, HookKeyCallback callback) {
-    hook_push(type, -1, "*", (void *)callback);
+    hook_push(type, -1, "*", (HookFn)callback);
 }
 
 void hook_register_simple(HookType type, HookSimpleCallback callback) {
-    hook_push(type, -1, "*", (void *)callback);
+    hook_push(type, -1, "*", (HookFn)callback);
 }
 
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb) {
-    hook_push(type, -1, "*", (void *)cb);
+    hook_push(type, -1, "*", (HookFn)cb);
 }
 
 void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb) {
-    hook_push(type, -1, "*", (void *)cb);
+    hook_push(type, -1, "*", (HookFn)cb);
 }
 
-int hook_unregister(HookType type, void *callback) {
+int hook_unregister(HookType type, HookFn callback) {
     if (type >= HOOK_TYPE_COUNT) return 0;
     int removed = 0;
     for (ptrdiff_t i = arrlen(hooks[type]) - 1; i >= 0; i--) {
