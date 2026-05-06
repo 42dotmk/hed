@@ -1,7 +1,9 @@
 #include "ui/abuf.h"
 #include "lib/ansi.h"
+#include "lib/theme.h"
 #include "utils/bottom_ui.h"
 #include "buf/buffer.h"
+#include "buf/virtual_text.h"
 #include "editor.h"
 #include "prompt.h"
 #include "utils/fold.h"
@@ -175,6 +177,36 @@ static inline void ab_append_ch(Abuf *ab, char c) { ab_append(ab, &c, 1); }
 
 static int window_gutter_width(const Window *win, int view_rows);
 static int render_cols_ss(const SizedStr *r);
+
+/* Append EOL virtual-text marks for `filerow` to `ab`, clipped to
+ * `avail` render columns. Uses byte-count == column-count clipping —
+ * phase 1 expects ASCII suffixes; multi-byte UTF-8 may be cut at a
+ * codepoint boundary, which is acceptable since the visible result
+ * is bounded by the screen and the next frame paints over it. */
+static void emit_eol_vtext(Abuf *ab, const Buffer *buf, int filerow,
+                           int avail) {
+    if (avail <= 0) return;
+    const VtMark *marks[8];
+    int n = vtext_collect_eol(buf, filerow, marks, 8);
+    if (n == 0) return;
+
+    int budget = avail;
+    for (int i = 0; i < n && budget > 0; i++) {
+        const VtMark *m = marks[i];
+        ansi_sgr_reset(ab);
+        ab_append_str(ab, m->sgr ? m->sgr : COLOR_COMMENT);
+        int take = (int)m->text.len;
+        if (take > budget) take = budget;
+        if (take > 0) ab_append(ab, m->text.data, take);
+        budget -= take;
+        if (budget > 0 && i + 1 < n) {
+            ab_append_ch(ab, ' ');
+            budget--;
+        }
+    }
+    ansi_sgr_reset(ab);
+}
+
 static int row_visual_height(const Row *row, int content_cols, int wrap) {
     if (!wrap)
         return 1;
@@ -634,6 +666,20 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                     APPEND_SLICE(post_start, post_len);
                 }
 #undef APPEND_SLICE
+                }
+
+                /* EOL virtual text — drawn on the last visual segment
+                 * of the row, after the buffer slice and any selection
+                 * inversion, so reverse-video does not bleed in. */
+                if (vtext_buffer_has_marks(buf) && start_rx <= line_rcols) {
+                    int h = row_visual_height(&buf->rows[filerow],
+                                              content_cols, win->wrap);
+                    int is_last = win->wrap ? (sub == h - 1) : 1;
+                    if (is_last) {
+                        int painted = len > 0 ? len : 0;
+                        int avail = content_cols - painted;
+                        emit_eol_vtext(ab, buf, filerow, avail);
+                    }
                 }
             }
         }

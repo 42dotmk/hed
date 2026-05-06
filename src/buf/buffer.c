@@ -73,6 +73,7 @@ static void buf_init(Buffer *buf) {
     fold_list_init(&buf->folds);
     buf->fold_method = FOLD_METHOD_MANUAL; /* Default: manual folding */
     undo_state_init(&buf->undo);
+    vtext_init(buf);
 }
 
 /* Create a new buffer and return EdError status */
@@ -319,6 +320,7 @@ EdError buf_close(int index) {
     buf->cursor = NULL;
     fold_list_free(&buf->folds);
     undo_state_free(&buf->undo);
+    vtext_free(buf);
 
     arrdel(E.buffers, index);
 
@@ -774,6 +776,10 @@ void buf_reload(Buffer *buf) {
     /* Drop undo history — rows are about to be replaced wholesale. */
     undo_state_free(&buf->undo);
     undo_state_init(&buf->undo);
+
+    /* Drop virtual-text marks — they pin to line indices that the
+     * about-to-be-replaced content may not have. */
+    vtext_clear_all(buf);
 
     /* Detect filetype (update) */
     free(buf->filetype);

@@ -5,7 +5,6 @@
 
 typedef struct {
     SizedStr chars;  /* Original text */
-    SizedStr virtualText; /* Rendered text (with tabs expanded) */
     SizedStr render; /* Rendered text (with tabs expanded) */
 
     /* Fold markers */

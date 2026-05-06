@@ -43,6 +43,7 @@
 #include "buf/buffer.h"
 #include "buf/row.h"
 #include "buf/textobj.h"
+#include "buf/virtual_text.h"
 
 /* Utilities */
 #include "utils/bottom_ui.h"

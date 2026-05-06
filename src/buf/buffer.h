@@ -9,6 +9,7 @@
 #include "lib/cursor.h"
 #include "lib/errors.h"
 #include "buf/row.h"
+#include "buf/virtual_text.h"
 #include "utils/fold.h"
 #include "utils/undo.h"
 
@@ -41,6 +42,8 @@ typedef struct Buffer {
     FoldMethod fold_method; /* Active fold detection method */
 
     UndoState undo; /* Undo/redo state */
+
+    VtTable vtext; /* Virtual text annotations (display-only) */
 } Buffer;
 
 /* Buffer management */
