@@ -14,10 +14,12 @@ typedef struct {
 /* Per-type stb_ds dynamic array of HookEntry. */
 static HookEntry *hooks[HOOK_TYPE_COUNT];
 
-/* Helper: check if hook should fire based on filters */
+/* Helper: check if hook should fire based on filters.
+ * entry->mode < 0 is a wildcard that matches every mode (same
+ * convention hook_register_mode/key/simple use internally). */
 static int hook_should_fire(const HookEntry *entry, int current_mode,
                             const char *current_filetype) {
-    if (entry->mode != current_mode) {
+    if (entry->mode >= 0 && entry->mode != current_mode) {
         return 0;
     }
     if (strcmp(entry->filetype, "*") != 0) {
