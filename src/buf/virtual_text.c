@@ -18,6 +18,7 @@
 #include "buf/virtual_text.h"
 #include "buf/buffer.h"
 #include "hooks.h"
+#include "lib/vector.h"
 #include "stb_ds.h"
 
 #include <stdlib.h>
@@ -109,7 +110,7 @@ int vtext_clear_all(Buffer *b) {
     for (ptrdiff_t i = 0; i < arrlen(b->vtext.marks); i++) {
         sstr_free(&b->vtext.marks[i].text);
     }
-    arrsetlen(b->vtext.marks, 0);
+    arr_reset(b->vtext.marks);
     return n;
 }
 

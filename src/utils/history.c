@@ -36,7 +36,12 @@ static void hist_insert_front(CmdHistory *h, const char *line) {
         return;
 
     char *line_copy = strdup(line);
+    /* arrins expands stb_ds's grow macros which gcc flags with
+     * -Wsign-compare on the size_t/ptrdiff_t ternary inside arraddnindex. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
     arrins(h->items, 0, line_copy);
+#pragma GCC diagnostic pop
 
     /* Enforce max limit */
     if (arrlen(h->items) > CMD_HISTORY_MAX) {

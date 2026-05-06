@@ -226,7 +226,7 @@ static void lsp_send_initialized(LspServer *srv) {
 }
 
 static void lsp_notify_existing_buffers(LspServer *srv) {
-    for (size_t i = 0; i < arrlen(E.buffers); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         Buffer *buf = &E.buffers[i];
         if (buf && buf->filetype && buf->filename &&
             strcmp(buf->filetype, srv->lang) == 0)
@@ -864,11 +864,16 @@ int lsp_cmd_connect(const char *lang, const char *to_addr,
     }
 
     char resolved_root[1024];
+    /* Truncation OK: an over-long root URI just gets clipped — the LSP
+     * server will reject it on initialize and we'll surface the error. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
     if (root_uri) {
         snprintf(resolved_root, sizeof(resolved_root), "%s", root_uri);
     } else {
         snprintf(resolved_root, sizeof(resolved_root), "file://%s", E.cwd);
     }
+#pragma GCC diagnostic pop
 
     LspServer *srv = lsp_server_alloc(lang, resolved_root);
     if (!srv) {

@@ -17,7 +17,12 @@ static int find_tags_file(char *out_path, size_t size) {
 
     /* Try current working directory first */
     if (E.cwd[0]) {
+        /* Truncation OK: caller passes a sized buffer; if cwd is too long
+         * the fopen below fails and we move on to the buffer-dir fallback. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(out_path, size, "%s/tags", E.cwd);
+#pragma GCC diagnostic pop
         FILE *f = fopen(out_path, "r");
         if (f) {
             fclose(f);

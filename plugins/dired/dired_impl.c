@@ -264,7 +264,7 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     dired_clear_buffer(buf);
 
     /* Reset snapshot for the new listing */
-    arrsetlen(st->snapshot, 0);
+    arr_reset(st->snapshot);
     st->next_id = 1;
 
     for (size_t i = 0; i < count; i++) {
@@ -600,11 +600,11 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
     int applied = 0;
 
     /* Pass 1: source → temp */
-    for (size_t i = 0; i < arrlen(*ops); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_RENAME)
             continue;
-        snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%zu",
+        snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%td",
                  DIRED_TMP_PREFIX, i);
         char src[PATH_MAX], tmp[PATH_MAX];
         if (!dired_join(st->cwd, op->src_name, src, sizeof(src)) ||
@@ -623,7 +623,7 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
     }
 
     /* Pass 2: temp → destination */
-    for (size_t i = 0; i < arrlen(*ops); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_RENAME)
             continue;
@@ -658,7 +658,7 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
 
 static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) {
     int applied = 0;
-    for (size_t i = 0; i < arrlen(*ops); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_DELETE)
             continue;
@@ -694,7 +694,7 @@ static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) 
 
 static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) {
     int applied = 0;
-    for (size_t i = 0; i < arrlen(*ops); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_CREATE)
             continue;
@@ -745,7 +745,7 @@ static struct {
 static void dired_render_plan(Buffer *buf, const char *cwd,
                               const DiredOpVec *ops, int *out_max_w) {
     int n_create = 0, n_rename = 0, n_delete = 0;
-    for (size_t i = 0; i < arrlen(*ops); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         switch ((*ops)[i].kind) {
         case DIRED_OP_CREATE: n_create++; break;
         case DIRED_OP_RENAME: n_rename++; break;
@@ -770,7 +770,7 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
 
     if (n_create > 0) {
         APPEND("CREATE (%d):", n_create);
-        for (size_t i = 0; i < arrlen(*ops); i++) {
+        for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_CREATE) continue;
             APPEND("  + %s%s", op->dst_name, op->is_dir ? "/" : "");
@@ -779,7 +779,7 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     }
     if (n_rename > 0) {
         APPEND("RENAME (%d):", n_rename);
-        for (size_t i = 0; i < arrlen(*ops); i++) {
+        for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_RENAME) continue;
             APPEND("  ~ %s -> %s", op->src_name, op->dst_name);
@@ -788,7 +788,7 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     }
     if (n_delete > 0) {
         APPEND("DELETE (%d):", n_delete);
-        for (size_t i = 0; i < arrlen(*ops); i++) {
+        for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
             if (op->kind != DIRED_OP_DELETE) continue;
             APPEND("  - %s%s", op->src_name, op->is_dir ? "/" : "");

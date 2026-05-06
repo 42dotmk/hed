@@ -156,10 +156,14 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
     char path[PATH_MAX];
     char base[PATH_MAX];
     ts_default_base(base, sizeof(base));
+    /* Truncation harmless: an over-long path just fails to dlopen below. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
     if (base[0])
         snprintf(path, sizeof(path), "%s/%s.so", base, lang_name);
     else
         snprintf(path, sizeof(path), "ts/%s.so", lang_name);
+#pragma GCC diagnostic pop
     void *h = dlopen(path, RTLD_NOW);
     if (!h) {
         log_msg("TS dlopen failed for lang %s: %s", lang_name, dlerror());
@@ -168,7 +172,12 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
 
     char sym[64];
     snprintf(sym, sizeof(sym), "tree_sitter_%s", lang_name);
+    /* dlsym returns void*; converting to a function pointer is POSIX-blessed
+     * but ISO C forbids it. The cast is required by the ABI we're calling. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
     TSLanguage *(*langfn)(void) = (TSLanguage * (*)(void)) dlsym(h, sym);
+#pragma GCC diagnostic pop
     if (!langfn) {
         dlclose(h);
         return 0;
@@ -214,8 +223,12 @@ static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
     ts_default_base(base, sizeof(base));
     char qpath[PATH_MAX];
     if (base[0]) {
+        /* Truncation harmless: an over-long path just fails to load below. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(qpath, sizeof(qpath), "%s/queries/%s/%s", base, lang_name,
                  qname);
+#pragma GCC diagnostic pop
         TSQuery *q = load_query_file(lang, qpath);
         if (q)
             return q;

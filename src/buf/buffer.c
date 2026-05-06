@@ -378,7 +378,7 @@ void buf_cursor_clear_extras(Buffer *buf) {
 
 int buf_cursor_set_active(Buffer *buf, Cursor *c) {
     if (!buf || !c) return 0;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         if (buf->all_cursors[i] == c) {
             buf->cursor = c;
             return 1;
@@ -408,7 +408,7 @@ void buf_cursor_sync_from_window(Buffer *buf) {
 
 static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy && c->x >= ix) c->x++;
@@ -417,7 +417,7 @@ static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy && c->x > ix) c->x--;
@@ -426,7 +426,7 @@ static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
     if (!buf) return;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y > iy) {
@@ -440,7 +440,7 @@ static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
 
 static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
     if (!buf) return;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y == iy) {
@@ -454,7 +454,7 @@ static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
 
 static void cursors_after_delete_line(Buffer *buf, int iy) {
     if (!buf) return;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
         if (c->y > iy) {

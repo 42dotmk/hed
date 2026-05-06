@@ -82,7 +82,7 @@ static void on_keypress(HookKeyEvent *event) {
      * active was destroyed by an mc_* command during dispatch, fall
      * back to whatever's at all_cursors[0]. */
     Cursor *restore_to = NULL;
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         if (buf->all_cursors[i] == original_active) {
             restore_to = original_active;
             break;

@@ -166,6 +166,11 @@ static void cmdcomp_apply_token(Prompt *p, const char *replacement) {
     p->cursor      = p->len;
 }
 
+/* snprintf truncation here is intentional: paths longer than PATH_MAX or
+ * the destination buffer are silently dropped, matching how the rest of
+ * the path-completion code treats oversize entries. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
 static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
     cmdcomp_clear(c);
     const char *home = getenv("HOME");
@@ -258,6 +263,7 @@ static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
     cmdcomp_apply_token(p, items[0]);
     ed_set_status_message("%d matches", count);
 }
+#pragma GCC diagnostic pop
 
 static void cmdcomp_next(Prompt *p, CmdComp *c) {
     if (!c->active || c->count == 0) {
@@ -334,6 +340,7 @@ static PromptResult colon_on_key(Prompt *p, int key) {
 }
 
 static void colon_on_submit(Prompt *p, const char *line, int len) {
+    (void)p;
     if (len == 0) return; /* dispatcher will close */
 
     /* Parse "name args" — split on first space (in a stack copy so we

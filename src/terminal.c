@@ -728,7 +728,7 @@ static void draw_extra_cursors_win(Abuf *ab, const Window *win) {
     int content_cols = win->width - margin;
     if (content_cols <= 0) return;
 
-    for (size_t i = 0; i < arrlen(buf->all_cursors); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (!c || c == buf->cursor) continue;
         if (c->y < 0 || c->y >= buf->num_rows) continue;

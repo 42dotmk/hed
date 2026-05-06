@@ -83,6 +83,7 @@ void cmd_cpick(const char *args) {
 }
 
 void cmd_ssearch(const char *args) {
+    (void)args;
 	BUF(buf)
     EdError err = buf_save_in(buf);
     if (err != ED_OK) {

@@ -3,6 +3,7 @@
 #include "buf/buf_helpers.h"
 #include "hooks.h"
 #include "lib/safe_string.h"
+#include "lib/vector.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -345,7 +346,7 @@ void qf_clear(Qf *qf) {
         return;
     for (ptrdiff_t i = 0; i < arrlen(qf->items); i++)
         qf_item_free(&qf->items[i]);
-    arrsetlen(qf->items, 0);
+    arr_reset(qf->items);
     qf->sel = 0;
     qf->scroll = 0;
     if (qf->open)

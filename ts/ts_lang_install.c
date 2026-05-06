@@ -5,6 +5,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+/* This is a CLI helper that builds and copies grammar files; every snprintf
+ * here is path concatenation where truncation just makes the operation fail
+ * cleanly with a write/copy error. Suppress format-truncation warnings
+ * file-wide rather than wrapping each site. */
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+
 /*
  * Tree-sitter language installer for hed.
  *

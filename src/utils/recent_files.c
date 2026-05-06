@@ -52,7 +52,12 @@ static void recent_files_insert_front(RecentFiles *rf, const char *filepath) {
         return;
 
     char *path_copy = strdup(filepath);
+    /* arrins expands stb_ds's grow macros which gcc flags with
+     * -Wsign-compare on the size_t/ptrdiff_t ternary inside arraddnindex. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
     arrins(rf->items, 0, path_copy);
+#pragma GCC diagnostic pop
 
     if (arrlen(rf->items) > RECENT_FILES_MAX) {
         char *oldest = arrpop(rf->items);
