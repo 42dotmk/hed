@@ -11,6 +11,7 @@ output update next to your editor.
 | `:tmux_toggle` | Open / close the runner pane |
 | `:tmux_send <cmd>` | Send a literal command to the runner pane |
 | `:tmux_send_line` | Send the paragraph under the cursor |
+| `:tmux_send_selection` | Send the current visual selection |
 | `:tmux_kill` | Kill the runner pane (and the shell in it) |
 
 The runner pane is a regular tmux pane, opened to the right of the
@@ -18,11 +19,12 @@ window hed is running in.
 
 ## Default keybinds
 
-| Key | Action |
-|---|---|
-| `<space>tt` | `:tmux_toggle` |
-| `<space>tT` | `:tmux_kill` |
-| `<space>ts` | `:tmux_send_line` (send paragraph under cursor) |
+| Key | Mode | Action |
+|---|---|---|
+| `<space>tt` | normal | `:tmux_toggle` |
+| `<space>tT` | normal | `:tmux_kill` |
+| `<space>ts` | normal | `:tmux_send_line` (send paragraph under cursor) |
+| `<space>ts` | visual | `:tmux_send_selection` (send the highlighted text) |
 
 ## What "paragraph under cursor" means
 
@@ -30,6 +32,14 @@ Lines from the previous blank line down to the next blank line
 (matches `{` / `}` Vim motions). The whole paragraph is sent as a
 single multi-line command — useful for one-shot REPL fragments,
 SQL statements, or shell scripts.
+
+## Sending a visual selection
+
+In any visual mode (`v`, `V`, `<C-v>`), `<space>ts` (or
+`:tmux_send_selection`) sends the highlighted text to the last
+focused tmux pane and exits visual mode. Character-, line-, and
+block-wise selections are all joined with newlines, matching the
+behaviour of `:tmux_send_line` for paragraphs.
 
 ## Requirements
 

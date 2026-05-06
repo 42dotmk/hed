@@ -157,39 +157,46 @@ static int visual_line_range(Buffer *buf, Window *win, int *sy, int *ey) {
     return 1;
 }
 
-static int visual_yank(Buffer *buf, Window *win, int block_mode) {
-    if (!buf || !win || win->sel.type == SEL_NONE)
+int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
+                         TextSelection *out) {
+    if (!buf || !win || !out || win->sel.type == SEL_NONE)
         return 0;
     if (block_mode != 0)
         block_mode = 1;
     if (win->sel.type == SEL_VISUAL_BLOCK)
         block_mode = 1;
 
-    /* Convert visual selection to TextSelection */
-    TextSelection sel;
     if (win->sel.type == SEL_VISUAL_LINE) {
         int sy, ey;
         if (!visual_line_range(buf, win, &sy, &ey))
             return 0;
         int ex = (int)buf->rows[ey].chars.len;
-        sel = textsel_make_range(sy, 0, ey, ex, SEL_VISUAL_LINE);
-    } else if (!block_mode) {
+        *out = textsel_make_range(sy, 0, ey, ex, SEL_VISUAL_LINE);
+        return 1;
+    }
+    if (!block_mode) {
         int sy, sx, ey, ex_excl;
         if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
             return 0;
-        sel = textsel_make_range(sy, sx, ey, ex_excl, SEL_VISUAL);
-    } else {
-        int sy, ey, start_rx, end_rx_excl;
-        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
-            return 0;
-        /* For block mode, convert render columns to character columns */
-        Row *first_row = &buf->rows[sy];
-        int sx = buf_row_rx_to_cx(first_row, start_rx);
-        int ex = buf_row_rx_to_cx(first_row, end_rx_excl);
-        sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL_BLOCK);
+        *out = textsel_make_range(sy, sx, ey, ex_excl, SEL_VISUAL);
+        return 1;
     }
+    int sy, ey, start_rx, end_rx_excl;
+    if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
+        return 0;
+    /* For block mode, convert render columns to character columns */
+    Row *first_row = &buf->rows[sy];
+    int sx = buf_row_rx_to_cx(first_row, start_rx);
+    int ex = buf_row_rx_to_cx(first_row, end_rx_excl);
+    *out = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL_BLOCK);
+    return 1;
+}
 
-    /* Use new yank API */
+static int visual_yank(Buffer *buf, Window *win, int block_mode) {
+    TextSelection sel;
+    if (!kb_visual_to_textsel(buf, win, block_mode, &sel))
+        return 0;
+
     EdError err = yank_selection(&sel);
     if (err == ED_OK) {
         ed_set_status_message("Yanked");
@@ -205,34 +212,10 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
         ed_set_status_message("Buffer is read-only");
         return 0;
     }
-    if (block_mode != 0)
-        block_mode = 1;
-    if (win->sel.type == SEL_VISUAL_BLOCK)
-        block_mode = 1;
 
-    /* Convert visual selection to TextSelection */
     TextSelection sel;
-    if (win->sel.type == SEL_VISUAL_LINE) {
-        int sy, ey;
-        if (!visual_line_range(buf, win, &sy, &ey))
-            return 0;
-        int ex = (int)buf->rows[ey].chars.len;
-        sel = textsel_make_range(sy, 0, ey, ex, SEL_VISUAL_LINE);
-    } else if (!block_mode) {
-        int sy, sx, ey, ex_excl;
-        if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl))
-            return 0;
-        sel = textsel_make_range(sy, sx, ey, ex_excl, SEL_VISUAL);
-    } else {
-        int sy, ey, start_rx, end_rx_excl;
-        if (!visual_block_range(buf, win, &sy, &ey, &start_rx, &end_rx_excl))
-            return 0;
-        /* For block mode, convert render columns to character columns */
-        Row *first_row = &buf->rows[sy];
-        int sx = buf_row_rx_to_cx(first_row, start_rx);
-        int ex = buf_row_rx_to_cx(first_row, end_rx_excl);
-        sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL_BLOCK);
-    }
+    if (!kb_visual_to_textsel(buf, win, block_mode, &sel))
+        return 0;
 
     /* Yank first (to clipboard) */
     EdError err = yank_selection(&sel);

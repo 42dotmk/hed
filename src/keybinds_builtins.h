@@ -11,6 +11,7 @@
  */
 
 #include "ui/window.h"
+#include "buf/textobj.h"
 
 void kb_line_number_toggle(void);
 void kb_enter_insert_mode(void);
@@ -97,6 +98,11 @@ void kb_visual_clear(Window *win);
 void kb_visual_begin(int block_mode);
 int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
 int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
+/* Build a TextSelection from the window's current visual selection.
+ * `block_mode` is forced on if win->sel.type is SEL_VISUAL_BLOCK.
+ * Returns 1 on success and fills *out; 0 if there is no selection. */
+int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
+                         TextSelection *out);
 
 /* Note: kb_change_word removed - now handled by operator + text object system */
 void kb_toggle_case(void); /* Toggle case of char under cursor (~) */

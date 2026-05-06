@@ -7,6 +7,8 @@
 #include "hed.h"
 #include "tmux.h"
 #include "utils/fzf.h"
+#include "utils/yank.h"
+#include "keybinds_builtins.h"
 #include "command_mode.h"
 #include "prompt.h"
 #include <string.h>
@@ -116,6 +118,63 @@ static void cmd_tmux_send_line(const char *args) {
     kb_tmux_send_line();
 }
 
+/* Send the current visual selection to whichever pane was last focused.
+ * Joins block/line/char selections into a single newline-separated string,
+ * matching how :tmux_send delivers a multi-line command. */
+static void kb_tmux_send_selection(void) {
+    BUFWIN(buf, win);
+    if (!buf || !win || win->sel.type == SEL_NONE) {
+        ed_set_status_message("tmux: no selection");
+        return;
+    }
+
+    int block_mode = (E.mode == MODE_VISUAL_BLOCK);
+    TextSelection sel;
+    if (!kb_visual_to_textsel(buf, win, block_mode, &sel)) {
+        ed_set_status_message("tmux: no selection");
+        return;
+    }
+
+    YankData yd = yank_data_new(buf, &sel);
+    if (yd.num_rows <= 0 || !yd.rows) {
+        yank_data_free(&yd);
+        ed_set_status_message("tmux: empty selection");
+        return;
+    }
+
+    SizedStr joined = sstr_new();
+    for (int i = 0; i < yd.num_rows; i++) {
+        sstr_append(&joined, yd.rows[i].data, yd.rows[i].len);
+        if (i < yd.num_rows - 1)
+            sstr_append_char(&joined, '\n');
+    }
+    yank_data_free(&yd);
+
+    if (joined.len == 0) {
+        sstr_free(&joined);
+        ed_set_status_message("tmux: empty selection");
+        return;
+    }
+
+    char *cmd_str = sstr_to_cstr(&joined);
+    sstr_free(&joined);
+    if (!cmd_str) {
+        ed_set_status_message("tmux: out of memory");
+        return;
+    }
+
+    tmux_pane_send_focused(cmd_str);
+    free(cmd_str);
+
+    kb_visual_clear(win);
+    ed_set_mode(MODE_NORMAL);
+}
+
+static void cmd_tmux_send_selection(const char *args) {
+    (void)args;
+    kb_tmux_send_selection();
+}
+
 /* Colon-prompt history hook. Only handles the case where the user is
  * editing a "tmux_send ..." line; otherwise returns 0 so the next hook
  * (or the default command-history fallback) takes over. */
@@ -156,11 +215,13 @@ static int tmux_plugin_init(void) {
     cmd("tmux_toggle",    cmd_tmux_toggle,    "tmux toggle runner pane");
     cmd("tmux_send",      cmd_tmux_send,      "tmux send command");
     cmd("tmux_kill",      cmd_tmux_kill,      "tmux kill runner pane");
-    cmd("tmux_send_line", cmd_tmux_send_line, "tmux send paragraph to last focused pane");
-    cmd("tmux_focus",     cmd_tmux_focus,     "tmux focus pane by name");
-    cmd("tmux_panes",     cmd_tmux_panes,     "tmux fzf-pick a registered pane");
-    cmd("tmux_attach",    cmd_tmux_attach,    "tmux bind a live pane to a name");
-    mapn(" ts", kb_tmux_send_line, "send paragraph to last focused tmux pane");
+    cmd("tmux_send_line",      cmd_tmux_send_line,      "tmux send paragraph to last focused pane");
+    cmd("tmux_send_selection", cmd_tmux_send_selection, "tmux send visual selection to last focused pane");
+    cmd("tmux_focus",          cmd_tmux_focus,          "tmux focus pane by name");
+    cmd("tmux_panes",          cmd_tmux_panes,          "tmux fzf-pick a registered pane");
+    cmd("tmux_attach",         cmd_tmux_attach,         "tmux bind a live pane to a name");
+    mapn(" ts", kb_tmux_send_line,      "send paragraph to last focused tmux pane");
+    mapv(" ts", kb_tmux_send_selection, "send selection to last focused tmux pane");
 
     cmd_prompt_history_register(tmux_send_history_hook, NULL);
     return 0;

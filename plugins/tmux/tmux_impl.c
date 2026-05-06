@@ -542,8 +542,18 @@ int tmux_pane_send(const char *name, const char *cmd) {
     char esc[1024];
     shell_escape_single(cmd, esc, sizeof(esc));
 
+    /* tmux types embedded LF bytes as Enter, so a trailing newline already
+     * executes the command. Only append the explicit Enter when the cmd is
+     * not newline-terminated, so the caller always gets exactly one Enter
+     * regardless of whether they passed a paragraph, visual selection, or
+     * a bare line. */
+    size_t cmd_len = strlen(cmd);
+    int ends_nl = (cmd_len > 0 && cmd[cmd_len - 1] == '\n');
+
     int status =
-        tmux_systemf("tmux send-keys -t %s %s Enter", slot->pane_id, esc);
+        ends_nl
+            ? tmux_systemf("tmux send-keys -t %s %s", slot->pane_id, esc)
+            : tmux_systemf("tmux send-keys -t %s %s Enter", slot->pane_id, esc);
     if (status != 0) {
         ed_set_status_message("tmux: send-keys failed (status %d)", status);
         return 0;
