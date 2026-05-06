@@ -37,55 +37,135 @@ int macro_queue_has_keys(void) {
     return E.macro_queue.position < E.macro_queue.length;
 }
 
+/* Map a base keycode to its canonical name used in <...> tokens. */
+static const char *macro_named_key(int base) {
+    switch (base) {
+    case '\x1b':         return "Esc";
+    case '\r':           return "CR";
+    case '\n':           return "NL";
+    case '\t':           return "Tab";
+    case 127:            return "BS";
+    case KEY_ARROW_UP:   return "Up";
+    case KEY_ARROW_DOWN: return "Down";
+    case KEY_ARROW_LEFT: return "Left";
+    case KEY_ARROW_RIGHT:return "Right";
+    case KEY_HOME:       return "Home";
+    case KEY_END:        return "End";
+    case KEY_PAGE_UP:    return "PageUp";
+    case KEY_PAGE_DOWN:  return "PageDown";
+    default:             return NULL;
+    }
+}
+
+/* Reverse: token name -> base keycode. Returns -1 if unknown. */
+static int macro_named_code(const char *name, int len) {
+    static const struct { const char *name; int code; } names[] = {
+        {"Esc", '\x1b'}, {"CR", '\r'}, {"NL", '\n'}, {"Tab", '\t'},
+        {"BS", 127},
+        {"Up", KEY_ARROW_UP}, {"Down", KEY_ARROW_DOWN},
+        {"Left", KEY_ARROW_LEFT}, {"Right", KEY_ARROW_RIGHT},
+        {"Home", KEY_HOME}, {"End", KEY_END},
+        {"PageUp", KEY_PAGE_UP}, {"PageDown", KEY_PAGE_DOWN},
+        {"lt", '<'}, {"gt", '>'},
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        int nlen = (int)strlen(names[i].name);
+        if (nlen == len && strncmp(name, names[i].name, nlen) == 0)
+            return names[i].code;
+    }
+    return -1;
+}
+
+/* Try to decode a <...> token at the current queue position. On success
+ * fills *out_key and advances position past '>'. */
+static int macro_try_decode_token(int *out_key) {
+    const char *buf = E.macro_queue.buffer;
+    int pos = E.macro_queue.position;
+    int len = E.macro_queue.length;
+
+    /* Bound the search so a stray '<' doesn't scan the whole buffer. */
+    int limit = pos + 40;
+    if (limit > len) limit = len;
+    int end = pos + 1;
+    while (end < limit && buf[end] != '>') end++;
+    if (end >= limit || buf[end] != '>') return 0;
+
+    int p = pos + 1;            /* inner start */
+    int inner_end = end;        /* exclusive */
+    if (inner_end <= p) return 0;
+
+    /* Strip modifier prefixes in any order: M-, C-, S- */
+    int flags = 0;
+    while (p + 1 < inner_end && buf[p + 1] == '-') {
+        char c = buf[p];
+        if      (c == 'M') flags |= KEY_META;
+        else if (c == 'C') flags |= KEY_CTRL;
+        else if (c == 'S') flags |= KEY_SHIFT;
+        else break;
+        p += 2;
+    }
+
+    int name_len = inner_end - p;
+    if (name_len <= 0) return 0;
+
+    int base = -1;
+
+    if (buf[p] == '#') {
+        /* Numeric escape: <#NNNN> */
+        if (name_len < 2) return 0;
+        int n = 0;
+        for (int i = p + 1; i < inner_end; i++) {
+            if (buf[i] < '0' || buf[i] > '9') return 0;
+            n = n * 10 + (buf[i] - '0');
+            if (n > 0xFFFF) return 0;
+        }
+        base = n;
+    } else if (buf[p] == 'F' && name_len >= 2 &&
+               buf[p + 1] >= '0' && buf[p + 1] <= '9') {
+        /* Function key: F1..F12 */
+        int n = 0;
+        for (int i = p + 1; i < inner_end; i++) {
+            if (buf[i] < '0' || buf[i] > '9') return 0;
+            n = n * 10 + (buf[i] - '0');
+        }
+        if (n < 1 || n > 12) return 0;
+        base = KEY_F1 + n - 1;
+    } else if (name_len == 1) {
+        unsigned char c = (unsigned char)buf[p];
+        if (c < 32 || c >= 127) return 0;
+        base = c;
+    } else {
+        base = macro_named_code(buf + p, name_len);
+        if (base < 0) return 0;
+    }
+
+    /* <C-a>..<C-z> with no other flags collapses to raw byte 1..26,
+     * matching what the input parser produces for typed Ctrl-letter. */
+    if (flags == KEY_CTRL && ((base >= 'a' && base <= 'z') ||
+                              (base >= 'A' && base <= 'Z'))) {
+        int letter = (base >= 'A' && base <= 'Z') ? base - 'A' + 1
+                                                  : base - 'a' + 1;
+        *out_key = letter;
+    } else {
+        *out_key = flags | base;
+    }
+
+    E.macro_queue.position = end + 1;
+    return 1;
+}
+
 int macro_queue_get_key(void) {
     if (!macro_queue_has_keys())
         return 0;
 
     char c = E.macro_queue.buffer[E.macro_queue.position];
-
-    /* Check for special key sequences like <Esc>, <Up>, etc. */
     if (c == '<') {
-        const char *rest = E.macro_queue.buffer + E.macro_queue.position + 1;
-        int remaining = E.macro_queue.length - E.macro_queue.position - 1;
-
-        /* Try to match special sequences */
-        if (remaining >= 4 && strncmp(rest, "Esc>", 4) == 0) {
-            E.macro_queue.position += 5;
-            return '\x1b';
-        } else if (remaining >= 3 && strncmp(rest, "CR>", 3) == 0) {
-            E.macro_queue.position += 4;
-            return '\r';
-        } else if (remaining >= 4 && strncmp(rest, "Tab>", 4) == 0) {
-            E.macro_queue.position += 5;
-            return '\t';
-        } else if (remaining >= 3 && strncmp(rest, "BS>", 3) == 0) {
-            E.macro_queue.position += 4;
-            return 127;
-        } else if (remaining >= 5 && strncmp(rest, "Left>", 5) == 0) {
-            E.macro_queue.position += 6;
-            return KEY_ARROW_LEFT;
-        } else if (remaining >= 6 && strncmp(rest, "Right>", 6) == 0) {
-            E.macro_queue.position += 7;
-            return KEY_ARROW_RIGHT;
-        } else if (remaining >= 3 && strncmp(rest, "Up>", 3) == 0) {
-            E.macro_queue.position += 4;
-            return KEY_ARROW_UP;
-        } else if (remaining >= 5 && strncmp(rest, "Down>", 5) == 0) {
-            E.macro_queue.position += 6;
-            return KEY_ARROW_DOWN;
-        } else if (remaining >= 2 && rest[0] == 'C' && rest[1] == '-') {
-            /* Ctrl sequences like <C-s>, <C-w> */
-            if (remaining >= 4 && rest[3] == '>') {
-                char ctrl_char = rest[2];
-                if (ctrl_char >= 'a' && ctrl_char <= 'z') {
-                    E.macro_queue.position += 5;
-                    return ctrl_char - 'a' + 1;
-                }
-            }
-        }
+        int key;
+        if (macro_try_decode_token(&key))
+            return key;
+        /* Malformed token: fall through and emit literal '<'. */
     }
 
-    /* Regular character */
     E.macro_queue.position++;
     return (unsigned char)c;
 }
@@ -138,38 +218,55 @@ char macro_get_recording_register(void) {
     return E.macro_recording.register_name;
 }
 
-/* Helper: Convert key code to string representation */
+/* Helper: Convert key code to string representation. Symmetric with the
+ * <...> parser in macro_try_decode_token. */
 static void key_to_string_buf(int key, char *buf, size_t bufsize) {
-    if (key >= 32 && key < 127 && key != '<') {
-        /* Printable ASCII (except '<' which we escape) */
-        snprintf(buf, bufsize, "%c", key);
-    } else if (key == 127) {
-        snprintf(buf, bufsize, "<BS>");
-    } else if (key == '\r') {
-        snprintf(buf, bufsize, "<CR>");
-    } else if (key == '\n') {
-        snprintf(buf, bufsize, "<CR>");
-    } else if (key == '\t') {
-        snprintf(buf, bufsize, "<Tab>");
-    } else if (key == '\x1b') {
-        snprintf(buf, bufsize, "<Esc>");
-    } else if (key == KEY_ARROW_UP) {
-        snprintf(buf, bufsize, "<Up>");
-    } else if (key == KEY_ARROW_DOWN) {
-        snprintf(buf, bufsize, "<Down>");
-    } else if (key == KEY_ARROW_LEFT) {
-        snprintf(buf, bufsize, "<Left>");
-    } else if (key == KEY_ARROW_RIGHT) {
-        snprintf(buf, bufsize, "<Right>");
-    } else if (key >= 1 && key <= 26) {
-        /* Ctrl+letter */
-        snprintf(buf, bufsize, "<C-%c>", key + 'a' - 1);
-    } else if (key == '<') {
-        /* Escape literal '<' */
-        snprintf(buf, bufsize, "<%c>", key);
+    int has_mod = KEY_IS_META(key) || KEY_IS_CTRL(key) || KEY_IS_SHIFT(key);
+
+    if (!has_mod) {
+        if (key >= 32 && key < 127 && key != '<') {
+            snprintf(buf, bufsize, "%c", key);
+            return;
+        }
+        if (key == '<') {
+            snprintf(buf, bufsize, "<lt>");
+            return;
+        }
+        const char *named = macro_named_key(key);
+        if (named) {
+            snprintf(buf, bufsize, "<%s>", named);
+            return;
+        }
+        if (key >= 1 && key <= 26) {
+            snprintf(buf, bufsize, "<C-%c>", key + 'a' - 1);
+            return;
+        }
+        if (key >= KEY_F1 && key <= KEY_F12) {
+            snprintf(buf, bufsize, "<F%d>", key - KEY_F1 + 1);
+            return;
+        }
+        snprintf(buf, bufsize, "<#%d>", key);
+        return;
+    }
+
+    int base = KEY_BASE(key);
+    char prefix[8];
+    int p = 0;
+    prefix[p++] = '<';
+    if (KEY_IS_META(key))  { prefix[p++] = 'M'; prefix[p++] = '-'; }
+    if (KEY_IS_CTRL(key))  { prefix[p++] = 'C'; prefix[p++] = '-'; }
+    if (KEY_IS_SHIFT(key)) { prefix[p++] = 'S'; prefix[p++] = '-'; }
+    prefix[p] = '\0';
+
+    const char *named = macro_named_key(base);
+    if (named) {
+        snprintf(buf, bufsize, "%s%s>", prefix, named);
+    } else if (base >= KEY_F1 && base <= KEY_F12) {
+        snprintf(buf, bufsize, "%sF%d>", prefix, base - KEY_F1 + 1);
+    } else if (base >= 32 && base < 127) {
+        snprintf(buf, bufsize, "%s%c>", prefix, base);
     } else {
-        /* Unknown key - store as numeric code */
-        snprintf(buf, bufsize, "<%d>", key);
+        snprintf(buf, bufsize, "%s#%d>", prefix, base);
     }
 }
 
