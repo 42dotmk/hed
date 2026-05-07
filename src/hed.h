@@ -57,6 +57,7 @@
 
 /* UI */
 #include "ui/abuf.h"
+#include "ui/ask.h"
 #include "ui/window.h"
 #include "ui/winmodal.h"
 #include "ui/wlayout.h"
