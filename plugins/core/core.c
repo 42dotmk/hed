@@ -112,6 +112,54 @@ static void cmd_vt_demo(const char *args) {
     }
 }
 
+/* :vt-demo-block [text] — toggle demo BLOCK_BELOW virtual rows on the
+ * current line. Multi-line text uses literal `|` as a row separator
+ * (so you can pass it from the command line), or '\n' if already
+ * present. Useful for eyeballing the phase-2 renderer without copilot. */
+static void cmd_vt_demo_block(const char *args) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win) return;
+
+    static int ns = -1;
+    if (ns < 0) ns = vtext_ns_create("vt-demo-block");
+    if (ns < 0) {
+        ed_set_status_message("vt-demo-block: cannot create namespace");
+        return;
+    }
+
+    int line = win->cursor.y;
+    if (line < 0 || line >= buf->num_rows) {
+        ed_set_status_message("vt-demo-block: cursor not on a buffer line");
+        return;
+    }
+
+    if (!args || !*args) {
+        int dropped = vtext_clear_line(buf, ns, line);
+        if (dropped > 0) {
+            ed_set_status_message("vt-demo-block: cleared on line %d", line + 1);
+            return;
+        }
+        args = "  block line 1|  block line 2|  block line 3";
+    }
+
+    /* Build a buffer with '|' replaced by '\n'. */
+    size_t n = strlen(args);
+    char  *text = malloc(n + 1);
+    if (!text) { ed_set_status_message("vt-demo-block: oom"); return; }
+    for (size_t i = 0; i < n; i++) text[i] = args[i] == '|' ? '\n' : args[i];
+    text[n] = '\0';
+
+    vtext_clear_line(buf, ns, line);
+    if (vtext_set_block_below(buf, ns, line, text, n, COLOR_COMMENT) == 0) {
+        ed_set_status_message("vt-demo-block: set %d row(s) on line %d",
+                              vtext_block_below_count(buf, line), line + 1);
+    } else {
+        ed_set_status_message("vt-demo-block: failed to set");
+    }
+    free(text);
+}
+
 /* :modeless on|off|toggle — toggle the global "always-insert" redirect.
  * When on, NORMAL mode is unreachable. */
 static void cmd_modeless(const char *args) {
@@ -238,7 +286,8 @@ static void register_commands(void) {
     cmd("plugins",  cmd_plugins,  "list loaded plugins");
     cmd("goto",     cmd_goto,     "goto <line> | <motion> [count]");
     cmd("modeless", cmd_modeless, "modeless on|off|toggle");
-    cmd("vt-demo",  cmd_vt_demo,  "toggle demo virtual text on current line");
+    cmd("vt-demo",       cmd_vt_demo,       "toggle demo EOL virtual text on current line");
+    cmd("vt-demo-block", cmd_vt_demo_block, "toggle demo BLOCK_BELOW rows (use | as row separator)");
 }
 
 static void register_hooks(void) {
