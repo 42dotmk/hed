@@ -10,19 +10,21 @@ user-facing feature is a plugin you can rip out, fork, or replace.
 ---
 
 ## Install in 10 seconds
-
 One line install:
 
 ```bash
 curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
 ```
+and follow the prompts.
+
 
 The installer asks two things:
 
 1. **Source or binary?** Binary is faster (one download, ready to
    run). Source clones the repo into `~/.local/share/hed`, builds it,
    and symlinks `hed` and `tsi` into `~/.local/bin` — pick this if
-   you want to hack on plugins.
+   you want to hack on plugins (or the core editor itself).
+   
 2. **Optional tools?** Offers to download portable static `fzf` and
    `ripgrep` binaries into the same `~/.local/bin`, then lets you
    pick tree-sitter grammars to install for syntax highlighting.
