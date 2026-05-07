@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static FILE *g_log_fp = NULL;
 static char g_log_path[512] = {0};
@@ -64,6 +65,18 @@ void log_clear(void) {
 
 const char *log_path(void) {
     return g_log_path;
+}
+
+int log_fileno(void) {
+    if (!g_log_fp) return -1;
+    return fileno(g_log_fp);
+}
+
+int log_stderr_to_logfile(void) {
+    int fd = log_fileno();
+    if (fd < 0) return -1;
+    if (dup2(fd, STDERR_FILENO) < 0) return -1;
+    return 0;
 }
 
 void log_close(void) {
