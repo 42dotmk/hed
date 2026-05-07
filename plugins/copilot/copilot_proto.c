@@ -161,11 +161,13 @@ int cp_proto_spawn(void) {
     }
 
     if (pid == 0) {
-        /* Child: hook up stdin/stdout, drop everything else, exec. */
+        /* Child: hook up stdin/stdout. Send stderr to the editor log
+         * so node/copilot's noise (deprecation warnings, telemetry
+         * complaints, etc.) doesn't repaint over the renderer. */
         dup2(in_pipe[0],  STDIN_FILENO);
         dup2(out_pipe[1], STDOUT_FILENO);
-        /* Keep stderr going to our own stderr so we can see server
-         * errors if something explodes during dev. */
+        int log_fd = log_fileno();
+        if (log_fd >= 0) dup2(log_fd, STDERR_FILENO);
         close(in_pipe[0]);  close(in_pipe[1]);
         close(out_pipe[0]); close(out_pipe[1]);
 
@@ -176,8 +178,14 @@ int cp_proto_spawn(void) {
             /* <argv0> --stdio (binary in PATH) */
             execlp(inv.argv0, inv.argv0, "--stdio", (char *)NULL);
         }
-        fprintf(stderr, "copilot: execlp(%s) failed: %s\n",
-                inv.argv0, strerror(errno));
+        /* If exec returns, write the error directly to the log fd
+         * (parent's stderr is the user's terminal — we don't want to
+         * paint there). */
+        char err[256];
+        int  n = snprintf(err, sizeof(err),
+                          "copilot: execlp(%s) failed: %s\n",
+                          inv.argv0, strerror(errno));
+        if (n > 0 && log_fd >= 0) (void)write(log_fd, err, (size_t)n);
         _exit(127);
     }
 

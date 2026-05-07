@@ -439,12 +439,25 @@ static void cp_show_active(int line, int col) {
     if (!buf || !buf->cursor) return;
     if (line < 0 || col < 0) { line = buf->cursor->y; col = buf->cursor->x; }
 
-    /* v1: render only the first line of the suggestion as EOL ghost. */
+    /* First line of the suggestion goes on the anchor row as EOL
+     * ghost text. Any tail lines get one BLOCK_BELOW mark so they
+     * render as virtual rows directly under the anchor. */
     const char *nl = strchr(disp, '\n');
     int show_len   = nl ? (int)(nl - disp) : (int)strlen(disp);
-    if (show_len <= 0) return;
+    if (show_len > 0)
+        vtext_set_eol(buf, CP.vt_ns, line, disp, (size_t)show_len, NULL);
 
-    vtext_set_eol(buf, CP.vt_ns, line, disp, (size_t)show_len, NULL);
+    if (nl && *(nl + 1)) {
+        const char *tail = nl + 1;
+        /* Strip a single trailing newline so we don't render an empty
+         * virtual line at the bottom of the block. */
+        size_t tail_len = strlen(tail);
+        while (tail_len > 0 && tail[tail_len - 1] == '\n') tail_len--;
+        if (tail_len > 0)
+            vtext_set_block_below(buf, CP.vt_ns, line,
+                                  tail, tail_len, NULL);
+    }
+    if (show_len <= 0 && !(nl && *(nl + 1))) return;
 
     CP.suggestion_text    = text ? strdup(text) : strdup(disp);
     CP.suggestion_display = strdup(disp);
@@ -656,15 +669,16 @@ static void kb_accept(void) {
         if (strip < max) strip = 0;   /* prefixes diverged — insert all */
     }
 
-    const char *insert = full + strip;
-
-    /* Clear marks + state before mutating the buffer (the edit hooks
-     * fire and would otherwise see stale state). */
+    /* cp_clear_suggestion() will free CP.suggestion_text, so make a
+     * private copy of the bytes we're about to type before clearing —
+     * otherwise the loop below reads freed memory and inserts garbage. */
+    char *to_insert = strdup(full + strip);
+    if (!to_insert) return;
     char *uuid = CP.suggestion_uuid;
     CP.suggestion_uuid = NULL;
     cp_clear_suggestion();
 
-    for (const char *p = insert; *p; p++) {
+    for (const char *p = to_insert; *p; p++) {
         if (*p == '\n') buf_insert_newline_in(buf);
         else            buf_insert_char_in(buf, (unsigned char)*p);
     }
@@ -673,10 +687,11 @@ static void kb_accept(void) {
     if (uuid) {
         cJSON *p = cJSON_CreateObject();
         cJSON_AddStringToObject(p, "uuid", uuid);
-        cJSON_AddNumberToObject(p, "acceptedLength", (double)strlen(insert));
+        cJSON_AddNumberToObject(p, "acceptedLength", (double)strlen(to_insert));
         cp_proto_notify("notifyAccepted", p);
         free(uuid);
     }
+    free(to_insert);
 }
 
 /* ----- commands ----- */
