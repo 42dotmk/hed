@@ -261,13 +261,15 @@ void window_scroll(Window *win) {
     /* Wrap enabled: treat row_offset as visual (wrapped) row index */
     win->col_offset = 0; /* no horizontal scroll when wrapped */
 
-    /* Compute cursor's visual row index */
+    /* Compute cursor's visual row index. Virtual block_below rows for
+     * earlier rows count toward the offset; the cursor itself sits on
+     * a real subline so we don't add the cursor row's own virtuals. */
     int cursor_visual = 0;
     for (int y = 0; y < buf->num_rows; y++) {
         Row *row = &buf->rows[y];
         int h = row_visual_height(row, content_cols, 1);
         if (y < win->cursor.y) {
-            cursor_visual += h;
+            cursor_visual += h + vtext_block_below_count(buf, y);
         } else if (y == win->cursor.y) {
             int rx = buf_row_cx_to_rx(row, win->cursor.x);
             if (rx < 0)
@@ -282,10 +284,12 @@ void window_scroll(Window *win) {
         }
     }
 
-    /* Total visual height */
+    /* Total visual height — every row contributes its real sublines
+     * plus its block_below count. */
     int total_visual = 0;
     for (int y = 0; y < buf->num_rows; y++) {
-        total_visual += row_visual_height(&buf->rows[y], content_cols, 1);
+        total_visual += row_visual_height(&buf->rows[y], content_cols, 1)
+                      + vtext_block_below_count(buf, y);
     }
 
     int max_off = total_visual - win->height;
@@ -475,13 +479,15 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 y++;
                 continue;
             }
-            int h = row_visual_height(&buf->rows[y], content_cols, win->wrap);
-            if (target < h) {
+            int h_real = row_visual_height(&buf->rows[y], content_cols,
+                                           win->wrap);
+            int h_total = h_real + vtext_block_below_count(buf, y);
+            if (target < h_total) {
                 row = y;
                 sub = target;
                 break;
             }
-            target -= h;
+            target -= h_total;
             y++;
         }
         if (y >= buf->num_rows) {
@@ -495,6 +501,51 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
 
         /* Move to start of this window row */
         ansi_move(ab, win->top + vy, win->left);
+
+        /* Virtual block_below path. When sub exceeds the real visual
+         * height of the anchor row, this screen row is a virtual one
+         * owned by a vtext mark. Skip the gutter line-number, fold
+         * marker, selection, tree-sitter highlight, EOL vtext and
+         * cursor mapping — just paint the virtual text. */
+        if (buf && filerow < buf->num_rows) {
+            int h_real_now = win->wrap
+                ? row_visual_height(&buf->rows[filerow], content_cols, 1)
+                : 1;
+            if (sub >= h_real_now) {
+                int virt_idx = sub - h_real_now;
+                if (E.show_line_numbers) {
+                    for (int i = 0; i < margin; i++) ab_append_ch(ab, ' ');
+                }
+                const char *vtxt = NULL;
+                size_t      vlen = 0;
+                const char *vsgr = NULL;
+                if (vtext_block_below_at(buf, filerow, virt_idx,
+                                         &vtxt, &vlen, &vsgr) && vtxt) {
+                    ansi_sgr_reset(ab);
+                    ab_append_str(ab, vsgr ? vsgr : COLOR_COMMENT);
+                    int take = (int)vlen;
+                    if (take > content_cols) take = content_cols;
+                    if (take > 0) ab_append(ab, vtxt, take);
+                    ansi_sgr_reset(ab);
+                }
+                ansi_clear_eol(ab);
+
+                /* Advance: same logic as the end-of-loop block, but
+                 * unified so block_below increments sub the same way
+                 * a wrap subline does. */
+                int h_total_now = h_real_now
+                    + vtext_block_below_count(buf, filerow);
+                sub++;
+                if (sub >= h_total_now) {
+                    sub = 0;
+                    row++;
+                    while (row < buf->num_rows
+                           && fold_is_line_hidden(&buf->folds, row))
+                        row++;
+                }
+                continue;
+            }
+        }
 
         /* Draw gutter */
         if (E.show_line_numbers) {
@@ -686,24 +737,20 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
 
         ansi_clear_eol(ab);
 
-        /* Advance to next visual row */
+        /* Advance to next visual row. Unified for wrap / no-wrap so
+         * block_below virtuals get their own iterations: sub++ steps
+         * through real sublines first (only > 1 when wrap is on) and
+         * then through virtual block_below rows. */
         if (buf && row < buf->num_rows) {
-            if (win->wrap) {
-                Row *r = &buf->rows[row];
-                int h = row_visual_height(r, content_cols, 1);
-                sub++;
-                if (sub >= h) {
-                    sub = 0;
-                    row++;
-                    /* Skip hidden lines */
-                    while (row < buf->num_rows &&
-                           fold_is_line_hidden(&buf->folds, row)) {
-                        row++;
-                    }
-                }
-            } else {
+            Row *r       = &buf->rows[row];
+            int  h_real  = win->wrap
+                ? row_visual_height(r, content_cols, 1)
+                : 1;
+            int  h_total = h_real + vtext_block_below_count(buf, row);
+            sub++;
+            if (sub >= h_total) {
+                sub = 0;
                 row++;
-                /* Skip hidden lines */
                 while (row < buf->num_rows &&
                        fold_is_line_hidden(&buf->folds, row)) {
                     row++;

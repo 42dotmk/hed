@@ -125,6 +125,72 @@ int vtext_clear_all(Buffer *b) {
     return n;
 }
 
+int vtext_set_block_below(Buffer *b, int ns, int line,
+                          const char *text, size_t n, const char *sgr) {
+    if (!b || !text || line < 0) return -1;
+    VtMark m = {
+        .ns_id    = ns,
+        .line     = line,
+        .place    = VT_PLACE_BLOCK_BELOW,
+        .text     = sstr_from(text, n),
+        .sgr      = sgr,
+        .priority = 0,
+    };
+    arrput(b->vtext.marks, m);
+    return 0;
+}
+
+/* Count virtual rows produced by one block_below mark: newlines + 1. */
+static int block_below_rows_in_mark(const VtMark *m) {
+    int rows = 1;
+    for (size_t i = 0; i < m->text.len; i++) {
+        if (m->text.data[i] == '\n') rows++;
+    }
+    return rows;
+}
+
+int vtext_block_below_count(const Buffer *b, int line) {
+    if (!b) return 0;
+    int total = 0;
+    for (ptrdiff_t i = 0; i < arrlen(b->vtext.marks); i++) {
+        const VtMark *m = &b->vtext.marks[i];
+        if (m->place == VT_PLACE_BLOCK_BELOW && m->line == line)
+            total += block_below_rows_in_mark(m);
+    }
+    return total;
+}
+
+int vtext_block_below_at(const Buffer *b, int line, int row_index,
+                         const char **out_text, size_t *out_len,
+                         const char **out_sgr) {
+    if (!b || row_index < 0 || !out_text || !out_len) return 0;
+    for (ptrdiff_t i = 0; i < arrlen(b->vtext.marks); i++) {
+        const VtMark *m = &b->vtext.marks[i];
+        if (m->place != VT_PLACE_BLOCK_BELOW || m->line != line) continue;
+        int rows = block_below_rows_in_mark(m);
+        if (row_index >= rows) {
+            row_index -= rows;
+            continue;
+        }
+        /* Walk to the row_index-th '\n'-separated segment. */
+        size_t start = 0, seg = 0;
+        for (size_t j = 0; j <= m->text.len; j++) {
+            if (j == m->text.len || m->text.data[j] == '\n') {
+                if ((int)seg == row_index) {
+                    *out_text = m->text.data + start;
+                    *out_len  = j - start;
+                    if (out_sgr) *out_sgr = m->sgr;
+                    return 1;
+                }
+                seg++;
+                start = j + 1;
+            }
+        }
+        return 0;
+    }
+    return 0;
+}
+
 int vtext_collect_eol(const Buffer *b, int line,
                       const VtMark **out, int max) {
     if (!b || !out || max <= 0) return 0;
