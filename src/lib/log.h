@@ -14,6 +14,9 @@ void log_msg(const char *fmt, ...);
 /* Truncate the log file (keeps logging enabled). */
 void log_clear(void);
 
+/* Path of the active log file, or "" if logging is uninitialized. */
+const char *log_path(void);
+
 /* Close the log file. Called automatically on exit. */
 void log_close(void);
 

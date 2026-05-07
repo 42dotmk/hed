@@ -130,6 +130,37 @@ static void cmd_modeless(const char *args) {
     ed_set_status_message("modeless: %s", target ? "on" : "off");
 }
 
+static void cmd_log(const char *args) {
+    (void)args;
+    const char *path = log_path();
+    if (!path || !*path) {
+        ed_set_status_message("log: not initialized");
+        return;
+    }
+    buf_open_or_switch(path, true);
+}
+
+static void cmd_logs(const char *args) {
+    (void)args;
+    const char *home = getenv("HOME");
+    if (!home || !*home) {
+        ed_set_status_message("logs: HOME not set");
+        return;
+    }
+    char find_cmd[1024];
+    snprintf(find_cmd, sizeof(find_cmd),
+             "find '%s/.cache/hed' -maxdepth 2 -type f -name log 2>/dev/null",
+             home);
+    char **lines = NULL;
+    int    count = 0;
+    if (!fzf_run(find_cmd, 0, &lines, &count) || count == 0) {
+        fzf_free(lines, count);
+        return;
+    }
+    buf_open_or_switch(lines[0], true);
+    fzf_free(lines, count);
+}
+
 static void register_commands(void) {
     cmd("q", cmd_quit, "quit");
     cmd("q!", cmd_quit_force, "quit!");
@@ -147,6 +178,8 @@ static void register_commands(void) {
     cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
     cmd("history", cmd_history, "cmd hist");
+    cmd("log",  cmd_log,  "open the editor log file");
+    cmd("logs", cmd_logs, "fzf-pick a log file from the cache dir");
     cmd("hfzf", cmd_history_fzf, "fuzzy search command history");
     cmd("jfzf", cmd_jumplist_fzf, "fuzzy search jump list");
     cmd("reg", cmd_registers, "registers");

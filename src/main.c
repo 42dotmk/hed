@@ -19,6 +19,7 @@ typedef struct {
     int          file_count;
 } CliArgs;
 
+
 /* ------------------------------------------------------------------------- */
 /* Argument parsing                                                          */
 

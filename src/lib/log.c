@@ -62,6 +62,10 @@ void log_clear(void) {
         setvbuf(g_log_fp, NULL, _IOLBF, 0);
 }
 
+const char *log_path(void) {
+    return g_log_path;
+}
+
 void log_close(void) {
     if (g_log_fp) {
         fclose(g_log_fp);

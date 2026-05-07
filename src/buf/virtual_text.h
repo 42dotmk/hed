@@ -40,6 +40,13 @@ void vtext_hooks_install_once(void);
  * the same id. Returns < 0 on failure. */
 int  vtext_ns_create(const char *name);
 
+/* Control whether marks in this namespace are wiped on every char/line
+ * edit. Default is 1 (the "diagnostic" model: any edit invalidates).
+ * Plugins that manage their own clears (e.g. copilot ghost text, which
+ * is updated per keystroke and dismissed on cursor move / mode change)
+ * set this to 0. Returns 0 on success, -1 if the ns id is unknown. */
+int  vtext_ns_set_auto_clear(int ns, int auto_clear);
+
 /* Append an EOL mark to `line`. Copies `text`. If `sgr` is NULL the
  * renderer falls back to COLOR_COMMENT. Returns 0 on success. */
 int  vtext_set_eol(Buffer *b, int ns, int line,
