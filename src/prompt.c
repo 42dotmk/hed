@@ -10,8 +10,13 @@ static Prompt g_prompt;
 
 void prompt_open(const PromptVTable *vt, void *state) {
     /* Capture the prior edit mode so prompt_close can restore it.
-     * This makes prompts self-contained — callers don't manage modes. */
-    EditorMode prior = E.mode;
+     * This makes prompts self-contained — callers don't manage modes.
+     * If a prompt is already active (e.g. `:shell` reopens as the `!`
+     * prompt from the colon prompt's submit handler), E.mode is already
+     * MODE_COMMAND. Inherit the outer prompt's return_mode so we
+     * eventually unwind to the user's real mode, not back to a colon
+     * prompt that no longer exists. */
+    EditorMode prior = g_prompt.vt ? g_prompt.return_mode : E.mode;
     g_prompt.vt          = vt;
     g_prompt.state       = state;
     g_prompt.return_mode = prior;
@@ -59,14 +64,19 @@ void prompt_handle_key(int key) {
     switch (r) {
     case PROMPT_CONTINUE:
         return;
-    case PROMPT_SUBMIT:
+    case PROMPT_SUBMIT: {
+        /* Snapshot the active vt so we can tell whether on_submit
+         * reopened a different prompt (e.g. `:shell` -> the `!` prompt).
+         * If it did, the new prompt owns its own lifecycle — don't
+         * auto-close it. */
+        const PromptVTable *vt_before = g_prompt.vt;
         g_prompt.stay_open = false;
-        if (g_prompt.vt->on_submit)
-            g_prompt.vt->on_submit(&g_prompt, g_prompt.buf, g_prompt.len);
-        /* on_submit may have closed/reopened the prompt or set stay_open. */
-        if (g_prompt.vt && !g_prompt.stay_open)
+        if (vt_before->on_submit)
+            vt_before->on_submit(&g_prompt, g_prompt.buf, g_prompt.len);
+        if (g_prompt.vt == vt_before && !g_prompt.stay_open)
             prompt_close(true);
         return;
+    }
     case PROMPT_CANCEL:
         prompt_close(false);
         return;
