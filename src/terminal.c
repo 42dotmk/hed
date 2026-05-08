@@ -40,6 +40,9 @@ void die(const char *s) {
 }
 
 void disable_raw_mode(void) {
+    /* Turn bracketed paste off before restoring termios. Harmless on
+     * terminals that don't support DEC 2004. */
+    write(STDOUT_FILENO, "\x1b[?2004l", 8);
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
         die("tcsetattr");
 }
@@ -59,6 +62,11 @@ void enable_raw_mode(void) {
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
         die("tcsetattr");
+
+    /* Bracketed paste: terminal will wrap pasted text in ESC[200~ ...
+     * ESC[201~ so the input parser can route the body around hooks
+     * and keymap dispatch. */
+    write(STDOUT_FILENO, "\x1b[?2004h", 8);
 }
 
 int get_cursor_position(int *rows, int *cols) {

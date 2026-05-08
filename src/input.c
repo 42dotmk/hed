@@ -80,6 +80,8 @@ int ed_parse_key_from_fd(int fd) {
                     base = KEY_F6 + (n - 17); break;
                 case 23: case 24:
                     base = KEY_F11 + (n - 23); break;
+                case 200: base = KEY_PASTE_START; break;
+                case 201: base = KEY_PASTE_END;   break;
                 case 1:  /* used only with ';<mod><letter>' suffix */
                     break;
                 }
