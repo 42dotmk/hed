@@ -9,6 +9,7 @@
 
 #include "hed.h"
 #include "ts.h"
+#include "theme.h"
 #include "shell/shell.h"
 
 static void cmd_ts(const char *args) {
@@ -66,10 +67,41 @@ static void cmd_tsi(const char *args) {
     cmd_shell(cmd_str);
 }
 
+static void cmd_theme(const char *args) {
+    if (!args || !*args) {
+        const char *active = theme_active_name();
+        const char *const *names = theme_list();
+        if (!names || !names[0]) {
+            ed_set_status_message("theme: %s (no themes registered)",
+                                  active ? active : "default");
+            return;
+        }
+        char buf[256];
+        size_t off = 0;
+        for (int i = 0; names[i] && off + 32 < sizeof(buf); i++) {
+            int n = snprintf(buf + off, sizeof(buf) - off, "%s%s", i ? " " : "",
+                             names[i]);
+            if (n < 0)
+                break;
+            off += (size_t)n;
+        }
+        ed_set_status_message("theme: %s [%s]", active ? active : "default",
+                              buf);
+        return;
+    }
+    if (theme_activate(args) != 0) {
+        ed_set_status_message("theme: unknown '%s'", args);
+        return;
+    }
+    ed_set_status_message("theme: %s", args);
+}
+
 static int treesitter_init(void) {
+    ts_seed_default_theme();
     cmd("ts",     cmd_ts,     "ts on|off|auto");
     cmd("tslang", cmd_tslang, "tslang <name>");
     cmd("tsi",    cmd_tsi,    "install ts lang");
+    cmd("theme",  cmd_theme,  "theme [name]");
     return 0;
 }
 

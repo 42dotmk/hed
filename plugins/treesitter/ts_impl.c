@@ -1,4 +1,6 @@
 #include "ts.h"
+#include "highlight.h"
+#include "theme.h"
 #include "hed.h"
 #include <dlfcn.h>
 #include <limits.h>
@@ -216,14 +218,101 @@ static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
     return q;
 }
 
-/* Try {base}/queries/<lang>/<qname>, then queries/<lang>/<qname>. */
+/* Plugin-registered query strings. Keyed by "<lang>/<qname>"; values
+ * are borrowed pointers to caller-owned static strings. */
+typedef struct {
+    char       *key;
+    const char *value;
+} QEntry;
+static QEntry *g_query_registry = NULL;
+static int     g_query_registry_inited = 0;
+
+static void make_qkey(char *out, size_t out_sz, const char *lang,
+                      const char *qname) {
+    snprintf(out, out_sz, "%s/%s", lang, qname);
+}
+
+int ts_register_query(const char *lang_name, const char *qname,
+                      const char *content) {
+    if (!lang_name || !qname || !content)
+        return -1;
+    if (!g_query_registry_inited) {
+        sh_new_strdup(g_query_registry);
+        g_query_registry_inited = 1;
+    }
+    char key[128];
+    make_qkey(key, sizeof(key), lang_name, qname);
+    shput(g_query_registry, key, content);
+    return 0;
+}
+
+static const char *find_registered_query(const char *lang_name,
+                                         const char *qname) {
+    if (!g_query_registry_inited)
+        return NULL;
+    char key[128];
+    make_qkey(key, sizeof(key), lang_name, qname);
+    QEntry *e = shgetp_null(g_query_registry, key);
+    return e ? e->value : NULL;
+}
+
+static TSQuery *parse_query_string(TSLanguage *lang, const char *src,
+                                   const char *origin) {
+    if (!lang || !src)
+        return NULL;
+    uint32_t      err_offset;
+    TSQueryError  err_type;
+    TSQuery      *q = ts_query_new(lang, src, (uint32_t)strlen(src),
+                                   &err_offset, &err_type);
+    if (!q) {
+        log_msg("TS query parse error in %s at offset %u (err=%d)",
+                origin ? origin : "<embedded>", err_offset, (int)err_type);
+    }
+    return q;
+}
+
+/* Lookup order:
+ *   1. <base>/queries.local/<lang>/<qname>   — user override (handwritten)
+ *   2. plugin-registered embedded string      — enhanced defaults shipped
+ *                                               by a plugin (e.g. markdown)
+ *   3. <base>/queries/<lang>/<qname>          — tsi-installed defaults from
+ *                                               upstream nvim-treesitter
+ *   4. ./queries/<lang>/<qname>               — cwd-local (development)
+ *
+ * Rationale: tsi-installed XDG queries are just bundled upstream defaults
+ * and shouldn't beat a plugin shipping enhanced defaults at the editor
+ * level. Users who want to override a plugin's queries drop their file in
+ * <base>/queries.local/, which wins over everything. */
 static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
                                 const char *qname) {
     char base[PATH_MAX];
     ts_default_base(base, sizeof(base));
     char qpath[PATH_MAX];
+
+    /* 1. user override */
     if (base[0]) {
-        /* Truncation harmless: an over-long path just fails to load below. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+        snprintf(qpath, sizeof(qpath), "%s/queries.local/%s/%s", base,
+                 lang_name, qname);
+#pragma GCC diagnostic pop
+        TSQuery *q = load_query_file(lang, qpath);
+        if (q)
+            return q;
+    }
+
+    /* 2. plugin-registered embedded string */
+    const char *embedded = find_registered_query(lang_name, qname);
+    if (embedded) {
+        char origin[64];
+        snprintf(origin, sizeof(origin), "embedded:%s/%s", lang_name, qname);
+        TSQuery *q = parse_query_string(lang, embedded, origin);
+        if (q)
+            return q;
+    }
+
+    /* 3. tsi-installed defaults */
+    if (base[0]) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(qpath, sizeof(qpath), "%s/queries/%s/%s", base, lang_name,
@@ -233,6 +322,8 @@ static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
         if (q)
             return q;
     }
+
+    /* 4. cwd-local */
     snprintf(qpath, sizeof(qpath), "queries/%s/%s", lang_name, qname);
     return load_query_file(lang, qpath);
 }
@@ -666,62 +757,72 @@ void ts_buffer_reparse(Buffer *buf) {
 }
 
 /* ===================================================================
- * Capture name → SGR.
+ * Default palette + role mapping.
+ *
+ * The palette is what themes change. The role mapping (capture name →
+ * palette token) is theme-independent: if a theme replaces "string" in
+ * the palette, every role that maps to "string" follows automatically.
+ *
+ * Roles are looked up walk-by-dot (string.special.symbol → string.special
+ * → string), so a more specific role wins when registered.
  * =================================================================== */
+void ts_seed_default_theme(void) {
+    /* --- Palette: bundled "default" colours, mirrors src/lib/theme.h.
+     *     A theme plugin (e.g. tokyo_night) may overwrite any of these. --- */
+    theme_palette_set("string",     COLOR_STRING);
+    theme_palette_set("comment",    COLOR_COMMENT);
+    theme_palette_set("variable",   COLOR_VARIABLE);
+    theme_palette_set("constant",   COLOR_CONSTANT);
+    theme_palette_set("number",     COLOR_NUMBER);
+    theme_palette_set("keyword",    COLOR_KEYWORD);
+    theme_palette_set("type",       COLOR_TYPE);
+    theme_palette_set("function",   COLOR_FUNCTION);
+    theme_palette_set("attribute",  COLOR_ATTRIBUTE);
+    theme_palette_set("label",      COLOR_LABEL);
+    theme_palette_set("operator",   COLOR_OPERATOR);
+    theme_palette_set("punctuation", COLOR_PUNCT);
+    theme_palette_set("title",      COLOR_TITLE);
+    theme_palette_set("uri",        COLOR_URI);
+    theme_palette_set("diag.error", COLOR_DIAG_ERROR);
+    theme_palette_set("diag.warn",  COLOR_DIAG_WARN);
+    theme_palette_set("diag.note",  COLOR_DIAG_NOTE);
+
+    /* --- Role map: capture name → palette token. Plugins can overwrite
+     *     individual entries (e.g. markdown plugin re-maps text.emphasis
+     *     to a raw italic SGR). --- */
+    highlight_set("string",         "string");
+    highlight_set("escape",         "string");
+    highlight_set("comment",        "comment");
+    highlight_set("variable",       "variable");
+    highlight_set("constant",       "constant");
+    highlight_set("number",         "number");
+    highlight_set("keyword",        "keyword");
+    highlight_set("conditional",    "keyword");
+    highlight_set("repeat",         "keyword");
+    highlight_set("include",        "keyword");
+    highlight_set("type",           "type");
+    highlight_set("module",         "type");
+    highlight_set("constructor",    "type");
+    highlight_set("function",       "function");
+    highlight_set("property",       "attribute");
+    highlight_set("attribute",      "attribute");
+    highlight_set("label",          "label");
+    highlight_set("operator",       "operator");
+    highlight_set("punctuation",    "punctuation");
+    highlight_set("delimiter",      "punctuation");
+    highlight_set("text",           "comment");
+    highlight_set("text.title",     "title");
+    highlight_set("text.literal",   "string");
+    highlight_set("text.uri",       "uri");
+    highlight_set("text.reference", "type");
+    highlight_set("text.danger",    "diag.error");
+    highlight_set("text.warning",   "diag.warn");
+    highlight_set("text.note",      "diag.note");
+    highlight_set("exception",      "diag.error");
+}
+
 static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
-    if (nlen >= 6 && strncmp(name, "string", 6) == 0)
-        return COLOR_STRING;
-    if (nlen >= 6 && strncmp(name, "escape", 6) == 0)
-        return COLOR_STRING;
-    if (nlen >= 7 && strncmp(name, "comment", 7) == 0)
-        return COLOR_COMMENT;
-    if (nlen >= 8 && strncmp(name, "variable", 8) == 0)
-        return COLOR_VARIABLE;
-    if (nlen >= 8 && strncmp(name, "constant", 8) == 0)
-        return COLOR_CONSTANT;
-    if (nlen >= 6 && strncmp(name, "number", 6) == 0)
-        return COLOR_NUMBER;
-    if ((nlen >= 7 && strncmp(name, "keyword", 7) == 0) ||
-        (nlen >= 11 && strncmp(name, "conditional", 11) == 0) ||
-        (nlen >= 6 && strncmp(name, "repeat", 6) == 0) ||
-        (nlen >= 7 && strncmp(name, "include", 7) == 0))
-        return COLOR_KEYWORD;
-    if ((nlen >= 4 && strncmp(name, "type", 4) == 0) ||
-        (nlen >= 6 && strncmp(name, "module", 6) == 0) ||
-        (nlen >= 11 && strncmp(name, "constructor", 11) == 0))
-        return COLOR_TYPE;
-    if (nlen >= 8 && strncmp(name, "function", 8) == 0)
-        return COLOR_FUNCTION;
-    if ((nlen >= 8 && strncmp(name, "property", 8) == 0) ||
-        (nlen >= 9 && strncmp(name, "attribute", 9) == 0))
-        return COLOR_ATTRIBUTE;
-    if (nlen >= 5 && strncmp(name, "label", 5) == 0)
-        return COLOR_LABEL;
-    if (nlen >= 8 && strncmp(name, "operator", 8) == 0)
-        return COLOR_OPERATOR;
-    if ((nlen >= 11 && strncmp(name, "punctuation", 11) == 0) ||
-        (nlen >= 9 && strncmp(name, "delimiter", 9) == 0))
-        return COLOR_PUNCT;
-    if (nlen >= 4 && strncmp(name, "text", 4) == 0) {
-        if (nlen >= 10 && strncmp(name, "text.title", 10) == 0)
-            return COLOR_TITLE;
-        if (nlen >= 12 && strncmp(name, "text.literal", 12) == 0)
-            return COLOR_STRING;
-        if (nlen >= 8 && strncmp(name, "text.uri", 8) == 0)
-            return COLOR_URI;
-        if (nlen >= 14 && strncmp(name, "text.reference", 14) == 0)
-            return COLOR_TYPE;
-        if (nlen >= 11 && strncmp(name, "text.danger", 11) == 0)
-            return COLOR_DIAG_ERROR;
-        if (nlen >= 12 && strncmp(name, "text.warning", 12) == 0)
-            return COLOR_DIAG_WARN;
-        if (nlen >= 9 && strncmp(name, "text.note", 9) == 0)
-            return COLOR_DIAG_NOTE;
-        return COLOR_COMMENT;
-    }
-    if (nlen >= 9 && strncmp(name, "exception", 9) == 0)
-        return COLOR_DIAG_ERROR;
-    return NULL;
+    return highlight_lookup(name, nlen);
 }
 
 /* ===================================================================
@@ -735,10 +836,11 @@ typedef struct {
 /* Closes a syntax segment without disturbing reverse video, so visual
  * selection (rendered with ESC[7m) survives across highlight boundaries.
  *   22 = normal intensity (cancels bold from COLOR_TITLE)
+ *   23 = no italic       (cancels italic from emphasis-style segments)
  *   24 = no underline    (cancels underline from COLOR_URI)
  *   39 = default foreground
  * Reverse video (7/27) is intentionally untouched. */
-#define TS_SEG_RESET "\x1b[22;24;39m"
+#define TS_SEG_RESET "\x1b[22;23;24;39m"
 
 static int collect_segments(TSTree *tree, TSQuery *query, uint32_t cur_start,
                             uint32_t cur_end, uint32_t clip_start,
