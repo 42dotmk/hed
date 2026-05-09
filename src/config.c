@@ -24,8 +24,8 @@
 #include "shell/shell.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
+#include "hed_themes/hed_themes.h"
 #include "markdown/markdown.h"
-#include "tokyo_night/tokyo_night.h"
 #include "treesitter/treesitter.h"
 #include "viewmd/viewmd_plugin.h"
 #include "vim_keybinds/vim_keybinds.h"
@@ -51,8 +51,9 @@ void config_init(void) {
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
-    plugin_load(&plugin_tokyo_night,      1);
+    plugin_load(&plugin_hed_themes,       1);
     plugin_load(&plugin_markdown,         1);
+    theme_activate("tokyo-night");
     plugin_load(&plugin_scratch,          1);
     plugin_load(&plugin_sed,              1);
     plugin_load(&plugin_reload,           1);
