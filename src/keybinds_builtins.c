@@ -283,7 +283,10 @@ void kb_visual_enter_append_mode(void) {
 
 void kb_visual_enter_command_mode(void) {
     BUFWIN(buf, win)
-    kb_visual_clear(win);
+    (void)win;
+    /* Leave win->sel intact across the : prompt so commands like
+     * :shell foo >%v can act on it. ed_set_mode defers the visual
+     * clear until MODE_COMMAND itself exits. */
     kb_enter_command_mode();
 }
 
@@ -1009,6 +1012,8 @@ void kb_toggle_case(void) {
 /* Replace character under cursor with next typed char (stay in normal mode) */
 void kb_replace_char(void) {
 	ASSERT_EDIT(buf, win)
+    if (buf->num_rows == 0)
+        return;
     Row *row = &buf->rows[win->cursor.y];
     if (win->cursor.x >= (int)row->chars.len)
         return;

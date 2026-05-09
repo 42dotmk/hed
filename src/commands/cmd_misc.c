@@ -17,7 +17,6 @@
 #include "fold_methods/fold_methods.h"
 #include "keybinds.h"
 #include "commands/cmd_util.h"
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -589,58 +588,6 @@ void cmd_new_line_above(const char *args) {
     win->cursor.y--;
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
-}
-
-void cmd_shell(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("Usage: :shell <command>");
-        return;
-    }
-
-    char cmd_buf[4096];
-    snprintf(cmd_buf, sizeof(cmd_buf), "%s", args);
-
-    bool acknowledge = true;
-    const char *flag = "--skipwait";
-    size_t flen = strlen(flag);
-    char *p = cmd_buf;
-    while ((p = strstr(p, flag))) {
-        char before = (p == cmd_buf) ? ' ' : p[-1];
-        char after = p[flen];
-        if ((p == cmd_buf || isspace((unsigned char)before)) &&
-            (after == '\0' || isspace((unsigned char)after))) {
-            acknowledge = false;
-            if (p > cmd_buf && isspace((unsigned char)p[-1]))
-                p--;
-            char *src = p + flen;
-            while (isspace((unsigned char)*src))
-                src++;
-            memmove(p, src, strlen(src) + 1);
-            continue;
-        }
-        p += flen;
-    }
-
-    while (isspace((unsigned char)cmd_buf[0])) {
-        memmove(cmd_buf, cmd_buf + 1, strlen(cmd_buf));
-    }
-    if (cmd_buf[0] == '\0') {
-        ed_set_status_message("Usage: :shell <command>");
-        return;
-    }
-
-    /* Run command interactively, handing over the TTY */
-    int status = term_cmd_run_interactive(cmd_buf, acknowledge);
-
-    if (status == 0) {
-        ed_set_status_message("Command completed successfully");
-    } else if (status == -1) {
-        ed_set_status_message("Failed to run command");
-    } else {
-        ed_set_status_message("Command exited with status %d", status);
-    }
-
-    ed_render_frame();
 }
 
 void cmd_git(const char *args) {

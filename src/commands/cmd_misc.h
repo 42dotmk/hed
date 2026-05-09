@@ -19,7 +19,6 @@ void cmd_rln(const char *args);
 void cmd_logclear(const char *args);
 void cmd_new_line(const char *args);
 void cmd_new_line_above(const char *args);
-void cmd_shell(const char *args);
 void cmd_git(const char *args);
 void cmd_wrap(const char *args);
 void cmd_wrapdefault(const char *args);

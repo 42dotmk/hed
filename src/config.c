@@ -1,5 +1,6 @@
 #include "config.h"
 #include "commands.h"
+
 #include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
@@ -20,6 +21,7 @@
 #include "scratch/scratch.h"
 #include "sed/sed_plugin.h"
 #include "session/session_plugin.h"
+#include "shell/shell.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
 #include "treesitter/treesitter.h"
@@ -43,6 +45,7 @@ void config_init(void) {
     plugin_load(&plugin_auto_pair,        1);
     plugin_load(&plugin_smart_indent,     1);
     plugin_load(&plugin_fmt,              1);
+    plugin_load(&plugin_shell,            1);
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
@@ -56,6 +59,7 @@ void config_init(void) {
     plugin_load(&plugin_copilot,          1);
     plugin_load(&plugin_autosave,         1);
 
+    cmapn(" ag",    "fzf",                  "find files");
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");
@@ -110,4 +114,5 @@ void config_init(void) {
     cmapn(" fj",   "jfzf",                 "jump-list fzf");
     cmapn(" fy",   "yazi",                 "pick file with yazi");
     cmapn(" z",    "scratch",              "scratch buffer");
+    cmapn("<C-s>", "shell", "open shell prompt");
 }

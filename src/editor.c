@@ -66,8 +66,20 @@ void ed_set_mode(EditorMode new_mode) {
     EditorMode old_mode = E.mode;
     E.mode = new_mode;
 
-    if ((old_mode == MODE_VISUAL || old_mode == MODE_VISUAL_BLOCK) &&
-        !(new_mode == MODE_VISUAL || new_mode == MODE_VISUAL_BLOCK)) {
+    /* Clear visual selection on transitions out of visual mode — but
+     * defer past MODE_COMMAND so a colon-command (e.g. :shell foo >%v)
+     * can still see the selection. Cleanup fires when command mode
+     * itself exits. */
+    int leaving_visual = (old_mode == MODE_VISUAL ||
+                          old_mode == MODE_VISUAL_LINE ||
+                          old_mode == MODE_VISUAL_BLOCK);
+    int entering_visual = (new_mode == MODE_VISUAL ||
+                           new_mode == MODE_VISUAL_LINE ||
+                           new_mode == MODE_VISUAL_BLOCK);
+    int should_clear =
+        (leaving_visual && !entering_visual && new_mode != MODE_COMMAND) ||
+        (old_mode == MODE_COMMAND && !entering_visual);
+    if (should_clear) {
         Window *win = window_cur();
         if (win) {
             win->sel.type = SEL_NONE;

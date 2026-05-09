@@ -9,9 +9,7 @@
 
 #include "hed.h"
 #include "ts.h"
-
-/* Forward decl from cmd_misc — used to launch the tsi installer. */
-void cmd_shell(const char *args);
+#include "shell/shell.h"
 
 static void cmd_ts(const char *args) {
     if (!args || !*args) {
