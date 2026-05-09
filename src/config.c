@@ -2,8 +2,10 @@
 #include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
+#include "autosave/autosave.h"
 #include "claude/claude.h"
 #include "clipboard/clipboard.h"
+#include "copilot/copilot.h"
 #include "core/core.h"
 #include "dired/dired_plugin.h"
 #include "emacs_keybinds/emacs_keybinds.h"
@@ -52,6 +54,8 @@ void config_init(void) {
     plugin_load(&plugin_multicursor,      1);
     plugin_load(&plugin_whichkey,         1);
     plugin_load(&plugin_yazi,             1);
+    plugin_load(&plugin_copilot,          1);
+    plugin_load(&plugin_autosave,         1);
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");

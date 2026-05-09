@@ -92,12 +92,95 @@ int ed_read_key(void) {
         if (E.mode == MODE_NORMAL && (key == 'q' || key == '@')) {
             should_record = 0;
         }
+        /* Bracketed paste markers are not user keystrokes — never
+         * record them, and the paste body is read raw inside
+         * ed_handle_paste() so it doesn't pass through here. */
+        if (key == KEY_PASTE_START || key == KEY_PASTE_END) {
+            should_record = 0;
+        }
         if (should_record) {
             macro_record_key(key);
         }
     }
 
     return key;
+}
+
+/* Drain a bracketed paste body (between ESC[200~ and ESC[201~) and
+ * insert it verbatim into the current buffer, bypassing keymap
+ * dispatch, HOOK_KEYPRESS, and HOOK_CHAR_INSERT. That's what makes
+ * pastes survive auto-pair / smart-indent / numeric prefixes
+ * unmangled. The whole paste lands as one undo group. */
+static void ed_handle_paste(void) {
+    Buffer *buf = buf_cur();
+
+    /* Paste only makes sense when there's a buffer to receive text.
+     * If there isn't one, still drain bytes until the end marker so
+     * leftover content doesn't bleed into subsequent keystrokes. */
+    int can_insert = (buf != NULL);
+
+    /* Force INSERT mode for the duration so the paste lands as text
+     * regardless of whether the user was in NORMAL/VISUAL/etc.
+     * Restore afterwards. */
+    EditorMode prev_mode = E.mode;
+    if (can_insert && E.mode != MODE_INSERT) ed_set_mode(MODE_INSERT);
+
+    if (can_insert) undo_begin(buf, "paste");
+
+    /* End-marker matcher: ESC '[' '2' '0' '1' '~'.
+     * If the match fails partway through, the consumed prefix has to
+     * be re-emitted as literal text (paste content is allowed to
+     * contain arbitrary bytes, including stray ESC). */
+    static const char END_MARKER[6] = { '\x1b', '[', '2', '0', '1', '~' };
+    int matched = 0;
+
+    for (;;) {
+        char c;
+        ssize_t n = read(STDIN_FILENO, &c, 1);
+        if (n == 0) break;            /* EOF — terminal closed */
+        if (n < 0) {
+            if (errno == EINTR || errno == EAGAIN) continue;
+            break;
+        }
+
+        if (c == END_MARKER[matched]) {
+            matched++;
+            if (matched == (int)sizeof(END_MARKER)) break;
+            continue;
+        }
+
+        /* Mismatch: flush any matched prefix as literal text, then
+         * re-process the current byte. Done iteratively so a stray
+         * ESC mid-paste doesn't drop characters. */
+        if (matched > 0) {
+            for (int i = 0; i < matched; i++) {
+                char p = END_MARKER[i];
+                if (can_insert) {
+                    if (p == '\n' || p == '\r')
+                        buf_insert_newline_in(buf);
+                    else if ((unsigned char)p >= 0x20 || p == '\t')
+                        buf_insert_char_in(buf, (unsigned char)p);
+                    /* Other control bytes (incl. ESC) are dropped to
+                     * keep pasted ANSI sequences from corrupting the
+                     * file. */
+                }
+            }
+            matched = 0;
+            /* Fall through to handle `c` itself below. */
+            if (c == END_MARKER[0]) { matched = 1; continue; }
+        }
+
+        if (!can_insert) continue;
+        if (c == '\n' || c == '\r') {
+            buf_insert_newline_in(buf);
+        } else if ((unsigned char)c >= 0x20 || c == '\t') {
+            buf_insert_char_in(buf, (unsigned char)c);
+        }
+        /* Drop other control bytes silently. */
+    }
+
+    if (can_insert) undo_end(buf);
+    if (can_insert && prev_mode != MODE_INSERT) ed_set_mode(prev_mode);
 }
 
 
@@ -158,6 +241,13 @@ void ed_dispatch_key(int c) {
 /* Main keypress dispatcher - delegates to mode-specific handlers */
 void ed_process_keypress(void) {
     int c = ed_read_key();
+    if (c == KEY_PASTE_START) {
+        ed_handle_paste();
+        return;
+    }
+    /* Stray end marker (e.g. terminal sent it without a start, or we
+     * lost sync somehow) — drop it rather than dispatching as a key. */
+    if (c == KEY_PASTE_END) return;
     HookKeyEvent kev = { c, 0 };
     hook_fire_key(HOOK_KEYPRESS, &kev);
     if (kev.consumed) return;

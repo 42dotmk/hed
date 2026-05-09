@@ -10,19 +10,21 @@ user-facing feature is a plugin you can rip out, fork, or replace.
 ---
 
 ## Install in 10 seconds
-
 One line install:
 
 ```bash
 curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
 ```
+and follow the prompts.
+
 
 The installer asks two things:
 
 1. **Source or binary?** Binary is faster (one download, ready to
    run). Source clones the repo into `~/.local/share/hed`, builds it,
    and symlinks `hed` and `tsi` into `~/.local/bin` — pick this if
-   you want to hack on plugins.
+   you want to hack on plugins (or the core editor itself).
+   
 2. **Optional tools?** Offers to download portable static `fzf` and
    `ripgrep` binaries into the same `~/.local/bin`, then lets you
    pick tree-sitter grammars to install for syntax highlighting.
@@ -56,6 +58,7 @@ If you forgot `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```
+	Note: --recursive is needed so it can clone the vendored tree-sitter runtime.`
 
 Targets:
 
@@ -92,6 +95,8 @@ Each integration degrades cleanly if its tool is missing:
 | `bat` | fzf previews |
 | `ctags` | `:tag` |
 | `clang-format` / `rustfmt` / `prettier` / `black` / `gofmt` / `shfmt` | `:fmt` |
+| [`yazi`](https://yazi-rs.github.io/) | `:yazi` file-manager picker |
+| [`copilot-language-server`](https://www.npmjs.com/package/@github/copilot-language-server) | `copilot` plugin (`:copilot login`, ghost-text suggestions) |
 | `git`, `cc` | `tsi` (tree-sitter grammar installer) |
 
 ---
@@ -150,6 +155,7 @@ Each has its own README; here's the catalogue:
 | [`dired`](plugins/dired/README.md) | oil.nvim-style directory browser |
 | [`tmux`](plugins/tmux/README.md) | Runner pane integration |
 | [`claude`](plugins/claude/README.md) | Toggle a tmux pane running Claude Code (rides the tmux pane registry) |
+| [`copilot`](plugins/copilot/README.md) | GitHub Copilot ghost-text suggestions via `copilot-language-server`, with a `[copilot]` alternatives pane |
 | [`fmt`](plugins/fmt/README.md) | `:fmt` runs an external formatter on the buffer |
 | [`auto_pair`](plugins/auto_pair/README.md) | Auto-insert matching brackets and quotes |
 | [`smart_indent`](plugins/smart_indent/README.md) | Carry indent onto new lines |
@@ -159,6 +165,8 @@ Each has its own README; here's the catalogue:
 | [`sed`](plugins/sed/README.md) | `:sed <expr>` pipes the buffer through external sed |
 | [`reload`](plugins/reload/README.md) | `:reload` rebuilds and execs the new binary |
 | [`session`](plugins/session/README.md) | Save / restore the open-buffer list per cwd |
+| [`autosave`](plugins/autosave/README.md) | Idle/timer autosave to per-cwd cache dir, with recovery prompt on reopen |
+| [`yazi`](plugins/yazi/README.md) | Launch the [`yazi`](https://yazi-rs.github.io/) file manager as a chooser; selected paths open as buffers |
 | [`lsp`](plugins/lsp/README.md) | LSP client (work in progress) |
 | [`example`](plugins/example/README.md) | Starter template — copy and rename for your own |
 

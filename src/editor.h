@@ -39,6 +39,13 @@
 #define KEY_F11 1020
 #define KEY_F12 1021
 
+/* Bracketed paste markers (DEC mode 2004). Terminals wrap a paste in
+ * ESC[200~ ... ESC[201~ so the editor can distinguish "user typed N
+ * keystrokes" from "user pasted N bytes" and avoid running per-char
+ * hooks (auto-pair, smart-indent) and keymap dispatch on every byte. */
+#define KEY_PASTE_START 1030
+#define KEY_PASTE_END   1031
+
 /* Modifier flags OR'd with the base key code. Out of range of the
  * special keys above and well above any byte value, so they never
  * overlap with raw key codes.
