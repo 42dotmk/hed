@@ -13,7 +13,9 @@
 #include "stb_ds.h"
 #include "ui/window.h"
 
-#define HED_VERSION "0.2.0"
+#ifndef HED_VERSION
+#define HED_VERSION "dev"
+#endif
 #define TAB_STOP 4
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define CMD_HISTORY_MAX 1000
