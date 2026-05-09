@@ -353,6 +353,8 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "yaml";
         else if (strcmp(ext, "toml") == 0 || strcmp(ext, "conf") == 0)
             want = "toml";
+        else if (strcmp(ext, "diff") == 0 || strcmp(ext, "patch") == 0)
+            want = "diff";
         else if (strcmp(ext, "ini") == 0)
             want = "ini";
         else if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
