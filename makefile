@@ -2,6 +2,23 @@ CC=LD_LIBRARY_PATH=/usr/lib gcc
 BASE_CFLAGS = $(shell cat compile_flags.txt | tr '\n' ' ')
 CFLAGS = $(BASE_CFLAGS) -MMD -MP
 
+# Version derived from `git describe` at build time so the binary
+# reports the exact tag/commit it was built from. Falls back to "dev"
+# when git metadata is unavailable (e.g. release tarballs).
+HED_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+ifeq ($(HED_VERSION),)
+HED_VERSION := dev
+endif
+CFLAGS += -DHED_VERSION='"$(HED_VERSION)"'
+
+DEBUG ?= 0
+
+# DEBUG=1 adds -ggdb for gdb-friendly debug symbols.
+ifeq ($(DEBUG),1)
+CFLAGS += -ggdb
+CFLAGS += -O0
+endif
+
 SRC_DIR = src
 BUILD_DIR = build
 VENDOR_BUILD_DIR = vendor/build

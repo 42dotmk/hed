@@ -257,7 +257,6 @@ static void register_commands(void) {
     cmd("fzf", cmd_fzf, "pick a file(s)");
     cmd("recent", cmd_recent, "recent files");
     cmd("logclear", cmd_logclear, "clear .hedlog");
-    cmd("shell", cmd_shell, "run shell cmd");
     cmd("git", cmd_git, "run lazygit");
     cmd("wrap", cmd_wrap, "toggle wrap");
     cmd("wrapdefault", cmd_wrapdefault, "toggle default wrap");

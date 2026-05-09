@@ -1,4 +1,5 @@
 #include "config.h"
+#include "commands.h"
 #include "keybinds.h"
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
@@ -20,8 +21,11 @@
 #include "selectlist/selectlist.h"
 #include "sed/sed_plugin.h"
 #include "session/session_plugin.h"
+#include "shell/shell.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
+#include "hed_themes/hed_themes.h"
+#include "markdown/markdown.h"
 #include "treesitter/treesitter.h"
 #include "viewmd/viewmd_plugin.h"
 #include "vim_keybinds/vim_keybinds.h"
@@ -43,9 +47,12 @@ void config_init(void) {
     plugin_load(&plugin_auto_pair,        1);
     plugin_load(&plugin_smart_indent,     1);
     plugin_load(&plugin_fmt,              1);
+    plugin_load(&plugin_shell,            1);
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
+    plugin_load(&plugin_hed_themes,       1);
+    plugin_load(&plugin_markdown,         1);
     plugin_load(&plugin_scratch,          1);
     plugin_load(&plugin_selectlist,       1);
     plugin_load(&plugin_sed,              1);
@@ -56,6 +63,8 @@ void config_init(void) {
     plugin_load(&plugin_yazi,             1);
     plugin_load(&plugin_copilot,          1);
     plugin_load(&plugin_autosave,         1);
+    theme_activate("tokyo-night");
+    
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");
@@ -110,4 +119,5 @@ void config_init(void) {
     cmapn(" fj",   "jfzf",                 "jump-list fzf");
     cmapn(" fy",   "yazi",                 "pick file with yazi");
     cmapn(" z",    "scratch",              "scratch buffer");
+    cmapn("<C-s>", "shell", "open shell prompt");
 }

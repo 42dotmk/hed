@@ -9,9 +9,9 @@
 
 #include "hed.h"
 #include "ts.h"
-
-/* Forward decl from cmd_misc — used to launch the tsi installer. */
-void cmd_shell(const char *args);
+#include "theme.h"
+#include "shell/shell.h"
+#include "utils/fzf.h"
 
 static void cmd_ts(const char *args) {
     if (!args || !*args) {
@@ -68,10 +68,50 @@ static void cmd_tsi(const char *args) {
     cmd_shell(cmd_str);
 }
 
+static void cmd_theme(const char *args) {
+    if (args && *args) {
+        if (theme_activate(args) != 0) {
+            ed_set_status_message("theme: unknown '%s'", args);
+            return;
+        }
+        ed_set_status_message("theme: %s", args);
+        return;
+    }
+
+    /* No args → fzf picker over the registered themes. */
+    const char *const *names = theme_list();
+    if (!names || !names[0]) {
+        const char *active = theme_active_name();
+        ed_set_status_message("theme: %s (no themes registered)",
+                              active ? active : "default");
+        return;
+    }
+    int n = 0;
+    while (names[n])
+        n++;
+
+    char **sel = NULL;
+    int    cnt = 0;
+    /* fzf_pick_list takes const char **; theme_list returns const char *const *.
+     * The cast is safe — fzf_pick_list never writes through the array. */
+    if (!fzf_pick_list((const char **)names, n, 0, &sel, &cnt) || cnt <= 0 ||
+        !sel[0] || !sel[0][0]) {
+        fzf_free(sel, cnt);
+        return;
+    }
+    if (theme_activate(sel[0]) != 0)
+        ed_set_status_message("theme: unknown '%s'", sel[0]);
+    else
+        ed_set_status_message("theme: %s", sel[0]);
+    fzf_free(sel, cnt);
+}
+
 static int treesitter_init(void) {
+    ts_seed_default_theme();
     cmd("ts",     cmd_ts,     "ts on|off|auto");
     cmd("tslang", cmd_tslang, "tslang <name>");
     cmd("tsi",    cmd_tsi,    "install ts lang");
+    cmd("theme",  cmd_theme,  "theme [name]");
     return 0;
 }
 

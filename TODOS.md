@@ -55,3 +55,6 @@ If there is no new line sent we should esure to send new line at the end , so we
 
 ## [DONE] Better API for the command mode
    Its not good at the moment, at all
+   
+## [DONE] Shell piping to/from buffer, yank register and system clipboard
+
