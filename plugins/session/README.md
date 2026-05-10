@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # session
 
 Saves and restores the list of open buffers for the current cwd.

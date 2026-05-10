@@ -12,7 +12,7 @@ user-facing feature is a plugin you can rip out, fork, or replace.
 ## Install in 10 seconds
 One line install:
 
-```bash
+```sh
 curl -fsSL https://github.com/42dotmk/hed/releases/latest/download/install.sh | bash
 ```
 and follow the prompts.
@@ -46,7 +46,7 @@ Then run `hed` and you're in.
 
 If you want to skip the installer:
 
-```bash
+```zsh
 git clone --recursive https://github.com/42dotmk/hed.git
 cd hed
 make
@@ -163,6 +163,7 @@ Each has its own README; here's the catalogue:
 | [`viewmd`](plugins/viewmd/README.md) | Markdown live preview in the browser |
 | [`scratch`](plugins/scratch/README.md) | `:scratch` ephemeral unnamed buffer |
 | [`sed`](plugins/sed/README.md) | `:sed <expr>` pipes the buffer through external sed |
+| [`shell`](plugins/shell/README.md) | `:shell` / `!` prompt; capture tokens splice stdout into the buffer or yank register |
 | [`reload`](plugins/reload/README.md) | `:reload` rebuilds and execs the new binary |
 | [`session`](plugins/session/README.md) | Save / restore the open-buffer list per cwd |
 | [`autosave`](plugins/autosave/README.md) | Idle/timer autosave to per-cwd cache dir, with recovery prompt on reopen |

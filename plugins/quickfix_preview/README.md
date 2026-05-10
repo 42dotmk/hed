@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # quickfix_preview
 
 When the cursor moves inside a quickfix buffer, this plugin syncs the

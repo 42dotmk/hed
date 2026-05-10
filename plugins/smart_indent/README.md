@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # smart_indent
 
 Carries indentation onto new lines. When you press `<Enter>` in

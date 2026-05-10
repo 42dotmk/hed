@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # viewmd
 
 `:viewmd` opens a live HTML preview of the current Markdown buffer in

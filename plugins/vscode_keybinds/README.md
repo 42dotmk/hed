@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # vscode_keybinds
 
 VSCode-flavored keymap. Modeless — the editor stays in INSERT

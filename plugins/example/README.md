@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # example
 
 The starter template. Copy this directory, rename, and you have a

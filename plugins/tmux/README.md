@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # tmux
 
 Treats a sibling tmux pane as a runner — send the paragraph under

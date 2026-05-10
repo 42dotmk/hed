@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # dired
 
 A directory browser inspired by `oil.nvim`: opening a directory drops

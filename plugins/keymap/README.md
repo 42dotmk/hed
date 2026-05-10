@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # keymap
 
 Runtime keymap swap. Without this plugin, you're locked to whichever

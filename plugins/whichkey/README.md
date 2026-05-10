@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # whichkey
 
 When you start a multi-key chord and pause, whichkey lists the

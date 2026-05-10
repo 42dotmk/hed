@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # reload
 
 Rebuild hed and replace the running process with the new binary,

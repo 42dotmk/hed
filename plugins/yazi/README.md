@@ -1,3 +1,5 @@
+← [hed](../../README.md)
+
 # yazi
 
 Launch the [`yazi`](https://yazi-rs.github.io/) file manager as a

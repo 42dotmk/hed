@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # core
 
 The default `:` command set. Every keymap-agnostic command that

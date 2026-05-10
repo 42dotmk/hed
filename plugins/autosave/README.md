@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # autosave
 
 Idle / timer autosave for dirty buffers, with a recovery prompt on

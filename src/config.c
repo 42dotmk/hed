@@ -64,7 +64,7 @@ void config_init(void) {
     plugin_load(&plugin_copilot,          1);
     plugin_load(&plugin_autosave,         1);
     theme_activate("tokyo-night");
-    
+
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");
@@ -120,4 +120,5 @@ void config_init(void) {
     cmapn(" fy",   "yazi",                 "pick file with yazi");
     cmapn(" z",    "scratch",              "scratch buffer");
     cmapn("<C-s>", "shell", "open shell prompt");
+    cmapn(" jh","fzf /home/halicea/probe/hed", "hed dir");
 }

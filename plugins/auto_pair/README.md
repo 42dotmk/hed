@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # auto_pair
 
 Auto-inserts the closing half of a pair when you type the opening

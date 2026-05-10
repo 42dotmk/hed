@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # treesitter
 
 Syntax highlighting via tree-sitter. Grammars are `.so` files loaded

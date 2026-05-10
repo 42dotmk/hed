@@ -1,3 +1,5 @@
+← [hed](../../readme.md)
+
 # copilot
 
 GitHub Copilot ghost-text suggestions via the official
