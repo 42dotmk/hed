@@ -2,7 +2,7 @@
 
 CC = clang
 CFLAGS = -Wall -Wextra -std=c23 -pedantic -g -O0
-INCLUDES = -I../src -I../src/buf -I../src/lib -Iunity
+INCLUDES = -I../src -I../src/buf -I../src/lib -I../vendor -Iunity
 LDFLAGS =
 
 # Source files needed for tests
