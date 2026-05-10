@@ -780,6 +780,26 @@ void cmd_fold_toggle(const char *args) {
     }
 }
 
+/* Build a comma-separated list of registered methods for error messages.
+ * Returns a pointer into a static buffer; not thread-safe (the editor is
+ * single-threaded). */
+static const char *foldmethod_list_str(void) {
+    static char buf[256];
+    buf[0] = '\0';
+    size_t off = 0;
+    int n = fold_method_count();
+    for (int i = 0; i < n; i++) {
+        const char *name = fold_method_name_at(i);
+        if (!name) continue;
+        int written = snprintf(buf + off, sizeof(buf) - off,
+                               "%s%s", off ? ", " : "", name);
+        if (written < 0 || (size_t)written >= sizeof(buf) - off)
+            break;
+        off += (size_t)written;
+    }
+    return buf;
+}
+
 void cmd_foldmethod(const char *args) {
     Buffer *buf = buf_cur();
     if (!buf) {
@@ -788,39 +808,25 @@ void cmd_foldmethod(const char *args) {
     }
 
     if (!args || !*args) {
-        /* Show current fold method */
-        const char *method_name = "unknown";
-        switch (buf->fold_method) {
-        case FOLD_METHOD_MANUAL:
-            method_name = "manual";
-            break;
-        case FOLD_METHOD_BRACKET:
-            method_name = "bracket";
-            break;
-        case FOLD_METHOD_INDENT:
-            method_name = "indent";
-            break;
-        }
-        ed_set_status_message("foldmethod=%s", method_name);
+        ed_set_status_message("foldmethod=%s",
+                              buf->fold_method ? buf->fold_method : "(none)");
         return;
     }
 
-    /* Parse the method name */
-    FoldMethod new_method = FOLD_METHOD_MANUAL;
-    if (strcmp(args, "manual") == 0) {
-        new_method = FOLD_METHOD_MANUAL;
-    } else if (strcmp(args, "bracket") == 0) {
-        new_method = FOLD_METHOD_BRACKET;
-    } else if (strcmp(args, "indent") == 0) {
-        new_method = FOLD_METHOD_INDENT;
-    } else {
-        ed_set_status_message("foldmethod: unknown method '%s' (manual, bracket, indent)", args);
+    if (!fold_method_lookup(args)) {
+        ed_set_status_message("foldmethod: unknown method '%s' (%s)",
+                              args, foldmethod_list_str());
         return;
     }
 
-    /* Set the method and apply it */
-    buf->fold_method = new_method;
-    fold_apply_method(buf, new_method);
+    char *copy = strdup(args);
+    if (!copy) {
+        ed_set_status_message("foldmethod: out of memory");
+        return;
+    }
+    free(buf->fold_method);
+    buf->fold_method = copy;
+    fold_apply_method(buf, args);
     ed_set_status_message("foldmethod=%s", args);
 }
 
@@ -831,21 +837,7 @@ void cmd_foldupdate(const char *args) {
         ed_set_status_message("foldupdate: no buffer");
         return;
     }
-
-    /* Reapply the current fold method */
     fold_apply_method(buf, buf->fold_method);
-
-    const char *method_name = "manual";
-    switch (buf->fold_method) {
-    case FOLD_METHOD_MANUAL:
-        method_name = "manual";
-        break;
-    case FOLD_METHOD_BRACKET:
-        method_name = "bracket";
-        break;
-    case FOLD_METHOD_INDENT:
-        method_name = "indent";
-        break;
-    }
-    ed_set_status_message("Folds updated using %s method", method_name);
+    ed_set_status_message("Folds updated using %s method",
+                          buf->fold_method ? buf->fold_method : "(none)");
 }

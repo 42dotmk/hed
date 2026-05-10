@@ -13,13 +13,6 @@
 #include "utils/fold.h"
 #include "utils/undo.h"
 
-/* FoldMethod enum for automatic fold detection */
-typedef enum {
-    FOLD_METHOD_MANUAL,   /* No automatic folding, manual only */
-    FOLD_METHOD_BRACKET,  /* Bracket-based folding { } */
-    FOLD_METHOD_INDENT,   /* Indentation-based folding */
-} FoldMethod;
-
 /* Buffer structure - represents a single file/document */
 typedef struct Buffer {
     Row *rows;
@@ -39,7 +32,10 @@ typedef struct Buffer {
     void *ts_internal; /* tree-sitter per-buffer state (opaque) */
 
     FoldList folds; /* Code folding regions */
-    FoldMethod fold_method; /* Active fold detection method */
+    /* Active fold detection method as a registry name (heap-owned).
+     * NULL means "not yet chosen" — the BUFFER_OPEN hook may apply a
+     * filetype default. Plugin-registered methods round-trip here. */
+    char *fold_method;
 
     UndoState undo; /* Undo/redo state */
 

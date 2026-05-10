@@ -71,7 +71,7 @@ static void buf_init(Buffer *buf) {
     buf->readonly = 0; /* Default: not read-only */
     buf->ts_internal = NULL;
     fold_list_init(&buf->folds);
-    buf->fold_method = FOLD_METHOD_MANUAL; /* Default: manual folding */
+    buf->fold_method = NULL; /* Filetype default applied on BUFFER_OPEN */
     undo_state_init(&buf->undo);
     vtext_init(buf);
 }
@@ -313,6 +313,7 @@ EdError buf_close(int index) {
     free(buf->filename);
     free(buf->title);
     free(buf->filetype);
+    free(buf->fold_method);
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++)
         free(buf->all_cursors[i]);
     arrfree(buf->all_cursors);

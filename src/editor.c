@@ -6,6 +6,7 @@
 #include "keybinds.h"
 #include "terminal.h"
 #include "buf/buf_helpers.h"
+#include "fold_methods/fold_methods.h"
 #include "registers.h"
 #include "commands.h"
 #include "ui/wlayout.h"
@@ -302,6 +303,7 @@ void ed_init(int create_default_buffer) {
     hook_init();
     command_init();
     keybind_init();
+    fold_method_init();
     hist_init(&E.history);
     recent_files_init(&E.recent_files);
     jump_list_init(&E.jump_list);
