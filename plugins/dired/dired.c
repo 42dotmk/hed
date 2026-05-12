@@ -32,10 +32,10 @@ static int dired_plugin_init(void) {
     dired_hooks_init();
     hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", dired_open_pre);
     hook_register_buffer(HOOK_BUFFER_SAVE_PRE, MODE_NORMAL, "*", dired_save_pre);
-    mapn("<CR>", on_enter,  "dired open");
-    mapn("-",    on_parent, "dired parent");
-    mapn("~",    on_home,   "dired home");
-    mapn("cd",   on_chdir,  "dired chdir");
+    mapn_ft("dired", "<CR>", on_enter,  "dired open");
+    mapn_ft("dired", "-",    on_parent, "dired parent");
+    mapn_ft("dired", "~",    on_home,   "dired home");
+    mapn_ft("dired", "cd",   on_chdir,  "dired chdir");
     return 0;
 }
 
