@@ -1,4 +1,4 @@
-#include "utils/ctags.h"
+#include "ctags/tags.h"
 #include "lib/log.h"
 #include "editor.h"
 #include "buf/buf_helpers.h"

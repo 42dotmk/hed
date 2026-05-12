@@ -123,17 +123,19 @@ static char *lsp_build_content(Buffer *buf) {
 
 static char *lsp_get_file_uri(const char *filepath) {
     if (!filepath) return NULL;
-    char  cwd[1024] = {0};
-    char *uri        = malloc(strlen(filepath) + 32);
+    char cwd[1024] = {0};
+    int have_cwd = (filepath[0] != '/' && getcwd(cwd, sizeof(cwd)) != NULL);
+    /* "file://" (7) + cwd + "/" + filepath + NUL, plus a little slack. */
+    size_t need = strlen(filepath) + 16;
+    if (have_cwd) need += strlen(cwd);
+    char *uri = malloc(need);
     if (!uri) return NULL;
-    if (filepath[0] == '/') {
+    if (filepath[0] == '/')
         sprintf(uri, "file://%s", filepath);
-    } else {
-        if (getcwd(cwd, sizeof(cwd)))
-            sprintf(uri, "file://%s/%s", cwd, filepath);
-        else
-            sprintf(uri, "file://%s", filepath);
-    }
+    else if (have_cwd)
+        sprintf(uri, "file://%s/%s", cwd, filepath);
+    else
+        sprintf(uri, "file://%s", filepath);
     return uri;
 }
 

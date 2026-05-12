@@ -8,12 +8,15 @@
 #include "clipboard/clipboard.h"
 #include "copilot/copilot.h"
 #include "core/core.h"
+#include "ctags/ctags.h"
 #include "dired/dired_plugin.h"
 #include "emacs_keybinds/emacs_keybinds.h"
 #include "fmt/fmt.h"
+#include "git/git.h"
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
 #include "multicursor/multicursor.h"
+#include "pickers/pickers.h"
 #include "plugin.h"
 #include "quickfix_preview/quickfix_preview.h"
 #include "reload/reload.h"
@@ -63,6 +66,9 @@ void config_init(void) {
     plugin_load(&plugin_yazi,             1);
     plugin_load(&plugin_copilot,          1);
     plugin_load(&plugin_autosave,         1);
+    plugin_load(&plugin_ctags,            1);
+    plugin_load(&plugin_git,              1);
+    plugin_load(&plugin_pickers,          1);
     theme_activate("tokyo-night");
 
     cmapn("  ",    "fzf",                  "find files");

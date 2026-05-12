@@ -1,5 +1,5 @@
-#ifndef CTAGS_H
-#define CTAGS_H
+#ifndef HED_PLUGIN_CTAGS_TAGS_H
+#define HED_PLUGIN_CTAGS_TAGS_H
 
 /*
  * CTAGS INTEGRATION
@@ -57,4 +57,4 @@ int tag_exists(const char *tag_name);
  */
 void tag_entry_free(TagEntry *entry);
 
-#endif /* CTAGS_H */
+#endif /* HED_PLUGIN_CTAGS_TAGS_H */

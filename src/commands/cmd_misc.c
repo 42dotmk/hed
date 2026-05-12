@@ -3,17 +3,14 @@
 #include "commands.h"
 #include "buf/buf_helpers.h"
 #include "utils/yank.h"
-#include "utils/term_cmd.h"
 #include "terminal.h"
 #include "lib/log.h"
 #include "ui/winmodal.h"
 #include <unistd.h>
 #include "macros.h"
 #include "registers.h"
-#include "utils/ctags.h"
 #include "utils/fold.h"
 #include "utils/fzf.h"
-#include "prompt.h"
 #include "fold_methods/fold_methods.h"
 #include "keybinds.h"
 #include "commands/cmd_util.h"
@@ -229,124 +226,6 @@ void cmd_history(const char *args) {
     }
     buf[off] = '\0';
     ed_set_status_message("%s", buf);
-}
-
-void cmd_history_fzf(const char *args) {
-    (void)args;
-    int hlen = hist_len(&E.history);
-    if (hlen == 0) {
-        ed_set_status_message("No history");
-        return;
-    }
-
-    /* Write history to a temp file to avoid escaping/length issues */
-    char tmppath[64];
-    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_hist_%d", getpid());
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        ed_set_status_message("hfzf: failed to write temp file");
-        return;
-    }
-    for (int i = 0; i < hlen; i++) {
-        const char *line = hist_get(&E.history, i);
-        if (line) fprintf(fp, "%s\n", line);
-    }
-    fclose(fp);
-
-    char fzf_cmd[128];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
-
-    char **sel = NULL;
-    int cnt    = 0;
-    fzf_run(fzf_cmd, 0, &sel, &cnt);
-    unlink(tmppath);
-
-    if (cnt == 0 || !sel || !sel[0]) {
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    /* Prefill the active : prompt with the picked history line and
-     * keep it open for further editing. */
-    Prompt *p = prompt_current();
-    if (p) {
-        prompt_set_text(p, sel[0], (int)strlen(sel[0]));
-        ed_set_status_message(":%s", p->buf);
-        prompt_keep_open();
-    }
-    fzf_free(sel, cnt);
-}
-
-void cmd_jumplist_fzf(const char *args) {
-    (void)args;
-    int jlen = (int)arrlen(E.jump_list.entries);
-    if (jlen == 0) {
-        ed_set_status_message("Jump list is empty");
-        return;
-    }
-
-    /* Write entries to temp file as "filepath:line:col" (1-indexed) */
-    char tmppath[64];
-    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_jumps_%d", getpid());
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        ed_set_status_message("jfzf: failed to write temp file");
-        return;
-    }
-    /* Most recent first */
-    for (int i = jlen - 1; i >= 0; i--) {
-        JumpEntry *e = &E.jump_list.entries[i];
-        if (e->filepath)
-            fprintf(fp, "%s:%d:%d\n", e->filepath, e->cursor_y + 1, e->cursor_x + 1);
-    }
-    fclose(fp);
-
-    char fzf_cmd[128];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
-
-    const char *fzf_opts =
-        "--delimiter ':' "
-        "--preview 'command -v bat >/dev/null 2>&1 "
-            "&& bat --style=plain --color=always --highlight-line {2} "
-                "--line-range {2}:+30 {1} "
-            "|| awk \"NR>={2}-5 && NR<={2}+25\" {1}' "
-        "--preview-window 'right,60%,+{2}-5'";
-
-    char **sel = NULL;
-    int cnt    = 0;
-    fzf_run_opts(fzf_cmd, fzf_opts, 0, &sel, &cnt);
-    unlink(tmppath);
-
-    if (cnt == 0 || !sel || !sel[0]) {
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    /* Parse "filepath:line:col" */
-    char *entry = sel[0];
-    /* Find last two colons to extract line and col */
-    char *last_colon = strrchr(entry, ':');
-    if (!last_colon) { fzf_free(sel, cnt); return; }
-    int col = atoi(last_colon + 1) - 1;
-    *last_colon = '\0';
-
-    char *prev_colon = strrchr(entry, ':');
-    if (!prev_colon) { fzf_free(sel, cnt); return; }
-    int line = atoi(prev_colon + 1) - 1;
-    *prev_colon = '\0';
-
-    /* entry is now just the filepath */
-    buf_open_or_switch(entry, false);
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (buf) {
-        int row = (line < buf->num_rows) ? line : buf->num_rows - 1;
-        if (row < 0) row = 0;
-        buf->cursor->y = row;
-        buf->cursor->x = col;
-        if (win) { win->cursor.y = row; win->cursor.x = col; }
-    }
-    fzf_free(sel, cnt);
 }
 
 void cmd_registers(const char *args) {
@@ -588,28 +467,6 @@ void cmd_new_line_above(const char *args) {
     win->cursor.y--;
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
-}
-
-void cmd_git(const char *args) {
-    (void)args;
-    /* Run lazygit as a full-screen TUI, like fzf: temporarily leave raw mode.
-     */
-    int status = term_cmd_run_interactive("lazygit", false);
-    if (status == 0) {
-        ed_set_status_message("lazygit exited");
-    } else if (status == -1) {
-        ed_set_status_message("failed to run lazygit");
-    } else {
-        ed_set_status_message("lazygit exited with status %d", status);
-    }
-    ed_render_frame();
-}
-
-
-void cmd_tag(const char *args) {
-    (void)args;
-    goto_tag(args && *args ? args : NULL);
-	buf_center_screen();
 }
 
 void cmd_modal_from_current(const char *args) {

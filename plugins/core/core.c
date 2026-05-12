@@ -228,8 +228,6 @@ static void register_commands(void) {
     cmd("history", cmd_history, "cmd hist");
     cmd("log",  cmd_log,  "open the editor log file");
     cmd("logs", cmd_logs, "fzf-pick a log file from the cache dir");
-    cmd("hfzf", cmd_history_fzf, "fuzzy search command history");
-    cmd("jfzf", cmd_jumplist_fzf, "fuzzy search jump list");
     cmd("reg", cmd_registers, "registers");
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");
@@ -250,14 +248,12 @@ static void register_commands(void) {
     cmd("ssearch", cmd_ssearch, "search current file");
     cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
     cmd("rg", cmd_rg, "ripgrep");
-    cmd("tag", cmd_tag, "jump to tag definition");
     cmd("shq", cmd_shq, "shell cmd");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
     cmd("fzf", cmd_fzf, "pick a file(s)");
     cmd("recent", cmd_recent, "recent files");
     cmd("logclear", cmd_logclear, "clear .hedlog");
-    cmd("git", cmd_git, "run lazygit");
     cmd("wrap", cmd_wrap, "toggle wrap");
     cmd("wrapdefault", cmd_wrapdefault, "toggle default wrap");
     cmd("new_line", cmd_new_line, "open new line below");
