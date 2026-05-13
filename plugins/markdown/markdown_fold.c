@@ -37,7 +37,7 @@ static size_t leading_ws(const Row *row) {
     return i;
 }
 
-/* If the row begins with an ATX heading marker (1–6 `#` followed by a
+/* If the row begins with an ATX heading marker (1-6 `#` followed by a
  * space, tab, or end-of-line), return the heading level. Otherwise 0. */
 static int atx_heading_level(const Row *row) {
     size_t off = leading_ws(row);

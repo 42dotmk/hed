@@ -596,10 +596,6 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         }
 
         if (!buf || filerow >= buf->num_rows) {
-            if ((!buf || buf->num_rows == 0) && vy == win->height / 3) {
-            } else {
-                ab_append_ch(ab, '~');
-            }
         } else {
             /* Check if this line has a collapsed fold */
             bool is_folded = false;
