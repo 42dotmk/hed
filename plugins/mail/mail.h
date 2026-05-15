@@ -21,6 +21,15 @@ void mail_open_list(void);
 /* Called by <CR> keybind while in a mail list buffer. */
 void mail_handle_enter(void);
 
+/* Apply notmuch tags to the thread(s) under the cursor or visual selection.
+ * `args` is a whitespace-separated list of tags; tokens without a leading
+ * +/- get a + prefix. */
+void mail_apply_tags(const char *args);
+
+/* Apply notmuch tags to every thread matching the current base + filter
+ * query (i.e. everything currently listed). */
+void mail_apply_tags_query(const char *args);
+
 /* Set the mbsync profile argument (default: "-a" for all channels). */
 void mail_set_mbsync_profile(const char *profile);
 

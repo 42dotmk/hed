@@ -26,7 +26,7 @@ static int has_unread_tag(const char *line) {
     const char *last_paren = strrchr(line, '(');
     if (!last_paren) return 0;
     const char *p = last_paren + 1;
-    while (*p) {
+    while (*p && *p != ')') {
         while (*p == ' ') p++;
         const char *word = p;
         while (*p && *p != ' ' && *p != ')') p++;
@@ -350,7 +350,7 @@ void mail_open_list(void) {
     free(buf->title);    buf->title    = strdup("Mail");
     free(buf->filetype); buf->filetype = strdup("mail");
     buf->readonly   = 1;
-    buf->hl_line_fn = NULL; /* coloring temporarily disabled */
+    buf->hl_line_fn = mail_list_hl;
 
     clear_buffer(buf);
 
@@ -374,14 +374,21 @@ void mail_open_list(void) {
     }
     E.current_buffer = idx;
 
+    int unread = 0;
+    for (int i = 0; i < mail_entry_count; i++)
+        if (mail_entries[i].is_unread) unread++;
+    int read = mail_entry_count - unread;
+
     char q[1100];
     build_full_query(q, sizeof(q));
     if (filter_query[0])
-        ed_set_status_message("mail: %d threads  [%s] (filtered: %s)",
-                              mail_entry_count, base_query, filter_query);
+        ed_set_status_message(
+            "mail: %d threads (%d unread, %d read)  [%s] (filtered: %s)",
+            mail_entry_count, unread, read, base_query, filter_query);
     else
-        ed_set_status_message("mail: %d threads  [%s]",
-                              mail_entry_count, base_query);
+        ed_set_status_message(
+            "mail: %d threads (%d unread, %d read)  [%s]",
+            mail_entry_count, unread, read, base_query);
 }
 
 /* ------------------------------------------------------------------ */
@@ -400,6 +407,10 @@ void mail_handle_enter(void) {
 
     const char *tid = mail_entries[row].thread_id;
     if (!tid[0]) return;
+
+    /* Record current position so <C-o> returns to the mail list. */
+    if (buf->filename)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
 
     /* Reuse an already-open thread buffer if present. */
     char bufname[256];
@@ -421,7 +432,7 @@ void mail_handle_enter(void) {
     free(tbuf->title);    tbuf->title    = strdup(mail_entries[row].display);
     free(tbuf->filetype); tbuf->filetype = strdup("mail-message");
     tbuf->readonly   = 1;
-    tbuf->hl_line_fn = NULL; /* coloring temporarily disabled */
+    tbuf->hl_line_fn = mail_msg_hl;
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
@@ -448,6 +459,178 @@ void mail_handle_enter(void) {
     E.current_buffer = idx;
 
     ed_set_status_message("%s", mail_entries[row].display);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tagging                                                             */
+/* ------------------------------------------------------------------ */
+
+static int tag_char_ok(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' ||
+           c == '/' || c == ':';
+}
+
+/* Normalize a whitespace-separated tag list into "+a -b +c" form.
+ * Returns 0 on success, -1 on validation error (status message is set). */
+static int parse_tag_args(const char *args, char *out, size_t cap) {
+    if (!args || !*args) {
+        ed_set_status_message("mail-tag: usage :mail-tag <+tag|-tag>...");
+        return -1;
+    }
+    size_t n = 0;
+    const char *p = args;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        const char *tok = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        size_t tlen = (size_t)(p - tok);
+        if (tlen == 0) continue;
+
+        char sign = '+';
+        const char *body = tok;
+        size_t blen = tlen;
+        if (*tok == '+' || *tok == '-') {
+            sign = *tok;
+            body++;
+            blen--;
+        }
+        if (blen == 0) {
+            ed_set_status_message("mail-tag: empty tag");
+            return -1;
+        }
+        for (size_t i = 0; i < blen; i++) {
+            if (!tag_char_ok(body[i])) {
+                ed_set_status_message("mail-tag: invalid char in tag");
+                return -1;
+            }
+        }
+        if (n + blen + 3 >= cap) {
+            ed_set_status_message("mail-tag: too many tags");
+            return -1;
+        }
+        if (n) out[n++] = ' ';
+        out[n++] = sign;
+        memcpy(out + n, body, blen);
+        n += blen;
+    }
+    out[n] = '\0';
+    if (n == 0) {
+        ed_set_status_message("mail-tag: no tags given");
+        return -1;
+    }
+    return 0;
+}
+
+/* Re-render the list, keeping cursor row when possible. */
+static void mail_refresh_keep_cursor(void) {
+    Window *win = window_cur();
+    int saved_y = win ? win->cursor.y : 0;
+    int saved_x = win ? win->cursor.x : 0;
+    mail_open_list();
+    win = window_cur();
+    if (win) {
+        Buffer *lbuf = buf_cur();
+        if (lbuf && saved_y < lbuf->num_rows) {
+            win->cursor.y = saved_y;
+            win->cursor.x = saved_x;
+        }
+    }
+}
+
+void mail_apply_tags(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0) {
+        ed_set_status_message("mail-tag: not in a mail list buffer");
+        return;
+    }
+    Window *win = window_cur();
+    if (!win) return;
+
+    int row_start = win->cursor.y;
+    int row_end   = win->cursor.y;
+    if (win->sel.type == SEL_VISUAL ||
+        win->sel.type == SEL_VISUAL_LINE ||
+        win->sel.type == SEL_VISUAL_BLOCK) {
+        int ay = win->sel.anchor_y;
+        int cy = win->cursor.y;
+        row_start = ay < cy ? ay : cy;
+        row_end   = ay > cy ? ay : cy;
+    }
+    if (row_start < 0) row_start = 0;
+    if (row_end >= mail_entry_count) row_end = mail_entry_count - 1;
+    if (row_start > row_end) {
+        ed_set_status_message("mail-tag: no thread under cursor");
+        return;
+    }
+
+    char tag_args[512];
+    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0) return;
+
+    /* Build a thread-id query: thread:a or thread:b or ... */
+    char query[4096];
+    size_t qout = 0;
+    int applied = 0;
+    for (int r = row_start; r <= row_end; r++) {
+        const char *tid = mail_entries[r].thread_id;
+        if (!tid[0]) continue;
+        size_t tlen = strlen(tid);
+        const char *sep = applied ? " or " : "";
+        size_t slen = strlen(sep);
+        if (qout + slen + tlen + 1 >= sizeof(query)) {
+            ed_set_status_message("mail-tag: too many threads selected");
+            return;
+        }
+        memcpy(query + qout, sep, slen); qout += slen;
+        memcpy(query + qout, tid, tlen); qout += tlen;
+        applied++;
+    }
+    query[qout] = '\0';
+    if (applied == 0) {
+        ed_set_status_message("mail-tag: no threads to tag");
+        return;
+    }
+
+    char cmd[5120];
+    snprintf(cmd, sizeof(cmd),
+             "notmuch tag %s -- %s 2>/dev/null", tag_args, query);
+    int rc = term_cmd_system(cmd);
+    if (rc != 0) {
+        ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
+        return;
+    }
+
+    mail_refresh_keep_cursor();
+    ed_set_status_message("mail-tag: %s applied to %d thread%s",
+                          tag_args, applied, applied == 1 ? "" : "s");
+}
+
+void mail_apply_tags_query(const char *args) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0) {
+        ed_set_status_message("mail-tag: not in a mail list buffer");
+        return;
+    }
+
+    char tag_args[512];
+    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0) return;
+
+    char full_query[1100];
+    build_full_query(full_query, sizeof(full_query));
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "notmuch tag %s -- %s 2>/dev/null", tag_args, full_query);
+    int rc = term_cmd_system(cmd);
+    if (rc != 0) {
+        ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
+        return;
+    }
+
+    mail_refresh_keep_cursor();
+    ed_set_status_message("mail-tag: %s applied to all (%s)",
+                          tag_args, full_query);
 }
 
 /* ------------------------------------------------------------------ */

@@ -299,6 +299,9 @@ EdError buf_close(int index) {
         return ED_ERR_BUFFER_DIRTY;
     }
 
+    bool was_current = (index == E.current_buffer);
+    char *closed_filename = buf->filename ? strdup(buf->filename) : NULL;
+
     /* Fire hook before closing */
     HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_CLOSE, &event);
@@ -334,10 +337,51 @@ EdError buf_close(int index) {
         }
         /* If buffer creation fails, editor will be in an invalid state, but
          * better than crashing */
-    } else if (E.current_buffer >= (int)arrlen(E.buffers)) {
-        E.current_buffer = (int)arrlen(E.buffers) - 1;
+    } else {
+        if (E.current_buffer > index) {
+            /* Closed buffer was before current — keep current buffer focused. */
+            E.current_buffer--;
+        } else if (was_current) {
+            /* Walk jump list from newest to oldest, skipping the just-closed
+             * file, and switch to the first entry that still has an open
+             * buffer. Falls through to the index-clamp below if nothing
+             * matches. */
+            int target = -1;
+            for (ptrdiff_t i = arrlen(E.jump_list.entries) - 1; i >= 0; i--) {
+                const char *fp = E.jump_list.entries[i].filepath;
+                if (!fp) continue;
+                if (closed_filename && strcmp(fp, closed_filename) == 0)
+                    continue;
+                int found = buf_find_by_filename(fp);
+                if (found >= 0) {
+                    target = found;
+                    break;
+                }
+            }
+            if (target >= 0) {
+                E.current_buffer = target;
+            } else if (E.current_buffer >= (int)arrlen(E.buffers)) {
+                E.current_buffer = (int)arrlen(E.buffers) - 1;
+            }
+        } else if (E.current_buffer >= (int)arrlen(E.buffers)) {
+            E.current_buffer = (int)arrlen(E.buffers) - 1;
+        }
+
+        /* Keep the focused window's buffer_index in sync. */
+        Window *win = window_cur();
+        if (win) win->buffer_index = E.current_buffer;
+
+        /* Restore window cursor from the new buffer's cursor. */
+        Buffer *new_buf = buf_cur();
+        if (was_current && win && new_buf && new_buf->cursor) {
+            win->cursor.x = new_buf->cursor->x;
+            win->cursor.y = new_buf->cursor->y;
+            HookBufferEvent ev = {.buf = new_buf, .filename = new_buf->filename};
+            hook_fire_buffer(HOOK_BUFFER_SWITCH, &ev);
+        }
     }
 
+    free(closed_filename);
     return ED_OK;
 }
 

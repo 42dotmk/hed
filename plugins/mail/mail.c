@@ -58,10 +58,20 @@ static void cmd_mail_sync(const char *args) {
     mail_sync();
 }
 
-static void kb_enter(void)   { mail_handle_enter(); }
-static void kb_filter(void)  { mail_filter_prompt(); }
-static void kb_refresh(void) { mail_set_filter(""); mail_open_list(); }
-static void kb_sync(void)    { mail_sync(); }
+static void cmd_mail_tag(const char *args) {
+    mail_apply_tags(args);
+}
+
+static void cmd_mail_tag_all(const char *args) {
+    mail_apply_tags_query(args);
+}
+
+static void kb_enter(void)        { mail_handle_enter(); }
+static void kb_filter(void)       { mail_filter_prompt(); }
+static void kb_refresh(void)      { mail_set_filter(""); mail_open_list(); }
+static void kb_sync(void)         { mail_sync(); }
+static void kb_mark_read(void)    { mail_apply_tags("-unread"); }
+static void kb_mark_read_all(void){ mail_apply_tags_query("-unread"); }
 
 static int mail_plugin_init(void) {
     cmd("mail",         cmd_mail,         "open notmuch mail list");
@@ -69,11 +79,19 @@ static int mail_plugin_init(void) {
     cmd("mail-filter",  cmd_mail_filter,  "filter mail (appended to base query)");
     cmd("mail-query",   cmd_mail_query,   "set base notmuch query");
     cmd("mail-sync",    cmd_mail_sync,    "mbsync + notmuch new, then refresh");
+    cmd("mail-tag",     cmd_mail_tag,     "apply notmuch tags to thread under cursor");
+    cmd("mail-tag-all", cmd_mail_tag_all, "apply notmuch tags to every thread in the current query");
 
-    mapn_ft("mail", "<CR>", kb_enter,   "open selected thread");
-    mapn_ft("mail", "/",    kb_filter,  "open filter prompt");
-    mapn_ft("mail", "r",    kb_refresh, "refresh (clear filter)");
-    mapn_ft("mail", "R",    kb_sync,    "sync mbsync + notmuch");
+    mapn_ft("mail", "<CR>",  kb_enter,         "open selected thread");
+    mapn_ft("mail", "/",     kb_filter,        "open filter prompt");
+    mapn_ft("mail", "r",     kb_refresh,       "refresh (clear filter)");
+    mapn_ft("mail", "R",     kb_sync,          "sync mbsync + notmuch");
+    mapn_ft("mail", "<C-r>", kb_mark_read,     "mark thread under cursor as read");
+    mapv_ft("mail", "<C-r>", kb_mark_read,     "mark selected threads as read");
+    keybind_register_ft(MODE_VISUAL_LINE, "<C-r>", "mail", kb_mark_read,
+                        "mark selected threads as read");
+    mapn_ft("mail", "<C-S-r>", kb_mark_read_all,
+            "mark all threads in current query as read");
 
     return 0;
 }
