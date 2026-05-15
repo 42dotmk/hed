@@ -672,16 +672,17 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         render_slice_ss(&buf->rows[filerow].render, (start_rx_),               \
                         (slice_cols_), &__sb, &__blen);                        \
         if (__blen > 0) {                                                      \
-            if (ts_is_enabled && ts_is_enabled() && ts_highlight_line) {       \
-                char linebuf[4096];                                            \
-                size_t wrote = ts_highlight_line(                              \
-                    buf, filerow, linebuf, sizeof(linebuf), __sb, __blen);     \
-                if (wrote > 0) {                                               \
-                    ab_append(ab, linebuf, (int)wrote);                        \
-                } else {                                                       \
-                    ab_append(ab, &buf->rows[filerow].render.data[__sb],       \
-                              __blen);                                         \
-                }                                                              \
+            char   __linebuf[4096];                                            \
+            size_t __wrote = 0;                                                \
+            if (buf->hl_line_fn) {                                             \
+                __wrote = buf->hl_line_fn(buf, filerow, __linebuf,             \
+                                          sizeof(__linebuf), __sb, __blen);    \
+            } else if (ts_is_enabled && ts_is_enabled() && ts_highlight_line) { \
+                __wrote = ts_highlight_line(buf, filerow, __linebuf,           \
+                                            sizeof(__linebuf), __sb, __blen);  \
+            }                                                                  \
+            if (__wrote > 0) {                                                 \
+                ab_append(ab, __linebuf, (int)__wrote);                        \
             } else {                                                           \
                 ab_append(ab, &buf->rows[filerow].render.data[__sb], __blen);  \
             }                                                                  \
@@ -916,9 +917,16 @@ void ed_render_frame(void) {
     int cur_col;
     Prompt *pr = prompt_current();
     if (pr) {
-        cur_row = lo.cmd_row;
+        int extra_lines = 0;
+        int last_line_bytes = 0;
+        for (int i = 0; i < pr->len; i++) {
+            if (pr->buf[i] == '\n') { extra_lines++; last_line_bytes = 0; }
+            else last_line_bytes++;
+        }
+        cur_row = lo.cmd_row + extra_lines;
         const char *label = pr->vt->label ? pr->vt->label(pr) : "";
-        cur_col = 1 + (int)strlen(label) + pr->len;
+        int label_len = (extra_lines == 0) ? (int)strlen(label) : 0;
+        cur_col = 1 + label_len + last_line_bytes;
     } else {
         if (!buf || win->cursor.y >= buf->num_rows) {
             cur_row = win->top;

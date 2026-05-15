@@ -14,4 +14,9 @@ extern const Plugin plugin_shell;
  */
 void cmd_shell(const char *args);
 
+/* Open the `!` prompt pre-filled with `text` (clamped to the prompt
+ * buffer size). Pass len < 0 to use strlen(text). NULL/empty text
+ * opens an empty prompt (same as `cmd_shell(NULL)`). */
+void shell_open_prompt(const char *text, int len);
+
 #endif /* HED_PLUGIN_SHELL_H */

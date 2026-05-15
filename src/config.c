@@ -15,7 +15,9 @@
 #include "git/git.h"
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
+#include "mail/mail.h"
 #include "multicursor/multicursor.h"
+#include "open/open.h"
 #include "pickers/pickers.h"
 #include "plugin.h"
 #include "quickfix_preview/quickfix_preview.h"
@@ -69,8 +71,11 @@ void config_init(void) {
     plugin_load(&plugin_ctags,            1);
     plugin_load(&plugin_git,              1);
     plugin_load(&plugin_pickers,          1);
+    plugin_load(&plugin_mail,             1);
+    plugin_load(&plugin_open,             1);
     theme_activate("tokyo-night");
-
+    mail_set_query("tag:inbox");
+    mail_set_mbsync_profile("-a");
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bd",   "bd",                   "buffer delete");

@@ -17,8 +17,10 @@
  */
 
 #include "hed.h"
+#include "keybinds_builtins.h"
 #include "prompt.h"
 #include "shell.h"
+#include "utils/yank.h"
 
 #include <ctype.h>
 #include <stdbool.h>
@@ -513,14 +515,86 @@ static void shell_on_submit(Prompt *p, const char *line, int len) {
     shell_execute(line);
 }
 
+/* `\` at the end of the typed line continues the command onto another
+ * "line." We don't render multiple lines — we just inject a literal
+ * '\n' into the prompt buffer. /bin/sh interprets `\<newline>` as line
+ * continuation, so the assembled command runs as the user intends. */
+static PromptResult shell_on_key(Prompt *p, int key) {
+    if (key == '\r' && p->len > 0 && p->buf[p->len - 1] == '\\') {
+        if (p->len < (int)sizeof(p->buf) - 1) {
+            p->buf[p->len++] = '\n';
+            p->buf[p->len]   = '\0';
+            p->cursor        = p->len;
+        }
+        return PROMPT_CONTINUE;
+    }
+    return prompt_default_on_key(p, key);
+}
+
 static const PromptVTable shell_vt = {
     .label     = shell_label,
-    .on_key    = prompt_default_on_key,
+    .on_key    = shell_on_key,
     .on_submit = shell_on_submit,
     .on_cancel = NULL,
     .complete  = NULL,
     .history   = NULL,
 };
+
+void shell_open_prompt(const char *text, int len) {
+    prompt_open(&shell_vt, NULL);
+    if (!text) return;
+    if (len < 0) len = (int)strlen(text);
+    if (len <= 0) return;
+    Prompt *p = prompt_current();
+    if (!p) return;
+    int cap = (int)sizeof(p->buf) - 1;
+    if (len > cap) len = cap;
+    prompt_set_text(p, text, len);
+}
+
+/* --- visual-mode <C-s>: open the `!` prompt with the selection --- */
+
+static void shell_kb_visual_to_prompt(void) {
+    BUFWIN(buf, win);
+    int block_mode = (E.mode == MODE_VISUAL_BLOCK);
+    TextSelection sel;
+    if (!kb_visual_to_textsel(buf, win, block_mode, &sel)) {
+        ed_set_status_message("shell: no selection");
+        return;
+    }
+    YankData yd = yank_data_new(buf, &sel);
+    if (yd.num_rows <= 0) {
+        yank_data_free(&yd);
+        ed_set_status_message("shell: empty selection");
+        return;
+    }
+
+    /* Join rows. For multi-row selections, glue with " \\\n" so /bin/sh
+     * treats it as line continuation; for single rows just take the
+     * text verbatim. */
+    char buf2[PROMPT_BUF_CAP];
+    int blen = 0;
+    int cap = (int)sizeof(buf2) - 1;
+    for (int i = 0; i < yd.num_rows && blen < cap; i++) {
+        const SizedStr *r = &yd.rows[i];
+        if (i > 0) {
+            const char *sep = " \\\n";
+            for (int k = 0; k < 3 && blen < cap; k++) buf2[blen++] = sep[k];
+        }
+        int take = (int)r->len;
+        if (take > cap - blen) take = cap - blen;
+        if (take > 0) {
+            memcpy(buf2 + blen, r->data, (size_t)take);
+            blen += take;
+        }
+    }
+    buf2[blen] = '\0';
+    yank_data_free(&yd);
+
+    kb_visual_clear(win);
+    ed_set_mode(MODE_NORMAL);
+    shell_open_prompt(buf2, blen);
+}
 
 /* ---------- public entry point + plugin registration ---------- */
 
@@ -541,6 +615,9 @@ void cmd_shell(const char *args) {
 
 static int shell_init(void) {
     cmd("shell", cmd_shell, "run shell cmd");
+    mapv ("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
+    mapvl("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
+    mapvb("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
     return 0;
 }
 

@@ -40,6 +40,14 @@ typedef struct Buffer {
     UndoState undo; /* Undo/redo state */
 
     VtTable vtext; /* Virtual text annotations (display-only) */
+
+    /* Optional per-buffer line highlighter. When set, the renderer calls
+     * this before tree-sitter. Write ANSI-colored bytes for render slice
+     * [col_offset, col_offset+max_cols) into dst. Return bytes written,
+     * or 0 to fall back to tree-sitter / plain text. */
+    size_t (*hl_line_fn)(struct Buffer *buf, int row,
+                         char *dst, size_t dst_cap,
+                         int col_offset, int max_cols);
 } Buffer;
 
 /* Buffer management */

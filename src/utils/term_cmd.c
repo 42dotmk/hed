@@ -117,6 +117,39 @@ int term_cmd_run_interactive(const char *cmd, bool acknowledge) {
     return status;
 }
 
+int term_cmd_capture(const char *cmd, char ***out_lines, int *out_count) {
+    if (!cmd) return 0;
+    if (out_lines)  *out_lines  = NULL;
+    if (out_count)  *out_count  = 0;
+
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return 0;
+
+    int    capacity = 0, count = 0;
+    char **lines    = NULL;
+    char   buf[2048];
+
+    while (fgets(buf, sizeof(buf), fp)) {
+        size_t n = strlen(buf);
+        while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r')) buf[--n] = '\0';
+
+        if (count + 1 > capacity) {
+            capacity = capacity ? capacity * 2 : 8;
+            char **nl = realloc(lines, (size_t)capacity * sizeof(char *));
+            if (!nl) { for (int i = 0; i < count; i++) free(lines[i]); free(lines); pclose(fp); return 0; }
+            lines = nl;
+        }
+        char *copy = strdup(buf);
+        if (!copy) { for (int i = 0; i < count; i++) free(lines[i]); free(lines); pclose(fp); return 0; }
+        lines[count++] = copy;
+    }
+
+    pclose(fp);
+    if (out_lines) *out_lines = lines; else { for (int i = 0; i < count; i++) free(lines[i]); free(lines); }
+    if (out_count) *out_count = count;
+    return 1;
+}
+
 void term_cmd_free(char **lines, int count) {
     if (!lines)
         return;

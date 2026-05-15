@@ -5,8 +5,14 @@
 #include "terminal.h"
 
 int ui_message_lines_needed(void) {
-    if (prompt_active())
-        return 1;
+    if (prompt_active()) {
+        Prompt *pr = prompt_current();
+        if (!pr) return 1;
+        int lines = 1;
+        for (int i = 0; i < pr->len; i++)
+            if (pr->buf[i] == '\n') lines++;
+        return lines;
+    }
     const char *s = E.status_msg;
     int cols = E.screen_cols > 0 ? E.screen_cols : 80;
     int lines = 1, cur = 0;
@@ -45,7 +51,7 @@ void layout_compute(Layout *lo) {
     lo->status_row = lo->content_rows + 1;
     lo->qf_rows = qf_rows; /* informational only now */
     lo->qf_header_row = 0; /* drawing handled via layout */
-    lo->msg_lines = prompt_active() ? 1 : needed;
+    lo->msg_lines = needed;
     /* Command/message row sits directly below status bar; quickfix is part of
      * content now */
     lo->cmd_row = lo->status_row + 1;
@@ -79,17 +85,28 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
 void draw_message_bar(Abuf *ab, const Layout *lo) {
     Prompt *pr = prompt_current();
     if (pr) {
-        ansi_move(ab, lo->cmd_row, 1);
-        ansi_clear_eol(ab);
         const char *label = pr->vt->label ? pr->vt->label(pr) : "";
         int label_len = (int)strlen(label);
-        int avail = lo->term_cols;
-        if (label_len > avail) label_len = avail;
+        if (label_len > lo->term_cols) label_len = lo->term_cols;
+        ansi_move(ab, lo->cmd_row, 1);
+        ansi_clear_eol(ab);
         ab_append(ab, label, label_len);
-        avail -= label_len;
-        int msglen = pr->len;
-        if (msglen > avail) msglen = avail;
-        if (msglen > 0) ab_append(ab, pr->buf, msglen);
+        int line_idx = 0;
+        int avail = lo->term_cols - label_len;
+        for (int i = 0; i < pr->len; i++) {
+            char c = pr->buf[i];
+            if (c == '\n') {
+                line_idx++;
+                ansi_move(ab, lo->cmd_row + line_idx, 1);
+                ansi_clear_eol(ab);
+                avail = lo->term_cols;
+                continue;
+            }
+            if (avail > 0) {
+                ab_append(ab, &c, 1);
+                avail--;
+            }
+        }
         return;
     }
     const char *s = E.status_msg;
