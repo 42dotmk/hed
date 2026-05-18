@@ -1,15 +1,33 @@
 #include "mail.h"
+#include "mail_parse.h"
 #include "hed.h"
 #include "buf/row.h"
 #include "lib/theme.h"
+#include "open/open.h"
 #include "prompt.h"
 #include "utils/term_cmd.h"
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#define MAIL_MAX      500
-#define MAIL_LIST_BUF "mail://list"
+#define MAIL_MAX        500
+#define MAIL_MBOX_MAX   256
+#define MAIL_ATTACH_MAX 32
+#define MAIL_LIST_BUF   "mail://list"
+#define MAIL_MBOX_BUF   "mail://mailboxes"
+
+typedef struct {
+    char msg_id[256];
+    int  part_id;
+    char filename[256];
+} MailAttach;
+
+static MailAttach attachments[MAIL_ATTACH_MAX];
+static int        attach_count = 0;
 
 /* ------------------------------------------------------------------ */
 /* State                                                               */
@@ -40,9 +58,55 @@ static int has_unread_tag(const char *line) {
 static MailEntry mail_entries[MAIL_MAX];
 static int       mail_entry_count = 0;
 
-static char base_query[512]    = "tag:inbox";
-static char filter_query[512]  = "";
+static char base_query[512]     = "*";
+static char filter_query[512]   = "";
+static char mailbox_query[512]  = "";
 static char mbsync_profile[128] = "-a";
+static char mail_dir[512]       = "";  /* lazily initialised to $HOME/.mail */
+
+typedef enum {
+    MBE_ALL,      /* "[All mail]" — clears both base and mailbox */
+    MBE_VIEW,     /* saved view — sets base_query */
+    MBE_MAILBOX,  /* account/folder — sets mailbox_query */
+    MBE_HEADER,   /* visual separator, not selectable */
+} MailboxKind;
+
+typedef struct {
+    char        display[256];
+    char        query[256];
+    MailboxKind kind;
+} MailboxEntry;
+
+static MailboxEntry mailbox_entries[MAIL_MBOX_MAX];
+static int          mailbox_entry_count = 0;
+
+#define MAIL_VIEWS_MAX 32
+typedef struct {
+    char name[64];
+    char query[256];
+} MailView;
+static MailView views[MAIL_VIEWS_MAX];
+static int      view_count = 0;
+
+void mail_add_view(const char *name, const char *query) {
+    if (!name || !*name) return;
+    /* Update or remove existing by name. */
+    for (int i = 0; i < view_count; i++) {
+        if (strcmp(views[i].name, name) == 0) {
+            if (!query || !*query) {
+                views[i] = views[--view_count]; /* unordered remove */
+            } else {
+                snprintf(views[i].query, sizeof(views[i].query), "%s", query);
+            }
+            return;
+        }
+    }
+    if (!query || !*query) return;
+    if (view_count >= MAIL_VIEWS_MAX) return;
+    MailView *v = &views[view_count++];
+    snprintf(v->name,  sizeof(v->name),  "%s", name);
+    snprintf(v->query, sizeof(v->query), "%s", query);
+}
 
 /* Forward-declared internal helper from buf/row.c */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
@@ -52,7 +116,7 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 /* ------------------------------------------------------------------ */
 
 void mail_set_query(const char *q) {
-    snprintf(base_query, sizeof(base_query), "%s", q ? q : "tag:inbox");
+    snprintf(base_query, sizeof(base_query), "%s", q && *q ? q : "*");
 }
 
 const char *mail_get_query(void) { return base_query; }
@@ -61,11 +125,193 @@ void mail_set_filter(const char *f) {
     snprintf(filter_query, sizeof(filter_query), "%s", f ? f : "");
 }
 
+/* Wrap `in` in single quotes for /bin/sh, escaping embedded quotes.
+ * Required for any notmuch query passed through popen because `*`,
+ * wildcards, and parentheses are otherwise shell-expanded. */
+static void shell_quote(const char *in, char *out, size_t cap) {
+    size_t n = 0;
+    if (cap < 3) { if (cap) out[0] = '\0'; return; }
+    out[n++] = '\'';
+    for (const char *p = in; *p && n + 5 < cap; p++) {
+        if (*p == '\'') {
+            if (n + 5 >= cap) break;
+            memcpy(out + n, "'\\''", 4);
+            n += 4;
+        } else {
+            out[n++] = *p;
+        }
+    }
+    out[n++] = '\'';
+    out[n]   = '\0';
+}
+
+/* notmuch's `*` is a match-all that can't be combined with AND, so we
+ * treat it (and an empty string) as "no constraint" and skip it. */
+static int q_is_wild(const char *q) {
+    return !q || !q[0] || (q[0] == '*' && q[1] == '\0');
+}
+
 static void build_full_query(char *out, size_t sz) {
-    if (filter_query[0])
-        snprintf(out, sz, "%s AND %s", base_query, filter_query);
+    out[0] = '\0';
+    int n = 0;
+    const char *parts[3] = { base_query, mailbox_query, filter_query };
+    for (int i = 0; i < 3; i++) {
+        if (q_is_wild(parts[i])) continue;
+        int w = snprintf(out + n, sz - n,
+                         n == 0 ? "(%s)" : " AND (%s)", parts[i]);
+        if (w < 0 || (size_t)w >= sz - n) break;
+        n += w;
+    }
+    if (n == 0) snprintf(out, sz, "*");
+}
+
+void mail_set_mailbox(const char *q) {
+    snprintf(mailbox_query, sizeof(mailbox_query), "%s", q ? q : "");
+}
+
+const char *mail_get_mailbox(void) { return mailbox_query; }
+
+/* ------------------------------------------------------------------ */
+/* Mail dir + mailbox discovery                                        */
+/* ------------------------------------------------------------------ */
+
+void mail_set_dir(const char *dir) {
+    snprintf(mail_dir, sizeof(mail_dir), "%s", dir ? dir : "");
+}
+
+static const char *resolve_mail_dir(void) {
+    if (mail_dir[0]) return mail_dir;
+    const char *home = getenv("HOME");
+    if (home && *home)
+        snprintf(mail_dir, sizeof(mail_dir), "%s/.mail", home);
     else
-        snprintf(out, sz, "%s", base_query);
+        snprintf(mail_dir, sizeof(mail_dir), ".mail");
+    return mail_dir;
+}
+
+const char *mail_get_dir(void) { return resolve_mail_dir(); }
+
+static int is_maildir(const char *path) {
+    char p[1024];
+    struct stat st;
+    snprintf(p, sizeof(p), "%s/cur", path);
+    if (stat(p, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+    snprintf(p, sizeof(p), "%s/new", path);
+    if (stat(p, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+    return 1;
+}
+
+/* Append an entry, bounds-checked. */
+static void mbox_add(const char *display, const char *query, MailboxKind k) {
+    if (mailbox_entry_count >= MAIL_MBOX_MAX) return;
+    MailboxEntry *e = &mailbox_entries[mailbox_entry_count++];
+    snprintf(e->display, sizeof(e->display), "%s", display);
+    snprintf(e->query,   sizeof(e->query),   "%s", query ? query : "");
+    e->kind = k;
+}
+
+static int cmp_str(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* Read sorted directory entries (excluding "." / ".." and hidden helpers
+ * like "cur" / "new" / "tmp"). Caller frees each entry and the array. */
+static int read_subdirs(const char *path, char ***out) {
+    DIR *d = opendir(path);
+    if (!d) { *out = NULL; return 0; }
+
+    char **names = NULL;
+    int    cap   = 0;
+    int    n     = 0;
+    struct dirent *de;
+    while ((de = readdir(d))) {
+        const char *name = de->d_name;
+        if (name[0] == '.') continue;
+        if (!strcmp(name, "cur") || !strcmp(name, "new") ||
+            !strcmp(name, "tmp")) continue;
+
+        char child[1024];
+        snprintf(child, sizeof(child), "%s/%s", path, name);
+        struct stat st;
+        if (stat(child, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+
+        if (n == cap) {
+            cap = cap ? cap * 2 : 16;
+            char **nn = realloc(names, (size_t)cap * sizeof(*nn));
+            if (!nn) break;
+            names = nn;
+        }
+        names[n++] = strdup(name);
+    }
+    closedir(d);
+    if (n > 1) qsort(names, (size_t)n, sizeof(*names), cmp_str);
+    *out = names;
+    return n;
+}
+
+static void free_names(char **names, int n) {
+    for (int i = 0; i < n; i++) free(names[i]);
+    free(names);
+}
+
+/* Scan the maildir root. Two layouts supported:
+ *   ~/.mail/cur,new                 — single maildir
+ *   ~/.mail/<account>/...           — collection; each account may be a
+ *                                     maildir itself or contain folders */
+static void mailboxes_scan(void) {
+    mailbox_entry_count = 0;
+    mbox_add("[All mail]", "", MBE_ALL);
+
+    if (view_count > 0) {
+        mbox_add("── Views ──", "", MBE_HEADER);
+        for (int i = 0; i < view_count; i++)
+            mbox_add(views[i].name, views[i].query, MBE_VIEW);
+    }
+
+    const char *root = resolve_mail_dir();
+
+    /* Single top-level maildir. */
+    if (is_maildir(root)) {
+        mbox_add("── Mailboxes ──", "", MBE_HEADER);
+        mbox_add("(root)", "path:**", MBE_MAILBOX);
+        return;
+    }
+
+    char **accounts = NULL;
+    int    nacc     = read_subdirs(root, &accounts);
+    if (nacc > 0) mbox_add("── Mailboxes ──", "", MBE_HEADER);
+
+    for (int i = 0; i < nacc; i++) {
+        const char *acct = accounts[i];
+        char acct_path[1024];
+        snprintf(acct_path, sizeof(acct_path), "%s/%s", root, acct);
+
+        /* Account-wide entry: path:<acct>/<asterisks>. */
+        char qall[256];
+        snprintf(qall, sizeof(qall), "path:%s/**", acct);
+        mbox_add(acct, qall, MBE_MAILBOX);
+
+        if (is_maildir(acct_path)) {
+            char qf[256], disp[256];
+            snprintf(disp, sizeof(disp), "  (root)");
+            snprintf(qf, sizeof(qf), "folder:%s", acct);
+            mbox_add(disp, qf, MBE_MAILBOX);
+        }
+
+        char **folders = NULL;
+        int    nf      = read_subdirs(acct_path, &folders);
+        for (int j = 0; j < nf; j++) {
+            char child[2048];
+            snprintf(child, sizeof(child), "%s/%s", acct_path, folders[j]);
+            if (!is_maildir(child)) continue;
+            char qf[256], disp[256];
+            snprintf(disp, sizeof(disp), "  %s", folders[j]);
+            snprintf(qf, sizeof(qf), "folder:%s/%s", acct, folders[j]);
+            mbox_add(disp, qf, MBE_MAILBOX);
+        }
+        free_names(folders, nf);
+    }
+    free_names(accounts, nacc);
 }
 
 /* ------------------------------------------------------------------ */
@@ -242,9 +488,18 @@ static int parse_msg_spans(const char *raw, int len,
     int n = 0;
     if (len <= 0) return 0;
 
-    /* notmuch format markers (\fpart{, \fheader}, …) */
-    if (raw[0] == '\f') {
+    /* Section separator emitted by mail_parse between messages. */
+    if ((unsigned char)raw[0] >= 0x80) {
         if (n < max) sp[n++] = (MailSpan){ 0, len, MC_MSG_MARKER };
+        return n;
+    }
+
+    /* "Attachments:" pseudo-header gets the same colouring as real headers. */
+    if (len > 12 && strncmp(raw, "Attachments:", 12) == 0) {
+        if (n + 1 < max) {
+            sp[n++] = (MailSpan){ 0,  12,  MC_MSG_HDR_KEY };
+            sp[n++] = (MailSpan){ 12, len, MC_MSG_HDR_VAL };
+        }
         return n;
     }
 
@@ -270,7 +525,7 @@ static int parse_msg_spans(const char *raw, int len,
     return 0; /* body text: no highlight (fall back to plain) */
 }
 
-static size_t mail_msg_hl(Buffer *buf, int row,
+size_t mail_msg_hl(Buffer *buf, int row,
                           char *dst, size_t dst_cap,
                           int col_off, int max_cols) {
     if (row < 0 || row >= buf->num_rows) return 0;
@@ -292,9 +547,11 @@ static void mail_run_query(void) {
     char query[1100];
     build_full_query(query, sizeof(query));
 
-    char cmd[1300];
+    char qq[2200];
+    shell_quote(query, qq, sizeof(qq));
+    char cmd[2400];
     snprintf(cmd, sizeof(cmd),
-             "notmuch search --output=summary -- %s 2>/dev/null", query);
+             "notmuch search --sort=newest-first --limit=500 --output=summary -- %s 2>/dev/null", qq);
 
     char **lines = NULL;
     int    count = 0;
@@ -379,16 +636,18 @@ void mail_open_list(void) {
         if (mail_entries[i].is_unread) unread++;
     int read = mail_entry_count - unread;
 
-    char q[1100];
-    build_full_query(q, sizeof(q));
-    if (filter_query[0])
+    if (mail_entry_count == 0 && mailbox_query[0] && !q_is_wild(base_query)) {
         ed_set_status_message(
-            "mail: %d threads (%d unread, %d read)  [%s] (filtered: %s)",
-            mail_entry_count, unread, read, base_query, filter_query);
-    else
+            "mail: 0 threads in %s — base query [%s] may be filtering them out "
+            "(try :mail-query *)",
+            mailbox_query, base_query);
+    } else {
         ed_set_status_message(
-            "mail: %d threads (%d unread, %d read)  [%s]",
-            mail_entry_count, unread, read, base_query);
+            "mail: %d threads (%d unread, %d read)  [%s]%s%s%s%s",
+            mail_entry_count, unread, read, base_query,
+            mailbox_query[0] ? "  mbox=" : "", mailbox_query[0] ? mailbox_query : "",
+            filter_query[0]  ? "  filter=" : "", filter_query[0]  ? filter_query  : "");
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -442,12 +701,27 @@ void mail_handle_enter(void) {
     int    count = 0;
     term_cmd_capture(cmd, &lines, &count);
 
-    clear_buffer(tbuf);
-    for (int i = 0; i < count; i++) {
-        const char *line = lines[i] ? lines[i] : "";
-        buf_row_insert_in(tbuf, tbuf->num_rows, line, strlen(line));
-    }
+    MailRender mr;
+    mail_render_init(&mr);
+    mail_render_notmuch_text(&mr, lines, count);
     term_cmd_free(lines, count);
+
+    clear_buffer(tbuf);
+    for (int i = 0; i < mr.line_count; i++) {
+        const char *l = mr.lines[i] ? mr.lines[i] : "";
+        buf_row_insert_in(tbuf, tbuf->num_rows, l, strlen(l));
+    }
+
+    /* Cache attachments for :mail-attach without rescanning the buffer. */
+    attach_count = 0;
+    for (int i = 0; i < mr.attach_count && attach_count < MAIL_ATTACH_MAX; i++) {
+        MailAttach *a = &attachments[attach_count++];
+        a->part_id = mr.attaches[i].part_id;
+        snprintf(a->msg_id,   sizeof(a->msg_id),   "%s", mr.attaches[i].msg_id);
+        snprintf(a->filename, sizeof(a->filename), "%s", mr.attaches[i].filename);
+    }
+    mail_render_free(&mr);
+
     tbuf->dirty = 0;
 
     Window *cur_win = window_cur();
@@ -592,9 +866,11 @@ void mail_apply_tags(const char *args) {
         return;
     }
 
-    char cmd[5120];
+    char qq[8200];
+    shell_quote(query, qq, sizeof(qq));
+    char cmd[8800];
     snprintf(cmd, sizeof(cmd),
-             "notmuch tag %s -- %s 2>/dev/null", tag_args, query);
+             "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
@@ -619,9 +895,11 @@ void mail_apply_tags_query(const char *args) {
     char full_query[1100];
     build_full_query(full_query, sizeof(full_query));
 
-    char cmd[2048];
+    char qq[2300];
+    shell_quote(full_query, qq, sizeof(qq));
+    char cmd[3000];
     snprintf(cmd, sizeof(cmd),
-             "notmuch tag %s -- %s 2>/dev/null", tag_args, full_query);
+             "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
@@ -657,4 +935,207 @@ static const PromptVTable filter_vt = {
 
 void mail_filter_prompt(void) {
     prompt_open(&filter_vt, NULL);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mailbox sidebar                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Highlight: indented rows (folders) dim, top-level rows bold. */
+static size_t mailbox_hl(Buffer *buf, int row,
+                         char *dst, size_t dst_cap,
+                         int col_off, int max_cols) {
+    if (row < 0 || row >= buf->num_rows) return 0;
+    const char *raw = buf->rows[row].render.data;
+    int         len = (int)buf->rows[row].render.len;
+    if (!raw || len <= 0) return 0;
+
+    int indented = (len >= 2 && raw[0] == ' ' && raw[1] == ' ');
+    MailboxKind kind = (row < mailbox_entry_count)
+                           ? mailbox_entries[row].kind : MBE_MAILBOX;
+
+    int active = 0;
+    if (row < mailbox_entry_count) {
+        const MailboxEntry *e = &mailbox_entries[row];
+        if      (e->kind == MBE_MAILBOX) active = strcmp(e->query, mailbox_query) == 0;
+        else if (e->kind == MBE_VIEW)    active = strcmp(e->query, base_query)    == 0;
+        else if (e->kind == MBE_ALL)     active = !mailbox_query[0] && q_is_wild(base_query);
+    }
+
+    MailSpan spans[2];
+    int n = 0;
+    const char *sgr;
+    if (kind == MBE_HEADER) sgr = MC_META;
+    else if (active)        sgr = MC_UNREAD_SUBJECT;     /* bold fg */
+    else if (kind == MBE_ALL)  sgr = MC_READ_SUBJECT;    /* normal  */
+    else if (kind == MBE_VIEW) sgr = MC_UNREAD_FLAG;     /* bold accent */
+    else if (indented)         sgr = MC_META;            /* dim     */
+    else                       sgr = MC_READ_SENDER;     /* blue    */
+    spans[n++] = (MailSpan){ 0, len, sgr };
+
+    return emit_spans(raw, len, spans, n, dst, dst_cap, col_off, max_cols);
+}
+
+void mail_open_mailboxes(void) {
+    mailboxes_scan();
+
+    int idx = buf_find_by_filename(MAIL_MBOX_BUF);
+    if (idx < 0) {
+        if (buf_new(MAIL_MBOX_BUF, &idx) != ED_OK) {
+            ed_set_status_message("mail: failed to open mailbox buffer");
+            return;
+        }
+    } else {
+        buf_switch(idx);
+    }
+
+    Buffer *buf = &E.buffers[idx];
+    free(buf->title);    buf->title    = strdup("Mailboxes");
+    free(buf->filetype); buf->filetype = strdup("mail-mailboxes");
+    buf->readonly   = 1;
+    buf->hl_line_fn = mailbox_hl;
+
+    clear_buffer(buf);
+    if (mailbox_entry_count == 0) {
+        const char *msg = "(no mailboxes found — check mail_set_dir)";
+        buf_row_insert_in(buf, 0, msg, strlen(msg));
+    } else {
+        int active_row = 0;
+        for (int i = 0; i < mailbox_entry_count; i++) {
+            const MailboxEntry *e = &mailbox_entries[i];
+            buf_row_insert_in(buf, buf->num_rows, e->display, strlen(e->display));
+            if (e->kind == MBE_MAILBOX && strcmp(e->query, mailbox_query) == 0)
+                active_row = i;
+            else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
+                active_row = i;
+        }
+        Window *win = window_cur();
+        if (win) {
+            win_attach_buf(win, buf);
+            win->cursor.x = 0;
+            win->cursor.y = active_row;
+        }
+    }
+    buf->dirty = 0;
+    E.current_buffer = idx;
+
+    ed_set_status_message("mailboxes: %d entries  (root: %s)",
+                          mailbox_entry_count, resolve_mail_dir());
+}
+
+/* ------------------------------------------------------------------ */
+/* Attachments                                                         */
+/* ------------------------------------------------------------------ */
+
+/* Sanitize a filename for safe use in /tmp paths — drop everything
+ * that isn't alnum, dot, dash, or underscore. */
+static void sanitize_name(const char *in, char *out, size_t cap) {
+    size_t n = 0;
+    for (const char *p = in; *p && n + 1 < cap; p++) {
+        unsigned char c = (unsigned char)*p;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '.' || c == '-' || c == '_')
+            out[n++] = (char)c;
+        else
+            out[n++] = '_';
+    }
+    if (n == 0) out[n++] = 'x';
+    out[n] = '\0';
+}
+
+static void extract_and_open(const MailAttach *a) {
+    char safe[256];
+    sanitize_name(a->filename[0] ? a->filename : "attachment", safe, sizeof(safe));
+    char path[512];
+    snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%s", a->part_id, safe);
+
+    char idq[300];
+    snprintf(idq, sizeof(idq), "id:%s", a->msg_id);
+    char qq[400];
+    shell_quote(idq, qq, sizeof(qq));
+
+    char pq[1024];
+    shell_quote(path, pq, sizeof(pq));
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "notmuch show --part=%d --format=raw -- %s > %s 2>/dev/null",
+             a->part_id, qq, pq);
+    int rc = term_cmd_system(cmd);
+    if (rc != 0) {
+        ed_set_status_message("mail-attach: extract failed (status %d)", rc);
+        return;
+    }
+    open_path(path);
+}
+
+void mail_open_attachment(int part_id) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype ||
+        strcmp(buf->filetype, "mail-message") != 0) {
+        ed_set_status_message("mail-attach: open a message first");
+        return;
+    }
+
+    if (attach_count == 0) {
+        ed_set_status_message("mail-attach: no attachments in this message");
+        return;
+    }
+
+    if (part_id < 0) {
+        if (attach_count == 1) {
+            extract_and_open(&attachments[0]);
+            return;
+        }
+        char list[512];
+        size_t n = 0;
+        for (int i = 0; i < attach_count && n + 32 < sizeof(list); i++) {
+            n += (size_t)snprintf(list + n, sizeof(list) - n,
+                                  "%s[%d] %s",
+                                  i ? "  " : "",
+                                  attachments[i].part_id,
+                                  attachments[i].filename);
+        }
+        ed_set_status_message(
+            "mail-attach: %d attachments — :mail-attach <id> to open. %s",
+            attach_count, list);
+        return;
+    }
+
+    for (int i = 0; i < attach_count; i++) {
+        if (attachments[i].part_id == part_id) {
+            extract_and_open(&attachments[i]);
+            return;
+        }
+    }
+    ed_set_status_message("mail-attach: no attachment with part id %d", part_id);
+}
+
+void mail_handle_mailbox_enter(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype ||
+        strcmp(buf->filetype, "mail-mailboxes") != 0) return;
+
+    Window *win = window_cur();
+    if (!win) return;
+    int row = win->cursor.y;
+    if (row < 0 || row >= mailbox_entry_count) return;
+
+    MailboxEntry *e = &mailbox_entries[row];
+    switch (e->kind) {
+    case MBE_HEADER:
+        return;
+    case MBE_ALL:
+        mail_set_mailbox("");
+        mail_set_query("*");
+        break;
+    case MBE_VIEW:
+        mail_set_query(e->query);
+        break;
+    case MBE_MAILBOX:
+        mail_set_mailbox(e->query);
+        break;
+    }
+    mail_open_list();
 }
