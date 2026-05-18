@@ -671,6 +671,13 @@ void mail_handle_enter(void) {
     if (buf->filename)
         jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
 
+    /* Persist the mail-list cursor onto the buffer so closing the thread
+     * buffer (which restores from buf->cursor) returns us to this row. */
+    if (buf->cursor) {
+        buf->cursor->x = win->cursor.x;
+        buf->cursor->y = win->cursor.y;
+    }
+
     /* Reuse an already-open thread buffer if present. */
     char bufname[256];
     snprintf(bufname, sizeof(bufname), "mail://%s", tid);
@@ -695,7 +702,7 @@ void mail_handle_enter(void) {
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
-             "notmuch show --format=text -- %s 2>/dev/null", tid);
+             "notmuch show --format=text --include-html -- %s 2>/dev/null", tid);
 
     char **lines = NULL;
     int    count = 0;
