@@ -217,6 +217,7 @@ static void register_commands(void) {
     cmd("wq", cmd_write_quit, "write+quit");
     cmd("bn", cmd_buffer_next, "next buf");
     cmd("bp", cmd_buffer_prev, "prev buf");
+    cmd("b#", cmd_buffer_alt, "alt buf");
     cmd("ls", cmd_buffer_list, "list bufs");
     cmd("refresh", cmd_buf_refresh, "refresh contents");
     cmd("b", cmd_buffer_switch, "switch buf");

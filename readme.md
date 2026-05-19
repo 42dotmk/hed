@@ -1,4 +1,4 @@
-j hed
+# hed
 
 A small sized(<1MB), hackable terminal editor written in C.
 

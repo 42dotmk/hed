@@ -4,6 +4,7 @@
 /* Buffer navigation and management */
 void cmd_buffer_next(const char *args);
 void cmd_buffer_prev(const char *args);
+void cmd_buffer_alt(const char *args);
 void cmd_buffer_list(const char *args);
 void cmd_buffer_switch(const char *args);
 void cmd_buffer_delete(const char *args);

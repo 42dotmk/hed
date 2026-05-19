@@ -67,8 +67,15 @@ static void cmd_scratch(const char *args) {
     E.buffers[buf_idx].dirty = 0;
 }
 
+/* Fallback hook for the editor: when no buffers remain, return the
+ * scratch buffer instead of letting core create a nameless empty one. */
+static int scratch_fallback_buf(void) {
+    return scratch_find_or_create_buf();
+}
+
 static int scratch_init(void) {
     cmd("scratch", cmd_scratch, "open/focus the scratch buffer in a vsplit");
+    E.fallback_buf_fn = scratch_fallback_buf;
     return 0;
 }
 

@@ -76,12 +76,23 @@ void config_init(void) {
     plugin_load(&plugin_mail,             1);
     plugin_load(&plugin_open,             1);
     theme_activate("tokyo-night");
-    mail_set_query("tag:inbox");
+
     mail_set_mbsync_profile("-a");
+    mail_add_view("Inbox", "tag:inbox");
+    mail_add_view("Unread", "tag:unread");
+    mail_add_view("Today", "date:today..");
+    mail_add_view("Week", "date:1w..");
+    mail_add_view("Attachments", "tag:attachment");
+    mail_add_view("Contact", "to:contact@codechem.com");
+    mail_add_view("Core", "to:core@codechem.com");
+    
 
     cmapn("mm",    "mail",                  "mail");
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
+    cmapn(" bo",   "b#",                   "alt buffer");
+    cmapn(" bn",   "bn",                   "next buffer");
+    cmapn(" bp",   "bp",                   "prev buffer");
     cmapn(" bd",   "bd",                   "buffer delete");
     cmapn(" br",   "refresh",              "buffer refresh");
     cmapn(" ff",   "fzf",                  "find files");

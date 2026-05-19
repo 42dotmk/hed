@@ -35,6 +35,23 @@ void cmd_buffer_prev(const char *args) {
     buf_prev();
 }
 
+void cmd_buffer_alt(const char *args) {
+    (void)args;
+    Buffer *cur = buf_cur();
+    const char *cur_fn = cur ? cur->filename : NULL;
+    for (ptrdiff_t i = arrlen(E.jump_list.entries) - 1; i >= 0; i--) {
+        const char *fp = E.jump_list.entries[i].filepath;
+        if (!fp) continue;
+        if (cur_fn && strcmp(fp, cur_fn) == 0) continue;
+        int idx = buf_find_by_filename(fp);
+        if (idx >= 0 && idx != E.current_buffer) {
+            buf_switch(idx);
+            return;
+        }
+    }
+    ed_set_status_message("No alternate buffer");
+}
+
 void cmd_buffer_list(const char *args) {
     (void)args;
 

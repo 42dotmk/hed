@@ -654,29 +654,46 @@ void mail_open_list(void) {
 /* Open thread on <CR>                                                 */
 /* ------------------------------------------------------------------ */
 
-void mail_handle_enter(void) {
-    Buffer *buf = buf_cur();
-    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0) return;
+/* Drop the "unread" tag (via notmuch) and update the in-memory state +
+ * the "U " prefix on the mail-list row. No-op if the thread isn't
+ * unread. */
+static void mark_thread_read(int row) {
+    if (row < 0 || row >= mail_entry_count) return;
+    if (!mail_entries[row].is_unread) return;
 
-    Window *win = window_cur();
-    if (!win) return;
+    const char *tid = mail_entries[row].thread_id;
+    if (!tid[0]) return;
 
-    int row = win->cursor.y;
+    char tidq[256];
+    shell_quote(tid, tidq, sizeof(tidq));
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+             "notmuch tag -unread -- %s 2>/dev/null", tidq);
+    if (term_cmd_system(cmd) != 0) return;
+
+    mail_entries[row].is_unread = 0;
+
+    int lidx = buf_find_by_filename(MAIL_LIST_BUF);
+    if (lidx >= 0) {
+        Buffer *lb = &E.buffers[lidx];
+        if (row < lb->num_rows && lb->rows[row].chars.len >= 1 &&
+            lb->rows[row].chars.data[0] == 'U') {
+            lb->rows[row].chars.data[0] = ' ';
+            buf_row_update(&lb->rows[row]);
+        }
+    }
+}
+
+/* Open (or focus) the thread for mail_entries[row], marking it as read.
+ * The caller is responsible for jump-list bookkeeping and for syncing
+ * the mail-list buffer's cursor if needed. */
+static void open_thread_row(int row) {
     if (row < 0 || row >= mail_entry_count) return;
 
     const char *tid = mail_entries[row].thread_id;
     if (!tid[0]) return;
 
-    /* Record current position so <C-o> returns to the mail list. */
-    if (buf->filename)
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
-
-    /* Persist the mail-list cursor onto the buffer so closing the thread
-     * buffer (which restores from buf->cursor) returns us to this row. */
-    if (buf->cursor) {
-        buf->cursor->x = win->cursor.x;
-        buf->cursor->y = win->cursor.y;
-    }
+    mark_thread_read(row);
 
     /* Reuse an already-open thread buffer if present. */
     char bufname[256];
@@ -685,6 +702,7 @@ void mail_handle_enter(void) {
     int existing = buf_find_by_filename(bufname);
     if (existing >= 0) {
         buf_switch(existing);
+        ed_set_status_message("%s", mail_entries[row].display);
         return;
     }
 
@@ -740,6 +758,84 @@ void mail_handle_enter(void) {
     E.current_buffer = idx;
 
     ed_set_status_message("%s", mail_entries[row].display);
+}
+
+void mail_handle_enter(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0) return;
+
+    Window *win = window_cur();
+    if (!win) return;
+
+    int row = win->cursor.y;
+    if (row < 0 || row >= mail_entry_count) return;
+
+    /* Record current position so <C-o> returns to the mail list. */
+    if (buf->filename)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
+
+    /* Persist the mail-list cursor onto the buffer so closing the thread
+     * buffer (which restores from buf->cursor) returns us to this row. */
+    if (buf->cursor) {
+        buf->cursor->x = win->cursor.x;
+        buf->cursor->y = win->cursor.y;
+    }
+
+    open_thread_row(row);
+}
+
+/* Find the row in mail_entries for the message currently displayed in
+ * the focused window (filetype "mail-message", filename "mail://<tid>").
+ * Returns -1 if not viewing a mail message or the tid isn't in the
+ * current listing. */
+static int find_current_message_row(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filename || !buf->filetype) return -1;
+    if (strcmp(buf->filetype, "mail-message") != 0) return -1;
+    if (strncmp(buf->filename, "mail://", 7) != 0) return -1;
+    const char *tid = buf->filename + 7;
+    for (int i = 0; i < mail_entry_count; i++) {
+        if (strcmp(mail_entries[i].thread_id, tid) == 0) return i;
+    }
+    return -1;
+}
+
+static void goto_message_at(int row) {
+    if (row < 0 || row >= mail_entry_count) return;
+    /* Keep the mail-list cursor in sync so closing the message buffer
+     * later returns the user to the right row. */
+    int lidx = buf_find_by_filename(MAIL_LIST_BUF);
+    if (lidx >= 0 && E.buffers[lidx].cursor) {
+        E.buffers[lidx].cursor->y = row;
+        E.buffers[lidx].cursor->x = 0;
+    }
+    open_thread_row(row);
+}
+
+void mail_next_message(void) {
+    int r = find_current_message_row();
+    if (r < 0) {
+        ed_set_status_message("mail: not viewing a mail message");
+        return;
+    }
+    if (r + 1 >= mail_entry_count) {
+        ed_set_status_message("mail: no next message");
+        return;
+    }
+    goto_message_at(r + 1);
+}
+
+void mail_prev_message(void) {
+    int r = find_current_message_row();
+    if (r < 0) {
+        ed_set_status_message("mail: not viewing a mail message");
+        return;
+    }
+    if (r <= 0) {
+        ed_set_status_message("mail: no previous message");
+        return;
+    }
+    goto_message_at(r - 1);
 }
 
 /* ------------------------------------------------------------------ */

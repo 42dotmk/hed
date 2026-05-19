@@ -128,6 +128,12 @@ typedef struct {
         char register_name;   /* Register being recorded to (a-z) */
         char last_played;     /* Last register played with @ (for @@) */
     } macro_recording;
+
+    /* Called when the editor needs a fallback buffer (startup with no
+     * files, last buffer closed). Returns an index into E.buffers, or
+     * -1 to let the caller create a plain empty buffer. The scratch
+     * plugin installs this so the scratch buffer is the fallback. */
+    int (*fallback_buf_fn)(void);
 } Ed;
 
 /* Global editor state */

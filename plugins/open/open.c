@@ -95,7 +95,7 @@ static void append_shell_quoted(SizedStr *dst, const char *s) {
     sstr_cat(dst, "'");
 }
 
-static void open_with_xdg(const char *target) {
+void open_path(const char *target) {
     if (!target || !*target) {
         ed_set_status_message("open: nothing to open");
         return;
@@ -117,7 +117,7 @@ static void open_with_xdg(const char *target) {
 static void cmd_open(const char *args) {
     if (args && *args) {
         while (*args == ' ') args++;
-        open_with_xdg(args);
+        open_path(args);
         return;
     }
     SizedStr target = sstr_new();
@@ -126,7 +126,7 @@ static void cmd_open(const char *args) {
         sstr_free(&target);
         return;
     }
-    open_with_xdg(target.data);
+    open_path(target.data);
     sstr_free(&target);
 }
 
@@ -137,7 +137,7 @@ static void cmd_open_file(const char *args) {
         ed_set_status_message("open: buffer has no file");
         return;
     }
-    open_with_xdg(buf->filename);
+    open_path(buf->filename);
 }
 
 static void cmd_open_dir(const char *args) {
@@ -146,11 +146,11 @@ static void cmd_open_dir(const char *args) {
     const char *fn = (buf->filename && *buf->filename) ? buf->filename : ".";
     const char *slash = strrchr(fn, '/');
     if (!slash) {
-        open_with_xdg(".");
+        open_path(".");
         return;
     }
     SizedStr dir = sstr_from(fn, (size_t)(slash - fn));
-    open_with_xdg(dir.data ? dir.data : ".");
+    open_path(dir.data ? dir.data : ".");
     sstr_free(&dir);
 }
 

@@ -329,12 +329,10 @@ EdError buf_close(int index) {
     arrdel(E.buffers, index);
 
     if (arrlen(E.buffers) == 0) {
-        /* Create an empty buffer */
-        int idx;
-        EdError err = buf_new(NULL, &idx);
-        if (err == ED_OK) {
-            E.current_buffer = 0;
-        }
+        int idx = -1;
+        if (E.fallback_buf_fn) idx = E.fallback_buf_fn();
+        if (idx < 0 && buf_new(NULL, &idx) != ED_OK) idx = -1;
+        if (idx >= 0) E.current_buffer = idx;
         /* If buffer creation fails, editor will be in an invalid state, but
          * better than crashing */
     } else {

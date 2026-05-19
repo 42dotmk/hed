@@ -316,9 +316,10 @@ void ed_init(int create_default_buffer) {
     /* Ensure at least one editable buffer exists at startup if requested */
     if (create_default_buffer) {
         int empty_idx = -1;
-        if (buf_new(NULL, &empty_idx) == ED_OK) {
-            E.current_buffer = empty_idx;
-        }
+        if (E.fallback_buf_fn) empty_idx = E.fallback_buf_fn();
+        if (empty_idx < 0 && buf_new(NULL, &empty_idx) != ED_OK)
+            empty_idx = -1;
+        if (empty_idx >= 0) E.current_buffer = empty_idx;
     }
 
     windows_init();

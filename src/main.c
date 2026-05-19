@@ -95,7 +95,10 @@ static void open_initial_buffers(char **files, int file_count) {
 
     if (arrlen(E.buffers) == 0) {
         int empty_idx = -1;
-        if (buf_new(NULL, &empty_idx) == ED_OK) {
+        if (E.fallback_buf_fn) empty_idx = E.fallback_buf_fn();
+        if (empty_idx < 0 && buf_new(NULL, &empty_idx) != ED_OK)
+            empty_idx = -1;
+        if (empty_idx >= 0) {
             E.current_buffer = empty_idx;
             Window *win = window_cur();
             if (win) win->buffer_index = empty_idx;
@@ -178,6 +181,7 @@ static void event_loop(void) {
             die("select");
     }
 }
+
 
 /* ------------------------------------------------------------------------- */
 /* Pager mode: handle being invoked with stdin attached to a pipe            */
