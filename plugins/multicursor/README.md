@@ -1,6 +1,6 @@
 ← [hed](../../readme.md)
 
-# multicursor
+# Multicursor
 
 Synchronized edits at multiple cursors. Add an extra cursor; every
 keystroke after that — motion, insert, operator, leader chord, mode
