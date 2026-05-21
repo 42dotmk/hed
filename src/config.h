@@ -134,7 +134,7 @@ void config_init(void) {
     cmapn(" rr",   "reload",               "reload editor");
     cmapn(" rp",   "viewmd",               "markdown preview");
     cmapn(" tq",   "ctoggle",              "toggle quickfix");
-    cmapn("<C-n>", "cnext",                "quickfix next");
+    /* <C-n> belongs to multicursor (cursor at next match); use gn/gp for quickfix. */
     cmapn("<C-p>", "cprev",                "quickfix prev");
     cmapn("gn",    "cnext",                "quickfix next");
     cmapn("gp",    "cprev",                "quickfix prev");
