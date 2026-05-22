@@ -31,6 +31,7 @@
 #include "shell/shell.h"
 #include "smart_indent/smart_indent.h"
 #include "tmux/tmux_plugin.h"
+#include "translate/translate.h"
 #include "hed_themes/hed_themes.h"
 #include "markdown/markdown.h"
 #include "treesitter/treesitter.h"
@@ -56,6 +57,7 @@ void config_init(void) {
     plugin_load(&plugin_fmt,              1);
     plugin_load(&plugin_shell,            1);
     plugin_load(&plugin_tmux,             1);
+    plugin_load(&plugin_translate,        1);
     plugin_load(&plugin_claude,           1);
     plugin_load(&plugin_treesitter,       1);
     plugin_load(&plugin_hed_themes,       1);
@@ -75,9 +77,11 @@ void config_init(void) {
     plugin_load(&plugin_pickers,          1);
     plugin_load(&plugin_mail,             1);
     plugin_load(&plugin_open,             1);
-    theme_activate("tokyo-night");
 
+    theme_activate("tokyo-night");
+    translate_set_default_target("en");
     mail_set_mbsync_profile("-a");
+
     mail_add_view("Inbox", "tag:inbox");
     mail_add_view("Unread", "tag:unread");
     mail_add_view("Today", "date:today..");
@@ -85,7 +89,6 @@ void config_init(void) {
     mail_add_view("Attachments", "tag:attachment");
     mail_add_view("Contact", "to:contact@codechem.com");
     mail_add_view("Core", "to:core@codechem.com");
-    
 
     cmapn("mm",    "mail",                  "mail");
     cmapn("  ",    "fzf",                  "find files");
@@ -135,7 +138,6 @@ void config_init(void) {
     cmapn(" rr",   "reload",               "reload editor");
     cmapn(" rp",   "viewmd",               "markdown preview");
     cmapn(" tq",   "ctoggle",              "toggle quickfix");
-    /* <C-n> belongs to multicursor (cursor at next match); use gn/gp for quickfix. */
     cmapn("<C-p>", "cprev",                "quickfix prev");
     cmapn("gn",    "cnext",                "quickfix next");
     cmapn("gp",    "cprev",                "quickfix prev");
@@ -148,5 +150,7 @@ void config_init(void) {
     cmapn(" z",    "scratch",              "scratch buffer");
     cmapn("<C-s>", "shell", "open shell prompt");
     cmapn(" jh","fzf /home/halicea/probe/hed", "hed dir");
+    cmapn(" lt", "translate",          "translate buffer/selection");
+    cmapv(" lt", "translate",          "translate selection");
 }
 #endif
