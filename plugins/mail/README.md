@@ -39,7 +39,8 @@ compatible binary that reads RFC 822 on stdin).
 | `:mail-send` | Send the current compose/reply/forward buffer |
 | `:mail-reply` / `:mail-reply-all` | Reply to the message being viewed |
 | `:mail-forward` | Forward the message being viewed |
-| `:mail-attach [id]` | Open attachment (auto if single, prints list if many) |
+| `:mail-attach [id]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all) |
+| `:mail-attach save [id] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 
 Tag tokens without a leading `+`/`-` get `+` prefixed, so
 `:mail-tag work important` is equivalent to `:mail-tag +work +important`.
@@ -66,7 +67,8 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 |---|---|
 | `r` / `R` | Reply / Reply-all |
 | `f` | Forward |
-| `a` | Open attachment (auto if one, otherwise lists ids) |
+| `a` | Open attachment(s) — auto if one, fzf multi-pick if many |
+| `A` | Save attachment(s) to `~/Downloads` (fzf multi-pick if many) |
 | `q` | Close the message |
 
 ### In the mailbox sidebar (`mail-mailboxes` filetype)
@@ -157,18 +159,40 @@ inherit a controlling terminal for password prompts.
 quoted draft; the configured `mail_set_from` (if any) overrides the
 `From:` line produced by notmuch.
 
-`:mail-forward` pulls the raw RFC 822 message via
-`notmuch show --format=raw` and inlines it after a separator, with
-`Fwd:` prepended to the subject (unless it already is).
+`:mail-forward` builds a clean compose: `From: <your address>`,
+`To: ` (left empty for you to fill), `Cc: ` empty, and
+`Subject: Fwd: <original>` (unless the source subject already starts
+with `Fwd:`/`Fw:`). Below the blank line goes a
+`---------- Forwarded message ----------` block with the original
+`From` / `Date` / `Subject` / `To` / `Cc` headers and the body lines
+copied straight out of the message buffer the user is reading. Any
+attachments on the source message are extracted to a per-forward
+`/tmp/hed-mail-fwd-…/` directory and listed as `Attach:` pseudo-
+headers in the compose buffer; `:mail-send` consumes those at send
+time and emits a real `multipart/mixed` MIME message (text body part +
+base64-encoded attachment parts, with mime type sniffed via the
+`file` command, falling back to `application/octet-stream`).
+
+You can delete `Attach:` lines from the compose to drop individual
+attachments, or add new `Attach: /path/to/file` lines anywhere in the
+header block to attach extra files. Without any `Attach:` headers,
+`:mail-send` produces a plain-text RFC 822 message exactly as before.
 
 ## Attachments
 
 Attachments are detected at parse time from the notmuch text stream —
 no second pass over the buffer. `:mail-attach` (or `a` in a message
-buffer) extracts the part with `notmuch show --part=<id> --format=raw`
-to `/tmp/hed-mail-<id>-<safename>` and opens it via the `open` plugin.
-With multiple attachments, `:mail-attach` lists them and waits for an
-explicit id.
+buffer) extracts each part with
+`notmuch show --part=<id> --format=raw` to
+`/tmp/hed-mail-<id>-<safename>` and opens it via the `open` plugin.
+With multiple attachments, an fzf picker shows `[id] name` for each
+part — `Tab` toggles a row, `<C-a>` selects all; every picked part is
+opened. You can still bypass the picker by passing an explicit id
+(`:mail-attach 3`).
+
+`:mail-attach save [id] [dir]` (or `A` in a message buffer) goes
+through the same picker but writes the picked parts into `dir`
+(default `~/Downloads`, created if needed) instead of opening them.
 
 ## Source layout
 

@@ -94,9 +94,21 @@ void mail_reply(int reply_all);
  * being viewed (raw original inlined after a separator). */
 void mail_forward(void);
 
-/* Open attachment of the current mail-message buffer.
- * If part_id < 0: with 1 attachment, opens it; with N>1, prints list
- * to the status line. If part_id >= 0: extracts that part and opens it. */
-void mail_open_attachment(int part_id);
+/* Act on attachments of the current mail-message buffer.
+ *   dest_dir == NULL → extract to /tmp and open with `open_path`.
+ *   dest_dir != NULL → extract into dest_dir (created if missing).
+ *                      `~` is expanded; trailing slash is fine.
+ * Selection:
+ *   part_id >= 0 → act on that single part-id.
+ *   part_id <  0 → 1 attachment auto-acts; many → fzf multi-select
+ *                  (Tab to pick multiple, <C-a> to select all). */
+void mail_attach_action(int part_id, const char *dest_dir);
+
+/* Extract every cached attachment of the currently-viewed mail-message
+ * into a fresh /tmp dir and append each resulting path to *out_paths.
+ * Allocates a new char* array (caller frees with free() per entry +
+ * free(*out_paths)). Returns the number of files written; 0 if the
+ * current buffer is not a mail-message or has no attachments. */
+int mail_extract_attachments_to_tmp(char ***out_paths);
 
 #endif

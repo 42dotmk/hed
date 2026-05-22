@@ -283,6 +283,23 @@ int keybind_get_at(int index, const char **sequence, const char **desc, int *mod
     return 1;
 }
 
+/* Like keybind_get_at, but also exposes the binding's filetype scope
+ * (NULL for global bindings) and the command line for cmap*
+ * bindings (NULL otherwise). */
+int keybind_get_at_ext(int index, const char **sequence, const char **desc,
+                      int *mode, const char **filetype, const char **cmdline) {
+    if (index < 0 || (ptrdiff_t)index >= arrlen(keybinds))
+        return 0;
+    if (sequence) *sequence = keybinds[index].sequence;
+    if (desc)     *desc     = keybinds[index].desc;
+    if (mode)     *mode     = keybinds[index].mode;
+    if (filetype) *filetype = keybinds[index].filetype;
+    if (cmdline)  *cmdline  = keybinds[index].command_callback
+                              ? keybinds[index].cmdline
+                              : NULL;
+    return 1;
+}
+
 /* Get and consume the pending numeric count (for commands that read additional keys) */
 int keybind_get_and_clear_pending_count(void) {
     int count = have_count ? pending_count : 1;

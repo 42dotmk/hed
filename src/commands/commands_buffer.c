@@ -179,6 +179,30 @@ void cmd_buffer_delete(const char *args) {
     }
 }
 
+void cmd_buffer_delete_force(const char *args) {
+    int buf_idx;
+    if (!args || !*args) {
+        buf_idx = E.current_buffer;
+    } else {
+        buf_idx = atoi(args) - 1;
+    }
+
+    if (buf_idx < 0 || buf_idx >= (int)arrlen(E.buffers)) {
+        ed_set_status_message("Invalid buffer index");
+        return;
+    }
+
+    E.buffers[buf_idx].dirty = 0;
+
+    EdError err = buf_close(buf_idx);
+    if (err != ED_OK) {
+        ed_set_status_message("Error closing buffer: %s",
+                              ed_error_string(err));
+    } else {
+        ed_set_status_message("Buffer closed (forced)");
+    }
+}
+
 
 
 void cmd_buffers(const char *args) {

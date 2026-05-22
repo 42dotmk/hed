@@ -60,7 +60,45 @@ static void rstrip(char *s) {
     }
 }
 
+/* If `path` exists and contains a slash, write its parent dir into
+ * out[0..cap). Returns 1 on success (out filled), 0 otherwise. */
+static int dirname_if_exists(const char *path, char *out, size_t cap) {
+    if (!path || !*path) return 0;
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    const char *slash = strrchr(path, '/');
+    if (!slash) {
+        /* File in cwd with no path separator — parent is cwd. */
+        if (cap < 2) return 0;
+        out[0] = '.';
+        out[1] = '\0';
+        return 1;
+    }
+    size_t n = (size_t)(slash - path);
+    if (n == 0) {              /* root: "/foo" → "/" */
+        if (cap < 2) return 0;
+        out[0] = '/';
+        out[1] = '\0';
+        return 1;
+    }
+    if (n + 1 > cap) return 0;
+    memcpy(out, path, n);
+    out[n] = '\0';
+    return 1;
+}
+
 static void cmd_yazi(const char *args) {
+    /* Default starting dir: the dir of the current buffer's file when
+     * that file exists on disk. Falls back to yazi's own default (cwd)
+     * when there's no file, the file doesn't exist yet, or the user
+     * supplied an explicit argument. */
+    char auto_start[1024] = {0};
+    if (!(args && *args)) {
+        Buffer *cur = buf_cur();
+        if (cur && cur->filename)
+            dirname_if_exists(cur->filename, auto_start, sizeof(auto_start));
+    }
+
     char tmppath[256];
     snprintf(tmppath, sizeof(tmppath), "%s/hed_yazi_%d",
              yazi_tmpdir(), (int)getpid());
@@ -74,11 +112,14 @@ static void cmd_yazi(const char *args) {
     }
     close(fd);
 
+    const char *start_arg = (args && *args) ? args
+                            : (auto_start[0] ? auto_start : NULL);
+
     char cmd[1024];
     int  n;
-    if (args && *args) {
+    if (start_arg) {
         char qarg[768];
-        if (shell_squote(qarg, sizeof(qarg), args) >= sizeof(qarg)) {
+        if (shell_squote(qarg, sizeof(qarg), start_arg) >= sizeof(qarg)) {
             ed_set_status_message("yazi: argument too long");
             unlink(tmppath);
             return;

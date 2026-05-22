@@ -222,6 +222,7 @@ static void register_commands(void) {
     cmd("refresh", cmd_buf_refresh, "refresh contents");
     cmd("b", cmd_buffer_switch, "switch buf");
     cmd("bd", cmd_buffer_delete, "delete buf");
+    cmd("bd!", cmd_buffer_delete_force, "delete buf (force)");
     cmd("e", cmd_edit, "edit file");
     cmd("c", cmd_cpick, "pick cmd");
     cmd("keybinds", cmd_list_keybinds, "list keybinds");

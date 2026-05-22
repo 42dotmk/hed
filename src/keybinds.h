@@ -173,6 +173,12 @@ int keybind_get_count(void);
  */
 int keybind_get_at(int index, const char **sequence, const char **desc, int *mode);
 
+/* Like keybind_get_at, but also exposes the binding's filetype scope
+ * (NULL for global bindings) and, for command-style bindings, the
+ * underlying command line (NULL for callback bindings). */
+int keybind_get_at_ext(int index, const char **sequence, const char **desc,
+                      int *mode, const char **filetype, const char **cmdline);
+
 /**
  * Get and consume the pending numeric count
  * Used by commands that need to read additional keys after the command key

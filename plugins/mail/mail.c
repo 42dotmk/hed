@@ -111,18 +111,44 @@ static void cmd_mail_reply_all(const char *args) { (void)args; mail_reply(1); }
 static void cmd_mail_forward(const char *args)   { (void)args; mail_forward(); }
 
 static void cmd_mail_attach(const char *args) {
+    /* Forms:
+     *   :mail-attach                  → open (multi fzf if >1)
+     *   :mail-attach <id>             → open part <id>
+     *   :mail-attach save [dir]       → save (multi fzf if >1) to dir
+     *                                   (default ~/Downloads)
+     *   :mail-attach save <id> [dir]  → save part <id> to dir
+     */
     int id = -1;
-    if (args && *args) {
-        while (*args == ' ') args++;
-        if (*args) id = atoi(args);
+    const char *dest = NULL;
+    int saving = 0;
+
+    const char *p = args ? args : "";
+    while (*p == ' ') p++;
+
+    if (strncmp(p, "save", 4) == 0 && (p[4] == '\0' || p[4] == ' ')) {
+        saving = 1;
+        p += 4;
+        while (*p == ' ') p++;
+        /* Optional id (digits) then optional dir. */
+        if (*p >= '0' && *p <= '9') {
+            id = atoi(p);
+            while (*p >= '0' && *p <= '9') p++;
+            while (*p == ' ') p++;
+        }
+        if (*p) dest = p;
+        else    dest = "~/Downloads";
+    } else if (*p) {
+        id = atoi(p);
     }
-    mail_open_attachment(id);
+
+    mail_attach_action(id, saving ? dest : NULL);
 }
 
 static void kb_reply(void)     { mail_reply(0); }
 static void kb_reply_all(void) { mail_reply(1); }
 static void kb_forward(void)   { mail_forward(); }
-static void kb_attach(void)    { mail_open_attachment(-1); }
+static void kb_attach(void)    { mail_attach_action(-1, NULL); }
+static void kb_attach_save(void){ mail_attach_action(-1, "~/Downloads"); }
 static void kb_next_msg(void)  { mail_next_message(); }
 static void kb_prev_msg(void)  { mail_prev_message(); }
 
@@ -148,7 +174,7 @@ static int mail_plugin_init(void) {
     cmd("mail-reply",     cmd_mail_reply,     "reply to the message being viewed (sender only)");
     cmd("mail-reply-all", cmd_mail_reply_all, "reply-all to the message being viewed");
     cmd("mail-forward",   cmd_mail_forward,   "forward the message being viewed");
-    cmd("mail-attach",    cmd_mail_attach,    "open attachment (no args: auto open / fzf pick; [id] to open directly)");
+    cmd("mail-attach",    cmd_mail_attach,    "open/save attachment(s) (no args: open, fzf multi-pick if >1; [id]; 'save [id] [dir]')");
 
     mapn_ft("mail", "<CR>",  kb_enter,         "open selected thread");
     mapn_ft("mail", "/",     kb_filter,        "open filter prompt");
@@ -172,7 +198,8 @@ static int mail_plugin_init(void) {
     mapn_ft("mail-message", "r", kb_reply,     "reply to this message");
     mapn_ft("mail-message", "R", kb_reply_all, "reply-all to this message");
     mapn_ft("mail-message", "f", kb_forward,   "forward this message");
-    mapn_ft("mail-message", "a", kb_attach,    "open attachment (1: direct; many: fzf pick)");
+    mapn_ft("mail-message", "a", kb_attach,      "open attachment (1: direct; many: fzf multi-pick)");
+    mapn_ft("mail-message", "A", kb_attach_save, "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
     mapn_ft("mail-message", "<C-p>", kb_prev_msg, "open previous message in list");
 

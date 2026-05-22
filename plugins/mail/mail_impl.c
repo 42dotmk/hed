@@ -3,6 +3,7 @@
 #include "hed.h"
 #include "buf/row.h"
 #include "lib/theme.h"
+#include "lib/file_helpers.h"
 #include "open/open.h"
 #include "prompt.h"
 #include "utils/fzf.h"
@@ -13,6 +14,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MAIL_MAX        500
@@ -1156,33 +1158,124 @@ static void sanitize_name(const char *in, char *out, size_t cap) {
     out[n] = '\0';
 }
 
-static void extract_and_open(const MailAttach *a) {
+/* Expand a leading ~ or ~/ into $HOME. Returns a freshly malloced
+ * string; the caller frees. Returns NULL on OOM. */
+static char *expand_home_dup(const char *in) {
+    if (!in) return NULL;
+    if (in[0] != '~') return strdup(in);
+    const char *home = getenv("HOME");
+    if (!home || !*home) return strdup(in);
+    const char *rest = (in[1] == '/' || in[1] == '\0') ? in + 1 : in;
+    if (rest == in) return strdup(in); /* "~user" — leave alone */
+    size_t n = strlen(home) + strlen(rest) + 1;
+    char *out = malloc(n);
+    if (!out) return NULL;
+    snprintf(out, n, "%s%s", home, rest);
+    return out;
+}
+
+/* Extract one attachment. If dest_dir is NULL, write into /tmp and
+ * open with open_path. Otherwise write into dest_dir/<sanitized-name>.
+ * Returns 0 on success, non-zero on failure. */
+static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     char safe[256];
     sanitize_name(a->filename[0] ? a->filename : "attachment", safe, sizeof(safe));
-    char path[512];
-    snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%s", a->part_id, safe);
+
+    char path[1024];
+    if (dest_dir) {
+        snprintf(path, sizeof(path), "%s/%s", dest_dir, safe);
+    } else {
+        snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%s", a->part_id, safe);
+    }
 
     char idq[300];
     snprintf(idq, sizeof(idq), "id:%s", a->msg_id);
     char qq[400];
     shell_quote(idq, qq, sizeof(qq));
 
-    char pq[1024];
+    char pq[1280];
     shell_quote(path, pq, sizeof(pq));
 
-    char cmd[2048];
+    char cmd[3072];
     snprintf(cmd, sizeof(cmd),
              "notmuch show --part=%d --format=raw -- %s > %s 2>/dev/null",
              a->part_id, qq, pq);
     int rc = term_cmd_system(cmd);
-    if (rc != 0) {
-        ed_set_status_message("mail-attach: extract failed (status %d)", rc);
-        return;
-    }
-    open_path(path);
+    if (rc != 0) return rc;
+
+    if (!dest_dir) open_path(path);
+    return 0;
 }
 
-void mail_open_attachment(int part_id) {
+/* Extract every cached attachment into a fresh /tmp dir; used by
+ * mail_forward to attach files to an outgoing message. Returns the
+ * number of files actually written. The dir is unique per call (PID
+ * + timestamp + monotonic counter) so concurrent forwards don't
+ * stomp each other. */
+int mail_extract_attachments_to_tmp(char ***out_paths) {
+    if (out_paths) *out_paths = NULL;
+
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype ||
+        strcmp(buf->filetype, "mail-message") != 0)
+        return 0;
+    if (attach_count == 0) return 0;
+
+    static int fwd_seq = 0;
+    fwd_seq++;
+    char dir[256];
+    snprintf(dir, sizeof(dir), "/tmp/hed-mail-fwd-%d-%ld-%d",
+             (int)getpid(), (long)time(NULL), fwd_seq);
+    if (!path_mkdir_p(dir)) return 0;
+
+    char **paths = calloc((size_t)attach_count, sizeof(char *));
+    if (!paths) return 0;
+    int n = 0;
+
+    for (int i = 0; i < attach_count; i++) {
+        /* Reuse extract_attachment so we share one extraction path. */
+        if (extract_attachment(&attachments[i], dir) != 0) continue;
+        char safe[256];
+        sanitize_name(attachments[i].filename[0]
+                      ? attachments[i].filename : "attachment",
+                      safe, sizeof(safe));
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/%s", dir, safe);
+        paths[n] = strdup(path);
+        if (paths[n]) n++;
+    }
+
+    if (n == 0) { free(paths); return 0; }
+    if (out_paths) {
+        *out_paths = paths;
+    } else {
+        for (int i = 0; i < n; i++) free(paths[i]);
+        free(paths);
+    }
+    return n;
+}
+
+/* Run the picked attachments through extract_attachment. Reports
+ * aggregate status to the status line. */
+static void act_on_attachments(const MailAttach **picks, int n,
+                               const char *dest_dir) {
+    int ok = 0, fail = 0;
+    for (int i = 0; i < n; i++) {
+        if (extract_attachment(picks[i], dest_dir) == 0) ok++;
+        else fail++;
+    }
+    if (dest_dir) {
+        if (fail == 0)
+            ed_set_status_message("mail-attach: saved %d to %s", ok, dest_dir);
+        else
+            ed_set_status_message(
+                "mail-attach: saved %d, %d failed (dir %s)", ok, fail, dest_dir);
+    } else if (fail > 0) {
+        ed_set_status_message("mail-attach: opened %d, %d failed", ok, fail);
+    }
+}
+
+void mail_attach_action(int part_id, const char *dest_dir) {
     Buffer *buf = buf_cur();
     if (!buf || !buf->filetype ||
         strcmp(buf->filetype, "mail-message") != 0) {
@@ -1195,66 +1288,109 @@ void mail_open_attachment(int part_id) {
         return;
     }
 
-    if (part_id < 0) {
-        if (attach_count == 1) {
-            extract_and_open(&attachments[0]);
-            return;
-        }
-        /* >1 attachment: let the user pick one via fzf. Each item is
-         * "[<part_id>] <filename>"; the leading part_id is the source
-         * of truth (filenames can repeat across parts). */
-        const char **items = malloc(sizeof(char *) * (size_t)attach_count);
-        char **labels = malloc(sizeof(char *) * (size_t)attach_count);
-        if (!items || !labels) {
-            free(items); free(labels);
+    /* Resolve / create dest dir up front so we fail fast. */
+    char *resolved_dir = NULL;
+    if (dest_dir && *dest_dir) {
+        resolved_dir = expand_home_dup(dest_dir);
+        if (!resolved_dir) {
             ed_set_status_message("mail-attach: out of memory");
             return;
         }
-        for (int i = 0; i < attach_count; i++) {
-            char buf[320];
-            snprintf(buf, sizeof(buf), "[%d] %s",
-                     attachments[i].part_id,
-                     attachments[i].filename[0]
-                         ? attachments[i].filename : "(unnamed)");
-            labels[i] = strdup(buf);
-            items[i]  = labels[i];
-        }
-        char **sel = NULL;
-        int cnt = 0;
-        int ok = fzf_pick_list(items, attach_count, 0, &sel, &cnt);
-        for (int i = 0; i < attach_count; i++) free(labels[i]);
-        free(labels);
-        free(items);
-        if (!ok || cnt <= 0 || !sel[0]) {
-            fzf_free(sel, cnt);
-            ed_set_status_message("mail-attach: canceled");
+        /* Trim a single trailing slash so "%s/%s" stays clean. */
+        size_t L = strlen(resolved_dir);
+        while (L > 1 && resolved_dir[L - 1] == '/') resolved_dir[--L] = '\0';
+        if (!path_mkdir_p(resolved_dir)) {
+            ed_set_status_message("mail-attach: cannot create dir %s",
+                                  resolved_dir);
+            free(resolved_dir);
             return;
         }
-        int picked_part = -1;
-        if (sel[0][0] == '[') sscanf(sel[0], "[%d]", &picked_part);
-        fzf_free(sel, cnt);
-        if (picked_part < 0) {
-            ed_set_status_message("mail-attach: invalid selection");
-            return;
-        }
+    }
+
+    /* Direct part-id path: act on one specific attachment, no fzf. */
+    if (part_id >= 0) {
         for (int i = 0; i < attach_count; i++) {
-            if (attachments[i].part_id == picked_part) {
-                extract_and_open(&attachments[i]);
+            if (attachments[i].part_id == part_id) {
+                const MailAttach *one[1] = { &attachments[i] };
+                act_on_attachments(one, 1, resolved_dir);
+                free(resolved_dir);
                 return;
             }
         }
         ed_set_status_message("mail-attach: no attachment with part id %d",
-                              picked_part);
+                              part_id);
+        free(resolved_dir);
         return;
     }
 
+    /* Auto-pick when there is only one attachment. */
+    if (attach_count == 1) {
+        const MailAttach *one[1] = { &attachments[0] };
+        act_on_attachments(one, 1, resolved_dir);
+        free(resolved_dir);
+        return;
+    }
+
+    /* Multiple attachments: fzf with multi=1. Tab toggles, <C-a>
+     * select-all. Items are "[<part_id>] <filename>". */
+    const char **items = malloc(sizeof(char *) * (size_t)attach_count);
+    char **labels = malloc(sizeof(char *) * (size_t)attach_count);
+    if (!items || !labels) {
+        free(items); free(labels); free(resolved_dir);
+        ed_set_status_message("mail-attach: out of memory");
+        return;
+    }
     for (int i = 0; i < attach_count; i++) {
-        if (attachments[i].part_id == part_id) {
-            extract_and_open(&attachments[i]);
-            return;
+        char tmp[320];
+        snprintf(tmp, sizeof(tmp), "[%d] %s",
+                 attachments[i].part_id,
+                 attachments[i].filename[0]
+                     ? attachments[i].filename : "(unnamed)");
+        labels[i] = strdup(tmp);
+        items[i]  = labels[i];
+    }
+    char **sel = NULL;
+    int cnt = 0;
+    int ok = fzf_pick_list(items, attach_count, 1, &sel, &cnt);
+    for (int i = 0; i < attach_count; i++) free(labels[i]);
+    free(labels);
+    free(items);
+
+    if (!ok || cnt <= 0) {
+        fzf_free(sel, cnt);
+        ed_set_status_message("mail-attach: canceled");
+        free(resolved_dir);
+        return;
+    }
+
+    const MailAttach **picks = malloc(sizeof(MailAttach *) * (size_t)cnt);
+    if (!picks) {
+        fzf_free(sel, cnt);
+        free(resolved_dir);
+        ed_set_status_message("mail-attach: out of memory");
+        return;
+    }
+    int picked = 0;
+    for (int i = 0; i < cnt; i++) {
+        if (!sel[i] || sel[i][0] != '[') continue;
+        int pid = -1;
+        if (sscanf(sel[i], "[%d]", &pid) != 1 || pid < 0) continue;
+        for (int j = 0; j < attach_count; j++) {
+            if (attachments[j].part_id == pid) {
+                picks[picked++] = &attachments[j];
+                break;
+            }
         }
     }
-    ed_set_status_message("mail-attach: no attachment with part id %d", part_id);
+    fzf_free(sel, cnt);
+
+    if (picked == 0) {
+        ed_set_status_message("mail-attach: nothing matched selection");
+    } else {
+        act_on_attachments(picks, picked, resolved_dir);
+    }
+    free(picks);
+    free(resolved_dir);
 }
 
 void mail_handle_mailbox_enter(void) {

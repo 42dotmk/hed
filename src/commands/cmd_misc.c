@@ -138,13 +138,15 @@ void cmd_list_keybinds(const char *args) {
     for (int i = 0; i < count; i++) {
         const char *sequence = NULL;
         const char *desc = NULL;
+        const char *filetype = NULL;
+        const char *cmdline  = NULL;
         int mode = 0;
 
-        if (!keybind_get_at(i, &sequence, &desc, &mode))
+        if (!keybind_get_at_ext(i, &sequence, &desc, &mode, &filetype, &cmdline))
             continue;
 
         /* Add mode prefix */
-        char display[256];
+        char display[320];
         const char *mode_prefix = "";
         if (mode == MODE_NORMAL) mode_prefix = "[N] ";
         else if (mode == MODE_INSERT) mode_prefix = "[I] ";
@@ -152,7 +154,13 @@ void cmd_list_keybinds(const char *args) {
         else if (mode == MODE_VISUAL_BLOCK) mode_prefix = "[VB] ";
         else if (mode == MODE_COMMAND) mode_prefix = "[C] ";
 
-        snprintf(display, sizeof(display), "%s%s", mode_prefix, sequence ? sequence : "");
+        /* Filetype tag: `*` for global bindings, the filetype name
+         * otherwise. Lives between the mode and the sequence so it
+         * stays at a fixed column when fzf renders the list. */
+        const char *ft_tag = (filetype && *filetype) ? filetype : "*";
+
+        snprintf(display, sizeof(display), "%s[%s] %s",
+                 mode_prefix, ft_tag, sequence ? sequence : "");
 
         char es[512], ed[512];
         shell_escape_single(display, es, sizeof(es));

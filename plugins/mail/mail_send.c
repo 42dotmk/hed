@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Highlighter shared with mail_impl.c — same header/quote shape. */
@@ -82,31 +83,6 @@ void mail_compose(void) {
         "mail: compose — edit headers + body, then :mail-send");
 }
 
-/* Concatenate every row of `buf` into one heap-allocated buffer,
- * separated by '\n'.  Caller must free.  Returns NULL on OOM. */
-static char *buf_to_string(Buffer *buf, size_t *out_len) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    if (total == 0) total = 1;
-
-    char *out = malloc(total + 1);
-    if (!out) return NULL;
-
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
-        if (s->len) {
-            memcpy(out + off, s->data, s->len);
-            off += s->len;
-        }
-        out[off++] = '\n';
-    }
-    out[off] = '\0';
-    if (out_len) *out_len = off;
-    return out;
-}
-
 /* Locate the header named `name` (case-insensitive, no colon) and
  * report whether it contains any non-whitespace value.  Headers stop
  * at the first blank line. */
@@ -124,6 +100,178 @@ static int header_has_value(Buffer *buf, const char *name) {
         }
         return 0;
     }
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* MIME multipart helpers (used when Attach: headers are present)      */
+/* ------------------------------------------------------------------ */
+
+static const char b64chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/* base64-encode `in` onto `out`, line-wrapped at 76 columns. Returns
+ * 0 on success, non-zero on read error. */
+static int base64_stream(FILE *in, FILE *out) {
+    unsigned char buf[3];
+    int col = 0;
+    size_t got;
+    while ((got = fread(buf, 1, 3, in)) > 0) {
+        unsigned long v = ((unsigned long)buf[0] << 16) |
+                          (got > 1 ? (unsigned long)buf[1] << 8 : 0) |
+                          (got > 2 ?  (unsigned long)buf[2]      : 0);
+        char enc[4] = {
+            b64chars[(v >> 18) & 0x3f],
+            b64chars[(v >> 12) & 0x3f],
+            got > 1 ? b64chars[(v >> 6) & 0x3f] : '=',
+            got > 2 ? b64chars[v & 0x3f]        : '=',
+        };
+        if (fwrite(enc, 1, 4, out) != 4) return 1;
+        col += 4;
+        if (col >= 76) { fputc('\n', out); col = 0; }
+    }
+    if (col > 0) fputc('\n', out);
+    return ferror(in);
+}
+
+/* Return the basename component of `path` (pointer into path). */
+static const char *path_basename(const char *path) {
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
+/* Sniff the mime type via `file --mime-type -b <path>`. Falls back to
+ * application/octet-stream when the file command is unavailable. */
+static void sniff_mime_type(const char *path, char *out, size_t cap) {
+    snprintf(out, cap, "application/octet-stream");
+    char pq[1280];
+    /* Tiny inline shell-quote for the path. */
+    size_t pl = 0;
+    pq[pl++] = '\'';
+    for (const char *p = path; *p && pl + 5 < sizeof(pq); p++) {
+        if (*p == '\'') { pq[pl++] = '\''; pq[pl++] = '\\';
+                          pq[pl++] = '\''; pq[pl++] = '\''; }
+        else pq[pl++] = *p;
+    }
+    pq[pl++] = '\''; pq[pl] = '\0';
+    char cmd[1400];
+    snprintf(cmd, sizeof(cmd), "file --mime-type -b -- %s 2>/dev/null", pq);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return;
+    char tmp[256];
+    if (fgets(tmp, sizeof(tmp), fp)) {
+        size_t L = strlen(tmp);
+        while (L > 0 && (tmp[L-1] == '\n' || tmp[L-1] == '\r' ||
+                          tmp[L-1] == ' '  || tmp[L-1] == '\t'))
+            tmp[--L] = '\0';
+        if (L > 0 && strchr(tmp, '/')) {
+            /* Truncate if the sniffed value won't fit; the caller's
+             * `out` is sized for "type/subtype" plus a small margin. */
+            if (L >= cap) L = cap - 1;
+            memcpy(out, tmp, L);
+            out[L] = '\0';
+        }
+    }
+    pclose(fp);
+}
+
+/* Walk the header block of buf, collecting Attach: values into a fresh
+ * paths[] array. Sets *out_body_start to the row index just past the
+ * blank line that ends the header block. Returns number of paths. */
+static int collect_attach_paths(Buffer *buf, char ***out_paths,
+                                int *out_body_start) {
+    if (out_paths) *out_paths = NULL;
+    if (out_body_start) *out_body_start = -1;
+    char **paths = NULL;
+    int    cnt = 0, cap = 0;
+    int    i;
+    for (i = 0; i < buf->num_rows; i++) {
+        SizedStr *s = &buf->rows[i].chars;
+        if (s->len == 0) { i++; break; }
+        if (s->len > 7 && strncasecmp(s->data, "Attach:", 7) == 0) {
+            size_t k = 7;
+            while (k < s->len && (s->data[k] == ' ' || s->data[k] == '\t')) k++;
+            size_t vlen = s->len - k;
+            if (vlen == 0) continue;
+            if (cnt >= cap) {
+                int ncap = cap ? cap * 2 : 4;
+                char **np = realloc(paths, (size_t)ncap * sizeof(*paths));
+                if (!np) break;
+                paths = np;
+                cap = ncap;
+            }
+            char *p = malloc(vlen + 1);
+            if (!p) break;
+            memcpy(p, s->data + k, vlen);
+            p[vlen] = '\0';
+            paths[cnt++] = p;
+        }
+    }
+    if (out_body_start) *out_body_start = i;
+    if (out_paths) *out_paths = paths;
+    return cnt;
+}
+
+/* Write the headers of buf to fp, suppressing any Attach: lines, and
+ * inserting MIME-Version + Content-Type:multipart/mixed when
+ * boundary != NULL. Stops at the blank line that ends the header
+ * block (which is also written). */
+static int write_headers_with_mime(Buffer *buf, FILE *fp,
+                                   const char *boundary) {
+    int wrote_mime = 0;
+    for (int i = 0; i < buf->num_rows; i++) {
+        SizedStr *s = &buf->rows[i].chars;
+        /* Skip Attach: pseudo-headers — they're consumed into the
+         * MIME envelope, not emitted to the wire. */
+        if (s->len > 7 && strncasecmp(s->data, "Attach:", 7) == 0)
+            continue;
+        if (boundary && !wrote_mime && s->len == 0) {
+            fprintf(fp, "MIME-Version: 1.0\r\n");
+            fprintf(fp, "Content-Type: multipart/mixed; boundary=\"%s\"\r\n",
+                    boundary);
+            wrote_mime = 1;
+        }
+        if (s->len) fwrite(s->data, 1, s->len, fp);
+        fputs("\r\n", fp);
+        if (s->len == 0) return i + 1; /* body starts on next row */
+    }
+    return buf->num_rows;
+}
+
+/* Write a multipart-MIME version of buf to fp. Returns 0 on success. */
+static int write_multipart(Buffer *buf, FILE *fp,
+                           char **att_paths, int att_count,
+                           const char *boundary) {
+    int body_start = write_headers_with_mime(buf, fp, boundary);
+
+    /* Text body part. */
+    fprintf(fp, "--%s\r\n", boundary);
+    fprintf(fp, "Content-Type: text/plain; charset=utf-8\r\n");
+    fprintf(fp, "Content-Transfer-Encoding: 8bit\r\n\r\n");
+    for (int i = body_start; i < buf->num_rows; i++) {
+        SizedStr *s = &buf->rows[i].chars;
+        if (s->len) fwrite(s->data, 1, s->len, fp);
+        fputs("\r\n", fp);
+    }
+
+    /* One part per attachment. */
+    for (int i = 0; i < att_count; i++) {
+        const char *path = att_paths[i];
+        FILE *af = fopen(path, "rb");
+        if (!af) return 1;
+        char mime[128];
+        sniff_mime_type(path, mime, sizeof(mime));
+        const char *base = path_basename(path);
+        fprintf(fp, "--%s\r\n", boundary);
+        fprintf(fp, "Content-Type: %s; name=\"%s\"\r\n", mime, base);
+        fprintf(fp, "Content-Disposition: attachment; filename=\"%s\"\r\n", base);
+        fprintf(fp, "Content-Transfer-Encoding: base64\r\n\r\n");
+        int rc = base64_stream(af, fp);
+        fclose(af);
+        if (rc) return rc;
+    }
+
+    fprintf(fp, "--%s--\r\n", boundary);
     return 0;
 }
 
@@ -145,36 +293,51 @@ void mail_send_current(void) {
         ed_set_status_message("mail-send: missing Subject: header");
         return;
     }
-    size_t msg_len = 0;
-    char  *msg     = buf_to_string(buf, &msg_len);
-    if (!msg) {
-        ed_set_status_message("mail-send: out of memory");
-        return;
-    }
 
-    /* Write the message to a temp file and feed it via shell
-     * redirection.  popen("w") would steal stdin from the child, so
-     * msmtp couldn't open the tty to prompt for a password.  Going
-     * through term_cmd_system drops raw mode and lets the child
-     * inherit the controlling terminal for interactive prompts. */
+    /* Collect Attach: pseudo-headers. If any are present we emit a
+     * multipart/mixed envelope; otherwise the message goes out as
+     * plain text exactly as before. */
+    char **att_paths = NULL;
+    int    att_count = collect_attach_paths(buf, &att_paths, NULL);
+
     char tmpl[] = "/tmp/hed-mail-XXXXXX";
     int  fd     = mkstemp(tmpl);
     if (fd < 0) {
-        free(msg);
+        for (int i = 0; i < att_count; i++) free(att_paths[i]);
+        free(att_paths);
         ed_set_status_message("mail-send: mkstemp failed");
         return;
     }
-    size_t wrote = 0;
-    while (wrote < msg_len) {
-        ssize_t n = write(fd, msg + wrote, msg_len - wrote);
-        if (n <= 0) break;
-        wrote += (size_t)n;
-    }
-    close(fd);
-    free(msg);
-    if (wrote != msg_len) {
+    FILE *fp = fdopen(fd, "w");
+    if (!fp) {
+        close(fd);
         unlink(tmpl);
-        ed_set_status_message("mail-send: short write");
+        for (int i = 0; i < att_count; i++) free(att_paths[i]);
+        free(att_paths);
+        ed_set_status_message("mail-send: fdopen failed");
+        return;
+    }
+
+    int wr_err = 0;
+    if (att_count > 0) {
+        char boundary[64];
+        snprintf(boundary, sizeof(boundary), "=_hed_%d_%ld",
+                 (int)getpid(), (long)time(NULL));
+        wr_err = write_multipart(buf, fp, att_paths, att_count, boundary);
+    } else {
+        for (int i = 0; i < buf->num_rows; i++) {
+            SizedStr *s = &buf->rows[i].chars;
+            if (s->len) fwrite(s->data, 1, s->len, fp);
+            fputc('\n', fp);
+        }
+    }
+    if (fflush(fp) != 0 || ferror(fp)) wr_err = 1;
+    fclose(fp);
+    if (wr_err) {
+        unlink(tmpl);
+        for (int i = 0; i < att_count; i++) free(att_paths[i]);
+        free(att_paths);
+        ed_set_status_message("mail-send: failed to write message");
         return;
     }
 
@@ -323,52 +486,128 @@ void mail_forward(void) {
         return;
     }
 
-    char orig_subj[512] = "";
+    /* Pull the original headers (From / Date / Subject / To / Cc)
+     * directly from the rendered message buffer — same source the
+     * user is reading. */
+    char orig_from[512] = "", orig_date[256] = "", orig_subj[512] = "";
+    char orig_to[512]   = "", orig_cc[512]   = "";
+    header_value(src, "From",    orig_from, sizeof(orig_from));
+    header_value(src, "Date",    orig_date, sizeof(orig_date));
     header_value(src, "Subject", orig_subj, sizeof(orig_subj));
+    header_value(src, "To",      orig_to,   sizeof(orig_to));
+    header_value(src, "Cc",      orig_cc,   sizeof(orig_cc));
 
-    /* Pull the raw original via notmuch show --format=raw. */
-    char qq[256];
-    snprintf(qq, sizeof(qq), "'%s'", tid);
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd),
-             "notmuch show --format=raw -- %s 2>/dev/null", qq);
-
-    char **raw_lines = NULL;
-    int    raw_count = 0;
-    term_cmd_capture(cmd, &raw_lines, &raw_count);
-
-    /* Build the compose: headers, blank line, separator, raw original. */
-    char **lines = NULL;
-    int    cap   = raw_count + 16;
-    int    n     = 0;
-    lines = calloc((size_t)cap, sizeof(*lines));
-    if (!lines) {
-        term_cmd_free(raw_lines, raw_count);
-        ed_set_status_message("mail-forward: out of memory");
-        return;
+    /* Find the body of the first message in the buffer: everything
+     * after the first blank line (which separates headers from body)
+     * and before either EOF or the section divider mail_parse inserts
+     * between messages in a thread. */
+    int body_start = -1;
+    for (int i = 0; i < src->num_rows; i++) {
+        if (src->rows[i].chars.len == 0) { body_start = i + 1; break; }
     }
+    int body_end = src->num_rows;
+    if (body_start >= 0) {
+        for (int i = body_start; i < src->num_rows; i++) {
+            const SizedStr *s = &src->rows[i].chars;
+            /* mail_parse uses a long "─" run as the per-message divider. */
+            if (s->len >= 3 && (unsigned char)s->data[0] == 0xE2 &&
+                (unsigned char)s->data[1] == 0x94 &&
+                (unsigned char)s->data[2] == 0x80) {
+                body_end = i;
+                break;
+            }
+        }
+    }
+
+    /* Extract any attachments into /tmp; each becomes an `Attach:`
+     * pseudo-header that mail_send_current converts into a real
+     * multipart MIME part at send time. */
+    char **att_paths = NULL;
+    int    att_count = mail_extract_attachments_to_tmp(&att_paths);
 
     char from_line[320];
     snprintf(from_line, sizeof(from_line), "From: %s", from_addr);
-    char subj_line[576];
-    /* Don't double-prefix if the user already has "Fwd: " somewhere. */
+
+    /* Don't double-prefix "Fwd: " if the source subject already has it. */
     int already_fwd = (strncasecmp(orig_subj, "Fwd:", 4) == 0 ||
                        strncasecmp(orig_subj, "Fw:",  3) == 0);
+    char subj_line[576];
     snprintf(subj_line, sizeof(subj_line),
              "Subject: %s%s", already_fwd ? "" : "Fwd: ", orig_subj);
 
+    /* Compose layout:
+     *   From / To / Cc / Subject
+     *   Attach: ... (one per file)
+     *   <blank>
+     *   ---------- Forwarded message ----------
+     *   From / Date / Subject / To / Cc (original)
+     *   <blank>
+     *   <body lines from src> */
+    int body_lines = (body_start >= 0) ? (body_end - body_start) : 0;
+    if (body_lines < 0) body_lines = 0;
+    int cap = 4 + att_count + 2 + 5 + 1 + body_lines + 4;
+    char **lines = calloc((size_t)cap, sizeof(*lines));
+    if (!lines) {
+        for (int i = 0; i < att_count; i++) free(att_paths[i]);
+        free(att_paths);
+        ed_set_status_message("mail-forward: out of memory");
+        return;
+    }
+    int n = 0;
     lines[n++] = strdup(from_line);
     lines[n++] = strdup("To: ");
     lines[n++] = strdup("Cc: ");
     lines[n++] = strdup(subj_line);
+    for (int i = 0; i < att_count; i++) {
+        char ab[1280];
+        snprintf(ab, sizeof(ab), "Attach: %s", att_paths[i]);
+        lines[n++] = strdup(ab);
+    }
     lines[n++] = strdup("");
     lines[n++] = strdup("---------- Forwarded message ----------");
-    for (int i = 0; i < raw_count && n < cap; i++)
-        lines[n++] = raw_lines[i] ? strdup(raw_lines[i]) : strdup("");
+    if (orig_from[0]) {
+        char b[576]; snprintf(b, sizeof(b), "From: %s", orig_from);
+        lines[n++] = strdup(b);
+    }
+    if (orig_date[0]) {
+        char b[320]; snprintf(b, sizeof(b), "Date: %s", orig_date);
+        lines[n++] = strdup(b);
+    }
+    if (orig_subj[0]) {
+        char b[576]; snprintf(b, sizeof(b), "Subject: %s", orig_subj);
+        lines[n++] = strdup(b);
+    }
+    if (orig_to[0]) {
+        char b[576]; snprintf(b, sizeof(b), "To: %s", orig_to);
+        lines[n++] = strdup(b);
+    }
+    if (orig_cc[0]) {
+        char b[576]; snprintf(b, sizeof(b), "Cc: %s", orig_cc);
+        lines[n++] = strdup(b);
+    }
+    lines[n++] = strdup("");
+    for (int i = 0; i < body_lines && n < cap; i++) {
+        const SizedStr *s = &src->rows[body_start + i].chars;
+        char *dup = malloc(s->len + 1);
+        if (dup) {
+            if (s->len) memcpy(dup, s->data, s->len);
+            dup[s->len] = '\0';
+        }
+        lines[n++] = dup ? dup : strdup("");
+    }
 
     compose_from_lines("Forward", lines, n);
     for (int i = 0; i < n; i++) free(lines[i]);
     free(lines);
-    term_cmd_free(raw_lines, raw_count);
-    ed_set_status_message("mail-forward: edit To: and body, :mail-send to send");
+    for (int i = 0; i < att_count; i++) free(att_paths[i]);
+    free(att_paths);
+
+    if (att_count > 0)
+        ed_set_status_message(
+            "mail-forward: edit To: and body — %d attachment(s) cached, "
+            ":mail-send to send",
+            att_count);
+    else
+        ed_set_status_message(
+            "mail-forward: edit To: and body, :mail-send to send");
 }

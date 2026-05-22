@@ -10,6 +10,12 @@ enough for the dispatcher to time out.
 It's pure discoverability: type `<space>` and you can see every
 leader binding without leaving the editor.
 
+When the current buffer has a filetype with filetype-specific
+bindings (e.g. `dired`, `mail`, `mail-message`), they appear in an
+extra `── Filetype (<ft>) ──` section below the prefix-match list —
+so the keys a `mail-message` exposes (`r`, `a`, `A`, `f`, `q`, …) are
+discoverable even though they don't share the active prefix.
+
 ## What you see
 
 ```

@@ -97,7 +97,7 @@ void config_init(void) {
     cmapn(" bn",   "bn",                   "next buffer");
     cmapn(" bp",   "bp",                   "prev buffer");
     cmapn(" bd",   "bd",                   "buffer delete");
-    cmapn(" bd",   "bd",                   "buffer delete");
+    cmapn(" bD",   "bd!",                  "buffer delete (force)");
     cmapn(" br",   "refresh",              "buffer refresh");
     cmapn(" ff",   "fzf",                  "find files");
     cmapn(" fn",   "new",                  "new buffer");
