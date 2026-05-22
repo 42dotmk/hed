@@ -3,7 +3,9 @@
 #include "terminal.h"
 
 #include <ctype.h>
+#include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 static Prompt g_prompt;
@@ -24,6 +26,7 @@ void prompt_open(const PromptVTable *vt, void *state) {
     g_prompt.len         = 0;
     g_prompt.cursor      = 0;
     g_prompt.stay_open   = false;
+    g_prompt.hint[0]     = '\0';
     if (E.mode != MODE_COMMAND) ed_set_mode(MODE_COMMAND);
 }
 
@@ -56,6 +59,19 @@ void prompt_set_text(Prompt *p, const char *s, int len) {
     p->len           = len;
     p->buf[p->len]   = '\0';
     p->cursor        = len;
+}
+
+void prompt_set_hint(Prompt *p, const char *fmt, ...) {
+    if (!p || !fmt) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(p->hint, sizeof(p->hint), fmt, ap);
+    va_end(ap);
+}
+
+void prompt_clear_hint(Prompt *p) {
+    if (!p) return;
+    p->hint[0] = '\0';
 }
 
 void prompt_handle_key(int key) {

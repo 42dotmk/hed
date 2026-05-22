@@ -923,7 +923,17 @@ void ed_render_frame(void) {
             if (pr->buf[i] == '\n') { extra_lines++; last_line_bytes = 0; }
             else last_line_bytes++;
         }
-        cur_row = lo.cmd_row + extra_lines;
+        /* When draw_message_bar renders the prompt's hint above the
+         * input (completion feedback etc.), the input itself is shifted
+         * down by the number of hint rows. */
+        int hint_offset = 0;
+        if (pr->hint[0]) {
+            int total = ui_message_lines_needed();
+            int prompt_lines = extra_lines + 1;
+            hint_offset = total - prompt_lines;
+            if (hint_offset < 0) hint_offset = 0;
+        }
+        cur_row = lo.cmd_row + hint_offset + extra_lines;
         const char *label = pr->vt->label ? pr->vt->label(pr) : "";
         int label_len = (extra_lines == 0) ? (int)strlen(label) : 0;
         cur_col = 1 + label_len + last_line_bytes;

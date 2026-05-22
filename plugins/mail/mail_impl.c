@@ -5,6 +5,7 @@
 #include "lib/theme.h"
 #include "open/open.h"
 #include "prompt.h"
+#include "utils/fzf.h"
 #include "utils/term_cmd.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -1199,18 +1200,51 @@ void mail_open_attachment(int part_id) {
             extract_and_open(&attachments[0]);
             return;
         }
-        char list[512];
-        size_t n = 0;
-        for (int i = 0; i < attach_count && n + 32 < sizeof(list); i++) {
-            n += (size_t)snprintf(list + n, sizeof(list) - n,
-                                  "%s[%d] %s",
-                                  i ? "  " : "",
-                                  attachments[i].part_id,
-                                  attachments[i].filename);
+        /* >1 attachment: let the user pick one via fzf. Each item is
+         * "[<part_id>] <filename>"; the leading part_id is the source
+         * of truth (filenames can repeat across parts). */
+        const char **items = malloc(sizeof(char *) * (size_t)attach_count);
+        char **labels = malloc(sizeof(char *) * (size_t)attach_count);
+        if (!items || !labels) {
+            free(items); free(labels);
+            ed_set_status_message("mail-attach: out of memory");
+            return;
         }
-        ed_set_status_message(
-            "mail-attach: %d attachments — :mail-attach <id> to open. %s",
-            attach_count, list);
+        for (int i = 0; i < attach_count; i++) {
+            char buf[320];
+            snprintf(buf, sizeof(buf), "[%d] %s",
+                     attachments[i].part_id,
+                     attachments[i].filename[0]
+                         ? attachments[i].filename : "(unnamed)");
+            labels[i] = strdup(buf);
+            items[i]  = labels[i];
+        }
+        char **sel = NULL;
+        int cnt = 0;
+        int ok = fzf_pick_list(items, attach_count, 0, &sel, &cnt);
+        for (int i = 0; i < attach_count; i++) free(labels[i]);
+        free(labels);
+        free(items);
+        if (!ok || cnt <= 0 || !sel[0]) {
+            fzf_free(sel, cnt);
+            ed_set_status_message("mail-attach: canceled");
+            return;
+        }
+        int picked_part = -1;
+        if (sel[0][0] == '[') sscanf(sel[0], "[%d]", &picked_part);
+        fzf_free(sel, cnt);
+        if (picked_part < 0) {
+            ed_set_status_message("mail-attach: invalid selection");
+            return;
+        }
+        for (int i = 0; i < attach_count; i++) {
+            if (attachments[i].part_id == picked_part) {
+                extract_and_open(&attachments[i]);
+                return;
+            }
+        }
+        ed_set_status_message("mail-attach: no attachment with part id %d",
+                              picked_part);
         return;
     }
 

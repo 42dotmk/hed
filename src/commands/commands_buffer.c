@@ -151,30 +151,6 @@ void cmd_buffer_switch(const char *args) {
     }
 }
 
-void cmd_buffer_delete_force(const char *args) {
-	int buf_idx;
-	if (!args || !*args) {
-		buf_idx = E.current_buffer;
-	} else {
-		buf_idx = atoi(args) - 1;
-	}
-
-	EdError err = buf_close_force(buf_idx);
-	if (err != ED_OK) {
-		switch (err) {
-		case ED_ERR_INVALID_INDEX:
-			ed_set_status_message("Invalid buffer index");
-			break;
-		default:
-			ed_set_status_message("Error closing buffer: %s",
-								  ed_error_string(err));
-			break;
-		}
-	} else {
-		ed_set_status_message("Buffer force closed");
-	}
-}
-
 void cmd_buffer_delete(const char *args) {
     int buf_idx;
     if (!args || !*args) {

@@ -15,13 +15,21 @@ int fzf_run_opts(const char *input_cmd, const char *fzf_opts, int multi,
     if (!input_cmd)
         return 0;
 
-    /* Build fzf command pipeline */
-    char pipebuf[4096];
-    snprintf(pipebuf, sizeof(pipebuf), "%s | fzf%s %s", input_cmd,
-             multi ? " -m" : "", fzf_opts ? fzf_opts : "");
+    /* Build the "<input_cmd> | fzf [opts]" pipeline. Callers like
+     * cmd_cpick (command palette) build input_cmd as a single
+     * `printf ...` listing every registered command — easily 4–8 KB.
+     * Stack-allocate to fit that comfortably so snprintf doesn't
+     * truncate mid-quote and hand the shell an unparseable string. */
+    const char *opts = fzf_opts ? fzf_opts : "";
+    size_t need = strlen(input_cmd) + strlen(opts) + 32;
+    char *pipebuf = malloc(need);
+    if (!pipebuf) return 0;
+    snprintf(pipebuf, need, "%s | fzf%s %s", input_cmd,
+             multi ? " -m" : "", opts);
 
-    /* Use term_cmd utility to run fzf */
-    return term_cmd_run(pipebuf, out_lines, out_count);
+    int rc = term_cmd_run(pipebuf, out_lines, out_count);
+    free(pipebuf);
+    return rc;
 }
 
 int fzf_run(const char *input_cmd, int multi, char ***out_lines,

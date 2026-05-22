@@ -148,7 +148,7 @@ static int mail_plugin_init(void) {
     cmd("mail-reply",     cmd_mail_reply,     "reply to the message being viewed (sender only)");
     cmd("mail-reply-all", cmd_mail_reply_all, "reply-all to the message being viewed");
     cmd("mail-forward",   cmd_mail_forward,   "forward the message being viewed");
-    cmd("mail-attach",    cmd_mail_attach,    "open attachment of current message ([id] or auto)");
+    cmd("mail-attach",    cmd_mail_attach,    "open attachment (no args: auto open / fzf pick; [id] to open directly)");
 
     mapn_ft("mail", "<CR>",  kb_enter,         "open selected thread");
     mapn_ft("mail", "/",     kb_filter,        "open filter prompt");
@@ -172,7 +172,7 @@ static int mail_plugin_init(void) {
     mapn_ft("mail-message", "r", kb_reply,     "reply to this message");
     mapn_ft("mail-message", "R", kb_reply_all, "reply-all to this message");
     mapn_ft("mail-message", "f", kb_forward,   "forward this message");
-    mapn_ft("mail-message", "a", kb_attach,    "open attachment (auto/list)");
+    mapn_ft("mail-message", "a", kb_attach,    "open attachment (1: direct; many: fzf pick)");
     mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
     mapn_ft("mail-message", "<C-p>", kb_prev_msg, "open previous message in list");
 

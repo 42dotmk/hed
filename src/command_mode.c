@@ -119,12 +119,13 @@ static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
             matches[n++] = (int)i;
     }
     if (n == 0) {
-        ed_set_status_message("no matching commands");
+        prompt_set_hint(p, "no matching commands");
         c->cmdname_pending = 0;
         return 0;
     }
     if (n == 1) {
         cmdcomp_replace_first_token(p, commands[matches[0]].name, 1);
+        prompt_clear_hint(p);
         c->cmdname_pending = 0;
         return 1;
     }
@@ -147,7 +148,7 @@ static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
         changed = 1;
     }
     c->cmdname_pending = 1;
-    ed_set_status_message("%d matches — Tab again for fzf", n);
+    prompt_set_hint(p, "%d matches — Tab again for fzf", n);
     return changed;
 }
 
@@ -261,7 +262,7 @@ static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
     snprintf(c->prefix, sizeof(c->prefix), "%s", pref);
     c->active = 1;
     cmdcomp_apply_token(p, items[0]);
-    ed_set_status_message("%d matches", count);
+    prompt_set_hint(p, "%d matches — Tab cycles", count);
 }
 #pragma GCC diagnostic pop
 
@@ -335,6 +336,7 @@ static PromptResult colon_on_key(Prompt *p, int key) {
         key != '\r' && key != '\x1b') {
         cmdcomp_clear(&s->comp);
         hist_reset_browse(&E.history);
+        prompt_clear_hint(p);
     }
     return prompt_default_on_key(p, key);
 }

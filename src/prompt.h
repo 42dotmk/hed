@@ -63,6 +63,8 @@ struct Prompt {
     int                 len;
     int                 cursor;       /* future: in-line editing */
     bool                stay_open;    /* set by submit handler / commands */
+    char                hint[256];    /* shown above prompt; survives async
+                                       * E.status_msg overwrites */
 };
 
 /* Lifecycle. Switches MODE_COMMAND on/off automatically. */
@@ -92,5 +94,12 @@ PromptResult prompt_default_on_key(Prompt *p, int key);
  * handlers run. */
 void prompt_keep_open(void);                       /* don't auto-close */
 void prompt_set_text(Prompt *p, const char *s, int len);
+
+/* Set/clear a hint line rendered just above the prompt input. Lives in
+ * the Prompt itself so it's immune to async overwrites of E.status_msg
+ * (mail/copilot/etc.). Cleared automatically on the next keystroke
+ * unless the prompt sets it again. */
+void prompt_set_hint(Prompt *p, const char *fmt, ...);
+void prompt_clear_hint(Prompt *p);
 
 #endif
