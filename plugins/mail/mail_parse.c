@@ -189,6 +189,10 @@ typedef struct {
 
     /* indices into render->attaches for this message */
     int attach_start;
+    /* number of attachments belonging to this message — captured when
+     * the message is closed so emit_msg works even when messages are
+     * emitted out of parse order (newest-first reordering). */
+    int attach_count;
 } MsgState;
 
 static void buf_append(char **buf, size_t *len, size_t *cap,
@@ -243,7 +247,7 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
         lines_pushz(r, line);
     }
 
-    int n_att = r->attach_count - m->attach_start;
+    int n_att = m->attach_count;
     if (n_att > 0) {
         size_t cap = 32 + (size_t)n_att * 80;
         char  *al  = malloc(cap);
@@ -309,11 +313,35 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
     }
 }
 
+/* Push the current MsgState onto saved[] (taking ownership of its
+ * heap buffers) and reset the working copy. Called wherever we used
+ * to call emit_msg + msg_state_reset; the actual emit happens at the
+ * end of parsing in reverse order so the newest message lands at the
+ * top of the rendered buffer. */
+static void msg_save(MsgState *m, MsgState **saved, int *n, int *cap,
+                     int attach_total) {
+    if (*n >= *cap) {
+        int ncap = *cap ? *cap * 2 : 8;
+        MsgState *ns = realloc(*saved, (size_t)ncap * sizeof(*ns));
+        if (!ns) return;
+        *saved = ns;
+        *cap = ncap;
+    }
+    m->attach_count = attach_total - m->attach_start;
+    (*saved)[(*n)++] = *m;
+    /* Hand ownership of plain/html to the saved entry — wipe the
+     * working copy so msg_state_reset in subsequent flow doesn't
+     * double-free. */
+    memset(m, 0, sizeof(*m));
+}
+
 void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
     MsgState msg;
     memset(&msg, 0, sizeof(msg));
     int in_message = 0;
-    int is_first   = 1;
+
+    MsgState *saved   = NULL;
+    int       saved_n = 0, saved_cap = 0;
 
     /* Header block flag (between \fheader{ and \fheader}). */
     int in_header = 0;
@@ -334,11 +362,8 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
 
         /* --- markers ------------------------------------------------- */
         if (starts_with(line, "\fmessage{")) {
-            if (in_message) {
-                emit_msg(r, &msg, is_first);
-                is_first = 0;
-                msg_state_reset(&msg);
-            }
+            if (in_message)
+                msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
             in_message       = 1;
             in_header        = 0;
             pstack_depth     = 0;
@@ -351,9 +376,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
         if (strcmp(line, "\fmessage}") == 0) {
             if (in_message) {
-                emit_msg(r, &msg, is_first);
-                is_first   = 0;
-                msg_state_reset(&msg);
+                msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
                 in_message = 0;
             }
             continue;
@@ -435,8 +458,16 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
     }
 
-    if (in_message) {
-        emit_msg(r, &msg, is_first);
-        msg_state_reset(&msg);
+    if (in_message)
+        msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
+
+    /* Emit messages newest-first. notmuch outputs the thread in
+     * arrival/depth order (root → replies), which is oldest-first;
+     * reversing puts the most recent message at the top of the
+     * buffer — what the reader actually wants to see. */
+    for (int i = saved_n - 1; i >= 0; i--) {
+        emit_msg(r, &saved[i], i == saved_n - 1);
+        msg_state_reset(&saved[i]);
     }
+    free(saved);
 }

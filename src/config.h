@@ -18,6 +18,7 @@
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
 #include "mail/mail.h"
+#include "mail_git_patch/mail_git_patch.h"
 #include "multicursor/multicursor.h"
 #include "open/open.h"
 #include "pickers/pickers.h"
@@ -76,6 +77,7 @@ void config_init(void) {
     plugin_load(&plugin_git,              1);
     plugin_load(&plugin_pickers,          1);
     plugin_load(&plugin_mail,             1);
+    plugin_load(&plugin_mail_git_patch,   1);
     plugin_load(&plugin_open,             1);
 
     theme_activate("tokyo-night");
@@ -120,6 +122,10 @@ void config_init(void) {
     cmapn(" tt",   "tmux_toggle",          "toggle tmux pane");
     cmapn(" tT",   "tmux_kill",            "kill tmux pane");
     cmapn(" gg",   "git",                  "lazygit");
+    mapn (" gp",   kb_mail_git_patch_prompt,
+                                          "open :mail-git-patch prompt (Enter for -1 HEAD)");
+    cmapn_ft("mail-message", " ga", "mail-git-am",
+             "apply this patch email via git am");
     cmapn(" tl",   "ln",                   "toggle line numbers");
     cmapn(" wd",   "wclose",               "close window");
     cmapn(" ws",   "split",                "split horizontal");

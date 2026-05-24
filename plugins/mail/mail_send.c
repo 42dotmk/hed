@@ -39,6 +39,10 @@ void mail_set_from(const char *from) {
     snprintf(from_addr, sizeof(from_addr), "%s", from ? from : "");
 }
 
+const char *mail_get_from(void) {
+    return from_addr;
+}
+
 static void insert_line(Buffer *buf, const char *s) {
     buf_row_insert_in(buf, buf->num_rows, s, strlen(s));
 }
@@ -432,6 +436,10 @@ static void compose_from_lines(const char *title, char **lines, int count) {
     }
     E.current_buffer = idx;
     ed_set_mode(MODE_INSERT);
+}
+
+void mail_compose_with_lines(const char *title, char **lines, int count) {
+    compose_from_lines(title, lines, count);
 }
 
 void mail_reply(int reply_all) {

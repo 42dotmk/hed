@@ -188,6 +188,7 @@ static int mail_plugin_init(void) {
             "mark all threads in current query as read");
 
     mapn_ft("mail", "b", kb_mailboxes, "open mailbox sidebar");
+    mapn_ft("mail", "C", mail_compose, "start a new compose buffer");
     mapn_ft("mail", "D", kb_delete,    "mark thread under cursor as deleted");
     mapv_ft("mail", "D", kb_delete,    "mark selected threads as deleted");
     keybind_register_ft(MODE_VISUAL_LINE, "D", "mail", kb_delete,

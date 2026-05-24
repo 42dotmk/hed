@@ -78,6 +78,12 @@ void mail_set_send_cmd(const char *cmd);
  * or NULL, the From: line is left blank for the user to fill in. */
 void mail_set_from(const char *from);
 
+/* Read back the configured From: address (set via mail_set_from).
+ * Returns "" if none has been configured. The returned pointer is
+ * owned by the mail plugin — copy if you need to retain it past the
+ * next mail_set_from call. */
+const char *mail_get_from(void);
+
 /* Open a new editable buffer pre-filled with a compose template. */
 void mail_compose(void);
 
@@ -85,6 +91,14 @@ void mail_compose(void);
  * command. The buffer must look like an RFC 822 message: headers,
  * a blank line, then the body. */
 void mail_send_current(void);
+
+/* Open a compose buffer pre-filled from a flat array of header+body
+ * lines (one row per line, the first empty line marks the start of
+ * the body). Used by /reply/forward and by external producers like
+ * the git-patch plugin that already have a fully-formed RFC 822
+ * message. `title` becomes the buffer title; filetype is
+ * "mail-compose" so :mail-send picks it up. */
+void mail_compose_with_lines(const char *title, char **lines, int count);
 
 /* Open a compose buffer pre-filled with a reply to the message being
  * viewed. reply_all=0 → sender only, 1 → reply-all. */
