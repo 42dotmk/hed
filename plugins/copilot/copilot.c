@@ -39,7 +39,7 @@ static char *cp_uri_for(const char *filepath) {
         sprintf(uri, "file://%s", filepath);
     } else if (E.cwd[0]) {
         sprintf(uri, "file://%s/%s", E.cwd, filepath);
-    } else if (getcwd(cwd, sizeof(cwd))) {
+    } else if (fs_getcwd(cwd, sizeof(cwd))) {
         sprintf(uri, "file://%s/%s", cwd, filepath);
     } else {
         sprintf(uri, "file://%s", filepath);

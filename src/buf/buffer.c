@@ -1,5 +1,6 @@
 #include "buf/buf_helpers.h"
 #include "buf/buffer.h"
+#include "fs/fs.h"
 #include "registers.h"
 #include "editor.h"
 #include "hooks.h"
@@ -13,7 +14,6 @@
 #include <string.h>
 #include "lib/safe_string.h"
 #include "fold_methods/fold_methods.h"
-#include "lib/file_helpers.h"
 #include <assert.h>
 #include <regex.h>
 
@@ -107,7 +107,7 @@ EdError buf_new(const char *filename, int *out_idx) {
         }
     }
 
-    buf->filetype = path_detect_filetype(filename);
+    buf->filetype = fs_path_detect_filetype(filename);
     if (!buf->filetype) {
         free(buf->title);
         free(buf->filename);
@@ -132,27 +132,19 @@ EdError buf_open_file(const char *filename, Buffer **out) {
         return err;
     Buffer *buf = &E.buffers[idx];
 
-    FILE *fp = fopen(filename, "r");
-    if (!fp) {
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, filename) != ED_OK) {
         /* New file - this is OK, not an error */
         ed_set_status_message("New file: %s", filename);
         *out = buf;
         return ED_OK;
     }
 
-    // Add to jump list
-
-    char *line = NULL;
-    size_t linecap = 0;
-    ssize_t linelen;
-    while ((linelen = getline(&line, &linecap, fp)) != -1) {
-        while (linelen > 0 &&
-               (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
-            linelen--;
+    const char *line;
+    size_t      linelen;
+    while (fs_lines_next(r, &line, &linelen))
         buf_row_insert_in(buf, buf->num_rows, line, linelen);
-    }
-    free(line);
-    fclose(fp);
+    fs_lines_close(r);
     buf->dirty = 0;
 
     recent_files_add(&E.recent_files, filename);
@@ -826,24 +818,19 @@ void buf_reload(Buffer *buf) {
 
     /* Detect filetype (update) */
     free(buf->filetype);
-    buf->filetype = path_detect_filetype(buf->filename);
+    buf->filetype = fs_path_detect_filetype(buf->filename);
 
-    FILE *fp = fopen(buf->filename, "r");
-    if (!fp) {
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, buf->filename) != ED_OK) {
         ed_set_status_message("reload: cannot open %s", buf->filename);
         buf->dirty = 0;
         return;
     }
-    char *line = NULL;
-    size_t cap = 0;
-    ssize_t len;
-    while ((len = getline(&line, &cap, fp)) != -1) {
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-            len--;
-        buf_row_insert_in(buf, buf->num_rows, line, (size_t)len);
-    }
-    free(line);
-    fclose(fp);
+    const char *line;
+    size_t      len;
+    while (fs_lines_next(r, &line, &len))
+        buf_row_insert_in(buf, buf->num_rows, line, len);
+    fs_lines_close(r);
     buf->dirty = 0;
     ed_set_status_message("reloaded: %s", buf->filename);
 }

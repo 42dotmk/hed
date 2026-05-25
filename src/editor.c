@@ -1,4 +1,5 @@
 #include "editor.h"
+#include "fs/fs.h"
 #include "input.h"
 #include "hooks.h"
 #include "prompt.h"
@@ -16,12 +17,10 @@
 #include "command_mode.h"
 #include "config.h"
 #include "macros.h"
-#include <dirent.h>
 #include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 Ed E;
 
@@ -291,7 +290,7 @@ void ed_init(int create_default_buffer) {
     ed_init_state();
     log_msg("Editor state initialized");
 
-    if (!getcwd(E.cwd, sizeof(E.cwd))) {
+    if (!fs_getcwd(E.cwd, sizeof(E.cwd))) {
         E.cwd[0] = '\0';
     }
 

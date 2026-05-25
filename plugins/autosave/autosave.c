@@ -55,7 +55,7 @@ static int autosave_skip_buf(const Buffer *buf) {
 /* Build `~/.cache/hed/<encoded-cwd>/autosave/<rel>`. Caller frees. */
 static char *autosave_path_for(const char *filename) {
     char base[PATH_MAX];
-    if (!path_cache_file_for_cwd("autosave", base, sizeof(base))) return NULL;
+    if (!fs_path_cache_for_cwd("autosave", base, sizeof(base))) return NULL;
 
     /* Strip any leading slashes so absolute paths nest cleanly under
      * the autosave dir without producing `<base>//abs/path`. */
@@ -78,7 +78,7 @@ static int autosave_mkdir_parent(const char *path) {
     if (!dir) return -1;
     memcpy(dir, path, n);
     dir[n] = '\0';
-    int ok = path_mkdir_p(dir);
+    int ok = fs_mkdir_p(dir) == ED_OK;
     free(dir);
     return ok ? 0 : -1;
 }
@@ -105,22 +105,7 @@ static char *autosave_build_text(const Buffer *buf, size_t *out_len) {
 /* ---------- atomic write ---------- */
 
 static int autosave_atomic_write(const char *path, const char *data, size_t n) {
-    char tmp[PATH_MAX];
-    int  m = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-    if (m <= 0 || (size_t)m >= sizeof(tmp)) return -1;
-
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return -1;
-    size_t off = 0;
-    while (off < n) {
-        ssize_t w = write(fd, data + off, n - off);
-        if (w < 0) { close(fd); unlink(tmp); return -1; }
-        off += (size_t)w;
-    }
-    fsync(fd);
-    close(fd);
-    if (rename(tmp, path) != 0) { unlink(tmp); return -1; }
-    return 0;
+    return fs_file_write_atomic(path, data, n) == ED_OK ? 0 : -1;
 }
 
 /* ---------- write the autosave for one buffer ---------- */
@@ -149,7 +134,7 @@ static void autosave_write_buf(Buffer *buf) {
         return;
     }
     if (autosave_atomic_write(path, text, n) != 0) {
-        log_msg("autosave: write failed for %s: %s", path, strerror(errno));
+        log_msg("autosave: write failed for %s", path);
     } else {
         log_msg("autosave: wrote %zu bytes to %s", n, path);
     }
@@ -190,7 +175,7 @@ static void on_buffer_save(HookBufferEvent *e) {
     if (autosave_skip_buf(e->buf)) return;
     char *path = autosave_path_for(e->buf->filename);
     if (!path) return;
-    if (unlink(path) == 0) log_msg("autosave: removed %s after save", path);
+    if (fs_unlink(path) == ED_OK) log_msg("autosave: removed %s after save", path);
     free(path);
 }
 
@@ -205,8 +190,8 @@ typedef struct {
 /* Replace `buf`'s rows with the contents of `path`, mark dirty.
  * Mirrors the read loop in buf_reload(). */
 static int autosave_load_into(Buffer *buf, const char *path) {
-    FILE *fp = fopen(path, "r");
-    if (!fp) return -1;
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK) return -1;
 
     /* Drop existing rows. */
     for (int i = 0; i < buf->num_rows; i++) row_free(&buf->rows[i]);
@@ -223,15 +208,11 @@ static int autosave_load_into(Buffer *buf, const char *path) {
     /* Drop vtext marks pinned to old line indices. */
     vtext_clear_all(buf);
 
-    char  *line = NULL;
-    size_t cap  = 0;
-    ssize_t len;
-    while ((len = getline(&line, &cap, fp)) != -1) {
-        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) len--;
-        buf_row_insert_in(buf, buf->num_rows, line, (size_t)len);
-    }
-    free(line);
-    fclose(fp);
+    const char *line;
+    size_t      len;
+    while (fs_lines_next(r, &line, &len))
+        buf_row_insert_in(buf, buf->num_rows, line, len);
+    fs_lines_close(r);
 
     buf->dirty = 1;
     return 0;
@@ -256,7 +237,7 @@ static void on_restore_choice(const char *answer, void *ud) {
                 rp->display_name);
         }
     } else {
-        if (unlink(rp->autosave_path) == 0)
+        if (fs_unlink(rp->autosave_path) == ED_OK)
             ed_set_status_message("autosave: discarded for %s",
                                   rp->display_name);
     }
@@ -271,14 +252,14 @@ static int autosave_exists_and_fresh(const Buffer *buf, char **out_path) {
     char *path = autosave_path_for(buf->filename);
     if (!path) return 0;
 
-    struct stat st_a;
-    if (stat(path, &st_a) != 0) { free(path); return 0; }
+    long am = fs_mtime(path);
+    if (am == 0) { free(path); return 0; }
 
-    struct stat st_o;
-    if (stat(buf->filename, &st_o) == 0 && st_a.st_mtime <= st_o.st_mtime) {
+    long om = fs_mtime(buf->filename);
+    if (om != 0 && am <= om) {
         /* On-disk file is at least as new — the autosave is stale.
          * Remove it silently. */
-        unlink(path);
+        fs_unlink(path);
         free(path);
         return 0;
     }

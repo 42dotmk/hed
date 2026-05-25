@@ -158,6 +158,18 @@ static void kb_close(void) {
         ed_set_status_message("buffer has unsaved changes (use :bd! to force)");
 }
 
+/* Intercept "open this path" when it's a mailto: URI — route to compose
+ * instead of letting core try to open a file literally named `mailto:…`.
+ * Makes `hed mailto:foo@bar?subject=Hi` work for desktop mail-handler
+ * registration. */
+static void mail_open_pre(HookBufferEvent *ev) {
+    if (!ev || !ev->filename) return;
+    if (strncmp(ev->filename, "mailto:", 7) == 0) {
+        mail_compose_uri(ev->filename);
+        ev->consumed = 1;
+    }
+}
+
 static int mail_plugin_init(void) {
     cmd("mail",         cmd_mail,         "open notmuch mail list");
     cmd("mail-refresh", cmd_mail_refresh, "clear filter and refresh mail list");
@@ -203,6 +215,8 @@ static int mail_plugin_init(void) {
     mapn_ft("mail-message", "A", kb_attach_save, "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
     mapn_ft("mail-message", "<C-p>", kb_prev_msg, "open previous message in list");
+
+    hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", mail_open_pre);
 
     /* q closes the current mail buffer in normal mode, for any of the
      * mail filetypes (list, message, mailbox sidebar, compose). */

@@ -21,7 +21,7 @@ static void cmd_reload(const char *args) {
     }
 
     char path[4096];
-    if (path_cache_file_for_cwd("session", path, sizeof(path))) {
+    if (fs_path_cache_for_cwd("session", path, sizeof(path))) {
         session_save(path);
         setenv("HED_RELOAD", "1", 1);
     }

@@ -16,14 +16,6 @@
 #include "hed.h"
 #include "yazi.h"
 
-#include <sys/stat.h>
-
-static const char *yazi_tmpdir(void) {
-    const char *t = getenv("TMPDIR");
-    if (t && *t) return t;
-    return "/tmp";
-}
-
 /* Append `s` to `dst` as a single-quoted shell literal. Returns the
  * number of bytes written (excluding NUL), or a value >= cap on
  * truncation (caller should treat as failure). */
@@ -50,22 +42,11 @@ static size_t shell_squote(char *dst, size_t cap, const char *s) {
     return off;
 }
 
-/* Trim trailing CR/LF/spaces/tabs in place. */
-static void rstrip(char *s) {
-    size_t n = strlen(s);
-    while (n > 0) {
-        char c = s[n - 1];
-        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') s[--n] = '\0';
-        else break;
-    }
-}
-
 /* If `path` exists and contains a slash, write its parent dir into
  * out[0..cap). Returns 1 on success (out filled), 0 otherwise. */
 static int dirname_if_exists(const char *path, char *out, size_t cap) {
     if (!path || !*path) return 0;
-    struct stat st;
-    if (stat(path, &st) != 0) return 0;
+    if (!fs_exists(path)) return 0;
     const char *slash = strrchr(path, '/');
     if (!slash) {
         /* File in cwd with no path separator — parent is cwd. */
@@ -99,18 +80,11 @@ static void cmd_yazi(const char *args) {
             dirname_if_exists(cur->filename, auto_start, sizeof(auto_start));
     }
 
-    char tmppath[256];
-    snprintf(tmppath, sizeof(tmppath), "%s/hed_yazi_%d",
-             yazi_tmpdir(), (int)getpid());
-    /* Pre-create the file so an empty-on-exit case is unambiguous and
-     * we own it at 0600 even if yazi never writes to it. */
-    int fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) {
-        ed_set_status_message("yazi: cannot create temp file: %s",
-                              strerror(errno));
+    char tmppath[PATH_MAX];
+    if (fs_temp_path("hed_yazi", tmppath, sizeof(tmppath)) != ED_OK) {
+        ed_set_status_message("yazi: cannot create temp file");
         return;
     }
-    close(fd);
 
     const char *start_arg = (args && *args) ? args
                             : (auto_start[0] ? auto_start : NULL);
@@ -121,7 +95,7 @@ static void cmd_yazi(const char *args) {
         char qarg[768];
         if (shell_squote(qarg, sizeof(qarg), start_arg) >= sizeof(qarg)) {
             ed_set_status_message("yazi: argument too long");
-            unlink(tmppath);
+            fs_unlink(tmppath);
             return;
         }
         n = snprintf(cmd, sizeof(cmd),
@@ -132,39 +106,39 @@ static void cmd_yazi(const char *args) {
     }
     if (n < 0 || (size_t)n >= sizeof(cmd)) {
         ed_set_status_message("yazi: command too long");
-        unlink(tmppath);
+        fs_unlink(tmppath);
         return;
     }
 
     int status = term_cmd_run_interactive(cmd, false);
     if (status == -1) {
         ed_set_status_message("yazi: failed to launch (is it installed?)");
-        unlink(tmppath);
+        fs_unlink(tmppath);
         ed_render_frame();
         return;
     }
 
     /* Read selected paths back. */
-    FILE *fp = fopen(tmppath, "r");
-    if (!fp) {
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, tmppath) != ED_OK) {
         ed_set_status_message("yazi: no selection");
-        unlink(tmppath);
+        fs_unlink(tmppath);
         ed_render_frame();
         return;
     }
 
-    char line[4096];
+    const char *line;
+    size_t      len;
     int  opened = 0;
     char first_path[4096] = {0};
-    while (fgets(line, sizeof(line), fp)) {
-        rstrip(line);
-        if (!line[0]) continue;
+    while (fs_lines_next(r, &line, &len)) {
+        if (!len) continue;
         if (!opened) snprintf(first_path, sizeof(first_path), "%s", line);
         buf_open_or_switch(line, true);
         opened++;
     }
-    fclose(fp);
-    unlink(tmppath);
+    fs_lines_close(r);
+    fs_unlink(tmppath);
 
     if (opened == 0) {
         ed_set_status_message("yazi: no selection");

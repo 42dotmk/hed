@@ -39,7 +39,7 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 typedef struct TrJob {
     pid_t pid;
     int   from_fd;        /* child stdout read end (non-blocking) */
-    char  in_path[64];    /* temp input file, unlink on finish */
+    char  in_path[PATH_MAX]; /* temp input file, unlink on finish */
 
     /* Output accumulator (grown with realloc). */
     char  *out;
@@ -117,19 +117,12 @@ static char *sel_to_text(Buffer *buf, const TextSelection *sel,
 
 static int write_temp(const char *data, size_t len, char *path_out,
                       size_t cap) {
-    snprintf(path_out, cap, "/tmp/hed-translate-XXXXXX");
-    int fd = mkstemp(path_out);
-    if (fd < 0) return -1;
-    size_t off = 0;
-    while (off < len) {
-        ssize_t w = write(fd, data + off, len - off);
-        if (w < 0) {
-            if (errno == EINTR) continue;
-            close(fd); unlink(path_out); return -1;
-        }
-        off += (size_t)w;
+    if (fs_temp_path("hed-translate", path_out, cap) != ED_OK)
+        return -1;
+    if (fs_file_write(path_out, data, len) != ED_OK) {
+        fs_unlink(path_out);
+        return -1;
     }
-    close(fd);
     return 0;
 }
 
@@ -180,7 +173,7 @@ static void job_finalize(TrJob *j) {
 
     int status = 0;
     if (j->pid > 0) waitpid(j->pid, &status, 0);
-    unlink(j->in_path);
+    fs_unlink(j->in_path);
 
     int exit_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
     if (!exit_ok || j->out_len == 0) {
@@ -322,7 +315,7 @@ static void cmd_translate(const char *args) {
 
     int pipefd[2];
     if (pipe(pipefd) != 0) {
-        unlink(j->in_path); job_free(j);
+        fs_unlink(j->in_path); job_free(j);
         ed_set_status_message("translate: pipe() failed");
         return;
     }
@@ -330,7 +323,7 @@ static void cmd_translate(const char *args) {
     pid_t pid = fork();
     if (pid < 0) {
         close(pipefd[0]); close(pipefd[1]);
-        unlink(j->in_path); job_free(j);
+        fs_unlink(j->in_path); job_free(j);
         ed_set_status_message("translate: fork() failed");
         return;
     }

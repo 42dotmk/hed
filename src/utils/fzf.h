@@ -23,4 +23,19 @@ int fzf_pick_list(const char **items, int count, int multi, char ***out_lines,
 /* Free the results allocated by fzf_run / fzf_pick_list. */
 void fzf_free(char **lines, int count);
 
+/* Shared shell snippets used by the file-picker callers (`:fzf`, `:recent`,
+ * the gF keybind). Single source of truth for "how do we list project files"
+ * and "what does the file preview look like." */
+
+/* Lists every file under the cwd, preferring ripgrep when present. */
+#define FZF_PROJECT_FILES_CMD                                                 \
+    "(command -v rg >/dev/null 2>&1 && rg --files || find . -type f -print)"
+
+/* Inner shell body for the fzf --preview option. fzf substitutes {} with
+ * the line under the cursor. Bat if installed, sed fallback. Caller wraps
+ * this in --preview '...' and adds --preview-window. */
+#define FZF_FILE_PREVIEW_BODY                                                 \
+    "command -v bat >/dev/null 2>&1 && bat --style=plain "                    \
+    "--color=always --line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null"
+
 #endif /* FZF_H */

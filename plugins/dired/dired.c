@@ -14,7 +14,7 @@ static void on_chdir(void)  { dired_handle_chdir(); }
 /* Intercept "open this path" if it's a directory. */
 static void dired_open_pre(HookBufferEvent *ev) {
     if (!ev || !ev->filename) return;
-    if (path_is_dir(ev->filename)) {
+    if (fs_is_dir(ev->filename)) {
         dired_open(ev->filename);
         ev->consumed = 1;
     }

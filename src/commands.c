@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Global command storage - exposed for cmd_search and cmd_misc */
+/* Global command storage - exposed so callers can iterate registrations
+ * (e.g. the pickers plugin's :c command palette). */
 Command *commands = NULL;
 
 void command_init(void) {

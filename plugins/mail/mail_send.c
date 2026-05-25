@@ -304,21 +304,19 @@ void mail_send_current(void) {
     char **att_paths = NULL;
     int    att_count = collect_attach_paths(buf, &att_paths, NULL);
 
-    char tmpl[] = "/tmp/hed-mail-XXXXXX";
-    int  fd     = mkstemp(tmpl);
-    if (fd < 0) {
+    char tmpl[PATH_MAX];
+    if (fs_temp_path("hed-mail", tmpl, sizeof(tmpl)) != ED_OK) {
         for (int i = 0; i < att_count; i++) free(att_paths[i]);
         free(att_paths);
-        ed_set_status_message("mail-send: mkstemp failed");
+        ed_set_status_message("mail-send: failed to reserve temp file");
         return;
     }
-    FILE *fp = fdopen(fd, "w");
+    FILE *fp = fopen(tmpl, "w");
     if (!fp) {
-        close(fd);
-        unlink(tmpl);
+        fs_unlink(tmpl);
         for (int i = 0; i < att_count; i++) free(att_paths[i]);
         free(att_paths);
-        ed_set_status_message("mail-send: fdopen failed");
+        ed_set_status_message("mail-send: failed to open temp file");
         return;
     }
 
@@ -338,17 +336,17 @@ void mail_send_current(void) {
     if (fflush(fp) != 0 || ferror(fp)) wr_err = 1;
     fclose(fp);
     if (wr_err) {
-        unlink(tmpl);
+        fs_unlink(tmpl);
         for (int i = 0; i < att_count; i++) free(att_paths[i]);
         free(att_paths);
         ed_set_status_message("mail-send: failed to write message");
         return;
     }
 
-    char shell_cmd[512];
+    char shell_cmd[PATH_MAX + 512];
     snprintf(shell_cmd, sizeof(shell_cmd), "%s < %s", send_cmd, tmpl);
     int rc = term_cmd_system(shell_cmd);
-    unlink(tmpl);
+    fs_unlink(tmpl);
     if (rc != 0) {
         if (WIFEXITED(rc))
             ed_set_status_message("mail-send: %s exited %d",
@@ -440,6 +438,200 @@ static void compose_from_lines(const char *title, char **lines, int count) {
 
 void mail_compose_with_lines(const char *title, char **lines, int count) {
     compose_from_lines(title, lines, count);
+}
+
+/* ------------------------------------------------------------------ */
+/* mailto: URI (RFC 6068) → compose                                    */
+/* ------------------------------------------------------------------ */
+
+static int hexval(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Percent-decode `src` (length `len`) into a fresh malloc'd NUL-terminated
+ * string. `form` non-zero also decodes '+' as space (tolerant — RFC 6068
+ * mandates %20, but many producers still emit '+'). Returns NULL on OOM. */
+static char *url_decode(const char *src, size_t len, int form) {
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = src[i];
+        if (c == '%' && i + 2 < len) {
+            int hi = hexval((unsigned char)src[i + 1]);
+            int lo = hexval((unsigned char)src[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out[j++] = (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        if (form && c == '+') { out[j++] = ' '; continue; }
+        out[j++] = c;
+    }
+    out[j] = '\0';
+    return out;
+}
+
+/* Append `add` to the comma-separated list in `*dst` (malloc'd). Skips
+ * empty additions. Frees and replaces `*dst`. */
+static void append_csv(char **dst, const char *add) {
+    if (!add || !*add) return;
+    if (!*dst || !**dst) {
+        free(*dst);
+        *dst = strdup(add);
+        return;
+    }
+    size_t need = strlen(*dst) + 2 + strlen(add) + 1;
+    char *nw = malloc(need);
+    if (!nw) return;
+    snprintf(nw, need, "%s, %s", *dst, add);
+    free(*dst);
+    *dst = nw;
+}
+
+/* Push one `Header: value` line onto a growing array. */
+static void push_header(char ***arr, int *count, int *cap,
+                        const char *name, const char *val) {
+    if (!val) return;
+    size_t need = strlen(name) + 2 + strlen(val) + 1;
+    char *line = malloc(need);
+    if (!line) return;
+    snprintf(line, need, "%s: %s", name, val);
+
+    if (*count >= *cap) {
+        int nc = *cap ? *cap * 2 : 16;
+        char **na = realloc(*arr, (size_t)nc * sizeof(char *));
+        if (!na) { free(line); return; }
+        *arr = na;
+        *cap = nc;
+    }
+    (*arr)[(*count)++] = line;
+}
+
+static void push_raw(char ***arr, int *count, int *cap, const char *s) {
+    if (*count >= *cap) {
+        int nc = *cap ? *cap * 2 : 16;
+        char **na = realloc(*arr, (size_t)nc * sizeof(char *));
+        if (!na) return;
+        *arr = na;
+        *cap = nc;
+    }
+    (*arr)[(*count)++] = strdup(s ? s : "");
+}
+
+void mail_compose_uri(const char *uri) {
+    if (!uri) return;
+    if (strncmp(uri, "mailto:", 7) != 0) {
+        ed_set_status_message("mail: not a mailto: URI");
+        return;
+    }
+
+    const char *rest = uri + 7;
+    const char *q    = strchr(rest, '?');
+    size_t      path_len = q ? (size_t)(q - rest) : strlen(rest);
+
+    char *to_acc      = NULL;
+    char *cc_acc      = NULL;
+    char *bcc_acc     = NULL;
+    char *subject     = NULL;
+    char *body        = NULL;
+    char *in_reply_to = NULL;
+    char *references  = NULL;
+
+    /* Path: comma-list of recipients. Each recipient is percent-decoded
+     * individually so commas inside encoded display-names (%2C) survive. */
+    if (path_len > 0) {
+        size_t start = 0;
+        for (size_t i = 0; i <= path_len; i++) {
+            if (i == path_len || rest[i] == ',') {
+                char *dec = url_decode(rest + start, i - start, 0);
+                if (dec && *dec) append_csv(&to_acc, dec);
+                free(dec);
+                start = i + 1;
+            }
+        }
+    }
+
+    /* Query: &-separated key=value pairs. */
+    if (q) {
+        const char *p = q + 1;
+        while (*p) {
+            const char *amp = strchr(p, '&');
+            size_t      seg = amp ? (size_t)(amp - p) : strlen(p);
+            const char *eq  = memchr(p, '=', seg);
+            if (eq) {
+                size_t klen = (size_t)(eq - p);
+                size_t vlen = seg - klen - 1;
+                char  *key  = url_decode(p, klen, 0);
+                char  *val  = url_decode(eq + 1, vlen, 1);
+                if (key && val) {
+                    if      (!strcasecmp(key, "to"))          append_csv(&to_acc,  val);
+                    else if (!strcasecmp(key, "cc"))          append_csv(&cc_acc,  val);
+                    else if (!strcasecmp(key, "bcc"))         append_csv(&bcc_acc, val);
+                    else if (!strcasecmp(key, "subject"))     { free(subject);     subject     = strdup(val); }
+                    else if (!strcasecmp(key, "body"))        { free(body);        body        = strdup(val); }
+                    else if (!strcasecmp(key, "in-reply-to")) { free(in_reply_to); in_reply_to = strdup(val); }
+                    else if (!strcasecmp(key, "references"))  { free(references);  references  = strdup(val); }
+                    /* unknown keys: ignore per RFC 6068 §4 */
+                }
+                free(key); free(val);
+            }
+            p = amp ? amp + 1 : p + seg;
+        }
+    }
+
+    /* Build the line array. */
+    char **lines = NULL;
+    int    count = 0, cap = 0;
+
+    push_header(&lines, &count, &cap, "From",    from_addr[0] ? from_addr : "");
+    push_header(&lines, &count, &cap, "To",      to_acc  ? to_acc  : "");
+    push_header(&lines, &count, &cap, "Cc",      cc_acc  ? cc_acc  : "");
+    if (bcc_acc && *bcc_acc)
+        push_header(&lines, &count, &cap, "Bcc", bcc_acc);
+    push_header(&lines, &count, &cap, "Subject", subject ? subject : "");
+    if (in_reply_to && *in_reply_to)
+        push_header(&lines, &count, &cap, "In-Reply-To", in_reply_to);
+    if (references && *references)
+        push_header(&lines, &count, &cap, "References", references);
+
+    /* Header/body separator. */
+    push_raw(&lines, &count, &cap, "");
+
+    /* Body: split on CR/LF in either order. */
+    if (body && *body) {
+        char  *p   = body;
+        char  *seg = body;
+        while (*p) {
+            if (*p == '\n' || *p == '\r') {
+                char save = *p;
+                *p = '\0';
+                push_raw(&lines, &count, &cap, seg);
+                if (save == '\r' && p[1] == '\n') p++;
+                p++;
+                seg = p;
+            } else {
+                p++;
+            }
+        }
+        if (*seg) push_raw(&lines, &count, &cap, seg);
+    } else {
+        push_raw(&lines, &count, &cap, "");
+    }
+
+    compose_from_lines("Compose (mailto)", lines, count);
+
+    for (int i = 0; i < count; i++) free(lines[i]);
+    free(lines);
+    free(to_acc); free(cc_acc); free(bcc_acc);
+    free(subject); free(body);
+    free(in_reply_to); free(references);
+
+    ed_set_status_message("mail: compose from mailto: URI");
 }
 
 void mail_reply(int reply_all) {

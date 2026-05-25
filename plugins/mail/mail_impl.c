@@ -3,7 +3,6 @@
 #include "hed.h"
 #include "buf/row.h"
 #include "lib/theme.h"
-#include "lib/file_helpers.h"
 #include "open/open.h"
 #include "prompt.h"
 #include "utils/fzf.h"
@@ -196,11 +195,10 @@ const char *mail_get_dir(void) { return resolve_mail_dir(); }
 
 static int is_maildir(const char *path) {
     char p[1024];
-    struct stat st;
     snprintf(p, sizeof(p), "%s/cur", path);
-    if (stat(p, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+    if (!fs_is_dir(p)) return 0;
     snprintf(p, sizeof(p), "%s/new", path);
-    if (stat(p, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+    if (!fs_is_dir(p)) return 0;
     return 1;
 }
 
@@ -220,23 +218,18 @@ static int cmp_str(const void *a, const void *b) {
 /* Read sorted directory entries (excluding "." / ".." and hidden helpers
  * like "cur" / "new" / "tmp"). Caller frees each entry and the array. */
 static int read_subdirs(const char *path, char ***out) {
-    DIR *d = opendir(path);
-    if (!d) { *out = NULL; return 0; }
+    FsDir *d = NULL;
+    if (fs_dir_open(&d, path) != ED_OK) { *out = NULL; return 0; }
 
     char **names = NULL;
     int    cap   = 0;
     int    n     = 0;
-    struct dirent *de;
-    while ((de = readdir(d))) {
-        const char *name = de->d_name;
-        if (name[0] == '.') continue;
+    FsDirEntry de;
+    while (fs_dir_next(d, &de)) {
+        const char *name = de.name;
+        if (!de.is_dir) continue;
         if (!strcmp(name, "cur") || !strcmp(name, "new") ||
             !strcmp(name, "tmp")) continue;
-
-        char child[1024];
-        snprintf(child, sizeof(child), "%s/%s", path, name);
-        struct stat st;
-        if (stat(child, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
 
         if (n == cap) {
             cap = cap ? cap * 2 : 16;
@@ -246,7 +239,7 @@ static int read_subdirs(const char *path, char ***out) {
         }
         names[n++] = strdup(name);
     }
-    closedir(d);
+    fs_dir_close(d);
     if (n > 1) qsort(names, (size_t)n, sizeof(*names), cmp_str);
     *out = names;
     return n;
@@ -1226,7 +1219,7 @@ int mail_extract_attachments_to_tmp(char ***out_paths) {
     char dir[256];
     snprintf(dir, sizeof(dir), "/tmp/hed-mail-fwd-%d-%ld-%d",
              (int)getpid(), (long)time(NULL), fwd_seq);
-    if (!path_mkdir_p(dir)) return 0;
+    if (fs_mkdir_p(dir) != ED_OK) return 0;
 
     char **paths = calloc((size_t)attach_count, sizeof(char *));
     if (!paths) return 0;
@@ -1299,7 +1292,7 @@ void mail_attach_action(int part_id, const char *dest_dir) {
         /* Trim a single trailing slash so "%s/%s" stays clean. */
         size_t L = strlen(resolved_dir);
         while (L > 1 && resolved_dir[L - 1] == '/') resolved_dir[--L] = '\0';
-        if (!path_mkdir_p(resolved_dir)) {
+        if (fs_mkdir_p(resolved_dir) != ED_OK) {
             ed_set_status_message("mail-attach: cannot create dir %s",
                                   resolved_dir);
             free(resolved_dir);

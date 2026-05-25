@@ -1,4 +1,5 @@
 #include "ui/abuf.h"
+#include "fs/fs.h"
 #include "lib/ansi.h"
 #include "lib/theme.h"
 #include "utils/bottom_ui.h"
@@ -19,8 +20,6 @@ extern int ts_is_enabled(void)             __attribute__((weak));
 extern void ts_buffer_reparse(Buffer *buf) __attribute__((weak));
 extern size_t ts_highlight_line(Buffer *buf, int row, char *out, size_t outsz,
                                 int slice_start, int slice_len) __attribute__((weak));
-#include <errno.h>
-#include <fcntl.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,29 +143,13 @@ EdError buf_save_in(Buffer *buf) {
     if (!buffer)
         return ED_ERR_NOMEM;
 
-    int fd = open(buf->filename, O_RDWR | O_CREAT, 0644);
-    if (fd == -1) {
-        free(buffer);
-        ed_set_status_message("Error opening file: %s", strerror(errno));
-        return ED_ERR_FILE_OPEN;
-    }
-
-    if (ftruncate(fd, len) == -1) {
-        close(fd);
-        free(buffer);
-        ed_set_status_message("Error truncating file: %s", strerror(errno));
-        return ED_ERR_FILE_WRITE;
-    }
-
-    if (write(fd, buffer, len) != len) {
-        close(fd);
-        free(buffer);
-        ed_set_status_message("Error writing file: %s", strerror(errno));
-        return ED_ERR_FILE_WRITE;
-    }
-
-    close(fd);
+    EdError werr = fs_file_write(buf->filename, buffer, (size_t)len);
     free(buffer);
+    if (werr != ED_OK) {
+        ed_set_status_message("Error writing %s: %s",
+                              buf->filename, ed_error_string(werr));
+        return werr;
+    }
     buf->dirty = 0;
 
     /* Track in recent files */

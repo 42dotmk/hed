@@ -1,90 +1,91 @@
-#include "commands/cmd_search.h"
-#include "editor.h"
-#include "commands.h"
-#include "buf/buf_helpers.h"
-#include "lib/strutil.h"
-#include "terminal.h"
-#include "commands/cmd_util.h"
-#include "utils/fzf.h"
-#include "prompt.h"
+/* search plugin: ripgrep-driven search across the project, the current
+ * buffer, and arbitrary shell output. Owns:
+ *
+ *   :rg [pat]   - ripgrep the project (interactive fzf if no pattern)
+ *   :rgword     - ripgrep word under cursor; also bound to `gr`
+ *   :ssearch    - ripgrep the current file with live fzf
+ *   :shq <cmd>  - run a shell command, parse file:line:col:text into qf
+ *
+ * Results land in the quickfix list (or jump directly when there's a
+ * single match). cmd_rg / cmd_rg_word both pipe through cmd_shq, which
+ * is why they live together.
+ *
+ * Sibling: the non-ripgrep pickers (cmd_cpick, cmd_fzf, cmd_recent)
+ * live in plugins/pickers/. */
+
+#include "hed.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-void cmd_cpick(const char *args) {
-    /* Build printf list with name\tdesc lines for fzf preview */
-    char pipebuf[8192];
-    size_t off = 0;
-    off +=
-        snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
-    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
-        const char *nm = commands[i].name ? commands[i].name : "";
-        const char *ds = commands[i].desc ? commands[i].desc : "";
-        char en[256], ed[512];
-        shell_escape_single(nm, en, sizeof(en));
-        shell_escape_single(ds, ed, sizeof(ed));
-        size_t need = strlen(en) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-        memcpy(pipebuf + off, en, strlen(en));
-        off += strlen(en);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
+static void cmd_shq(const char *args) {
+    if (!args || !*args) {
+        ed_set_status_message("Usage: :shq <command>");
+        return;
     }
-    pipebuf[off] = '\0';
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "%s 2>/dev/null", args);
 
-    /* If args contains a non-empty initial query, seed fzf with it via
-     * --query. Used by command-mode double-Tab escalation. */
-    char fzf_opts_buf[512];
-    char qescaped[256] = "";
-    if (args && *args) {
-        shell_escape_single(args, qescaped, sizeof(qescaped));
-    }
-    snprintf(fzf_opts_buf, sizeof(fzf_opts_buf),
-             "--delimiter '\t' --with-nth 1 --preview 'echo {2}' "
-             "--preview-window right,60%%,wrap%s%s",
-             qescaped[0] ? " --query " : "",
-             qescaped[0] ? qescaped : "");
-    const char *fzf_opts = fzf_opts_buf;
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        ed_set_status_message("c: canceled");
-        fzf_free(sel, cnt);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        ed_set_status_message("shq: failed to run");
         return;
     }
 
-    /* Parse the picked line: name<TAB>desc */
-    char *picked = sel[0];
-    char *tab = strchr(picked, '\t');
-    if (tab)
-        *tab = '\0';
-
-    /* Pre-fill the active : prompt with "<picked> " and keep it open
-     * for the user to type arguments. cmd_cpick is only ever called
-     * from within an active colon prompt (Tab→fzf escalation, or via
-     * the :c command), so prompt_current() is non-NULL here. */
-    Prompt *p = prompt_current();
-    if (p) {
-        size_t ll = strlen(picked);
-        if (ll + 1 >= sizeof(p->buf)) ll = sizeof(p->buf) - 2;
-        char tmp[PROMPT_BUF_CAP];
-        memcpy(tmp, picked, ll);
-        tmp[ll]   = ' ';
-        tmp[ll+1] = '\0';
-        prompt_set_text(p, tmp, (int)ll + 1);
-        ed_set_status_message(":%s", p->buf);
-        prompt_keep_open();
+    qf_clear(&E.qf);
+    char line[2048];
+    int added = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        /* Try parse as file:line:col:text */
+        char tmp[2048];
+        snprintf(tmp, sizeof(tmp), "%s", line);
+        char *p1 = strchr(tmp, ':');
+        if (p1) {
+            *p1 = '\0';
+            char *file = tmp;
+            char *p2 = strchr(p1 + 1, ':');
+            if (p2) {
+                *p2 = '\0';
+                int lno = atoi(p1 + 1);
+                char *p3 = strchr(p2 + 1, ':');
+                int col = 1;
+                char *text = NULL;
+                if (p3) {
+                    *p3 = '\0';
+                    col = atoi(p2 + 1);
+                    text = p3 + 1;
+                } else {
+                    col = atoi(p2 + 1);
+                    text = "";
+                }
+                size_t tl = strlen(text);
+                if (tl && (text[tl - 1] == '\n' || text[tl - 1] == '\r'))
+                    text[--tl] = '\0';
+                qf_add(&E.qf, file, lno, col, text);
+                added++;
+                continue;
+            }
+        }
+        /* Plain line -> text-only quickfix item */
+        size_t ll = strlen(line);
+        if (ll && (line[ll - 1] == '\n' || line[ll - 1] == '\r'))
+            line[--ll] = '\0';
+        qf_add(&E.qf, NULL, 0, 0, line);
+        added++;
     }
-    fzf_free(sel, cnt);
+    pclose(fp);
+
+    if (added > 0) {
+        qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
+        ed_set_status_message("shq: %d line(s)", added);
+    } else {
+        ed_set_status_message("shq: no output");
+    }
 }
 
-void cmd_ssearch(const char *args) {
+static void cmd_ssearch(const char *args) {
     (void)args;
-	BUF(buf)
+    BUF(buf)
     EdError err = buf_save_in(buf);
     if (err != ED_OK) {
         ed_set_status_message("Warning: save failed: %s", ed_error_string(err));
@@ -192,7 +193,7 @@ void cmd_ssearch(const char *args) {
     }
 }
 
-void cmd_rg(const char *args) {
+static void cmd_rg(const char *args) {
     /* If a pattern is provided, run rg once and populate quickfix directly (no
      * fzf). */
     if (args && *args) {
@@ -312,27 +313,7 @@ void cmd_rg(const char *args) {
     }
 }
 
-void cmd_fzf(const char *args) {
-    (void)args;
-    qf_clear(&E.qf);
-    char **sel = NULL;
-    int cnt = 0;
-    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files "
-                                 "|| find . -type f -print)";
-    const char *fzf_opts =
-        "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain "
-        "--color=always --line-range :200 {} || sed -n \"1,200p\" {} "
-        "2>/dev/null' --preview-window right,60%,wrap";
-    if (fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 &&
-        sel[0] && sel[0][0]) {
-        buf_open_or_switch(sel[0], true);
-    } else {
-        ed_set_status_message("fzf: no selection");
-    }
-    fzf_free(sel, cnt);
-}
-
-void cmd_rg_word(const char *args) {
+static void cmd_rg_word(const char *args) {
     (void)args;
     /* Get word under cursor */
     SizedStr w = sstr_new();
@@ -361,117 +342,17 @@ void cmd_rg_word(const char *args) {
     cmd_shq(cmd);
 }
 
-void cmd_recent(const char *args) {
-    (void)args;
-
-    int len = recent_files_len(&E.recent_files);
-    if (len == 0) {
-        ed_set_status_message("No recent files");
-        return;
-    }
-
-    char cmd[8192];
-    int off = 0;
-
-    off += snprintf(cmd + off, sizeof(cmd) - off, "printf '%%s\\n' ");
-
-    for (int i = 0; i < len && off < (int)sizeof(cmd) - 1024; i++) {
-        const char *file = recent_files_get(&E.recent_files, i);
-        if (!file)
-            continue;
-
-        char escaped[1024];
-        shell_escape_single(file, escaped, sizeof(escaped));
-
-        size_t need = strlen(escaped) + 2;
-        if (off + need >= sizeof(cmd)) {
-            break;
-        }
-
-        off += snprintf(cmd + off, sizeof(cmd) - off, "%s ", escaped);
-    }
-
-    cmd[off] = '\0';
-
-    char **sel = NULL;
-    int cnt = 0;
-    const char *fzf_opts =
-        "--preview 'command -v bat >/dev/null 2>&1 && bat --style=plain "
-        "--color=always --line-range :200 {} || sed -n \"1,200p\" {} "
-        "2>/dev/null' --preview-window right,60%,wrap";
-
-    if (fzf_run_opts(cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] &&
-        sel[0][0]) {
-        buf_open_or_switch(sel[0], true);
-    } else {
-        ed_set_status_message("no selection");
-    }
-
-    fzf_free(sel, cnt);
+static int search_init(void) {
+    cmd("rg",      cmd_rg,      "ripgrep");
+    cmd("rgword",  cmd_rg_word, "ripgrep word under cursor");
+    cmd("ssearch", cmd_ssearch, "search current file");
+    cmd("shq",     cmd_shq,     "shell cmd");
+    return 0;
 }
 
-void cmd_shq(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("Usage: :shq <command>");
-        return;
-    }
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "%s 2>/dev/null", args);
-
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
-        ed_set_status_message("shq: failed to run");
-        return;
-    }
-
-    qf_clear(&E.qf);
-    char line[2048];
-    int added = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        /* Try parse as file:line:col:text */
-        char tmp[2048];
-        snprintf(tmp, sizeof(tmp), "%s", line);
-        char *p1 = strchr(tmp, ':');
-        if (p1) {
-            *p1 = '\0';
-            char *file = tmp;
-            char *p2 = strchr(p1 + 1, ':');
-            if (p2) {
-                *p2 = '\0';
-                int lno = atoi(p1 + 1);
-                char *p3 = strchr(p2 + 1, ':');
-                int col = 1;
-                char *text = NULL;
-                if (p3) {
-                    *p3 = '\0';
-                    col = atoi(p2 + 1);
-                    text = p3 + 1;
-                } else {
-                    col = atoi(p2 + 1);
-                    text = "";
-                }
-                size_t tl = strlen(text);
-                if (tl && (text[tl - 1] == '\n' || text[tl - 1] == '\r'))
-                    text[--tl] = '\0';
-                qf_add(&E.qf, file, lno, col, text);
-                added++;
-                continue;
-            }
-        }
-        /* Plain line -> text-only quickfix item */
-        size_t ll = strlen(line);
-        if (ll && (line[ll - 1] == '\n' || line[ll - 1] == '\r'))
-            line[--ll] = '\0';
-        qf_add(&E.qf, NULL, 0, 0, line);
-        added++;
-    }
-    pclose(fp);
-
-    if (added > 0) {
-        qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
-        ed_set_status_message("shq: %d line(s)", added);
-    } else {
-        ed_set_status_message("shq: no output");
-    }
-}
-
+const Plugin plugin_search = {
+    .name   = "search",
+    .desc   = "ripgrep-driven search (:rg, :rgword, :ssearch, :shq)",
+    .init   = search_init,
+    .deinit = NULL,
+};

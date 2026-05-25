@@ -59,7 +59,7 @@ static char *find_in_path(const char *name) {
                 cand[seg] = '/';
                 memcpy(cand + seg + 1, name, name_len);
                 cand[seg + 1 + name_len] = '\0';
-                if (access(cand, X_OK) == 0) return cand;
+                if (fs_is_executable(cand)) return cand;
                 free(cand);
             }
         }
@@ -75,7 +75,7 @@ static int cp_resolve_invocation(CpServerInvocation *out) {
 
     /* 1. explicit override */
     const char *env = getenv("HED_COPILOT_LSP");
-    if (env && *env && access(env, R_OK) == 0) {
+    if (env && *env && fs_is_file(env)) {
         if (has_js_suffix(env)) {
             out->argv0  = strdup("node");
             out->script = strdup(env);
@@ -93,7 +93,7 @@ static int cp_resolve_invocation(CpServerInvocation *out) {
     }
 
     /* 3. cwd-relative local install. */
-    if (access(cp_lsp_relative, R_OK) == 0) {
+    if (fs_is_file(cp_lsp_relative)) {
         out->argv0  = strdup("node");
         out->script = strdup(cp_lsp_relative);
         return 0;
@@ -103,7 +103,7 @@ static int cp_resolve_invocation(CpServerInvocation *out) {
         char  *p = malloc(n);
         if (p) {
             snprintf(p, n, "%s/%s", E.cwd, cp_lsp_relative);
-            if (access(p, R_OK) == 0) {
+            if (fs_is_file(p)) {
                 out->argv0  = strdup("node");
                 out->script = p;
                 return 0;

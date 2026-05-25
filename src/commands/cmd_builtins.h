@@ -3,7 +3,6 @@
 
 
 #include "commands/cmd_misc.h"
-#include "commands/cmd_search.h"
 #include "commands/commands_buffer.h"
 #include "commands/commands_ui.h"
 

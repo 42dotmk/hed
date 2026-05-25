@@ -124,7 +124,7 @@ static char *lsp_build_content(Buffer *buf) {
 static char *lsp_get_file_uri(const char *filepath) {
     if (!filepath) return NULL;
     char cwd[1024] = {0};
-    int have_cwd = (filepath[0] != '/' && getcwd(cwd, sizeof(cwd)) != NULL);
+    int have_cwd = (filepath[0] != '/' && fs_getcwd(cwd, sizeof(cwd)));
     /* "file://" (7) + cwd + "/" + filepath + NUL, plus a little slack. */
     size_t need = strlen(filepath) + 16;
     if (have_cwd) need += strlen(cwd);
@@ -1262,7 +1262,7 @@ static int lsp_find_root(const char *start, const char *const *markers,
         for (int i = 0; markers[i]; i++) {
             char probe[2048];
             snprintf(probe, sizeof(probe), "%s/%s", dir, markers[i]);
-            if (access(probe, F_OK) == 0) {
+            if (fs_exists(probe)) {
                 snprintf(out, out_sz, "%s", dir);
                 return 0;
             }

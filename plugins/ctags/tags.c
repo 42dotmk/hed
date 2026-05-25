@@ -1,9 +1,11 @@
 #include "ctags/tags.h"
+#include "fs/fs.h"
 #include "lib/log.h"
 #include "editor.h"
 #include "buf/buf_helpers.h"
 #include "lib/sizedstr.h"
 #include "utils/term_cmd.h"
+#include "commands/cmd_util.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,16 +20,12 @@ static int find_tags_file(char *out_path, size_t size) {
     /* Try current working directory first */
     if (E.cwd[0]) {
         /* Truncation OK: caller passes a sized buffer; if cwd is too long
-         * the fopen below fails and we move on to the buffer-dir fallback. */
+         * the check below fails and we move on to the buffer-dir fallback. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(out_path, size, "%s/tags", E.cwd);
 #pragma GCC diagnostic pop
-        FILE *f = fopen(out_path, "r");
-        if (f) {
-            fclose(f);
-            return 1;
-        }
+        if (fs_is_file(out_path)) return 1;
     }
 
     /* Try buffer's directory if available */
@@ -38,24 +36,14 @@ static int find_tags_file(char *out_path, size_t size) {
             if (dir_len + 6 < size) { /* +6 for "/tags\0" */
                 memcpy(out_path, buf->filename, dir_len);
                 strcpy(out_path + dir_len, "/tags");
-                FILE *f = fopen(out_path, "r");
-                if (f) {
-                    fclose(f);
-                    return 1;
-                }
+                if (fs_is_file(out_path)) return 1;
             }
         }
     }
 
     /* Try plain "tags" in current directory */
     snprintf(out_path, size, "tags");
-    FILE *f = fopen(out_path, "r");
-    if (f) {
-        fclose(f);
-        return 1;
-    }
-
-    return 0;
+    return fs_is_file(out_path);
 }
 
 /* Helper: Parse a ctags line into a TagEntry */
@@ -194,12 +182,20 @@ TagEntry *find_tag(const char *tag_name) {
         return NULL;
     }
 
-    /* Build rg command to search for the tag */
-    /* We search for lines starting with "tag_name\t" */
-    char cmd[2048];
+    /* Build "^tag_name<TAB>" anchored regex, then shell-escape it (and
+     * the tags path) so quotes/spaces/etc in either are safe. */
+    char regex[600];
+    snprintf(regex, sizeof(regex), "^%s\t", tag_name);
+
+    char esc_regex[1300];
+    shell_escape_single(regex, esc_regex, sizeof(esc_regex));
+    char esc_path[2100];
+    shell_escape_single(tags_path, esc_path, sizeof(esc_path));
+
+    char cmd[4096];
     snprintf(cmd, sizeof(cmd),
-             "rg --no-heading --color=never --max-count=1 '^%s\t' %s", tag_name,
-             tags_path);
+             "rg --no-heading --color=never --max-count=1 -- %s %s",
+             esc_regex, esc_path);
 
     /* Run the command */
     char **lines = NULL;

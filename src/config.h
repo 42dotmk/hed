@@ -26,6 +26,7 @@
 #include "quickfix_preview/quickfix_preview.h"
 #include "reload/reload.h"
 #include "scratch/scratch.h"
+#include "search/search.h"
 #include "selectlist/selectlist.h"
 #include "sed/sed_plugin.h"
 #include "session/session_plugin.h"
@@ -64,6 +65,7 @@ void config_init(void) {
     plugin_load(&plugin_hed_themes,       1);
     plugin_load(&plugin_markdown,         1);
     plugin_load(&plugin_scratch,          1);
+    plugin_load(&plugin_search,           1);
     plugin_load(&plugin_selectlist,       1);
     plugin_load(&plugin_sed,              1);
     plugin_load(&plugin_reload,           1);

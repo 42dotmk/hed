@@ -8,10 +8,10 @@
 
 #include "commands/commands_buffer.h"
 #include "editor.h"
+#include "fs/fs.h"
 #include "hooks.h"
 #include "lib/strutil.h"
 #include "terminal.h"
-#include "lib/file_helpers.h"
 #include "commands/cmd_util.h"
 #include "utils/fzf.h"
 #include <errno.h>
@@ -328,7 +328,7 @@ void cmd_write(const char *args) {
             buf->title = strdup(exppath);
             /* update filetype */
             free(buf->filetype);
-            buf->filetype = path_detect_filetype(exppath);
+            buf->filetype = fs_path_detect_filetype(exppath);
         }
     }
     EdError err = buf_save_in(buf);
@@ -371,7 +371,7 @@ void cmd_cd(const char *args) {
             ed_set_status_message("cwd: %s", E.cwd);
         } else {
             char cwd[PATH_MAX];
-            if (getcwd(cwd, sizeof(cwd))) {
+            if (fs_getcwd(cwd, sizeof(cwd))) {
                 ed_set_status_message("cwd: %s", cwd);
             } else {
                 ed_set_status_message("cwd: (unknown)");
@@ -383,16 +383,17 @@ void cmd_cd(const char *args) {
     char trimmed[PATH_MAX];
     char path[PATH_MAX];
     str_trim_whitespace(args, trimmed, sizeof(trimmed));
-    str_expand_tilde(trimmed, path, sizeof(path));
+    fs_path_expand_tilde(trimmed, path, sizeof(path));
 
-    if (chdir(path) == 0) {
-        if (getcwd(E.cwd, sizeof(E.cwd))) {
+    EdError err = fs_chdir(path);
+    if (err == ED_OK) {
+        if (fs_getcwd(E.cwd, sizeof(E.cwd))) {
             ed_set_status_message("cd: %s", E.cwd);
         } else {
             E.cwd[0] = '\0';
             ed_set_status_message("cd: ok");
         }
     } else {
-        ed_set_status_message("cd: %s", strerror(errno));
+        ed_set_status_message("cd: %s", ed_error_string(err));
     }
 }

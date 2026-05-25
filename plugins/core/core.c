@@ -224,7 +224,6 @@ static void register_commands(void) {
     cmd("bd", cmd_buffer_delete, "delete buf");
     cmd("bd!", cmd_buffer_delete_force, "delete buf (force)");
     cmd("e", cmd_edit, "edit file");
-    cmd("c", cmd_cpick, "pick cmd");
     cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
     cmd("history", cmd_history, "cmd hist");
@@ -247,14 +246,8 @@ static void register_commands(void) {
     cmd("cnext", cmd_cnext, "qf next");
     cmd("cprev", cmd_cprev, "qf prev");
     cmd("copenidx", cmd_copenidx, "qf open N");
-    cmd("ssearch", cmd_ssearch, "search current file");
-    cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
-    cmd("rg", cmd_rg, "ripgrep");
-    cmd("shq", cmd_shq, "shell cmd");
     cmd("cd", cmd_cd, "chdir");
     cmd("pwd", cmd_cd, "current dir");
-    cmd("fzf", cmd_fzf, "pick a file(s)");
-    cmd("recent", cmd_recent, "recent files");
     cmd("logclear", cmd_logclear, "clear .hedlog");
     cmd("wrap", cmd_wrap, "toggle wrap");
     cmd("wrapdefault", cmd_wrapdefault, "toggle default wrap");

@@ -1,11 +1,11 @@
 #include "editor.h"
+#include "fs/fs.h"
 #include "lib/log.h"
 #include "hooks.h"
 #include "commands.h"
 #include "terminal.h"
 #include "select_loop.h"
 #include "macros.h"
-#include "lib/file_helpers.h"
 #include "buf/buffer.h"
 #include "ui/window.h"
 #include "stb_ds.h"
@@ -75,7 +75,7 @@ static int parse_args(int argc, char *argv[], CliArgs *out) {
 
 static void init_logging(int argc) {
     char log_path[4096];
-    if (path_cache_file_for_cwd("log", log_path, sizeof(log_path)))
+    if (fs_path_cache_for_cwd("log", log_path, sizeof(log_path)))
         log_init(log_path);
     else
         log_init(".hedlog");

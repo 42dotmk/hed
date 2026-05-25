@@ -1,22 +1,20 @@
 #include "editor.h"
 #include "commands.h"
+#include "fs/fs.h"
 #include "registers.h"
 #include "lib/safe_string.h"
 #include "lib/log.h"
 #include "lib/strutil.h"
 #include "terminal.h"
 #include "command_mode.h"
-#include "commands/cmd_search.h"
 #include "prompt.h"
 #include "stb_ds.h"
 
 #include <ctype.h>
-#include <dirent.h>
 #include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 /* ===========================================================================
@@ -58,6 +56,13 @@ static HistoryHook *g_history_hooks = NULL;
 void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud) {
     HistoryHook h = { fn, ud };
     arrput(g_history_hooks, h);
+}
+
+/* Completion-picker hook — provided by the pickers plugin. */
+static CmdPromptCompletionPicker g_completion_picker = NULL;
+
+void cmd_prompt_completion_picker_register(CmdPromptCompletionPicker fn) {
+    g_completion_picker = fn;
 }
 
 /* ----- completion: file-path and command-name ---------------------------- */
@@ -213,47 +218,36 @@ static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
         base[0] = '\0';
         snprintf(pref, sizeof(pref), "%s", full);
     }
-    DIR *d = opendir(base[0] ? base : ".");
-    if (!d) return;
-    struct dirent *de;
+    FsDir *d = NULL;
+    if (fs_dir_open(&d, base[0] ? base : ".") != ED_OK) return;
+    FsDirEntry de;
     int     cap   = 0;
     int     count = 0;
     char  **items = NULL;
-    while ((de = readdir(d)) != NULL) {
-        const char *name = de->d_name;
+    while (fs_dir_next(d, &de)) {
+        const char *name = de.name;
         if (name[0] == '.' && pref[0] != '.') continue;
         if (strncmp(name, pref, strlen(pref)) != 0) continue;
-        int isdir = 0;
-#ifdef DT_DIR
-        if (de->d_type == DT_DIR) isdir = 1;
-        if (de->d_type == DT_UNKNOWN)
-#endif
-        {
-            char path[PATH_MAX];
-            snprintf(path, sizeof(path), "%s%s", base[0] ? base : "", name);
-            struct stat st;
-            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) isdir = 1;
-        }
         char cand[PATH_MAX];
         snprintf(cand, sizeof(cand), "%s%s%s",
-                 base[0] ? base : "", name, isdir ? "/" : "");
+                 base[0] ? base : "", name, de.is_dir ? "/" : "");
         if (count + 1 > cap) {
             cap = cap ? cap * 2 : 16;
             char **new_items = realloc(items, (size_t)cap * sizeof(char *));
             if (!new_items) {
                 for (int i = 0; i < count; i++) free(items[i]);
-                free(items); closedir(d); return;
+                free(items); fs_dir_close(d); return;
             }
             items = new_items;
         }
         char *cand_copy = strdup(cand);
         if (!cand_copy) {
             for (int i = 0; i < count; i++) free(items[i]);
-            free(items); closedir(d); return;
+            free(items); fs_dir_close(d); return;
         }
         items[count++] = cand_copy;
     }
-    closedir(d);
+    fs_dir_close(d);
     if (count == 0) { free(items); return; }
     c->items  = items;
     c->count  = count;
@@ -283,16 +277,17 @@ static void colon_complete(Prompt *p) {
     CmdPromptState *s = p->state;
     if (cmdcomp_is_cmdname_position(p)) {
         if (s->comp.cmdname_pending) {
-            /* Second Tab on the command name: hand off to fzf, seeded
-             * with the partial typed so far. cmd_cpick re-fills the
-             * prompt and calls prompt_keep_open(). */
+            /* Second Tab on the command name: hand off to the registered
+             * picker (pickers plugin's cmd_cpick), seeded with the
+             * partial typed so far. The picker re-fills the prompt and
+             * calls prompt_keep_open(). No-op if no picker registered. */
             char query[128];
             int n = p->len;
             if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
             memcpy(query, p->buf, (size_t)n);
             query[n] = '\0';
             cmdcomp_clear(&s->comp);
-            cmd_cpick(query);
+            if (g_completion_picker) g_completion_picker(query);
         } else {
             cmdcomp_complete_cmdname(p, &s->comp);
         }

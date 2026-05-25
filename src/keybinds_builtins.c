@@ -3,7 +3,7 @@
 #include "command_mode.h"
 #include "commands/cmd_util.h"
 #include "commands/commands_ui.h"
-#include "lib/file_helpers.h"
+#include "fs/fs.h"
 #include "utils/fold.h"
 #include "editor.h"
 #include "hooks.h"
@@ -776,21 +776,16 @@ void kb_search_file_under_cursor(void) {
     char esc_query[PATH_MAX * 2];
     shell_escape_single(query, esc_query, sizeof(esc_query));
 
-    const char *find_files_cmd = "(command -v rg >/dev/null 2>&1 && rg --files "
-                                 "|| find . -type f -print)";
-    const char *preview =
-        "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always "
-        "--line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null";
-
     char fzf_opts[PATH_MAX * 2 + 256];
     snprintf(fzf_opts, sizeof(fzf_opts),
-             "--select-1 --exit-0 --query %s --preview '%s' "
-             "--preview-window right,60%%,wrap",
-             esc_query, preview);
+             "--select-1 --exit-0 --query %s --preview '" FZF_FILE_PREVIEW_BODY
+             "' --preview-window right,60%%,wrap",
+             esc_query);
 
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run_opts(find_files_cmd, fzf_opts, 0, &sel, &cnt) || cnt <= 0 ||
+    if (!fzf_run_opts(FZF_PROJECT_FILES_CMD, fzf_opts, 0, &sel, &cnt) ||
+        cnt <= 0 ||
         !sel[0] || !sel[0][0]) {
         fzf_free(sel, cnt);
         ed_set_status_message("gF: no selection");
@@ -821,13 +816,13 @@ void kb_open_file_under_cursor(void) {
 
     char base[PATH_MAX];
     base[0] = '\0';
-    path_dirname_buf(buf_cur()->filename, base, sizeof(base));
+    fs_path_dirname_buf(buf_cur()->filename, base, sizeof(base));
     if (base[0] == '\0') {
         if (E.cwd[0]) {
             safe_strcpy(base, E.cwd, sizeof(base));
         } else {
             char cwd[PATH_MAX];
-            if (getcwd(cwd, sizeof(cwd))) {
+            if (fs_getcwd(cwd, sizeof(cwd))) {
                 safe_strcpy(base, cwd, sizeof(base));
             }
         }
@@ -835,8 +830,8 @@ void kb_open_file_under_cursor(void) {
 
     char resolved[PATH_MAX];
     const char *target = expanded;
-    if (!path_is_absolute(expanded) && base[0]) {
-        if (!path_join_dir(resolved, sizeof(resolved), base, expanded)) {
+    if (!fs_path_is_absolute(expanded) && base[0]) {
+        if (!fs_path_join(resolved, sizeof(resolved), base, expanded)) {
             sstr_free(&path);
             ed_set_status_message("gf: path too long");
             return;
@@ -845,28 +840,24 @@ void kb_open_file_under_cursor(void) {
     }
 
     sstr_free(&path);
-    FILE *f = fopen(target, "r");
-    if (f) {
-        fclose(f);
-    } else if (!path_is_absolute(expanded)) {
+    bool found = fs_is_file(target);
+    if (!found && !fs_path_is_absolute(expanded)) {
         /* Fall back to CWD for relative paths */
         char cwd_resolved[PATH_MAX];
         const char *cwd = E.cwd[0] ? E.cwd : NULL;
         char tmp_cwd[PATH_MAX];
-        if (!cwd && getcwd(tmp_cwd, sizeof(tmp_cwd)))
+        if (!cwd && fs_getcwd(tmp_cwd, sizeof(tmp_cwd)))
             cwd = tmp_cwd;
-        if (cwd && path_join_dir(cwd_resolved, sizeof(cwd_resolved), cwd, expanded)) {
-            f = fopen(cwd_resolved, "r");
-            if (f) {
-                fclose(f);
-                target = cwd_resolved;
-            }
+        if (cwd && fs_path_join(cwd_resolved, sizeof(cwd_resolved), cwd, expanded) &&
+            fs_is_file(cwd_resolved)) {
+            target = cwd_resolved;
+            found  = true;
         }
-        if (!f) {
+        if (!found) {
             ed_set_status_message("gf: file does not exist: %s", expanded);
             return;
         }
-    } else {
+    } else if (!found) {
         ed_set_status_message("gf: file does not exist: %s", target);
         return;
     }

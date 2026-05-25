@@ -192,20 +192,10 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
 static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
     if (!qpath || !*qpath)
         return NULL;
-    FILE *fp = fopen(qpath, "r");
-    if (!fp)
+    char  *buf = NULL;
+    size_t sz  = 0;
+    if (fs_file_read(qpath, &buf, &sz) != ED_OK)
         return NULL;
-    fseek(fp, 0, SEEK_END);
-    long sz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    char *buf = malloc((size_t)sz + 1);
-    if (!buf) {
-        fclose(fp);
-        return NULL;
-    }
-    fread(buf, 1, (size_t)sz, fp);
-    buf[sz] = '\0';
-    fclose(fp);
     uint32_t err_offset;
     TSQueryError err_type;
     TSQuery *q =

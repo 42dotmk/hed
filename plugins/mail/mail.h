@@ -100,6 +100,14 @@ void mail_send_current(void);
  * "mail-compose" so :mail-send picks it up. */
 void mail_compose_with_lines(const char *title, char **lines, int count);
 
+/* Open a compose buffer pre-filled from a `mailto:` URI (RFC 6068).
+ * Recognized query keys: to, cc, bcc, subject, body, in-reply-to,
+ * references. Recipients in the path and any `to` query values are
+ * merged. `%0A` / `%0D%0A` in the body become real line breaks.
+ * Used by the buffer pre-open hook so `hed mailto:foo@bar?...` works
+ * when hed is registered as the system mailto handler. */
+void mail_compose_uri(const char *uri);
+
 /* Open a compose buffer pre-filled with a reply to the message being
  * viewed. reply_all=0 → sender only, 1 → reply-all. */
 void mail_reply(int reply_all);
