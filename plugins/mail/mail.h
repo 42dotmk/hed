@@ -32,6 +32,10 @@ void mail_add_view(const char *name, const char *query);
  * mail_get_dir()). */
 void mail_open_mailboxes(void);
 
+/* Register HOOK_RENDER_PRE handlers for the three mail filetypes.
+ * Called once from mail_plugin_init. */
+void mail_register_render_hooks(void);
+
 /* Called by <CR> while in the mailbox sidebar. */
 void mail_handle_mailbox_enter(void);
 

@@ -366,45 +366,8 @@ static void clear_buffer(Buffer *buf) {
 #define MC_MSG_HDR_VAL    COLOR_VARIABLE               /* header value        */
 #define MC_MSG_QUOTE      COLOR_COMMENT                /* > quoted lines      */
 
-/* A coloured span: [s, e) bytes in the render buffer → SGR escape. */
+/* A coloured span: [s, e) bytes in the row → SGR escape. */
 typedef struct { int s, e; const char *sgr; } MailSpan;
-
-/* Write the visible slice [col_off, col_off+max_cols) of `raw` into `dst`,
- * applying colour from `spans`.  Returns bytes written (including SGR codes),
- * or 0 on empty input. */
-static size_t emit_spans(const char *raw, int raw_len,
-                         const MailSpan *spans, int nspan,
-                         char *dst, size_t dst_cap,
-                         int col_off, int max_cols) {
-    int end = col_off + max_cols;
-    if (end > raw_len) end = raw_len;
-    if (col_off >= end || dst_cap < 8) return 0;
-
-    char       *p   = dst;
-    const char *lim = dst + dst_cap - 32; /* headroom for one SGR + reset */
-    const char *active_sgr = NULL;
-
-    for (int b = col_off; b < end && p < lim; b++) {
-        /* Find the span that owns byte b (linear scan — lines are short). */
-        const char *sgr = NULL;
-        for (int i = 0; i < nspan; i++) {
-            if (spans[i].s <= b && b < spans[i].e) { sgr = spans[i].sgr; break; }
-        }
-        /* Emit SGR only on colour transitions. */
-        if (sgr != active_sgr) {
-            const char *code = sgr ? sgr : COLOR_RESET;
-            size_t clen = strlen(code);
-            if (p + (int)clen >= lim) break;
-            memcpy(p, code, clen);
-            p += clen;
-            active_sgr = sgr;
-        }
-        *p++ = raw[b];
-    }
-    /* Always close with a reset so we don't bleed into adjacent cells. */
-    if (p + 4 <= dst + (int)dst_cap) { memcpy(p, COLOR_RESET, 4); p += 4; }
-    return (size_t)(p - dst);
-}
 
 /* Build colour spans for one mail-list row.
  * Row format (after our 2-char flag prefix):
@@ -458,17 +421,19 @@ static int parse_list_spans(const char *raw, int len,
     return n;
 }
 
-static size_t mail_list_hl(Buffer *buf, int row,
-                           char *dst, size_t dst_cap,
-                           int col_off, int max_cols) {
-    if (row < 0 || row >= buf->num_rows) return 0;
-    const char *raw = buf->rows[row].render.data;
-    int         len = (int)buf->rows[row].render.len;
-    if (!raw || len <= 0) return 0;
-
-    MailSpan spans[16];
-    int n = parse_list_spans(raw, len, spans, 16);
-    return emit_spans(raw, len, spans, n, dst, dst_cap, col_off, max_cols);
+static void mail_list_render_hook(const HookRenderEvent *e) {
+    if (!e || !e->buf || !e->spans) return;
+    Buffer *buf = e->buf;
+    for (int row = e->row_start; row < e->row_end; row++) {
+        if (row < 0 || row >= buf->num_rows) continue;
+        const char *raw = buf->rows[row].chars.data;
+        int         len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0) continue;
+        MailSpan ms[16];
+        int n = parse_list_spans(raw, len, ms, 16);
+        for (int i = 0; i < n; i++)
+            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr, 0);
+    }
 }
 
 /* Known RFC 2822 header names we want to colour. */
@@ -521,18 +486,19 @@ static int parse_msg_spans(const char *raw, int len,
     return 0; /* body text: no highlight (fall back to plain) */
 }
 
-size_t mail_msg_hl(Buffer *buf, int row,
-                          char *dst, size_t dst_cap,
-                          int col_off, int max_cols) {
-    if (row < 0 || row >= buf->num_rows) return 0;
-    const char *raw = buf->rows[row].render.data;
-    int         len = (int)buf->rows[row].render.len;
-    if (!raw || len <= 0) return 0;
-
-    MailSpan spans[8];
-    int n = parse_msg_spans(raw, len, spans, 8);
-    if (n == 0) return 0; /* plain body: let renderer output raw bytes */
-    return emit_spans(raw, len, spans, n, dst, dst_cap, col_off, max_cols);
+static void mail_msg_render_hook(const HookRenderEvent *e) {
+    if (!e || !e->buf || !e->spans) return;
+    Buffer *buf = e->buf;
+    for (int row = e->row_start; row < e->row_end; row++) {
+        if (row < 0 || row >= buf->num_rows) continue;
+        const char *raw = buf->rows[row].chars.data;
+        int         len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0) continue;
+        MailSpan ms[8];
+        int n = parse_msg_spans(raw, len, ms, 8);
+        for (int i = 0; i < n; i++)
+            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr, 0);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -603,7 +569,8 @@ void mail_open_list(void) {
     free(buf->title);    buf->title    = strdup("Mail");
     free(buf->filetype); buf->filetype = strdup("mail");
     buf->readonly   = 1;
-    buf->hl_line_fn = mail_list_hl;
+    /* Highlighting comes from mail_list_render_hook registered in
+     * mail_plugin_init; the filetype is the dispatch filter. */
 
     clear_buffer(buf);
 
@@ -712,7 +679,8 @@ static void open_thread_row(int row) {
     free(tbuf->title);    tbuf->title    = strdup(mail_entries[row].display);
     free(tbuf->filetype); tbuf->filetype = strdup("mail-message");
     tbuf->readonly   = 1;
-    tbuf->hl_line_fn = mail_msg_hl;
+    /* Highlighting via mail_msg_render_hook (registered in
+     * mail_plugin_init, filtered on filetype). */
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
@@ -1049,38 +1017,37 @@ void mail_filter_prompt(void) {
 /* ------------------------------------------------------------------ */
 
 /* Highlight: indented rows (folders) dim, top-level rows bold. */
-static size_t mailbox_hl(Buffer *buf, int row,
-                         char *dst, size_t dst_cap,
-                         int col_off, int max_cols) {
-    if (row < 0 || row >= buf->num_rows) return 0;
-    const char *raw = buf->rows[row].render.data;
-    int         len = (int)buf->rows[row].render.len;
-    if (!raw || len <= 0) return 0;
+static void mailbox_render_hook(const HookRenderEvent *ev) {
+    if (!ev || !ev->buf || !ev->spans) return;
+    Buffer *buf = ev->buf;
+    for (int row = ev->row_start; row < ev->row_end; row++) {
+        if (row < 0 || row >= buf->num_rows) continue;
+        const char *raw = buf->rows[row].chars.data;
+        int         len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0) continue;
 
-    int indented = (len >= 2 && raw[0] == ' ' && raw[1] == ' ');
-    MailboxKind kind = (row < mailbox_entry_count)
-                           ? mailbox_entries[row].kind : MBE_MAILBOX;
+        int indented = (len >= 2 && raw[0] == ' ' && raw[1] == ' ');
+        MailboxKind kind = (row < mailbox_entry_count)
+                               ? mailbox_entries[row].kind : MBE_MAILBOX;
 
-    int active = 0;
-    if (row < mailbox_entry_count) {
-        const MailboxEntry *e = &mailbox_entries[row];
-        if      (e->kind == MBE_MAILBOX) active = strcmp(e->query, mailbox_query) == 0;
-        else if (e->kind == MBE_VIEW)    active = strcmp(e->query, base_query)    == 0;
-        else if (e->kind == MBE_ALL)     active = !mailbox_query[0] && q_is_wild(base_query);
+        int active = 0;
+        if (row < mailbox_entry_count) {
+            const MailboxEntry *e = &mailbox_entries[row];
+            if      (e->kind == MBE_MAILBOX) active = strcmp(e->query, mailbox_query) == 0;
+            else if (e->kind == MBE_VIEW)    active = strcmp(e->query, base_query)    == 0;
+            else if (e->kind == MBE_ALL)     active = !mailbox_query[0] && q_is_wild(base_query);
+        }
+
+        const char *sgr;
+        if (kind == MBE_HEADER) sgr = MC_META;
+        else if (active)        sgr = MC_UNREAD_SUBJECT;     /* bold fg */
+        else if (kind == MBE_ALL)  sgr = MC_READ_SUBJECT;    /* normal  */
+        else if (kind == MBE_VIEW) sgr = MC_UNREAD_FLAG;     /* bold accent */
+        else if (indented)         sgr = MC_META;            /* dim     */
+        else                       sgr = MC_READ_SENDER;     /* blue    */
+
+        attrspan_push(ev->spans, row, 0, len, sgr, 0);
     }
-
-    MailSpan spans[2];
-    int n = 0;
-    const char *sgr;
-    if (kind == MBE_HEADER) sgr = MC_META;
-    else if (active)        sgr = MC_UNREAD_SUBJECT;     /* bold fg */
-    else if (kind == MBE_ALL)  sgr = MC_READ_SUBJECT;    /* normal  */
-    else if (kind == MBE_VIEW) sgr = MC_UNREAD_FLAG;     /* bold accent */
-    else if (indented)         sgr = MC_META;            /* dim     */
-    else                       sgr = MC_READ_SENDER;     /* blue    */
-    spans[n++] = (MailSpan){ 0, len, sgr };
-
-    return emit_spans(raw, len, spans, n, dst, dst_cap, col_off, max_cols);
 }
 
 void mail_open_mailboxes(void) {
@@ -1100,7 +1067,8 @@ void mail_open_mailboxes(void) {
     free(buf->title);    buf->title    = strdup("Mailboxes");
     free(buf->filetype); buf->filetype = strdup("mail-mailboxes");
     buf->readonly   = 1;
-    buf->hl_line_fn = mailbox_hl;
+    /* Highlighting via mailbox_render_hook (registered in
+     * mail_plugin_init, filtered on filetype). */
 
     clear_buffer(buf);
     if (mailbox_entry_count == 0) {
@@ -1412,4 +1380,17 @@ void mail_handle_mailbox_enter(void) {
         break;
     }
     mail_open_list();
+}
+
+void mail_register_render_hooks(void) {
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail",
+                         mail_list_render_hook);
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail-message",
+                         mail_msg_render_hook);
+    /* Same shape as mail-message — composing a reply or new message
+     * gets the header/quote coloring while editing. */
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail-compose",
+                         mail_msg_render_hook);
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail-mailboxes",
+                         mailbox_render_hook);
 }

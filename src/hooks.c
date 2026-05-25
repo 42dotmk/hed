@@ -95,6 +95,11 @@ void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb) {
     hook_push(type, -1, "*", (HookFn)cb);
 }
 
+void hook_register_render(HookType type, int mode, const char *filetype,
+                          HookRenderCallback cb) {
+    hook_push(type, mode, filetype, (HookFn)cb);
+}
+
 int hook_unregister(HookType type, HookFn callback) {
     if (type >= HOOK_TYPE_COUNT) return 0;
     int removed = 0;
@@ -186,6 +191,18 @@ void hook_fire_keybind_invoke(HookType type,
         return;
     for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
         ((HookKeybindInvokeCallback)hooks[type][i].callback)(event);
+    }
+}
+
+void hook_fire_render(HookType type, const HookRenderEvent *event) {
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    const char *filetype =
+        (event->buf && event->buf->filetype) ? event->buf->filetype : "txt";
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        if (hook_should_fire(&hooks[type][i], E.mode, filetype)) {
+            ((HookRenderCallback)hooks[type][i].callback)(event);
+        }
     }
 }
 

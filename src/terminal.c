@@ -1,5 +1,6 @@
 #include "ui/abuf.h"
 #include "fs/fs.h"
+#include "stb_ds.h"
 #include "lib/ansi.h"
 #include "lib/theme.h"
 #include "utils/bottom_ui.h"
@@ -18,8 +19,6 @@
 /* Weak refs to the treesitter plugin (skipped when not linked). */
 extern int ts_is_enabled(void)             __attribute__((weak));
 extern void ts_buffer_reparse(Buffer *buf) __attribute__((weak));
-extern size_t ts_highlight_line(Buffer *buf, int row, char *out, size_t outsz,
-                                int slice_start, int slice_len) __attribute__((weak));
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -346,6 +345,58 @@ static void render_slice_ss(const SizedStr *r, int start_col, int want_cols,
                           out_len);
 }
 
+/* Emit render columns [col_offset, col_offset+max_cols) of `buf` row `row`
+ * to `ab`, applying any AttrSpans attached to `buf`. Spans are looked up
+ * in chars-space byte coordinates; tab expansion (chars '\t' → multiple
+ * render spaces) is handled by walking chars and render side-by-side. */
+static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
+                                          int col_offset, int max_cols) {
+    if (!buf || row < 0 || row >= buf->num_rows) return;
+    const Row *r = &buf->rows[row];
+    const char *rdata = r->render.data;
+    int rlen = (int)r->render.len;
+    const char *cdata = r->chars.data;
+    int clen = (int)r->chars.len;
+
+    /* Advance chars-pos `ci` and render-col `roff` to col_offset. */
+    int roff = 0;
+    int ci   = 0;
+    while (ci < clen && roff < col_offset) {
+        unsigned char c = (unsigned char)cdata[ci];
+        int w = (c == '\t') ? (TAB_STOP - roff % TAB_STOP) : 1;
+        if (roff + w > col_offset) break;
+        roff += w;
+        ci++;
+    }
+    int rout = col_offset;
+    int rem  = max_cols;
+    const char *cur_sgr = NULL;
+
+    while (rem > 0 && ci < clen && rout < rlen) {
+        unsigned char c = (unsigned char)cdata[ci];
+        int rw = (c == '\t') ? (TAB_STOP - rout % TAB_STOP) : 1;
+        if (rw < 1) rw = 1;
+
+        const AttrSpan *sp = attrspan_at(&buf->render_spans, row, ci);
+        const char *want_sgr = sp ? sp->sgr : NULL;
+        if (want_sgr != cur_sgr) {
+            /* Soft reset preserves any reverse-video the caller has
+             * wrapping this slice (visual selection), so closing a
+             * syntax span mid-selection doesn't drop the inverse. */
+            if (cur_sgr) ansi_sgr_soft_reset(ab);
+            if (want_sgr) ab_append_str(ab, want_sgr);
+            cur_sgr = want_sgr;
+        }
+        for (int k = 0; k < rw && rout < rlen && rem > 0; k++) {
+            ab_append_ch(ab, rdata[rout]);
+            rout++;
+            rem--;
+        }
+        ci++;
+    }
+    if (cur_sgr) ansi_sgr_soft_reset(ab);
+}
+
 /* Compute selection span (render columns, exclusive end) for a row. Returns 1
  * if selection applies. */
 static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
@@ -449,6 +500,28 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
         win->buffer_index < (int)arrlen(E.buffers))
         buf = &E.buffers[win->buffer_index];
+
+    /* Phase-1 renderer abstraction: clear last frame's spans and let
+     * handlers repopulate them for the rows this window is about to
+     * paint. row_end is a conservative upper bound — wrap/folds can
+     * make the actual visible range smaller; spans outside the
+     * visible area are harmless, just unused. */
+    if (buf) {
+        attrspan_clear(&buf->render_spans);
+        int row_start = win->row_offset;
+        if (row_start < 0) row_start = 0;
+        int row_end = row_start + win->height;
+        if (row_end > buf->num_rows) row_end = buf->num_rows;
+        HookRenderEvent rev = {
+            .buf       = buf,
+            .row_start = row_start,
+            .row_end   = row_end,
+            .spans     = &buf->render_spans,
+        };
+        hook_fire_render(HOOK_RENDER_PRE, &rev);
+        attrspan_sort(&buf->render_spans);
+    }
+
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0; /* number + space */
     int content_cols = win->width - margin;
@@ -655,17 +728,13 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         render_slice_ss(&buf->rows[filerow].render, (start_rx_),               \
                         (slice_cols_), &__sb, &__blen);                        \
         if (__blen > 0) {                                                      \
-            char   __linebuf[4096];                                            \
-            size_t __wrote = 0;                                                \
-            if (buf->hl_line_fn) {                                             \
-                __wrote = buf->hl_line_fn(buf, filerow, __linebuf,             \
-                                          sizeof(__linebuf), __sb, __blen);    \
-            } else if (ts_is_enabled && ts_is_enabled() && ts_highlight_line) { \
-                __wrote = ts_highlight_line(buf, filerow, __linebuf,           \
-                                            sizeof(__linebuf), __sb, __blen);  \
-            }                                                                  \
-            if (__wrote > 0) {                                                 \
-                ab_append(ab, __linebuf, (int)__wrote);                        \
+            /* Highlighters push AttrSpans via HOOK_RENDER_PRE; the            \
+             * renderer walks them and emits SGR transitions. Buffers          \
+             * without any spans pass through as plain text. */                \
+            if (buf->render_spans.items &&                                     \
+                arrlen(buf->render_spans.items) > 0) {                         \
+                render_emit_slice_with_spans(ab, buf, filerow,                 \
+                                             (start_rx_), (slice_cols_));      \
             } else {                                                           \
                 ab_append(ab, &buf->rows[filerow].render.data[__sb], __blen);  \
             }                                                                  \

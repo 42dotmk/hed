@@ -218,6 +218,8 @@ static int mail_plugin_init(void) {
 
     hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", mail_open_pre);
 
+    mail_register_render_hooks();
+
     /* q closes the current mail buffer in normal mode, for any of the
      * mail filetypes (list, message, mailbox sidebar, compose). */
     mapn_ft("mail",            "q", kb_close, "close mail buffer");

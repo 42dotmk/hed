@@ -8,6 +8,7 @@
 
 #include "lib/cursor.h"
 #include "lib/errors.h"
+#include "buf/attrspan.h"
 #include "buf/row.h"
 #include "buf/virtual_text.h"
 #include "utils/fold.h"
@@ -41,13 +42,9 @@ typedef struct Buffer {
 
     VtTable vtext; /* Virtual text annotations (display-only) */
 
-    /* Optional per-buffer line highlighter. When set, the renderer calls
-     * this before tree-sitter. Write ANSI-colored bytes for render slice
-     * [col_offset, col_offset+max_cols) into dst. Return bytes written,
-     * or 0 to fall back to tree-sitter / plain text. */
-    size_t (*hl_line_fn)(struct Buffer *buf, int row,
-                         char *dst, size_t dst_cap,
-                         int col_offset, int max_cols);
+    /* Per-frame attribute spans, populated by HOOK_RENDER_PRE handlers
+     * and consumed by the renderer. Cleared at the start of each frame. */
+    AttrSpans render_spans;
 } Buffer;
 
 /* Buffer management */

@@ -16,6 +16,12 @@ static inline void ansi_move(Abuf *ab, int row, int col) {
 }
 static inline void ansi_invert_on(Abuf *ab) { ab_append(ab, "\x1b[7m", 4); }
 static inline void ansi_sgr_reset(Abuf *ab) { ab_append(ab, "\x1b[m", 3); }
+/* Soft reset: cancels bold/italic/underline + foreground without
+ * touching reverse video. Used by the renderer when closing a syntax
+ * span inside a selection so the selection's inverse-video stays on. */
+static inline void ansi_sgr_soft_reset(Abuf *ab) {
+    ab_append(ab, "\x1b[22;23;24;39m", 14);
+}
 static inline void ansi_set_fg_color(Abuf *ab, int color) {
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "\x1b[38;5;%dm", color);

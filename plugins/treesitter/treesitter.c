@@ -112,6 +112,12 @@ static int treesitter_init(void) {
     cmd("tslang", cmd_tslang, "tslang <name>");
     cmd("tsi",    cmd_tsi,    "install ts lang");
     cmd("theme",  cmd_theme,  "theme [name]");
+    /* Phase-1 renderer abstraction: tree-sitter is the first
+     * highlighter to emit AttrSpans instead of bytes. Registers for
+     * every filetype — ts_render_pre_hook itself no-ops when the
+     * buffer has no parsed tree. */
+    hook_register_render(HOOK_RENDER_PRE, -1, "*",
+                         (HookRenderCallback)ts_render_pre_hook);
     return 0;
 }
 

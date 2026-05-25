@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "buf/attrspan.h"
+
 typedef struct Buffer Buffer;
 struct KeybindMatchView;
 
@@ -53,6 +55,13 @@ typedef enum {
     /* Fires from keybind_invoke(), just before the callback runs.
      * Payload is the binding being invoked plus the repeat count. */
     HOOK_KEYBIND_INVOKE,
+
+    /* Fires from the renderer once per visible window, before the
+     * window's buffer is drawn. Handlers append AttrSpans to
+     * event->spans for rows in [row_start, row_end). The span table
+     * is cleared before the hook fires, so handlers see an empty
+     * canvas and can recompute freely. */
+    HOOK_RENDER_PRE,
 
     HOOK_TYPE_COUNT
 } HookType;
@@ -117,6 +126,13 @@ typedef struct {
     int repeat;
 } HookKeybindInvokeEvent;
 
+typedef struct HookRenderEvent {
+    Buffer    *buf;
+    int        row_start;  /* first visible row (inclusive) */
+    int        row_end;    /* one past last visible row */
+    AttrSpans *spans;      /* handlers append into this */
+} HookRenderEvent;
+
 /* Callback function pointer types */
 typedef void (*HookCharCallback)(const HookCharEvent *event);
 typedef void (*HookLineCallback)(const HookLineEvent *event);
@@ -127,6 +143,7 @@ typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may 
 typedef void (*HookSimpleCallback)(void);              /* payload-free hooks (e.g., HOOK_STARTUP_DONE) */
 typedef void (*HookKeybindFeedCallback)(const HookKeybindFeedEvent *event);
 typedef void (*HookKeybindInvokeCallback)(const HookKeybindInvokeEvent *event);
+typedef void (*HookRenderCallback)(const HookRenderEvent *event);
 
 /* Hook API */
 void hook_init(void);
@@ -151,6 +168,10 @@ void hook_register_simple(HookType type, HookSimpleCallback callback);
 /* Keybind dispatch hooks always fire regardless of mode or filetype. */
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb);
 void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb);
+/* Render hooks fire per visible window; mode/filetype filters apply
+ * (use "*" for all filetypes). */
+void hook_register_render(HookType type, int mode, const char *filetype,
+                          HookRenderCallback cb);
 
 /* Generic function-pointer alias. The hook table stores callbacks as
  * `void (*)(void)` so dispatch casts stay function-pointer-to-function-
@@ -173,6 +194,7 @@ void hook_fire_key(HookType type, HookKeyEvent *event);
 void hook_fire_simple(HookType type);
 void hook_fire_keybind_feed(HookType type, const HookKeybindFeedEvent *event);
 void hook_fire_keybind_invoke(HookType type, const HookKeybindInvokeEvent *event);
+void hook_fire_render(HookType type, const HookRenderEvent *event);
 
 
 #endif

@@ -38,9 +38,15 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name);
 /* Attempt autoload by filename/filetype */
 int ts_buffer_autoload(Buffer *buf);
 
-/* Highlight a single visual line into dst (ANSI colored). Returns bytes
- * written. */
-size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
-                         int col_offset, int max_cols);
+/* HOOK_RENDER_PRE handler: walks the whole-buffer tree-sitter parse,
+ * splits each query capture by line, and pushes one AttrSpan per
+ * (capture, row) into event->spans. Tree-sitter sees the full
+ * document anyway, so collecting for the whole buffer once per frame
+ * is no more parse-work than per-row and gives correct highlighting
+ * for tokens that straddle the visible viewport. Forward-declared so
+ * the treesitter init code can register it without exposing
+ * HookRenderEvent's full layout here. */
+struct HookRenderEvent;
+void ts_render_pre_hook(const struct HookRenderEvent *event);
 
 #endif /* TS_H */

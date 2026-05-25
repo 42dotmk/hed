@@ -74,6 +74,7 @@ static void buf_init(Buffer *buf) {
     buf->fold_method = NULL; /* Filetype default applied on BUFFER_OPEN */
     undo_state_init(&buf->undo);
     vtext_init(buf);
+    attrspan_init(&buf->render_spans);
 }
 
 /* Create a new buffer and return EdError status */
@@ -317,6 +318,7 @@ EdError buf_close(int index) {
     fold_list_free(&buf->folds);
     undo_state_free(&buf->undo);
     vtext_free(buf);
+    attrspan_free(&buf->render_spans);
 
     arrdel(E.buffers, index);
 

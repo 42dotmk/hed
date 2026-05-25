@@ -18,11 +18,6 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Highlighter shared with mail_impl.c — same header/quote shape. */
-extern size_t mail_msg_hl(Buffer *buf, int row,
-                          char *dst, size_t dst_cap,
-                          int col_off, int max_cols);
-
 /* Internal row helper exposed by buf/buffer.c. */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
@@ -61,7 +56,8 @@ void mail_compose(void) {
     free(buf->title);    buf->title    = strdup("Compose");
     free(buf->filetype); buf->filetype = strdup("mail-compose");
     buf->readonly   = 0;
-    buf->hl_line_fn = mail_msg_hl;
+    /* Highlighting via mail_msg_render_hook (registered for filetypes
+     * mail-message and mail-compose). */
 
     char from_line[320];
     snprintf(from_line, sizeof(from_line), "From: %s", from_addr);
@@ -415,7 +411,8 @@ static void compose_from_lines(const char *title, char **lines, int count) {
     free(buf->title);    buf->title    = strdup(title);
     free(buf->filetype); buf->filetype = strdup("mail-compose");
     buf->readonly   = 0;
-    buf->hl_line_fn = mail_msg_hl;
+    /* Highlighting via mail_msg_render_hook (registered for filetypes
+     * mail-message and mail-compose). */
 
     int body_row = -1;
     for (int i = 0; i < count; i++) {

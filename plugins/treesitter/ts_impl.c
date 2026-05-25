@@ -818,191 +818,106 @@ static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
 }
 
 /* ===================================================================
- * Segment collection from a (tree, query) over a byte range.
+ * HOOK_RENDER_PRE: push AttrSpans for the whole buffer.
  * =================================================================== */
-typedef struct {
-    uint32_t s, e;
-    const char *sgr;
-} Seg;
 
-/* Closes a syntax segment without disturbing reverse video, so visual
- * selection (rendered with ESC[7m) survives across highlight boundaries.
- *   22 = normal intensity (cancels bold from COLOR_TITLE)
- *   23 = no italic       (cancels italic from emphasis-style segments)
- *   24 = no underline    (cancels underline from COLOR_URI)
- *   39 = default foreground
- * Reverse video (7/27) is intentionally untouched. */
-#define TS_SEG_RESET "\x1b[22;23;24;39m"
-
-static int collect_segments(TSTree *tree, TSQuery *query, uint32_t cur_start,
-                            uint32_t cur_end, uint32_t clip_start,
-                            uint32_t clip_end, Seg *segs, int seg_cap,
-                            int seg_count) {
-    if (!tree || !query)
-        return seg_count;
+/* Push spans for one (tree, query) over a byte range, splitting each
+ * query capture by line boundaries. `line_starts[r]` is the chars-
+ * space byte offset where row r begins. */
+static void push_spans_from_tree(TSTree *tree, TSQuery *query,
+                                 uint32_t range_start, uint32_t range_end,
+                                 uint32_t clip_start, uint32_t clip_end,
+                                 const uint32_t *line_starts,
+                                 const int *line_lens, int num_rows,
+                                 AttrSpans *spans) {
+    if (!tree || !query) return;
     TSNode root = ts_tree_root_node(tree);
     TSQueryCursor *cur = ts_query_cursor_new();
     ts_query_cursor_exec(cur, query, root);
-    ts_query_cursor_set_byte_range(cur, cur_start, cur_end);
+    ts_query_cursor_set_byte_range(cur, range_start, range_end);
 
     TSQueryMatch m;
-    while (ts_query_cursor_next_match(cur, &m) && seg_count < seg_cap) {
-        for (uint32_t i = 0; i < m.capture_count && seg_count < seg_cap; i++) {
+    while (ts_query_cursor_next_match(cur, &m)) {
+        for (uint32_t i = 0; i < m.capture_count; i++) {
             TSQueryCapture c = m.captures[i];
             const char *name;
             uint32_t nlen;
             name = ts_query_capture_name_for_id(query, c.index, &nlen);
-            if (!name)
-                continue;
+            if (!name) continue;
             const char *sgr = capture_name_to_sgr(name, nlen);
-            if (!sgr)
-                continue;
+            if (!sgr) continue;
             uint32_t s = ts_node_start_byte(c.node);
             uint32_t e = ts_node_end_byte(c.node);
-            if (e <= clip_start || s >= clip_end)
-                continue;
-            if (s < clip_start)
-                s = clip_start;
-            if (e > clip_end)
-                e = clip_end;
-            segs[seg_count++] = (Seg){s, e, sgr};
+            if (e <= clip_start || s >= clip_end) continue;
+            if (s < clip_start) s = clip_start;
+            if (e > clip_end)   e = clip_end;
+
+            /* Walk the rows this capture intersects and push one span
+             * per row's slice. Linear scan from a binary-searched
+             * starting row keeps multi-line tokens cheap. */
+            int lo = 0, hi = num_rows - 1, row = 0;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                if (line_starts[mid] <= s) { row = mid; lo = mid + 1; }
+                else                       { hi = mid - 1; }
+            }
+            while (row < num_rows && line_starts[row] < e) {
+                uint32_t row_start = line_starts[row];
+                uint32_t row_end   = row_start + (uint32_t)line_lens[row];
+                uint32_t cs = s > row_start ? s : row_start;
+                uint32_t ce = e < row_end   ? e : row_end;
+                if (ce > cs) {
+                    attrspan_push(spans, row,
+                                  (int)(cs - row_start),
+                                  (int)(ce - row_start), sgr, 0);
+                }
+                row++;
+            }
         }
     }
     ts_query_cursor_delete(cur);
-    return seg_count;
 }
 
-size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
-                         int col_offset, int max_cols) {
-    if (!g_ts_enabled || !buf || !buf->ts_internal)
-        return 0;
+void ts_render_pre_hook(const struct HookRenderEvent *event) {
+    if (!event || !event->buf || !event->spans) return;
+    Buffer *buf = event->buf;
+    if (!g_ts_enabled || !buf->ts_internal) return;
     TSState *st = (TSState *)buf->ts_internal;
-    if (!st->tree || !st->query)
-        return 0;
+    if (!st->tree || !st->query) return;
+    if (buf->num_rows <= 0) return;
 
-    /* Compute byte range for this line in the source. */
-    size_t start = 0;
-    for (int i = 0; i < line_index; i++)
-        start += buf->rows[i].chars.len + 1;
-    size_t end = start + buf->rows[line_index].chars.len;
-
-    enum { SEG_CAP = 256 };
-    Seg segs[SEG_CAP];
-    int sc = 0;
-
-    /* Host segments. */
-    sc = collect_segments(st->tree, st->query, (uint32_t)start, (uint32_t)end,
-                          (uint32_t)start, (uint32_t)end, segs, SEG_CAP, sc);
-
-    /* Strip host segments wholly inside an injection range — the
-     * sub-language gets to colour those bytes. */
-    if (st->num_injections > 0) {
-        int kept = 0;
-        for (int i = 0; i < sc; i++) {
-            int inside = 0;
-            for (int j = 0; j < st->num_injections; j++) {
-                TSInjectionRange *ir = &st->injections[j];
-                if (segs[i].s >= ir->start_byte &&
-                    segs[i].e <= ir->end_byte) {
-                    inside = 1;
-                    break;
-                }
-            }
-            if (!inside)
-                segs[kept++] = segs[i];
-        }
-        sc = kept;
+    /* Precompute per-row byte offsets in chars-space. */
+    int n = buf->num_rows;
+    uint32_t *line_starts = malloc((size_t)n * sizeof(uint32_t));
+    int      *line_lens   = malloc((size_t)n * sizeof(int));
+    if (!line_starts || !line_lens) {
+        free(line_starts);
+        free(line_lens);
+        return;
     }
+    uint32_t off = 0;
+    for (int r = 0; r < n; r++) {
+        line_starts[r] = off;
+        line_lens[r]   = (int)buf->rows[r].chars.len;
+        off += (uint32_t)line_lens[r] + 1; /* +1 for newline */
+    }
+    uint32_t total = off > 0 ? off - 1 : 0;
 
-    /* Sub-language segments for any injection that touches this line. */
-    for (int j = 0; j < st->num_injections && sc < SEG_CAP; j++) {
+    /* Host segments over the whole buffer. */
+    push_spans_from_tree(st->tree, st->query, 0, total, 0, total,
+                         line_starts, line_lens, n, event->spans);
+
+    /* Sub-language segments for each injection range. */
+    for (int j = 0; j < st->num_injections; j++) {
         TSInjectionRange *ir = &st->injections[j];
-        if (ir->end_byte <= start || ir->start_byte >= end)
-            continue;
         TSSubLang *sub = find_sub_lang(st, ir->lang_name);
-        if (!sub || !sub->tree || !sub->query)
-            continue;
-        uint32_t cs = (uint32_t)((ir->start_byte > start) ? ir->start_byte
-                                                          : (uint32_t)start);
-        uint32_t ce = (uint32_t)((ir->end_byte < end) ? ir->end_byte
-                                                      : (uint32_t)end);
-        sc = collect_segments(sub->tree, sub->query, cs, ce, cs, ce, segs,
-                              SEG_CAP, sc);
+        if (!sub || !sub->tree || !sub->query) continue;
+        push_spans_from_tree(sub->tree, sub->query,
+                             ir->start_byte, ir->end_byte,
+                             ir->start_byte, ir->end_byte,
+                             line_starts, line_lens, n, event->spans);
     }
 
-    /* Sort segments by start byte. */
-    for (int i = 0; i < sc; i++)
-        for (int j = i + 1; j < sc; j++)
-            if (segs[j].s < segs[i].s) {
-                Seg t = segs[i];
-                segs[i] = segs[j];
-                segs[j] = t;
-            }
-
-    /* Render the line.
-     *
-     * Tree-sitter segments use chars-space byte offsets (matching chars.data).
-     * The display uses render.data where tabs are expanded to spaces.
-     * We walk chars.data for segment comparison and render.data for output,
-     * keeping both in sync so tab expansion doesn't shift highlight boundaries.
-     */
-    const Row  *row   = &buf->rows[line_index];
-    const char *rdata = row->render.data;
-    int         rlen  = (int)row->render.len;
-    const char *cdata = row->chars.data;
-    int         clen  = (int)row->chars.len;
-
-    int roff = 0;
-    int ci = 0;
-    while (ci < clen && roff < col_offset) {
-        unsigned char c = (unsigned char)cdata[ci];
-        int w = (c == '\t') ? (TAB_STOP - roff % TAB_STOP) : 1;
-        if (roff + w > col_offset)
-            break;
-        roff += w;
-        ci++;
-    }
-    int rout = col_offset;
-
-    int    si = 0;
-    int    rem = max_cols;
-    size_t out = 0;
-    uint32_t cpos = (uint32_t)start + (uint32_t)ci;
-
-    while (rem > 0 && ci < clen && rout < rlen) {
-        while (si < sc && segs[si].e <= cpos)
-            si++;
-
-        unsigned char c = (unsigned char)cdata[ci];
-        int rw = (c == '\t') ? (TAB_STOP - rout % TAB_STOP) : 1;
-        if (rw < 1)
-            rw = 1;
-
-        int in_seg = (si < sc && segs[si].s <= cpos && cpos < segs[si].e);
-
-        if (in_seg) {
-            size_t el = strlen(segs[si].sgr);
-            if (out + el < dst_cap) {
-                memcpy(dst + out, segs[si].sgr, el);
-                out += el;
-            }
-        }
-        for (int k = 0; k < rw && rout < rlen && rem > 0; k++) {
-            if (out + 1 < dst_cap)
-                dst[out++] = rdata[rout];
-            rout++;
-            rem--;
-        }
-        if (in_seg) {
-            size_t rl = strlen(TS_SEG_RESET);
-            if (out + rl < dst_cap) {
-                memcpy(dst + out, TS_SEG_RESET, rl);
-                out += rl;
-            }
-        }
-
-        cpos++;
-        ci++;
-    }
-    return out;
+    free(line_starts);
+    free(line_lens);
 }
