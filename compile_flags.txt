@@ -3,6 +3,8 @@
 -Os
 -fno-asynchronous-unwind-tables
 -fno-unwind-tables
+-ffunction-sections
+-fdata-sections
 -Wall
 -Wextra
 -std=c11

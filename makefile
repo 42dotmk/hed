@@ -73,8 +73,12 @@ $(BUILD_DIR):
 $(VENDOR_BUILD_DIR):
 	mkdir -p $(VENDOR_BUILD_DIR)
 
+# -Wl,--gc-sections drops object sections that nothing references,
+# so plugins removed from config.h's plugin_load() list are GC'd out
+# of the final binary without having to touch the Makefile. Paired
+# with -ffunction-sections -fdata-sections in compile_flags.txt.
 $(TARGET): $(OBJECTS) $(TS_DEPS)
-	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) $(TS_LDFLAGS)
+	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) -Wl,--gc-sections $(TS_LDFLAGS)
 
 # Pull in auto-generated header dependencies (created by -MMD).
 -include $(OBJECTS:.o=.d)
