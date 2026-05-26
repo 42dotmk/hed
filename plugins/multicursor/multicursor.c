@@ -219,6 +219,33 @@ static int mc_find_next(Buffer *buf, const char *q, size_t qlen,
     return 0;
 }
 
+/* Mirror of mc_find_next walking backward. On the start row the match
+ * must end at or before start_x (i.e. match-start <= start_x - qlen);
+ * wrapped rows are scanned from the rightmost candidate position. */
+static int mc_find_prev(Buffer *buf, const char *q, size_t qlen,
+                        int start_y, int start_x,
+                        int *out_y, int *out_x) {
+    if (!buf || !q || qlen == 0 || buf->num_rows == 0) return 0;
+    int rows = buf->num_rows;
+
+    for (int i = 0; i <= rows; i++) {
+        int y = ((start_y - i) % rows + rows) % rows;
+        Row *row = &buf->rows[y];
+        int len = (int)row->chars.len;
+        int upper = (i == 0) ? (start_x - (int)qlen)
+                             : (len - (int)qlen);
+        if (upper > len - (int)qlen) upper = len - (int)qlen;
+        for (int x = upper; x >= 0; x--) {
+            if (memcmp(row->chars.data + x, q, qlen) == 0) {
+                *out_y = y;
+                *out_x = x;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 /* C-n: add a cursor at the next occurrence of the word under cursor
  * (NORMAL) or the active visual selection (VISUAL, single-line only).
  * Skipped during replay — adding a cursor is a global action, not a
@@ -318,6 +345,96 @@ static void kb_mc_add_next_match(void) {
     ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
 }
 
+/* Mirror of kb_mc_add_next_match walking backward — leaves a cursor at
+ * the current occurrence and advances the active cursor to the previous
+ * match. */
+static void kb_mc_add_prev_match(void) {
+    if (in_replay) return;
+    BUFWIN(buf, win)
+    if (buf->num_rows == 0) return;
+
+    SizedStr q = {0};
+    int from_y = win->cursor.y;
+    int from_x = win->cursor.x;
+
+    if (E.mode == MODE_VISUAL) {
+        int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
+        int cy = win->sel.cursor_y, cx = win->sel.cursor_x;
+        if (ay > cy || (ay == cy && ax > cx)) {
+            int ty = ay, tx = ax; ay = cy; ax = cx; cy = ty; cx = tx;
+        }
+        if (ay != cy) {
+            ed_set_status_message("multicursor: multi-line selection not supported");
+            return;
+        }
+        Row *row = &buf->rows[ay];
+        if (ax < 0) ax = 0;
+        if (cx > (int)row->chars.len - 1) cx = (int)row->chars.len - 1;
+        int sel_end = cx + 1;
+        if (sel_end > (int)row->chars.len) sel_end = (int)row->chars.len;
+        if (sel_end <= ax) {
+            ed_set_status_message("multicursor: empty selection");
+            return;
+        }
+        q = sstr_from(row->chars.data + ax, (size_t)(sel_end - ax));
+        from_y = ay;
+        from_x = ax;
+    } else {
+        if (!buf_get_word_under_cursor(&q) || q.len == 0) {
+            ed_set_status_message("multicursor: no word under cursor");
+            sstr_free(&q);
+            return;
+        }
+        /* Walk back to the start of the current word so we look for an
+         * earlier occurrence, not this one again. */
+        Row *row = &buf->rows[win->cursor.y];
+        int x = win->cursor.x;
+        while (x > 0 &&
+               (isalnum((unsigned char)row->chars.data[x-1]) ||
+                row->chars.data[x-1] == '_'))
+            x--;
+        from_x = x;
+    }
+
+    int my, mx;
+    if (!mc_find_prev(buf, q.data, q.len, from_y, from_x, &my, &mx)) {
+        ed_set_status_message("multicursor: no more matches");
+        sstr_free(&q);
+        return;
+    }
+
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(q.data, q.len);
+    E.search_is_regex = 0;
+    sstr_free(&q);
+
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
+        if (c->y == my && c->x == mx) {
+            buf->cursor = c;
+            win->cursor.y = my;
+            win->cursor.x = mx;
+            ed_set_status_message("multicursor: %d cursors (moved to existing match)",
+                                  buf_cursor_count(buf));
+            return;
+        }
+    }
+
+    Cursor *nc = buf_cursor_add(buf, my, mx);
+    if (!nc) {
+        ed_set_status_message("multicursor: out of memory");
+        return;
+    }
+    buf->cursor = nc;
+    win->cursor.y = my;
+    win->cursor.x = mx;
+    if (E.mode == MODE_VISUAL) {
+        win->sel.type = SEL_NONE;
+        ed_set_mode(MODE_NORMAL);
+    }
+    ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+}
+
 /* Q: drop the active cursor; activate the next in cyclic (y,x) order.
  * Skipped during replay — Q is a "cursor list" operation, not an edit. */
 static void kb_mc_skip(void) {
@@ -357,44 +474,42 @@ static void kb_mc_skip(void) {
 
 /* --- Commands --- */
 
-static void cmd_mc_add_below(const char *args) {
-    (void)args;
+/* Plant a stationary cursor at the current position and advance the
+ * active cursor by one row in `dy`. Net effect: repeated C-Down "drops
+ * a trail" of cursors as you descend (and C-Up as you ascend), which
+ * mirrors how C-n leaves a cursor behind at each previous match. */
+static void mc_add_and_advance(int dy) {
     if (in_replay) return;
     BUFWIN(buf, win)
     if (!buf->cursor) { ed_set_status_message("multicursor: no cursor"); return; }
-    int new_y = buf->cursor->y + 1;
-    if (new_y >= buf->num_rows) {
-        ed_set_status_message("multicursor: no row below");
+    int new_y = buf->cursor->y + dy;
+    if (new_y < 0 || new_y >= buf->num_rows) {
+        ed_set_status_message("multicursor: no row %s",
+                              dy > 0 ? "below" : "above");
         return;
     }
     int x = buf->cursor->x;
     int len = (int)buf->rows[new_y].chars.len;
     if (x > len) x = len;
-    if (!buf_cursor_add(buf, new_y, x)) {
+    Cursor *nc = buf_cursor_add(buf, new_y, x);
+    if (!nc) {
         ed_set_status_message("multicursor: out of memory");
         return;
     }
+    buf->cursor = nc;
+    win->cursor.y = new_y;
+    win->cursor.x = x;
     ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+}
+
+static void cmd_mc_add_below(const char *args) {
+    (void)args;
+    mc_add_and_advance(+1);
 }
 
 static void cmd_mc_add_above(const char *args) {
     (void)args;
-    if (in_replay) return;
-    BUFWIN(buf, win)
-    if (!buf->cursor) { ed_set_status_message("multicursor: no cursor"); return; }
-    int new_y = buf->cursor->y - 1;
-    if (new_y < 0) {
-        ed_set_status_message("multicursor: no row above");
-        return;
-    }
-    int x = buf->cursor->x;
-    int len = (int)buf->rows[new_y].chars.len;
-    if (x > len) x = len;
-    if (!buf_cursor_add(buf, new_y, x)) {
-        ed_set_status_message("multicursor: out of memory");
-        return;
-    }
-    ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+    mc_add_and_advance(-1);
 }
 
 static void cmd_mc_clear(const char *args) {
@@ -421,6 +536,11 @@ static void cmd_mc_count(const char *args) {
 static void cmd_mc_next_match(const char *args) {
     (void)args;
     kb_mc_add_next_match();
+}
+
+static void cmd_mc_prev_match(const char *args) {
+    (void)args;
+    kb_mc_add_prev_match();
 }
 
 static void cmd_mc_skip(const char *args) {
@@ -455,6 +575,7 @@ static int multicursor_init(void) {
     cmd("mc_clear",      cmd_mc_clear,      "multicursor: keep only active cursor");
     cmd("mc_count",      cmd_mc_count,      "multicursor: show cursor count");
     cmd("mc_next_match", cmd_mc_next_match, "multicursor: add cursor at next match");
+    cmd("mc_prev_match", cmd_mc_prev_match, "multicursor: add cursor at previous match");
     cmd("mc_skip",       cmd_mc_skip,       "multicursor: skip current cursor");
     cmd("mc_debug",      cmd_mc_debug,      "multicursor: toggle dispatch logging");
 
@@ -462,8 +583,15 @@ static int multicursor_init(void) {
     mapn(" mu", kb_mc_add_above, "multicursor: add cursor above");
     mapn(" mc", kb_mc_clear,     "multicursor: clear extras");
 
+    mapn("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
+    mapn("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
+    mapi("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
+    mapi("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
+
     mapn("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match");
     mapv("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match");
+    mapn(" mn",   kb_mc_add_next_match, "multicursor: cursor at next match");
+    mapn(" mp",   kb_mc_add_prev_match, "multicursor: cursor at previous match");
     mapn("Q",     kb_mc_skip,           "multicursor: skip cursor / cycle to next");
 
     /* Single keypress hook handles every mode and every key — the
