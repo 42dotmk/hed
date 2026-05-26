@@ -20,7 +20,7 @@
 #include "markdown_internal.h"
 #include "buf/buffer.h"
 #include "buf/row.h"
-#include "fold_methods/fold_methods.h"
+#include "utils/fold_methods.h"
 #include "utils/fold.h"
 
 #include <stdbool.h>

@@ -13,6 +13,7 @@
 #include "dired/dired_plugin.h"
 #include "emacs_keybinds/emacs_keybinds.h"
 #include "fmt/fmt.h"
+#include "folds/folds.h"
 #include "git/git.h"
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
@@ -56,6 +57,7 @@ void config_init(void) {
     plugin_load(&plugin_auto_pair,        1);
     plugin_load(&plugin_smart_indent,     1);
     plugin_load(&plugin_fmt,              1);
+    plugin_load(&plugin_folds,            1);
     plugin_load(&plugin_shell,            1);
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_translate,        1);

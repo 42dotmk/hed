@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "lib/safe_string.h"
-#include "fold_methods/fold_methods.h"
+#include "utils/fold_methods.h"
 #include <assert.h>
 #include <regex.h>
 

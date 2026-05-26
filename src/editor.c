@@ -7,7 +7,7 @@
 #include "input/keybinds.h"
 #include "terminal.h"
 #include "buf/buf_helpers.h"
-#include "fold_methods/fold_methods.h"
+#include "utils/fold_methods.h"
 #include "input/registers.h"
 #include "commands/registry.h"
 #include "ui/wlayout.h"

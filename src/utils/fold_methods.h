@@ -8,10 +8,11 @@
  * ====================
  *
  * A "fold method" is a named function that scans a buffer and emits
- * fold regions. Built-ins are "manual" (no-op), "bracket" (matches
- * `{` / `}`), and "indent" (indentation levels). Plugins extend the
- * registry with `fold_method_register` — e.g. the markdown plugin
- * registers "markdown" to fold by heading level.
+ * fold regions. Core ships only "manual" (a no-op). Plugins extend
+ * the registry with `fold_method_register` — the `folds` plugin
+ * provides "bracket" (matches `{` / `}`) and "indent" (indentation
+ * levels), and the markdown plugin registers "markdown" to fold by
+ * heading level.
  *
  * The active method per buffer is stored as a name on
  * `Buffer.fold_method`. A filetype default map
@@ -51,10 +52,5 @@ const char *fold_method_get_default(const char *filetype);
 /* Iteration helpers for `:foldmethod` listing / completion. */
 int fold_method_count(void);
 const char *fold_method_name_at(int idx);
-
-/* Built-in detectors. Exposed so plugins can compose them or invoke
- * directly without going through the registry. */
-void fold_detect_brackets(Buffer *buf);
-void fold_detect_indent(Buffer *buf);
 
 #endif /* FOLD_METHODS_H */

@@ -11,7 +11,7 @@
 #include "input/macros.h"
 #include "input/registers.h"
 #include "utils/fold.h"
-#include "fold_methods/fold_methods.h"
+#include "utils/fold_methods.h"
 #include "input/keybinds.h"
 #include "commands/cmd_util.h"
 #include <stdio.h>

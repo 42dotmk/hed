@@ -1,4 +1,4 @@
-#include "fold_methods/fold_methods.h"
+#include "utils/fold_methods.h"
 #include "buf/buffer.h"
 #include "hooks.h"
 #include "stb_ds.h"
@@ -134,7 +134,5 @@ static void on_buffer_open(HookBufferEvent *event) {
 
 void fold_method_init(void) {
     fold_method_register("manual",  manual_noop);
-    fold_method_register("bracket", fold_detect_brackets);
-    fold_method_register("indent",  fold_detect_indent);
     hook_register_buffer(HOOK_BUFFER_OPEN, -1, "*", on_buffer_open);
 }
