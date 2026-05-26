@@ -118,6 +118,17 @@ static int treesitter_init(void) {
      * buffer has no parsed tree. */
     hook_register_render(HOOK_RENDER_PRE, -1, "*",
                          (HookRenderCallback)ts_render_pre_hook);
+    /* Own the per-buffer lifecycle entirely from the plugin side —
+     * core no longer carries any tree-sitter-shaped slots or calls. */
+    hook_register_buffer(HOOK_BUFFER_OPEN,  -1, "*", ts_on_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", ts_on_buffer_close);
+    /* Existing buffers (the placeholder buf_new at startup) get the
+     * same treatment as buffers opened later. */
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        HookBufferEvent ev = {.buf = &E.buffers[i],
+                              .filename = E.buffers[i].filename};
+        ts_on_buffer_open(&ev);
+    }
     return 0;
 }
 

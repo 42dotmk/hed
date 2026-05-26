@@ -30,7 +30,6 @@ typedef struct Buffer {
     char *filetype;
     int dirty;
     int readonly; /* Read-only flag (default: 0/false) */
-    void *ts_internal; /* tree-sitter per-buffer state (opaque) */
 
     FoldList folds; /* Code folding regions */
     /* Active fold detection method as a registry name (heap-owned).

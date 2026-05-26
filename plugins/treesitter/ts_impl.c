@@ -57,15 +57,43 @@ typedef struct {
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
 int ts_is_enabled(void) { return g_ts_enabled; }
 
-void ts_buffer_init(Buffer *buf) {
-    if (!buf)
-        return;
-    if (buf->ts_internal)
-        return;
-    buf->ts_internal = calloc(1, sizeof(TSState));
-    if (buf->ts_internal) {
-        ((TSState *)buf->ts_internal)->parsed_dirty = -1;
-    }
+/* ===================================================================
+ * Per-buffer state, plugin-owned. A small stb_ds vector keyed by
+ * Buffer* so core doesn't carry a tree-sitter-shaped slot on Buffer.
+ *
+ * Linear scan is fine here: a typical session has < 100 buffers and
+ * lookups happen O(once per frame per visible buffer). Using stb_ds's
+ * hash map (hmput / hmgeti / hmdel) would need typeof, which our
+ * `-std=c11 -pedantic` build rejects.
+ * =================================================================== */
+typedef struct { Buffer *key; TSState *value; } TSStateEntry;
+static TSStateEntry *g_states = NULL;
+
+static int ts_state_index(Buffer *buf) {
+    int n = (int)arrlen(g_states);
+    for (int i = 0; i < n; i++)
+        if (g_states[i].key == buf) return i;
+    return -1;
+}
+
+static TSState *ts_state_get(Buffer *buf) {
+    if (!buf) return NULL;
+    int i = ts_state_index(buf);
+    return i < 0 ? NULL : g_states[i].value;
+}
+
+/* Lazily allocate a TSState for `buf`. Idempotent: returns the
+ * existing state when one is already attached. */
+static TSState *ts_state_create(Buffer *buf) {
+    if (!buf) return NULL;
+    TSState *st = ts_state_get(buf);
+    if (st) return st;
+    st = calloc(1, sizeof(TSState));
+    if (!st) return NULL;
+    st->parsed_dirty = -1;
+    TSStateEntry e = { .key = buf, .value = st };
+    arrput(g_states, e);
+    return st;
 }
 
 static void free_sub_lang(TSSubLang *s) {
@@ -82,29 +110,39 @@ static void free_sub_lang(TSSubLang *s) {
     memset(s, 0, sizeof(*s));
 }
 
-void ts_buffer_free(Buffer *buf) {
-    if (!buf || !buf->ts_internal)
-        return;
-    TSState *st = (TSState *)buf->ts_internal;
-    if (st->tree)
-        ts_tree_delete(st->tree);
-    if (st->parser)
-        ts_parser_delete(st->parser);
-    if (st->query)
-        ts_query_delete(st->query);
-    if (st->inject_query)
-        ts_query_delete(st->inject_query);
-    if (st->dl_handle)
-        dlclose(st->dl_handle);
-    if (st->injections)
-        free(st->injections);
-    if (st->sub_langs) {
-        for (int i = 0; i < st->num_sub_langs; i++)
-            free_sub_lang(&st->sub_langs[i]);
-        free(st->sub_langs);
+static void ts_state_destroy(Buffer *buf) {
+    if (!buf) return;
+    int i = ts_state_index(buf);
+    if (i < 0) return;
+    TSState *st = g_states[i].value;
+    if (st) {
+        if (st->tree)         ts_tree_delete(st->tree);
+        if (st->parser)       ts_parser_delete(st->parser);
+        if (st->query)        ts_query_delete(st->query);
+        if (st->inject_query) ts_query_delete(st->inject_query);
+        if (st->dl_handle)    dlclose(st->dl_handle);
+        if (st->injections)   free(st->injections);
+        if (st->sub_langs) {
+            for (int j = 0; j < st->num_sub_langs; j++)
+                free_sub_lang(&st->sub_langs[j]);
+            free(st->sub_langs);
+        }
+        free(st);
     }
-    free(buf->ts_internal);
-    buf->ts_internal = NULL;
+    arrdel(g_states, i);
+}
+
+/* Public hook handlers — registered by treesitter_init. */
+void ts_on_buffer_open(HookBufferEvent *e) {
+    if (!e || !e->buf) return;
+    if (!g_ts_enabled) return;
+    if (ts_buffer_autoload(e->buf))
+        ts_buffer_reparse(e->buf);
+}
+
+void ts_on_buffer_close(HookBufferEvent *e) {
+    if (!e || !e->buf) return;
+    ts_state_destroy(e->buf);
 }
 
 static size_t build_source(Buffer *buf, char **out) {
@@ -327,8 +365,7 @@ static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     if (!buf)
         return 0;
-    ts_buffer_init(buf);
-    TSState *st = (TSState *)buf->ts_internal;
+    TSState *st = ts_state_create(buf);
     if (!st)
         return 0;
 
@@ -389,8 +426,9 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
 int ts_buffer_autoload(Buffer *buf) {
     if (!buf || !buf->filename)
         return 0;
-    ts_buffer_init(buf);
-    TSState *st = (TSState *)buf->ts_internal;
+    TSState *st = ts_state_create(buf);
+    if (!st)
+        return 0;
     const char *want = NULL;
 
     /* Detect by extension */
@@ -721,10 +759,9 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
 }
 
 void ts_buffer_reparse(Buffer *buf) {
-    if (!buf || !buf->ts_internal)
-        return;
-    TSState *st = (TSState *)buf->ts_internal;
-    if (!st->parser || !st->lang)
+    if (!buf) return;
+    TSState *st = ts_state_get(buf);
+    if (!st || !st->parser || !st->lang)
         return;
     if (st->parsed_dirty == buf->dirty && st->tree)
         return;
@@ -881,8 +918,15 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
 void ts_render_pre_hook(const struct HookRenderEvent *event) {
     if (!event || !event->buf || !event->spans) return;
     Buffer *buf = event->buf;
-    if (!g_ts_enabled || !buf->ts_internal) return;
-    TSState *st = (TSState *)buf->ts_internal;
+    if (!g_ts_enabled) return;
+    TSState *st = ts_state_get(buf);
+    if (!st) return;
+    /* Reparse if the buffer changed since the last frame. Replaces
+     * the per-frame reparse-all loop that used to live in
+     * src/terminal.c — the renderer fires this hook once per visible
+     * window, so tree-sitter sees the same trigger. */
+    if (st->parser && st->lang && st->parsed_dirty != buf->dirty)
+        ts_buffer_reparse(buf);
     if (!st->tree || !st->query) return;
     if (buf->num_rows <= 0) return;
 

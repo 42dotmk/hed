@@ -17,11 +17,6 @@
 #include <assert.h>
 #include <regex.h>
 
-/* Weak refs to the treesitter plugin (skipped when not linked). */
-extern int ts_is_enabled(void)               __attribute__((weak));
-extern int ts_buffer_autoload(Buffer *buf)   __attribute__((weak));
-extern void ts_buffer_reparse(Buffer *buf)   __attribute__((weak));
-extern void ts_buffer_free(Buffer *buf)      __attribute__((weak));
 
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
@@ -69,7 +64,6 @@ static void buf_init(Buffer *buf) {
     buf->filetype = NULL;
     buf->dirty = 0;
     buf->readonly = 0; /* Default: not read-only */
-    buf->ts_internal = NULL;
     fold_list_init(&buf->folds);
     buf->fold_method = NULL; /* Filetype default applied on BUFFER_OPEN */
     undo_state_init(&buf->undo);
@@ -153,10 +147,6 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     hook_fire_buffer(HOOK_BUFFER_OPEN, &event);
 
     ed_set_status_message("Loaded: %s", filename);
-    if (ts_is_enabled && ts_is_enabled()) {
-        if (ts_buffer_autoload) ts_buffer_autoload(buf);
-        if (ts_buffer_reparse)  ts_buffer_reparse(buf);
-    }
     *out = buf;
 
     return ED_OK;
@@ -300,8 +290,6 @@ EdError buf_close(int index) {
     hook_fire_buffer(HOOK_BUFFER_CLOSE, &event);
 
     /* Free buffer resources */
-    /* Tree-sitter cleanup (no-op if plugin not linked). */
-    if (ts_buffer_free) ts_buffer_free(buf);
     for (int i = 0; i < buf->num_rows; i++) {
         row_free(&buf->rows[i]);
     }

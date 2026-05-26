@@ -29,10 +29,19 @@ void ts_seed_default_theme(void);
 int ts_register_query(const char *lang_name, const char *qname,
                       const char *content) __attribute__((weak));
 
-/* Per-buffer lifecycle */
-void ts_buffer_init(Buffer *buf);
-void ts_buffer_free(Buffer *buf);
+/* Per-buffer lifecycle. State lives in a plugin-internal map keyed
+ * by Buffer*; ts_buffer_autoload and ts_buffer_reparse below create
+ * the entry on demand. Cleanup happens via a HOOK_BUFFER_CLOSE
+ * handler registered in treesitter_init. */
 void ts_buffer_reparse(Buffer *buf);
+
+/* Hook handlers exposed to treesitter_init for registration.
+ * Forward-declared so ts.h doesn't need to pull in hooks.h's full
+ * struct definitions (already brought in transitively by hed.h
+ * everywhere ts.h is used today). */
+struct HookBufferEvent;
+void ts_on_buffer_open(struct HookBufferEvent *e);
+void ts_on_buffer_close(struct HookBufferEvent *e);
 /* Try to load language for buffer based on path or explicit name */
 int ts_buffer_load_language(Buffer *buf, const char *lang_name);
 /* Attempt autoload by filename/filetype */

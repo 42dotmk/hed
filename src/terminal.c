@@ -16,9 +16,6 @@
 #include "ui/wlayout.h"
 #include <assert.h>
 
-/* Weak refs to the treesitter plugin (skipped when not linked). */
-extern int ts_is_enabled(void)             __attribute__((weak));
-extern void ts_buffer_reparse(Buffer *buf) __attribute__((weak));
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -569,7 +566,7 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         /* Virtual block_below path. When sub exceeds the real visual
          * height of the anchor row, this screen row is a virtual one
          * owned by a vtext mark. Skip the gutter line-number, fold
-         * marker, selection, tree-sitter highlight, EOL vtext and
+         * marker, selection, attribute spans, EOL vtext and
          * cursor mapping — just paint the virtual text. */
         if (buf && filerow < buf->num_rows) {
             int h_real_now = win->wrap
@@ -934,16 +931,9 @@ void ed_render_frame(void) {
     ansi_hide_cursor(&ab);
     ansi_home(&ab);
 
-    /* Reparse tree-sitter for any window whose buffer changed since last draw */
-    if (ts_is_enabled && ts_is_enabled() && ts_buffer_reparse) {
-        for (int wi = 0; wi < (int)arrlen(E.windows); ++wi) {
-            int bi = E.windows[wi].buffer_index;
-            if (bi >= 0 && bi < (int)arrlen(E.buffers))
-                ts_buffer_reparse(&E.buffers[bi]);
-        }
-    }
-
-    /* Draw all windows */
+    /* Draw all windows. Highlighters listen to HOOK_RENDER_PRE fired
+     * from ed_draw_rows_win and refresh their state on demand —
+     * core knows nothing about specific highlighter plugins. */
     for (int wi = 0; wi < (int)arrlen(E.windows); ++wi) {
         ed_draw_rows_win(&ab, &E.windows[wi]);
         draw_extra_cursors_win(&ab, &E.windows[wi]);

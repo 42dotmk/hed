@@ -5,10 +5,10 @@
  * AttrSpan — attributed runs over buffer bytes, applied at render time.
  *
  * Phase-1 scaffolding for the renderer abstraction: each frame the
- * renderer fires HOOK_RENDER_PRE on every visible buffer, and
- * highlighters (tree-sitter, LSP diagnostics, search matches, …)
- * append spans saying "bytes [col_start, col_end) on this row carry
- * this attribute." The renderer walks the row and emits transitions.
+ * renderer fires HOOK_RENDER_PRE on every visible buffer, and any
+ * highlighter plugin appends spans saying "bytes [col_start, col_end)
+ * on this row carry this attribute." The renderer walks the row and
+ * emits transitions; multiple plugins can stack overlays by priority.
  *
  * The attribute payload is a borrowed ANSI SGR string for now, so the
  * existing theme tokens (`COLOR_KEYWORD` and friends in lib/theme.h)
