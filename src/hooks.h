@@ -81,7 +81,7 @@ typedef struct {
     size_t len;
 } HookLineEvent;
 
-typedef struct {
+typedef struct HookBufferEvent {
     Buffer *buf;
     const char *filename;
     /* For *_PRE intercept hooks: handler sets to 1 to claim ownership.

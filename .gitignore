@@ -7,3 +7,4 @@ ts-langs
 tasks
 tags
 /lsp-servers
+test/test_textobj

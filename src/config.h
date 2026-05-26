@@ -1,9 +1,8 @@
 #ifndef HED_CONFIG_H
 #define HED_CONFIG_H
-#include "hed.h"
-#include "commands.h"
 #include "keybinds.h"
 #include "keybinds_builtins.h"
+
 #include "auto_pair/auto_pair.h"
 #include "autosave/autosave.h"
 #include "claude/claude.h"
@@ -124,10 +123,8 @@ void config_init(void) {
     cmapn(" tt",   "tmux_toggle",          "toggle tmux pane");
     cmapn(" tT",   "tmux_kill",            "kill tmux pane");
     cmapn(" gg",   "git",                  "lazygit");
-    mapn (" gp",   kb_mail_git_patch_prompt,
-                                          "open :mail-git-patch prompt (Enter for -1 HEAD)");
-    cmapn_ft("mail-message", " ga", "mail-git-am",
-             "apply this patch email via git am");
+//    mapn (" gp",   kb_mail_git_patch_prompt, "open :mail-git-patch prompt (Enter for -1 HEAD)");
+    cmapn_ft("mail-message", " ga", "mail-git-am", "apply this patch email via git am");
     cmapn(" tl",   "ln",                   "toggle line numbers");
     cmapn(" wd",   "wclose",               "close window");
     cmapn(" ws",   "split",                "split horizontal");
