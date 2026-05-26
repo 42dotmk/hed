@@ -11,9 +11,9 @@
  * isn't loaded. */
 
 #include "hed.h"
-#include "command_mode.h"
-#include "picker.h"
-#include "prompt.h"
+#include "input/command_mode.h"
+#include "input/picker.h"
+#include "input/prompt.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

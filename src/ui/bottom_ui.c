@@ -1,7 +1,7 @@
-#include "utils/bottom_ui.h"
+#include "ui/bottom_ui.h"
 #include "lib/ansi.h"
 #include "editor.h"
-#include "prompt.h"
+#include "input/prompt.h"
 #include "terminal.h"
 
 /* Count rows needed by `s`, wrapping at the terminal width. */

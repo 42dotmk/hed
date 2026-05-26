@@ -26,17 +26,17 @@
 #include "stb_ds.h"
 
 /* Core modules */
-#include "commands.h"
+#include "commands/registry.h"
 #include "commands/cmd_builtins.h"
 #include "commands/cmd_util.h"
 #include "editor.h"
 #include "hook_builtins.h"
 #include "hooks.h"
-#include "keybinds.h"
-#include "keybinds_builtins.h"
-#include "picker.h"
+#include "input/keybinds.h"
+#include "input/keybinds_builtins.h"
+#include "input/picker.h"
 #include "plugin.h"
-#include "registers.h"
+#include "input/registers.h"
 #include "terminal.h"
 #include "utils/undo.h"
 
@@ -48,7 +48,7 @@
 #include "buf/virtual_text.h"
 
 /* Utilities */
-#include "utils/bottom_ui.h"
+#include "ui/bottom_ui.h"
 #include "utils/fzf.h"
 #include "utils/history.h"
 #include "utils/jump_list.h"

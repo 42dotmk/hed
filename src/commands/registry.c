@@ -1,4 +1,4 @@
-#include "commands.h"
+#include "commands/registry.h"
 #include "stb_ds.h"
 #include <stdlib.h>
 #include <string.h>

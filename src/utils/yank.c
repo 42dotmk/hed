@@ -1,7 +1,7 @@
 #include "utils/yank.h"
 #include "editor.h"
 #include "buf/buf_helpers.h"
-#include "registers.h"
+#include "input/registers.h"
 #include "buf/row.h"
 #include "ui/window.h"
 #include <stdlib.h>

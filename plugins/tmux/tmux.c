@@ -8,9 +8,9 @@
 #include "tmux.h"
 #include "utils/fzf.h"
 #include "utils/yank.h"
-#include "keybinds_builtins.h"
-#include "command_mode.h"
-#include "prompt.h"
+#include "input/keybinds_builtins.h"
+#include "input/command_mode.h"
+#include "input/prompt.h"
 #include <string.h>
 
 static void cmd_tmux_toggle(const char *args) {

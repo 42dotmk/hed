@@ -8,8 +8,8 @@
 
 #include "hed.h"
 #include "hooks.h"
-#include "keybinds.h"
-#include "commands.h"
+#include "input/keybinds.h"
+#include "commands/registry.h"
 #include "select_loop.h"
 #include "buf/buffer.h"
 #include "editor.h"

@@ -1,6 +1,6 @@
-#include "keybinds.h"
+#include "input/keybinds.h"
 #include "editor.h"
-#include "commands.h"
+#include "commands/registry.h"
 #include "hooks.h"
 #include "lib/log.h"
 #include "stb_ds.h"
@@ -8,10 +8,10 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include "registers.h"
+#include "input/registers.h"
 #include "lib/safe_string.h"
 #include "buf/textobj.h"
-#include "keybinds_builtins.h"
+#include "input/keybinds_builtins.h"
 #include <time.h>
 
 #define KEY_BUFFER_SIZE 16

@@ -17,8 +17,8 @@
  */
 
 #include "hed.h"
-#include "keybinds_builtins.h"
-#include "prompt.h"
+#include "input/keybinds_builtins.h"
+#include "input/prompt.h"
 #include "shell.h"
 #include "utils/yank.h"
 

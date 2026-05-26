@@ -1,7 +1,7 @@
 #ifndef KEYBINDS_H
 #define KEYBINDS_H
 #include "editor.h"
-#include "commands.h"
+#include "commands/registry.h"
 #include <stdbool.h>
 
 /* Keybinding callback signature */

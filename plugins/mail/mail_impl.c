@@ -4,7 +4,7 @@
 #include "buf/row.h"
 #include "lib/theme.h"
 #include "open/open.h"
-#include "prompt.h"
+#include "input/prompt.h"
 #include "utils/fzf.h"
 #include "utils/term_cmd.h"
 #include <dirent.h>

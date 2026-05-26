@@ -1,7 +1,7 @@
 #include "plugin.h"
 #include "lib/log.h"
 #include "editor.h"
-#include "picker.h"
+#include "input/picker.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>

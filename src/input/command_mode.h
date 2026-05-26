@@ -1,7 +1,7 @@
 #ifndef COMMAND_MODE_H
 #define COMMAND_MODE_H
 
-#include "prompt.h"
+#include "input/prompt.h"
 
 /*
  * The ":" prompt and the "/" search prompt.

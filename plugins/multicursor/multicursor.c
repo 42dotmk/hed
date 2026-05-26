@@ -14,7 +14,7 @@
  */
 
 #include "hed.h"
-#include "prompt.h"
+#include "input/prompt.h"
 #include "multicursor/multicursor.h"
 #include <ctype.h>
 #include <stdlib.h>

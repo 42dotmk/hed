@@ -1,6 +1,6 @@
 #include "ui/ask.h"
 #include "editor.h"
-#include "prompt.h"
+#include "input/prompt.h"
 
 #include <stdlib.h>
 #include <string.h>

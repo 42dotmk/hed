@@ -24,7 +24,7 @@
 
 #include "hed.h"
 #include "select_loop.h"
-#include "prompt.h"
+#include "input/prompt.h"
 #include "autosave.h"
 
 #include <fcntl.h>

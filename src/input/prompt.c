@@ -1,4 +1,4 @@
-#include "prompt.h"
+#include "input/prompt.h"
 #include "editor.h"
 #include "terminal.h"
 

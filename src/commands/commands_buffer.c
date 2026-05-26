@@ -11,7 +11,7 @@
 #include "fs/fs.h"
 #include "hooks.h"
 #include "lib/strutil.h"
-#include "picker.h"
+#include "input/picker.h"
 #include "terminal.h"
 #include "commands/cmd_util.h"
 #include <errno.h>

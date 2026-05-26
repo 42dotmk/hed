@@ -1,6 +1,6 @@
-#include "macros.h"
+#include "input/macros.h"
 #include "editor.h"
-#include "registers.h"
+#include "input/registers.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

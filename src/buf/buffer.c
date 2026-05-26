@@ -1,7 +1,7 @@
 #include "buf/buf_helpers.h"
 #include "buf/buffer.h"
 #include "fs/fs.h"
-#include "registers.h"
+#include "input/registers.h"
 #include "editor.h"
 #include "hooks.h"
 #include "terminal.h"

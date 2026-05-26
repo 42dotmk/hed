@@ -13,8 +13,8 @@
 #include "mail_git_patch.h"
 #include "hed.h"
 #include "mail/mail.h"
-#include "command_mode.h"
-#include "prompt.h"
+#include "input/command_mode.h"
+#include "input/prompt.h"
 #include "utils/term_cmd.h"
 
 #include <stdio.h>

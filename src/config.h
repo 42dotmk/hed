@@ -1,7 +1,7 @@
 #ifndef HED_CONFIG_H
 #define HED_CONFIG_H
-#include "keybinds.h"
-#include "keybinds_builtins.h"
+#include "input/keybinds.h"
+#include "input/keybinds_builtins.h"
 
 #include "auto_pair/auto_pair.h"
 #include "autosave/autosave.h"
