@@ -34,6 +34,7 @@
 #include "hooks.h"
 #include "keybinds.h"
 #include "keybinds_builtins.h"
+#include "picker.h"
 #include "plugin.h"
 #include "registers.h"
 #include "terminal.h"

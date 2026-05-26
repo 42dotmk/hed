@@ -2,6 +2,7 @@
 #include "editor.h"
 #include "commands.h"
 #include "buf/buf_helpers.h"
+#include "picker.h"
 #include "utils/yank.h"
 #include "terminal.h"
 #include "lib/log.h"
@@ -10,7 +11,6 @@
 #include "macros.h"
 #include "registers.h"
 #include "utils/fold.h"
-#include "utils/fzf.h"
 #include "fold_methods/fold_methods.h"
 #include "keybinds.h"
 #include "commands/cmd_util.h"
@@ -88,108 +88,16 @@ static char *unescape_string(const char *in) {
 }
 
 void cmd_list_commands(const char *args) {
-    (void)args;
-    /* Build printf list with command\tdesc lines for fzf */
-    char pipebuf[8192];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
-    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
-        const char *nm = commands[i].name ? commands[i].name : "";
-        const char *ds = commands[i].desc ? commands[i].desc : "";
-        char en[256], ed[512];
-        shell_escape_single(nm, en, sizeof(en));
-        shell_escape_single(ds, ed, sizeof(ed));
-
-        size_t need = strlen(en) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-
-        memcpy(pipebuf + off, en, strlen(en));
-        off += strlen(en);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
-    }
-    pipebuf[off] = '\0';
-
-    const char *fzf_opts = "--delimiter '\t'";
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        ed_set_status_message("commands: canceled");
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    fzf_free(sel, cnt);
-    ed_set_status_message("commands: %td total", arrlen(commands));
+    if (picker_invoke("commands", args)) return;
+    /* No picker installed — just report how many we have. */
+    ed_set_status_message("commands: %td registered (no picker installed)",
+                          arrlen(commands));
 }
 
 void cmd_list_keybinds(const char *args) {
-    (void)args;
-    /* Build printf list with sequence\tdesc lines for fzf */
-    char pipebuf[16384];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
-    int count = keybind_get_count();
-    for (int i = 0; i < count; i++) {
-        const char *sequence = NULL;
-        const char *desc = NULL;
-        const char *filetype = NULL;
-        const char *cmdline  = NULL;
-        int mode = 0;
-
-        if (!keybind_get_at_ext(i, &sequence, &desc, &mode, &filetype, &cmdline))
-            continue;
-
-        /* Add mode prefix */
-        char display[320];
-        const char *mode_prefix = "";
-        if (mode == MODE_NORMAL) mode_prefix = "[N] ";
-        else if (mode == MODE_INSERT) mode_prefix = "[I] ";
-        else if (mode == MODE_VISUAL) mode_prefix = "[V] ";
-        else if (mode == MODE_VISUAL_BLOCK) mode_prefix = "[VB] ";
-        else if (mode == MODE_COMMAND) mode_prefix = "[C] ";
-
-        /* Filetype tag: `*` for global bindings, the filetype name
-         * otherwise. Lives between the mode and the sequence so it
-         * stays at a fixed column when fzf renders the list. */
-        const char *ft_tag = (filetype && *filetype) ? filetype : "*";
-
-        snprintf(display, sizeof(display), "%s[%s] %s",
-                 mode_prefix, ft_tag, sequence ? sequence : "");
-
-        char es[512], ed[512];
-        shell_escape_single(display, es, sizeof(es));
-        shell_escape_single(desc ? desc : "", ed, sizeof(ed));
-
-        size_t need = strlen(es) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-
-        memcpy(pipebuf + off, es, strlen(es));
-        off += strlen(es);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
-    }
-    pipebuf[off] = '\0';
-
-    const char *fzf_opts = "--delimiter '\t'";
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        ed_set_status_message("keybinds: canceled");
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    fzf_free(sel, cnt);
-    ed_set_status_message("keybinds: %d total", count);
+    if (picker_invoke("keybinds", args)) return;
+    ed_set_status_message("keybinds: %d registered (no picker installed)",
+                          keybind_get_count());
 }
 
 void cmd_echo(const char *args) {

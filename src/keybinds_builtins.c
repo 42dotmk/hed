@@ -10,7 +10,7 @@
 #include "keybinds.h"
 #include "lib/safe_string.h"
 #include "lib/errors.h"
-#include "utils/fzf.h"
+#include "picker.h"
 #include "terminal.h"
 #include "ui/wlayout.h"
 #include <stdlib.h>
@@ -773,27 +773,8 @@ void kb_search_file_under_cursor(void) {
     query[copy_len] = '\0';
     sstr_free(&path);
 
-    char esc_query[PATH_MAX * 2];
-    shell_escape_single(query, esc_query, sizeof(esc_query));
-
-    char fzf_opts[PATH_MAX * 2 + 256];
-    snprintf(fzf_opts, sizeof(fzf_opts),
-             "--select-1 --exit-0 --query %s --preview '" FZF_FILE_PREVIEW_BODY
-             "' --preview-window right,60%%,wrap",
-             esc_query);
-
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(FZF_PROJECT_FILES_CMD, fzf_opts, 0, &sel, &cnt) ||
-        cnt <= 0 ||
-        !sel[0] || !sel[0][0]) {
-        fzf_free(sel, cnt);
-        ed_set_status_message("gF: no selection");
-        return;
-    }
-
-    buf_open_or_switch(sel[0], true);
-    fzf_free(sel, cnt);
+    if (!picker_invoke("files", query))
+        ed_set_status_message("gF: no files picker installed");
 }
 void kb_open_file_under_cursor(void) {
     SizedStr path = sstr_new();

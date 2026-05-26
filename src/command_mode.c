@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "commands.h"
 #include "fs/fs.h"
+#include "picker.h"
 #include "registers.h"
 #include "lib/safe_string.h"
 #include "lib/log.h"
@@ -56,13 +57,6 @@ static HistoryHook *g_history_hooks = NULL;
 void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud) {
     HistoryHook h = { fn, ud };
     arrput(g_history_hooks, h);
-}
-
-/* Completion-picker hook — provided by the pickers plugin. */
-static CmdPromptCompletionPicker g_completion_picker = NULL;
-
-void cmd_prompt_completion_picker_register(CmdPromptCompletionPicker fn) {
-    g_completion_picker = fn;
 }
 
 /* ----- completion: file-path and command-name ---------------------------- */
@@ -277,17 +271,18 @@ static void colon_complete(Prompt *p) {
     CmdPromptState *s = p->state;
     if (cmdcomp_is_cmdname_position(p)) {
         if (s->comp.cmdname_pending) {
-            /* Second Tab on the command name: hand off to the registered
-             * picker (pickers plugin's cmd_cpick), seeded with the
-             * partial typed so far. The picker re-fills the prompt and
-             * calls prompt_keep_open(). No-op if no picker registered. */
+            /* Second Tab on the command name: hand off to the
+             * picker registered under name "command" (the pickers
+             * plugin wires this to cmd_cpick). The picker re-fills
+             * the prompt and calls prompt_keep_open(). No-op if no
+             * picker is installed. */
             char query[128];
             int n = p->len;
             if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
             memcpy(query, p->buf, (size_t)n);
             query[n] = '\0';
             cmdcomp_clear(&s->comp);
-            if (g_completion_picker) g_completion_picker(query);
+            picker_invoke("command", query);
         } else {
             cmdcomp_complete_cmdname(p, &s->comp);
         }

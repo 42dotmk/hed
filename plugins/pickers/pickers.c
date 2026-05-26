@@ -1,15 +1,18 @@
 /* pickers plugin: fzf-driven pickers — files, recent files, command
- * palette, command history, jump list. Pure UI on top of editor state
- * (commands array, utils/history.c, utils/recent_files.c,
- * utils/jump_list.c); no core editing primitives live here.
+ * palette, command history, jump list, buffer/keybind/plugin lists.
+ * Pure UI on top of editor state (commands array, utils/history.c,
+ * utils/recent_files.c, utils/jump_list.c); no core editing
+ * primitives live here.
  *
- * The command-palette picker (cmd_cpick) doubles as the prompt's
- * Tab→fzf escalation: pickers_init() hands it to command_mode.c via
- * cmd_prompt_completion_picker_register, so the colon prompt no longer
- * names cmd_cpick directly. */
+ * Registration: pickers_init wires every implementation into
+ * src/picker.h's name-keyed registry. Core commands like :b,
+ * :commands, :keybinds, :plugins and the gF keybind invoke pickers
+ * via picker_invoke and fall back gracefully when this plugin
+ * isn't loaded. */
 
 #include "hed.h"
 #include "command_mode.h"
+#include "picker.h"
 #include "prompt.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,13 +279,181 @@ static void cmd_recent(const char *args) {
     fzf_free(sel, cnt);
 }
 
+/* ------------------------------------------------------------------ */
+/* Named pickers registered with src/picker.h                          */
+/* ------------------------------------------------------------------ */
+
+/* "buffers": jump to a buffer. Format per row: idx<TAB>name<TAB>mod<TAB>lines. */
+static void pick_buffers(const char *seed) {
+    (void)seed;
+    if (arrlen(E.buffers) <= 0) {
+        ed_set_status_message("no buffers");
+        return;
+    }
+    char pipebuf[8192];
+    size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
+                    "printf '%%s\t%%s\t%%s\t%%s\\n' ");
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        char idxs[16], lines[32];
+        snprintf(idxs,  sizeof(idxs),  "%d", i + 1);
+        snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
+        const char *nm  = E.buffers[i].title;
+        const char *mod = E.buffers[i].dirty ? "*" : "-";
+        char eidx[32], enam[512], emod[8], elines[32];
+        shell_escape_single(idxs,  eidx,   sizeof(eidx));
+        shell_escape_single(nm,    enam,   sizeof(enam));
+        shell_escape_single(mod,   emod,   sizeof(emod));
+        shell_escape_single(lines, elines, sizeof(elines));
+        size_t need = strlen(eidx) + strlen(enam) + strlen(emod)
+                    + strlen(elines) + 4;
+        if (off + need + 4 >= sizeof(pipebuf)) break;
+        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s %s %s ",
+                        eidx, enam, emod, elines);
+    }
+    pipebuf[off] = '\0';
+
+    const char *fzf_opts =
+        "--delimiter '\\t' --with-nth 2 "
+        "--preview 'printf \"buf:%s modified:%s lines:%s\\n\\n\" {1} {3} {4}; "
+        "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always "
+        "--line-range :200 {2} || sed -n \"1,200p\" {2} 2>/dev/null' "
+        "--preview-window right,60%,wrap";
+    char **sel = NULL;
+    int cnt = 0;
+    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        fzf_free(sel, cnt);
+        ed_set_status_message("buffers: canceled");
+        return;
+    }
+    char *picked = sel[0];
+    char *tab = strchr(picked, '\t');
+    if (tab) *tab = '\0';
+    int idx = atoi(picked);
+    if (idx >= 1 && idx <= (int)arrlen(E.buffers))
+        buf_switch(idx - 1);
+    fzf_free(sel, cnt);
+}
+
+/* "commands": list every registered :command, prefill the picked name
+ * back into the active prompt. cmd_cpick already does exactly this and
+ * is used both by the colon prompt's Tab escalation and by the :c
+ * command, so we just alias both names to it (see pickers_init). */
+
+/* "keybinds": list every registered keybind. Selection is informational
+ * — no canonical action to take on a bind. */
+static void pick_keybinds(const char *seed) {
+    (void)seed;
+    char pipebuf[16384];
+    size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
+                    "printf '%%s\t%%s\\n' ");
+    int count = keybind_get_count();
+    for (int i = 0; i < count; i++) {
+        const char *seq = NULL, *desc = NULL, *ft = NULL, *cmdline = NULL;
+        int mode = 0;
+        if (!keybind_get_at_ext(i, &seq, &desc, &mode, &ft, &cmdline)) continue;
+        const char *mp = "";
+        if      (mode == MODE_NORMAL)       mp = "[N] ";
+        else if (mode == MODE_INSERT)       mp = "[I] ";
+        else if (mode == MODE_VISUAL)       mp = "[V] ";
+        else if (mode == MODE_VISUAL_BLOCK) mp = "[VB] ";
+        else if (mode == MODE_COMMAND)      mp = "[C] ";
+        const char *ft_tag = (ft && *ft) ? ft : "*";
+        char display[320];
+        snprintf(display, sizeof(display), "%s[%s] %s",
+                 mp, ft_tag, seq ? seq : "");
+        char es[512], ed[512];
+        shell_escape_single(display, es, sizeof(es));
+        shell_escape_single(desc ? desc : "", ed, sizeof(ed));
+        size_t need = strlen(es) + strlen(ed) + 3;
+        if (off + need >= sizeof(pipebuf)) break;
+        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s ", es, ed);
+    }
+    pipebuf[off] = '\0';
+    char **sel = NULL;
+    int cnt = 0;
+    fzf_run_opts(pipebuf, "--delimiter '\t'", 0, &sel, &cnt);
+    fzf_free(sel, cnt);
+    ed_set_status_message("keybinds: %d total", count);
+}
+
+/* "plugins": list loaded plugins with description in the preview pane. */
+static void pick_plugins(const char *seed) {
+    (void)seed;
+    char pipebuf[16384];
+    size_t off = 0;
+    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
+                    "printf '%%s\\t%%s\\n' ");
+    int count  = plugin_get_count();
+    int active = 0;
+    for (int i = 0; i < count; i++) {
+        const char *name = NULL, *desc = NULL;
+        int enabled = 0;
+        if (!plugin_get_at(i, &name, &desc, &enabled)) continue;
+        if (enabled) active++;
+        char display[256];
+        snprintf(display, sizeof(display), "[%c] %s",
+                 enabled ? 'x' : ' ', name);
+        char es[512], ed[512];
+        shell_escape_single(display, es, sizeof(es));
+        shell_escape_single(desc[0] ? desc : "(no description)", ed, sizeof(ed));
+        size_t need = strlen(es) + strlen(ed) + 3;
+        if (off + need >= sizeof(pipebuf)) break;
+        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s ", es, ed);
+    }
+    pipebuf[off] = '\0';
+    const char *fzf_opts =
+        "--delimiter '\t' --with-nth 1 "
+        "--preview \"printf '%s' {2}\" --preview-window 'right:50%:wrap'";
+    char **sel = NULL;
+    int cnt = 0;
+    fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt);
+    fzf_free(sel, cnt);
+    ed_set_status_message("plugins: %d loaded, %d enabled", count, active);
+}
+
+/* "files": project-files picker, optionally pre-seeded with a query
+ * (used by gF on a path under the cursor). */
+static void pick_files(const char *seed) {
+    char fzf_opts[PATH_MAX * 2 + 256];
+    if (seed && *seed) {
+        char esc[PATH_MAX * 2];
+        shell_escape_single(seed, esc, sizeof(esc));
+        snprintf(fzf_opts, sizeof(fzf_opts),
+                 "--select-1 --exit-0 --query %s --preview '"
+                 FZF_FILE_PREVIEW_BODY "' --preview-window right,60%%,wrap",
+                 esc);
+    } else {
+        snprintf(fzf_opts, sizeof(fzf_opts),
+                 "--preview '" FZF_FILE_PREVIEW_BODY
+                 "' --preview-window right,60%%,wrap");
+    }
+    char **sel = NULL;
+    int cnt = 0;
+    if (fzf_run_opts(FZF_PROJECT_FILES_CMD, fzf_opts, 0, &sel, &cnt) &&
+        cnt > 0 && sel[0] && sel[0][0]) {
+        buf_open_or_switch(sel[0], true);
+    } else {
+        ed_set_status_message("files: no selection");
+    }
+    fzf_free(sel, cnt);
+}
+
 static int pickers_init(void) {
     cmd("c",      cmd_cpick,        "pick cmd");
     cmd("fzf",    cmd_fzf,          "pick a file(s)");
     cmd("recent", cmd_recent,       "recent files");
     cmd("hfzf",   cmd_history_fzf,  "fuzzy search command history");
     cmd("jfzf",   cmd_jumplist_fzf, "fuzzy search jump list");
-    cmd_prompt_completion_picker_register(cmd_cpick);
+
+    /* Named pickers core commands invoke through picker_invoke. */
+    picker_register("command",  cmd_cpick);     /* colon Tab escalation */
+    picker_register("commands", cmd_cpick);     /* :commands lists same set */
+    picker_register("keybinds", pick_keybinds);
+    picker_register("buffers",  pick_buffers);
+    picker_register("plugins",  pick_plugins);
+    picker_register("files",    pick_files);
     return 0;
 }
 

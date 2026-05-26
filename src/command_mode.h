@@ -30,15 +30,11 @@ typedef int (*CmdPromptHistoryHook)(Prompt *p, int dir, void *ud);
 void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud);
 
 /*
- * Plugin hook: register the fzf-based command-name picker used by the
- * ":" prompt's second Tab. The hook is called with the partial command
- * name typed so far. The picker is expected to refill the active prompt
- * (via prompt_set_text + prompt_keep_open).
- *
- * If no hook is registered, the second Tab is a no-op and the prompt
- * remains as-is. Used by the pickers plugin to provide cmd_cpick.
+ * The colon prompt's second Tab hands off to the picker registered
+ * under name "command" (see src/picker.h). The pickers plugin wires
+ * this to its fzf-backed command palette. Other prompts that want
+ * picker support follow the same pattern: pick a name, register an
+ * implementation, call picker_invoke from the prompt's complete().
  */
-typedef void (*CmdPromptCompletionPicker)(const char *query);
-void cmd_prompt_completion_picker_register(CmdPromptCompletionPicker fn);
 
 #endif /* COMMAND_MODE_H */
