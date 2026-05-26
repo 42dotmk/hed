@@ -344,46 +344,62 @@ emits `<F1>`…`<F12>` and combinations like `<C-Left>`, `<S-Right>`,
 
 ```
 src/
-├── main.c                # Entry point + select() loop
-├── editor.{c,h}          # Global state, ed_set_mode, ed_set_modeless
-├── config.{c,h}          # Plugin manifest + personal overrides
-├── plugin.{c,h}          # Plugin runtime
-├── commands.{c,h}        # Command registry / dispatch
-├── command_mode.{c,h}    # `:` UI: completion + Tab→fzf
-├── keybinds.{c,h}        # Keybind registry / dispatch
-├── keybinds_builtins.{c,h}   # kb_* callbacks
-├── hooks.{c,h}           # Hook system
-├── hook_builtins.{c,h}   # hook_change_cursor_shape
-├── terminal.{c,h}        # Raw mode, ANSI, render loop
-├── registers.{c,h}       # Yank / paste registers
-├── macros.{c,h}          # Macro recording / playback
-├── hed.h                 # Master include + map/cmap macros
-├── buf/                  # Buffer + Row + textobj + helpers
-├── ui/                   # Window, layout tree, modal windows, abuf
-├── utils/                # ts, quickfix, fzf, fold, undo, ctags,
-│                         # jump_list, history, recent_files,
-│                         # bottom_ui, term_cmd, sed, yank
-├── fold_methods/         # bracket / indent fold detection
-├── lib/                  # vector, log, errors, sizedstr, strutil,
-│                         # safe_string, file_helpers, ansi, theme
-└── commands/             # cmd_misc / cmd_search / cmd_util / etc.
+├── main.c                  # Entry point + select() loop
+├── editor.{c,h}            # Global state, ed_set_mode, ed_set_modeless
+├── terminal.{c,h}          # Raw mode, ANSI, render loop
+├── select_loop.{c,h}       # fd + timer registry for the main select() loop
+├── plugin.{c,h}            # Plugin runtime
+├── hooks.{c,h}             # Hook system
+├── hook_builtins.{c,h}     # hook_change_cursor_shape
+├── config.h                # Plugin manifest + personal overrides
+├── hed.h                   # Master include + map/cmap macros
+├── input/                  # Input + dispatch:
+│                           #   input, keybinds, keybinds_builtins,
+│                           #   macros, registers, prompt, command_mode,
+│                           #   picker
+├── commands/               # Full command system:
+│                           #   registry.{c,h} + cmd_misc / cmd_util /
+│                           #   commands_buffer / commands_ui /
+│                           #   cmd_builtins.h
+├── buf/                    # Buffer + Row + textobj + attrspan +
+│                           # virtual_text + helpers
+├── ui/                     # Window, layout tree, modal windows, abuf,
+│                           # ask, bottom_ui (status bar)
+├── fs/                     # File I/O + path helpers
+├── utils/                  # Editor-domain helpers (own state, depend
+│                           # on Buffer/Window/E):
+│                           #   undo, history, recent_files, jump_list,
+│                           #   quickfix, fzf, yank, term_cmd, fold,
+│                           #   fold_methods (registry only)
+└── lib/                    # Stateless leaves (no editor state, no
+                            # singletons; drop-in reusable):
+                            #   ansi, cursor, errors, log, path_limits,
+                            #   safe_string, sizedstr, stb_ds, strutil,
+                            #   theme, vector
 
-plugins/                  # Default, override with PLUGINS_DIR
-├── core/                 # Default :commands + minimal hooks
-├── vim_keybinds/         # Default Vim keymap
-├── emacs_keybinds/       # Emacs keymap (modeless)
-├── vscode_keybinds/      # VSCode keymap (modeless)
-├── keymap/               # :keymap swap
-├── clipboard/            # OSC 52 yank
-├── quickfix_preview/     # Cursor → preview sync
-├── dired/                # Directory browser
-├── lsp/                  # LSP client + cJSON
-├── viewmd/               # Markdown live preview
-├── tmux/                 # Runner pane integration
-├── fmt/                  # External formatters
-├── auto_pair/            # Bracket auto-pairing
-├── smart_indent/         # Indent carry-over
-└── example/              # Starter template
+plugins/                    # Default, override with PLUGINS_DIR
+├── core/                   # Default :commands + minimal hooks
+├── vim_keybinds/           # Default Vim keymap
+├── emacs_keybinds/         # Emacs keymap (modeless)
+├── vscode_keybinds/        # VSCode keymap (modeless)
+├── keymap/                 # :keymap swap
+├── clipboard/              # OSC 52 yank
+├── quickfix_preview/       # Cursor → preview sync
+├── dired/                  # Directory browser
+├── lsp/                    # LSP client + cJSON
+├── viewmd/                 # Markdown live preview
+├── tmux/                   # Runner pane integration
+├── fmt/                    # External formatters
+├── auto_pair/              # Bracket auto-pairing
+├── smart_indent/           # Indent carry-over
+├── folds/                  # bracket + indent fold methods +
+│                           # filetype defaults
+├── pickers/                # fzf-backed implementations registered
+│                           # via picker_invoke (src/input/picker.{c,h})
+├── treesitter/             # Tree-sitter highlighter (self-driven via
+│                           # HOOK_BUFFER_OPEN / HOOK_RENDER_PRE)
+├── markdown/               # Markdown highlighter + fold method
+└── example/                # Starter template
 
 test/        # Unity unit tests
 ts/          # Tree-sitter language installer source
@@ -391,6 +407,25 @@ ts-langs/    # Compiled tree-sitter .so files
 queries/     # Highlight queries by language
 tasks/       # Project notes
 ```
+
+### `lib/` vs `utils/`
+
+These two are *not* interchangeable; pick the right one when adding
+a file.
+
+- **`lib/`** — stateless leaves. No editor state, no singletons, no
+  dependency on `editor.h`, no inclusion of `Buffer`/`Window`/`E`.
+  Anything you could lift into another C project unchanged. Examples:
+  `sizedstr`, `strutil`, `errors`, `log`, `vector`, `ansi`, `theme`.
+- **`utils/`** — editor-domain helpers. Own runtime state, depend on
+  `Buffer`/`Window`/`E`, or hook into the core lifecycle. Not reusable
+  outside hed, but also not part of the core runtime spine. Examples:
+  `undo`, `history`, `jump_list`, `quickfix`, `fzf`, `fold_methods`
+  (the registry — methods themselves are in `plugins/folds/`).
+
+If a file would need to grow editor state to do its job, it belongs
+in `utils/`. If you have to fight to keep it from doing so, it might
+belong in the core runtime spine (top-level `src/`) instead.
 
 ---
 
