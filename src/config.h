@@ -91,6 +91,9 @@ void config_init(void) {
     mail_add_view("Attachments", "tag:attachment");
     mail_add_view("Contact", "to:contact@codechem.com");
     mail_add_view("Core", "to:core@codechem.com");
+    mail_set_from("Costa Halicea <costa@codechem.com>");
+    mail_set_query("tag:inbox");
+    
 
     aishell_set_spawn_cmd("pi");
     
