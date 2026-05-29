@@ -447,3 +447,4 @@ tasks/       # Project notes
 - Optional kitty keyboard protocol support — would unlock
   `Ctrl+Shift+letter` and the rest of the modifier matrix that
   xterm-style escapes can't deliver
+  
