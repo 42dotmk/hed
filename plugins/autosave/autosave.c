@@ -45,7 +45,7 @@ static int g_enabled = 1;
 static int autosave_skip_buf(const Buffer *buf) {
     if (!buf || !buf->filename || !*buf->filename) return 1;
     if (buf->readonly) return 1;
-    /* Plugin scratch buffers ([copilot], [scratch], [claude], ...). */
+    /* Plugin scratch buffers ([copilot], [scratch], [aishell], ...). */
     if (buf->title && buf->title[0] == '[') return 1;
     return 0;
 }

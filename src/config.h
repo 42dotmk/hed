@@ -6,7 +6,7 @@
 #include "keybinds_builtins.h"
 #include "auto_pair/auto_pair.h"
 #include "autosave/autosave.h"
-#include "claude/claude.h"
+#include "aishell/aishell.h"
 #include "clipboard/clipboard.h"
 #include "copilot/copilot.h"
 #include "core/core.h"
@@ -59,7 +59,7 @@ void config_init(void) {
     plugin_load(&plugin_shell,            1);
     plugin_load(&plugin_tmux,             1);
     plugin_load(&plugin_translate,        1);
-    plugin_load(&plugin_claude,           1);
+    plugin_load(&plugin_aishell,          1);
     plugin_load(&plugin_treesitter,       1);
     plugin_load(&plugin_hed_themes,       1);
     plugin_load(&plugin_markdown,         1);
@@ -92,6 +92,8 @@ void config_init(void) {
     mail_add_view("Contact", "to:contact@codechem.com");
     mail_add_view("Core", "to:core@codechem.com");
 
+    aishell_set_spawn_cmd("pi");
+    
     cmapn("mm",    "mail",                  "mail");
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
@@ -136,7 +138,7 @@ void config_init(void) {
     cmapn(" wk",   "wk",                   "focus up");
     cmapn(" wl",   "wl",                   "focus right");
     cmapn(" ts",   "tmux_send_line",       "send paragraph to tmux");
-    cmapn(" ai",   "claude_toggle",        "toggle Claude pane");
+    cmapn(" ai",   "ai_toggle",            "toggle AI shell pane");
     mapn (" dl",   kb_del_right,           "del win right");
     mapn (" dh",   kb_del_left,            "del win left");
     mapn (" dj",   kb_del_down,            "del win down");
