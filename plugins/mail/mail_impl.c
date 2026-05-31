@@ -990,7 +990,7 @@ void mail_apply_tags(const char *args) {
     mail_refresh_keep_cursor();
 
     if (was_visual) ed_set_mode(MODE_NORMAL);
-    kb_move_down();
+    //kb_move_down();
 
     ed_set_status_message("mail-tag: %s applied to %d thread%s",
                           tag_args, applied, applied == 1 ? "" : "s");

@@ -95,7 +95,10 @@ static void kb_enter(void)        { mail_handle_enter(); }
 static void kb_filter(void)       { mail_filter_prompt(); }
 static void kb_refresh(void)      { mail_set_filter(""); mail_open_list(); }
 static void kb_sync(void)         { mail_sync(); }
-static void kb_mark_read(void)    { mail_apply_tags("-unread"); }
+static void kb_mark_read(void)    { 
+	mail_apply_tags("-unread");
+	kb_move_down(); 
+}
 static void kb_mark_read_all(void){ mail_apply_tags_query("-unread"); }
 static void kb_delete(void)       { mail_apply_tags("+deleted -unread -inbox"); }
 static void kb_mailboxes(void)    { mail_open_mailboxes(); }
