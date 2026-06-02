@@ -134,21 +134,45 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 
 | Plugin | What it does |
 |---|---|
-| `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
-| `vim_keybinds` | Default Vim keymap and text objects. |
-| `emacs_keybinds` | Emacs keymap (`C-a`/`C-e`/`C-n`/`C-p`/`C-x` cluster/M- bindings). Modeless. |
-| `vscode_keybinds` | VSCode keymap (`Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D`, shift-arrow selection, `Ctrl+Left/Right` word motion). Modeless. |
-| `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
-| `clipboard` | OSC 52 yank → system clipboard. |
-| `quickfix_preview` | Cursor → preview sync in quickfix buffers. |
-| `dired` | Directory browser (oil.nvim-style). |
-| `lsp` | LSP client (WIP). Owns `cJSON`, `:lsp_*` commands. |
-| `viewmd` | Markdown live preview. |
-| `tmux` | Runner pane. `:tmux_toggle/send/kill/send_line`. |
-| `fmt` | `:fmt` runs an external formatter by filetype. |
+| `aishell` | AI shell integration |
 | `auto_pair` | Auto-insert `()`/`[]`/`{}`/quotes. |
-| `smart_indent` | Carry indentation onto new lines. |
+| `autosave` | Auto-save functionality |
+| `clipboard` | OSC 52 yank → system clipboard. |
+| `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
+| `copilot` | GitHub Copilot integration |
+| `ctags` | Ctags integration for symbol navigation |
+| `dired` | Directory browser (oil.nvim-style). |
+| `emacs_keybinds` | Emacs keymap (`C-a`/`C-e`/`C-n`/`C-p`/`C-x` cluster/M- bindings). Modeless. |
 | `example` | Starter template — copy and rename to make your own. |
+| `fmt` | `:fmt` runs an external formatter by filetype. |
+| `git` | Git integration |
+| `hed_themes` | Theme management |
+| `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
+| `lsp` | LSP client (WIP). Owns `cJSON`, `:lsp_*` commands. |
+| `mail` | Mail integration |
+| `mail_git_patch` | Git patch mail integration |
+| `man` | Manual pages viewer |
+| `markdown` | Markdown rendering support |
+| `multicursor` | Multiple cursor support |
+| `open` | File opening utilities |
+| `pickers` | Fuzzy pickers |
+| `quickfix_preview` | Cursor → preview sync in quickfix buffers. |
+| `reload` | Reload functionality |
+| `scratch` | Scratch buffer support |
+| `sed` | Stream editor integration |
+| `selectlist` | Selection list functionality |
+| `session` | Session management |
+| `shell` | Shell integration |
+| `smart_indent` | Carry indentation onto new lines. |
+| `tags` | Tags integration |
+| `tmux` | Runner pane. `:tmux_toggle/send/kill/send_line`. |
+| `translate` | Translation support |
+| `treesitter` | Tree-sitter integration |
+| `viewmd` | Markdown live preview. |
+| `vim_keybinds` | Default Vim keymap and text objects. |
+| `vscode_keybinds` | VSCode keymap (`Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D`, shift-arrow selection, `Ctrl+Left/Right` word motion). Modeless. |
+| `whichkey` | Which-key tooltip support |
+| `yazi` | Yazi file manager integration |
 
 ### Adding your own plugin
 
@@ -458,3 +482,4 @@ belong in the core runtime spine (top-level `src/`) instead.
 - Optional kitty keyboard protocol support — would unlock
   `Ctrl+Shift+letter` and the rest of the modifier matrix that
   xterm-style escapes can't deliver
+  
