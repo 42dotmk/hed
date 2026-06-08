@@ -9,6 +9,7 @@
 
 #include "hed.h"
 #include "man.h"
+#include "utils/term_cmd.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -187,19 +188,31 @@ static void parse_apropos_line(const char *line,
 }
 
 static void cmd_man_fzf(void) {
+    /* Enumerate via apropos, hand the lines to the picker — keeps this
+     * plugin free of any direct fzf coupling. */
+    char **lines = NULL;
+    int lcnt = 0;
+    if (!term_cmd_capture("apropos . 2>/dev/null | sort -u",
+                          &lines, &lcnt) || lcnt == 0) {
+        term_cmd_free(lines, lcnt);
+        ed_set_status_message("man: no apropos output (is `apropos` available?)");
+        return;
+    }
+
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run("apropos . 2>/dev/null | sort -u", 0, &sel, &cnt) ||
-        cnt == 0 || !sel || !sel[0]) {
-        fzf_free(sel, cnt);
-        ed_set_status_message("man: nothing selected (is `apropos` available?)");
+    int ok = picker_list((const char **)lines, lcnt, 0, &sel, &cnt);
+    term_cmd_free(lines, lcnt);
+    if (!ok || cnt == 0 || !sel || !sel[0]) {
+        picker_list_free(sel, cnt);
+        ed_set_status_message("man: nothing selected");
         return;
     }
 
     char topic[128], section[16];
     parse_apropos_line(sel[0], topic, sizeof(topic),
                        section, sizeof(section));
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 
     if (!topic[0]) {
         ed_set_status_message("man: couldn't parse picker selection");

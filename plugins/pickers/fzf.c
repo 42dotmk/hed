@@ -1,4 +1,4 @@
-#include "utils/fzf.h"
+#include "pickers/fzf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

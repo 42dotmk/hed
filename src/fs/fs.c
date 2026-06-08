@@ -157,6 +157,7 @@ char *fs_path_detect_filetype(const char *path) {
     if (strcmp(ext, "py") == 0)                                  return strdup("python");
     if (strcmp(ext, "js") == 0)                                  return strdup("javascript");
     if (strcmp(ext, "ts") == 0)                                  return strdup("typescript");
+    if (strcmp(ext, "tsx") == 0)                                 return strdup("typescript");
     if (strcmp(ext, "rs") == 0)                                  return strdup("rust");
     if (strcmp(ext, "sh") == 0)                                  return strdup("shell");
     if (strcmp(ext, "md") == 0)                                  return strdup("markdown");

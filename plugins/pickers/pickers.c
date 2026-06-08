@@ -14,6 +14,7 @@
 #include "input/command_mode.h"
 #include "input/picker.h"
 #include "input/prompt.h"
+#include "pickers/fzf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -440,6 +441,35 @@ static void pick_files(const char *seed) {
     fzf_free(sel, cnt);
 }
 
+/* picker_list backend: just forward to fzf_pick_list. fzf allocates with
+ * malloc/strdup; picker_list_free does the matching free, so we don't
+ * need fzf_free here. */
+static int fzf_picker_list(const char **items, int count, int multi,
+                           char ***out_lines, int *out_count) {
+    return fzf_pick_list(items, count, multi, out_lines, out_count);
+}
+
+static void pick_logs(const char *seed) {
+    (void)seed;
+    const char *home = getenv("HOME");
+    if (!home || !*home) {
+        ed_set_status_message("logs: HOME not set");
+        return;
+    }
+    char find_cmd[1024];
+    snprintf(find_cmd, sizeof(find_cmd),
+             "find '%s/.cache/hed' -maxdepth 2 -type f -name log 2>/dev/null",
+             home);
+    char **lines = NULL;
+    int    count = 0;
+    if (!fzf_run(find_cmd, 0, &lines, &count) || count == 0) {
+        fzf_free(lines, count);
+        return;
+    }
+    buf_open_or_switch(lines[0], true);
+    fzf_free(lines, count);
+}
+
 static int pickers_init(void) {
     cmd("c",      cmd_cpick,        "pick cmd");
     cmd("fzf",    cmd_fzf,          "pick a file(s)");
@@ -454,6 +484,12 @@ static int pickers_init(void) {
     picker_register("buffers",  pick_buffers);
     picker_register("plugins",  pick_plugins);
     picker_register("files",    pick_files);
+    picker_register("logs",     pick_logs);
+
+    /* Generic list-picker backend — domain plugins (mail, tmux,
+     * treesitter, man) feed items through picker_list() and stay
+     * decoupled from fzf. */
+    picker_list_register(fzf_picker_list);
     return 0;
 }
 

@@ -49,7 +49,6 @@
 
 /* Utilities */
 #include "ui/bottom_ui.h"
-#include "utils/fzf.h"
 #include "utils/history.h"
 #include "utils/jump_list.h"
 #include "utils/quickfix.h"

@@ -37,4 +37,32 @@ PickerFn picker_get(const char *name);
  * the cue to fall back. */
 int picker_invoke(const char *name, const char *seed);
 
+/*
+ * picker_list — generic list picker. Plugins owning their data
+ * (mail attachments, tmux panes, ts themes, ...) feed in a list
+ * of strings and get back the user's selection, without needing
+ * to know which UI (fzf, modal window, ...) actually presents it.
+ *
+ * The pickers plugin registers an fzf-backed implementation at
+ * init; other plugins can replace it. Last write wins.
+ *
+ * items     — read-only array of `count` C-strings (not freed).
+ * multi     — 1 to allow multi-select, 0 for single.
+ * out_lines — receives a heap-allocated array of heap-allocated
+ *             strings holding the selected items. NULL/0 on cancel.
+ *             Free with picker_list_free.
+ * out_count — receives number of selected items.
+ *
+ * Returns 1 if an implementation ran (including 0-selection cancel),
+ *         0 if no implementation is registered or the backend failed.
+ * Callers use the 0 return to know they should fall back.
+ */
+typedef int (*PickerListFn)(const char **items, int count, int multi,
+                            char ***out_lines, int *out_count);
+
+void picker_list_register(PickerListFn fn);
+int  picker_list(const char **items, int count, int multi,
+                 char ***out_lines, int *out_count);
+void picker_list_free(char **lines, int count);
+
 #endif /* HED_PICKER_H */

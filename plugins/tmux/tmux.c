@@ -6,7 +6,7 @@
 
 #include "hed.h"
 #include "tmux.h"
-#include "utils/fzf.h"
+#include "utils/term_cmd.h"
 #include "utils/yank.h"
 #include "input/keybinds_builtins.h"
 #include "input/command_mode.h"
@@ -44,25 +44,37 @@ static void cmd_tmux_attach(const char *args) {
         ed_set_status_message("Usage: :tmux_attach <name>");
         return;
     }
-    char **sel = NULL;
-    int cnt = 0;
+    /* Enumerate panes via tmux, then hand the list to the picker —
+     * keeps this plugin agnostic to whichever picker backend is loaded. */
+    char **lines = NULL;
+    int lcnt = 0;
     const char *list_cmd =
         "tmux list-panes -a -F "
         "'#{pane_id} #{session_name}:#{window_name}.#{pane_index} "
         "#{pane_current_command} | #{pane_title}'";
-    if (!fzf_run(list_cmd, 0, &sel, &cnt) || cnt <= 0 || !sel[0] || !sel[0][0]) {
-        fzf_free(sel, cnt);
+    if (!term_cmd_capture(list_cmd, &lines, &lcnt) || lcnt <= 0) {
+        term_cmd_free(lines, lcnt);
+        ed_set_status_message("tmux: no panes");
+        return;
+    }
+
+    char **sel = NULL;
+    int cnt = 0;
+    int ok = picker_list((const char **)lines, lcnt, 0, &sel, &cnt);
+    term_cmd_free(lines, lcnt);
+    if (!ok || cnt <= 0 || !sel[0] || !sel[0][0]) {
+        picker_list_free(sel, cnt);
         return;
     }
     /* First whitespace-separated field of the picked line is the pane id. */
     char pane_id[64] = {0};
     if (sscanf(sel[0], "%63s", pane_id) != 1 || !pane_id[0]) {
         ed_set_status_message("tmux: could not parse pane id");
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         return;
     }
     tmux_pane_attach(args, pane_id);
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 }
 
 #define TMUX_PANE_LIST_MAX 16
@@ -78,13 +90,13 @@ static void cmd_tmux_panes(const char *args) {
 
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_pick_list(names, n, 0, &sel, &cnt) || cnt <= 0 || !sel[0] ||
+    if (!picker_list(names, n, 0, &sel, &cnt) || cnt <= 0 || !sel[0] ||
         !sel[0][0]) {
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         return;
     }
     tmux_pane_focus(sel[0]);
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 }
 
 /* Send the paragraph under cursor to whichever pane was last focused.

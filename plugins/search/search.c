@@ -14,6 +14,11 @@
  * live in plugins/pickers/. */
 
 #include "hed.h"
+/* Direct fzf access: ssearch uses fzf's --bind 'change:reload:...' for
+ * live ripgrep — that's a fzf-specific feature the generic picker_list
+ * abstraction can't express, so this plugin reaches across to pickers/
+ * instead of going through input/picker.h. */
+#include "pickers/fzf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

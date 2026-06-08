@@ -5,7 +5,6 @@
 #include "lib/theme.h"
 #include "open/open.h"
 #include "input/prompt.h"
-#include "utils/fzf.h"
 #include "utils/term_cmd.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -1312,13 +1311,13 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     }
     char **sel = NULL;
     int cnt = 0;
-    int ok = fzf_pick_list(items, attach_count, 1, &sel, &cnt);
+    int ok = picker_list(items, attach_count, 1, &sel, &cnt);
     for (int i = 0; i < attach_count; i++) free(labels[i]);
     free(labels);
     free(items);
 
     if (!ok || cnt <= 0) {
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         ed_set_status_message("mail-attach: canceled");
         free(resolved_dir);
         return;
@@ -1326,7 +1325,7 @@ void mail_attach_action(int part_id, const char *dest_dir) {
 
     const MailAttach **picks = malloc(sizeof(MailAttach *) * (size_t)cnt);
     if (!picks) {
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         free(resolved_dir);
         ed_set_status_message("mail-attach: out of memory");
         return;
@@ -1343,7 +1342,7 @@ void mail_attach_action(int part_id, const char *dest_dir) {
             }
         }
     }
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 
     if (picked == 0) {
         ed_set_status_message("mail-attach: nothing matched selection");

@@ -189,24 +189,8 @@ static void cmd_log(const char *args) {
 }
 
 static void cmd_logs(const char *args) {
-    (void)args;
-    const char *home = getenv("HOME");
-    if (!home || !*home) {
-        ed_set_status_message("logs: HOME not set");
-        return;
-    }
-    char find_cmd[1024];
-    snprintf(find_cmd, sizeof(find_cmd),
-             "find '%s/.cache/hed' -maxdepth 2 -type f -name log 2>/dev/null",
-             home);
-    char **lines = NULL;
-    int    count = 0;
-    if (!fzf_run(find_cmd, 0, &lines, &count) || count == 0) {
-        fzf_free(lines, count);
-        return;
-    }
-    buf_open_or_switch(lines[0], true);
-    fzf_free(lines, count);
+    if (picker_invoke("logs", args)) return;
+    ed_set_status_message("logs: no picker registered");
 }
 
 static void register_commands(void) {
@@ -228,7 +212,7 @@ static void register_commands(void) {
     cmd("echo", cmd_echo, "echo");
     cmd("history", cmd_history, "cmd hist");
     cmd("log",  cmd_log,  "open the editor log file");
-    cmd("logs", cmd_logs, "fzf-pick a log file from the cache dir");
+    cmd("logs", cmd_logs, "pick a log file from the cache dir");
     cmd("reg", cmd_registers, "registers");
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");

@@ -36,3 +36,21 @@ int picker_invoke(const char *name, const char *seed) {
     fn(seed);
     return 1;
 }
+
+static PickerListFn g_picker_list_fn = NULL;
+
+void picker_list_register(PickerListFn fn) { g_picker_list_fn = fn; }
+
+int picker_list(const char **items, int count, int multi,
+                char ***out_lines, int *out_count) {
+    if (out_lines) *out_lines = NULL;
+    if (out_count) *out_count = 0;
+    if (!g_picker_list_fn) return 0;
+    return g_picker_list_fn(items, count, multi, out_lines, out_count);
+}
+
+void picker_list_free(char **lines, int count) {
+    if (!lines) return;
+    for (int i = 0; i < count; i++) free(lines[i]);
+    free(lines);
+}

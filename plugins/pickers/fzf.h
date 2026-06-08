@@ -1,7 +1,15 @@
-#ifndef FZF_H
-#define FZF_H
+#ifndef PICKERS_FZF_H
+#define PICKERS_FZF_H
 
-/* Simple helpers to interact with fzf in a TUI-friendly way */
+/* Low-level fzf wrappers. Lives inside the pickers plugin because
+ * pickers owns the fzf integration end-to-end.
+ *
+ * Most plugins should NOT include this header — they should call
+ * picker_list() from src/input/picker.h, which routes through
+ * whichever picker backend is registered (fzf by default). Reach for
+ * this header only when you need fzf-specific options (e.g. live
+ * --bind change:reload, --preview) that the generic picker_list
+ * abstraction can't express. */
 
 /* Runs: <input_cmd> | fzf [-m] and returns selected lines (without newlines).
  * - multi = 0 for single, 1 for multi-select.
@@ -38,4 +46,4 @@ void fzf_free(char **lines, int count);
     "command -v bat >/dev/null 2>&1 && bat --style=plain "                    \
     "--color=always --line-range :200 {} || sed -n \"1,200p\" {} 2>/dev/null"
 
-#endif /* FZF_H */
+#endif /* PICKERS_FZF_H */

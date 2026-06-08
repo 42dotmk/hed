@@ -11,7 +11,6 @@
 #include "ts.h"
 #include "theme.h"
 #include "shell/shell.h"
-#include "utils/fzf.h"
 
 static void cmd_ts(const char *args) {
     if (!args || !*args) {
@@ -92,18 +91,18 @@ static void cmd_theme(const char *args) {
 
     char **sel = NULL;
     int    cnt = 0;
-    /* fzf_pick_list takes const char **; theme_list returns const char *const *.
-     * The cast is safe — fzf_pick_list never writes through the array. */
-    if (!fzf_pick_list((const char **)names, n, 0, &sel, &cnt) || cnt <= 0 ||
+    /* picker_list takes const char **; theme_list returns const char *const *.
+     * The cast is safe — picker_list never writes through the array. */
+    if (!picker_list((const char **)names, n, 0, &sel, &cnt) || cnt <= 0 ||
         !sel[0] || !sel[0][0]) {
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         return;
     }
     if (theme_activate(sel[0]) != 0)
         ed_set_status_message("theme: unknown '%s'", sel[0]);
     else
         ed_set_status_message("theme: %s", sel[0]);
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 }
 
 static int treesitter_init(void) {
