@@ -2,6 +2,7 @@
 #include "editor.h"
 #include "lib/errors.h"
 #include "lib/safe_string.h"
+#include "lib/strutil.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -852,14 +853,16 @@ void buf_move_cursor_key(int key) {
     case KEY_ARROW_LEFT:
     case 'h':
         if (row) {
-            int rx = buf_row_cx_to_rx(row, win->cursor.x);
-            if (rx > 0) {
-                win->cursor.x = buf_row_rx_to_cx(row, rx - 1);
+            if (win->cursor.x > 0) {
+                /* Step back one whole codepoint (skip continuation bytes). */
+                int idx = win->cursor.x - 1;
+                while (idx > 0 &&
+                       ((unsigned char)row->chars.data[idx] & 0xC0) == 0x80)
+                    idx--;
+                win->cursor.x = idx;
             } else if (win->cursor.y > 0) {
                 win->cursor.y--;
-                Row *pr = &buf->rows[win->cursor.y];
-                int prcols = buf_row_cx_to_rx(pr, (int)pr->chars.len);
-                win->cursor.x = buf_row_rx_to_cx(pr, prcols);
+                win->cursor.x = (int)buf->rows[win->cursor.y].chars.len;
             }
         }
         break;
@@ -949,10 +952,14 @@ void buf_move_cursor_key(int key) {
     case KEY_ARROW_RIGHT:
     case 'l':
         if (row) {
-            int rx = buf_row_cx_to_rx(row, win->cursor.x);
-            int rcols = buf_row_cx_to_rx(row, (int)row->chars.len);
-            if (rx < rcols) {
-                win->cursor.x = buf_row_rx_to_cx(row, rx + 1);
+            if (win->cursor.x < (int)row->chars.len) {
+                /* Step forward one whole codepoint. */
+                int adv = 1;
+                utf8_char_width(row->chars.data + win->cursor.x,
+                                row->chars.len - win->cursor.x, &adv);
+                if (adv < 1)
+                    adv = 1;
+                win->cursor.x += adv;
             } else if (win->cursor.y < buf->num_rows - 1) {
                 win->cursor.y++;
                 win->cursor.x = 0;
@@ -968,6 +975,13 @@ void buf_move_cursor_key(int key) {
         win->cursor.x = rowlen;
     if (win->cursor.x < 0)
         win->cursor.x = 0;
+    /* Vertical moves carry the byte index across lines; make sure we never
+     * land on a UTF-8 continuation byte. */
+    if (row && win->cursor.x > 0 && win->cursor.x < rowlen) {
+        while (win->cursor.x > 0 &&
+               ((unsigned char)row->chars.data[win->cursor.x] & 0xC0) == 0x80)
+            win->cursor.x--;
+    }
 }
 
 void buf_find_matching_bracket(void) {

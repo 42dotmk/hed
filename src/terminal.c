@@ -350,29 +350,42 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
                                           int col_offset, int max_cols) {
     if (!buf || row < 0 || row >= buf->num_rows) return;
     const Row *r = &buf->rows[row];
-    const char *rdata = r->render.data;
-    int rlen = (int)r->render.len;
     const char *cdata = r->chars.data;
     int clen = (int)r->chars.len;
 
-    /* Advance chars-pos `ci` and render-col `roff` to col_offset. */
-    int roff = 0;
-    int ci   = 0;
-    while (ci < clen && roff < col_offset) {
-        unsigned char c = (unsigned char)cdata[ci];
-        int w = (c == '\t') ? (TAB_STOP - roff % TAB_STOP) : 1;
-        if (roff + w > col_offset) break;
-        roff += w;
-        ci++;
-    }
-    int rout = col_offset;
-    int rem  = max_cols;
-    const char *cur_sgr = NULL;
+    /* Everything below is in display columns (wcwidth), matching
+     * utf8_slice_by_columns() so this highlighted path lines up exactly with
+     * the plain ab_append() path used when there are no spans. We emit the raw
+     * codepoint bytes from chars and expand tabs to spaces ourselves. */
+    int col = 0; /* display column at the start of the current codepoint */
+    int ci  = 0; /* byte index into chars */
 
-    while (rem > 0 && ci < clen && rout < rlen) {
-        unsigned char c = (unsigned char)cdata[ci];
-        int rw = (c == '\t') ? (TAB_STOP - rout % TAB_STOP) : 1;
-        if (rw < 1) rw = 1;
+    /* Skip codepoints entirely left of the viewport. A char straddling
+     * col_offset is dropped (it has already advanced past col_offset), which
+     * is the same boundary rule utf8_slice_by_columns uses. */
+    while (ci < clen && col < col_offset) {
+        int adv = 1, w;
+        if (cdata[ci] == '\t')
+            w = TAB_STOP - (col % TAB_STOP);
+        else {
+            w = utf8_char_width(cdata + ci, (size_t)(clen - ci), &adv);
+            if (adv < 1) adv = 1;
+        }
+        col += w;
+        ci  += adv;
+    }
+
+    int end_col = col_offset + max_cols;
+    const char *cur_sgr = NULL;
+    while (ci < clen && col < end_col) {
+        int adv = 1, w;
+        int is_tab = (cdata[ci] == '\t');
+        if (is_tab)
+            w = TAB_STOP - (col % TAB_STOP);
+        else {
+            w = utf8_char_width(cdata + ci, (size_t)(clen - ci), &adv);
+            if (adv < 1) adv = 1;
+        }
 
         const AttrSpan *sp = attrspan_at(&buf->render_spans, row, ci);
         const char *want_sgr = sp ? sp->sgr : NULL;
@@ -384,12 +397,15 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
             if (want_sgr) ab_append_str(ab, want_sgr);
             cur_sgr = want_sgr;
         }
-        for (int k = 0; k < rw && rout < rlen && rem > 0; k++) {
-            ab_append_ch(ab, rdata[rout]);
-            rout++;
-            rem--;
+        if (is_tab) {
+            for (int k = 0; k < w; k++)
+                ab_append_ch(ab, ' ');
+        } else {
+            for (int b = 0; b < adv; b++)
+                ab_append_ch(ab, cdata[ci + b]);
         }
-        ci++;
+        col += w;
+        ci  += adv;
     }
     if (cur_sgr) ansi_sgr_soft_reset(ab);
 }
@@ -683,11 +699,11 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                     if (len > available_cols)
                         len = available_cols;
                     if (len > 0 && start_rx < line_rcols) {
-                        for (int i = start_rx; i < start_rx + len; i++) {
-                            if (i >= (int)first_row->render.len)
-                                break;
-                            ab_append_ch(ab, first_row->render.data[i]);
-                        }
+                        int sb = 0, blen = 0;
+                        render_slice_ss(&first_row->render, start_rx, len, &sb,
+                                        &blen);
+                        if (blen > 0)
+                            ab_append(ab, &first_row->render.data[sb], blen);
                     }
                 }
             } else {

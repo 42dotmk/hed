@@ -2,9 +2,15 @@
 #include "buf/row.h"
 #include "lib/errors.h"
 #include "lib/log.h"
+#include "lib/strutil.h"
 #include <stdlib.h>
 #include <string.h>
-/* UTF-8 aware: cx is a byte-index into row->chars. Returns visual columns. */
+
+/* cx is a byte-index into row->chars. Returns the visual column (display
+ * width) of that position, expanding tabs to TAB_STOP and using wcwidth() for
+ * every other codepoint so wide (CJK/emoji) chars count as 2 and combining
+ * marks as 0. This is the same metric utf8_display_width() uses, so the
+ * renderer and the cursor agree on where every glyph sits. */
 int buf_row_cx_to_rx(const Row *row, int cx) {
     int rx = 0;
     const char *s = row->chars.data;
@@ -12,52 +18,40 @@ int buf_row_cx_to_rx(const Row *row, int cx) {
     if (cx > len)
         cx = len;
     for (int i = 0; i < cx;) {
-        unsigned char c = (unsigned char)s[i];
-        if (c == '\t') {
-            rx += (TAB_STOP - 1) - (rx % TAB_STOP);
+        if (s[i] == '\t') {
+            rx += TAB_STOP - (rx % TAB_STOP);
             i++;
-            rx++; /* tab char itself */
             continue;
         }
         int adv = 1;
-        if ((c & 0x80) == 0)
-            adv = 1; /* ASCII */
-        else if ((c & 0xE0) == 0xC0)
-            adv = 2; /* 2-byte */
-        else if ((c & 0xF0) == 0xE0)
-            adv = 3; /* 3-byte */
-        else if ((c & 0xF8) == 0xF0)
-            adv = 4; /* 4-byte */
+        int w = utf8_char_width(s + i, (size_t)(len - i), &adv);
+        if (adv < 1)
+            adv = 1;
         if (i + adv > cx)
-            adv = cx - i; /* don't cross boundary */
+            break; /* cx lands inside this codepoint; treat as its start */
         i += adv;
-        rx += 1; /* assume width 1 for all non-tab chars */
+        rx += w;
     }
     return rx;
 }
 
-/* UTF-8 aware: returns byte-index (cx) for a desired visual column (rx). */
+/* Returns the byte-index (cx) of the codepoint occupying visual column `rx`,
+ * the inverse of buf_row_cx_to_rx. A wide char straddling the target column
+ * resolves to its own start byte. */
 int buf_row_rx_to_cx(const Row *row, int rx) {
     int cur_rx = 0;
     int cx = 0;
     const char *s = row->chars.data;
     int len = (int)row->chars.len;
     while (cx < len) {
-        unsigned char c = (unsigned char)s[cx];
         int adv = 1;
-        int w = 1;
-        if (c == '\t') {
-            int add = (TAB_STOP - 1) - (cur_rx % TAB_STOP);
-            w = 1 + add;
-            adv = 1;
-        } else if ((c & 0x80) == 0) {
-            adv = 1;
-        } else if ((c & 0xE0) == 0xC0) {
-            adv = 2;
-        } else if ((c & 0xF0) == 0xE0) {
-            adv = 3;
-        } else if ((c & 0xF8) == 0xF0) {
-            adv = 4;
+        int w;
+        if (s[cx] == '\t') {
+            w = TAB_STOP - (cur_rx % TAB_STOP);
+        } else {
+            w = utf8_char_width(s + cx, (size_t)(len - cx), &adv);
+            if (adv < 1)
+                adv = 1;
         }
         if (cur_rx + w > rx)
             return cx;

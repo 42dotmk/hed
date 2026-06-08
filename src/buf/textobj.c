@@ -1096,7 +1096,7 @@ int textobj_char_right(Buffer *buf, int line, int col, TextSelection *sel) {
         return 0;
 
     Row *row = &buf->rows[line];
-    int new_col = col + 1;
+    int new_col = utf8_next_cp(row->chars.data, (int)row->chars.len, col);
 
     /* If at end of line, move to start of next line */
     if (new_col >= (int)row->chars.len) {
@@ -1126,7 +1126,8 @@ int textobj_char_left(Buffer *buf, int line, int col, TextSelection *sel) {
     if (!buf || line < 0 || line >= buf->num_rows)
         return 0;
 
-    int new_col = col - 1;
+    Row *row = &buf->rows[line];
+    int new_col = utf8_prev_cp(row->chars.data, (int)row->chars.len, col);
 
     /* If at start of line, move to end of previous line */
     if (new_col < 0) {

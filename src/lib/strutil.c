@@ -131,6 +131,28 @@ static size_t utf8_decode_char(const unsigned char *p, size_t remaining,
     return 0;
 }
 
+int utf8_char_width(const char *str, size_t byte_len, int *out_adv) {
+    if (!str || byte_len == 0) {
+        if (out_adv)
+            *out_adv = 0;
+        return 0;
+    }
+    wchar_t wc;
+    size_t char_len = utf8_decode_char((const unsigned char *)str, byte_len, &wc);
+    if (char_len == 0) {
+        /* Invalid byte: render as a single replacement column. */
+        if (out_adv)
+            *out_adv = 1;
+        return 1;
+    }
+    int w = wcwidth(wc);
+    if (w < 0)
+        w = 0; /* combining / control: zero width */
+    if (out_adv)
+        *out_adv = (int)char_len;
+    return w;
+}
+
 int utf8_display_width(const char *str, size_t byte_len) {
     if (!str)
         return 0;

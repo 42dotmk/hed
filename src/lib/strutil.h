@@ -21,6 +21,15 @@ size_t str_expand_tilde(const char *in, char *out, size_t out_sz);
  * Invalid UTF-8 sequences are counted as 1 column each. */
 int utf8_display_width(const char *str, size_t byte_len);
 
+/* Decode the single UTF-8 codepoint at `str` (with `byte_len` bytes available)
+ * and return its display width in columns (via wcwidth(): 0 for combining /
+ * control marks, 1 for invalid bytes, 2 for wide CJK/emoji). The byte length of
+ * the codepoint is written to *out_adv (always >= 1 unless byte_len == 0).
+ * This is the single source of truth for "how many columns / bytes is this
+ * char" — cursor movement, cx<->rx conversion and the renderer all use it so
+ * they stay in agreement. */
+int utf8_char_width(const char *str, size_t byte_len, int *out_adv);
+
 /* Extract a substring by column positions (not byte positions).
  * str: input UTF-8 string
  * byte_len: length of input in bytes
