@@ -831,23 +831,29 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
 }
 
 /* Overlay reverse-video cells at every non-active cursor's on-screen
- * position. Wrap mode is handled with the no-wrap mapping; positions
- * may be slightly off in wrap mode but won't crash. */
+ * position, using the cursor set that belongs to this window's
+ * (buffer, window) pair: the live set when this window owns it (the
+ * hardware cursor covers the active one), or the window's parked set
+ * drawn whole. Wrap mode is handled with the no-wrap mapping;
+ * positions may be slightly off in wrap mode but won't crash. */
 static void draw_extra_cursors_win(Abuf *ab, const Window *win) {
     if (!win) return;
     if (arrlen(E.buffers) == 0) return;
     if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers)) return;
     Buffer *buf = &E.buffers[win->buffer_index];
-    if (!buf || arrlen(buf->all_cursors) <= 1) return;
+    if (!buf) return;
+    Cursor *skip = NULL;
+    CursorVec cursors = buf_cursors_for_window(buf, win, &skip);
+    if (!cursors || arrlen(cursors) <= (skip ? 1 : 0)) return;
 
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0;
     int content_cols = win->width - margin;
     if (content_cols <= 0) return;
 
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (!c || c == buf->cursor) continue;
+    for (ptrdiff_t i = 0; i < arrlen(cursors); i++) {
+        Cursor *c = cursors[i];
+        if (!c || c == skip) continue;
         if (c->y < 0 || c->y >= buf->num_rows) continue;
         if (c->y < win->row_offset || c->y >= win->row_offset + win->height)
             continue;

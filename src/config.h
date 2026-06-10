@@ -32,6 +32,7 @@
 #include "session/session_plugin.h"
 #include "shell/shell.h"
 #include "smart_indent/smart_indent.h"
+#include "tasks/tasks.h"
 #include "tmux/tmux_plugin.h"
 #include "translate/translate.h"
 #include "hed_themes/hed_themes.h"
@@ -65,6 +66,7 @@ void config_init(void) {
     plugin_load(&plugin_treesitter,       1);
     plugin_load(&plugin_hed_themes,       1);
     plugin_load(&plugin_markdown,         1);
+    plugin_load(&plugin_tasks,            1);
     plugin_load(&plugin_scratch,          1);
     plugin_load(&plugin_search,           1);
     plugin_load(&plugin_selectlist,       1);
@@ -118,8 +120,7 @@ void config_init(void) {
     cmapn(" cf",   "fmt",                  "format code");
     cmapn(" qq",   "q!",                   "quit (force)");
     cmapn(" rm",   "shell make",           "run make");
-    cmapn(" mm",   "shell make",           "run make");
-    cmapn(" mt",   "shell make test",      "run make test");
+    cmapn(" rt",   "shell make test",      "run make test");
     cmapn(" nn",   "shell --skipwait nnn", "open nnn");
     cmapn(" dd",   "e .",                  "open cwd in dired");
     cmapn(" sd",   "rg",                   "ripgrep");

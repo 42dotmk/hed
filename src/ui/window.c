@@ -5,10 +5,17 @@
 #include "buf/buf_helpers.h"
 #include "assert.h"
 
+/* Monotonic id source — ids are never reused, so a Buffer's stashed
+ * cursor sets can detect that their window is gone. */
+static int next_window_id = 0;
+
+static int window_new_id(void) { return ++next_window_id; }
+
 void windows_init(void) {
     arrput(E.windows, ((Window){0}));
     E.current_window = 0;
     E.window_layout = 0;
+    E.windows[0].id = window_new_id();
     E.windows[0].top = 1;
     E.windows[0].left = 1;
     E.windows[0].height = E.screen_rows; /* content rows (set in ed_init) */
@@ -40,6 +47,16 @@ Window *window_cur(void) {
     return &E.windows[E.current_window];
 }
 
+Window *window_find_by_id(int id) {
+    if (id <= 0)
+        return NULL;
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        if (E.windows[i].id == id)
+            return &E.windows[i];
+    }
+    return NULL;
+}
+
 void win_attach_buf(Window *win, Buffer *buf) {
     if (!PTR_VALID(win) || !PTR_VALID(buf))
         return;
@@ -49,7 +66,13 @@ void win_attach_buf(Window *win, Buffer *buf) {
     int idx = (int)(buf - E.buffers);
     if (!BOUNDS_CHECK(idx, arrlen(E.buffers)))
         return; /* Extra safety check */
+    /* The outgoing buffer's cursor set captures this window's position
+     * before win->cursor is overwritten below. */
+    if (BOUNDS_CHECK(win->buffer_index, arrlen(E.buffers)) &&
+        win->buffer_index != idx && win == window_cur())
+        buf_cursor_sync_from_window(&E.buffers[win->buffer_index]);
     win->buffer_index = idx;
+    buf_cursors_bind_window(buf, win);
     if (buf->cursor) win->cursor = *buf->cursor;
     if (win->focus) {
         E.current_buffer = idx;
@@ -60,13 +83,17 @@ void windows_split_vertical(void) {
     WIN(win)
     int prev_idx = E.current_window;
     int new_idx = arrlen(E.windows);
-    arrput(E.windows, *win);
+    /* Copy before arrput: a realloc would invalidate `win` mid-append. */
+    Window copy = *win;
+    copy.id = window_new_id();
+    arrput(E.windows, copy);
 
     E.windows[prev_idx].focus = 0;
     E.windows[new_idx].focus = 1;
     E.windows[new_idx].sel.type = SEL_NONE;
     E.current_window = new_idx;
     E.current_buffer = E.windows[new_idx].buffer_index;
+    buf_cursors_bind_window(buf_cur(), &E.windows[new_idx]);
 
     if (!E.wlayout_root) {
         E.wlayout_root = wlayout_init_root(0);
@@ -91,12 +118,16 @@ void windows_split_horizontal(void) {
     int prev_idx = E.current_window;
     int new_idx = arrlen(E.windows);
 
-    arrput(E.windows, *win);
+    /* Copy before arrput: a realloc would invalidate `win` mid-append. */
+    Window copy = *win;
+    copy.id = window_new_id();
+    arrput(E.windows, copy);
     E.windows[prev_idx].focus = 0;
     E.windows[new_idx].focus = 1;
     E.windows[new_idx].sel.type = SEL_NONE;
     E.current_window = new_idx;
     E.current_buffer = E.windows[new_idx].buffer_index;
+    buf_cursors_bind_window(buf_cur(), &E.windows[new_idx]);
     if (!E.wlayout_root) {
         E.wlayout_root = wlayout_init_root(0);
     }
@@ -116,6 +147,7 @@ void windows_focus_next(void) {
     E.windows[E.current_window].focus = 1;
     /* Sync current buffer with focused window */
     E.current_buffer = E.windows[E.current_window].buffer_index;
+    buf_cursors_bind_window(buf_cur(), &E.windows[E.current_window]);
 }
 
 static void windows_focus_set(int idx) {
@@ -127,6 +159,7 @@ static void windows_focus_set(int idx) {
     E.current_window = idx;
     E.windows[idx].focus = 1;
     E.current_buffer = E.windows[idx].buffer_index;
+    buf_cursors_bind_window(buf_cur(), &E.windows[idx]);
 }
 
 /* Find neighbor window index in a given direction relative to current.
@@ -263,6 +296,7 @@ void windows_close_current(void) {
     if (E.current_window >= 0) {
         E.windows[E.current_window].focus = 1;
         E.current_buffer = E.windows[E.current_window].buffer_index;
+        buf_cursors_bind_window(buf_cur(), &E.windows[E.current_window]);
     }
     ed_set_status_message("closed window (%d remaining)", arrlen(E.windows));
 }

@@ -79,7 +79,7 @@ The Makefile auto-discovers `*.c` recursively under `src/` and
 ### Dependencies
 
 | Required | Optional |
-|---|---|
+|----------|----------|
 | gcc / clang (C11) | ripgrep (`:rg`, `:ssearch`) |
 | libdl | fzf (`:fzf`, `:c`, `:recent`, history fzf) |
 |  | tmux (runner pane) |

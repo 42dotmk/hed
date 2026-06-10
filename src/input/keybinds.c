@@ -82,6 +82,8 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         snprintf(buf, bufsize, "<NL>");
     } else if (key == '\t') {
         snprintf(buf, bufsize, "<Tab>");
+    } else if (key == KEY_BTAB) {
+        snprintf(buf, bufsize, "<S-Tab>");
     } else if (key == '\x1b') {
         snprintf(buf, bufsize, "<Esc>");
     } else if (key == KEY_ARROW_UP) {
@@ -476,10 +478,22 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
     HookKeybindInvokeEvent ev = { .match = m, .repeat = repeat };
     hook_fire_keybind_invoke(HOOK_KEYBIND_INVOKE, &ev);
 
+    /* Count-aware callbacks (gg/G via goto_line_or) consume the pending
+     * count themselves via keybind_get_and_clear_pending_count — when
+     * that happens, one call was the whole job; repeating it would
+     * re-run the no-count fallback (e.g. 25G → line 25, then EOF). */
     if (m->callback) {
-        for (int i = 0; i < repeat; i++) m->callback();
+        for (int i = 0; i < repeat; i++) {
+            bool had = have_count;
+            m->callback();
+            if (had && !have_count) break;
+        }
     } else if (m->command_callback) {
-        for (int i = 0; i < repeat; i++) m->command_callback(m->cmdline);
+        for (int i = 0; i < repeat; i++) {
+            bool had = have_count;
+            m->command_callback(m->cmdline);
+            if (had && !have_count) break;
+        }
     } else {
         return;
     }
@@ -506,8 +520,13 @@ bool keybind_process(int key, int mode) {
         handled = true;
     } else if (r.fallback_textobj) {
         int fallback_key = key_buffer[0];
+        /* Apply the numeric prefix before clearing it — unmapped
+         * single-key motions (j/k/w/b…) only reach the cursor through
+         * this textobj fallback, so this is where 3j repeats. */
+        int repeat = r.has_count ? r.count : 1;
         keybind_clear_buffer();
-        kb_operator_move(fallback_key);
+        for (int i = 0; i < repeat; i++)
+            kb_operator_move(fallback_key);
         handled = true;
     } else {
         keybind_clear_buffer();

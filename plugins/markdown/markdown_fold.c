@@ -5,6 +5,12 @@
  * Result: each section collapses into a one-line summary, and nested
  * sub-sections collapse into their parent.
  *
+ * On top of the heading hierarchy, the contiguous block of `key:: value`
+ * field lines ("tags") directly under a heading forms the innermost
+ * (deepest) fold level, so a section's metadata can collapse on its own
+ * while the prose stays visible. The field vocabulary/parser lives in
+ * markdown_fields.c.
+ *
  * Fenced code blocks (``` … ```) are tracked so a `#` inside a code
  * fence doesn't accidentally start a section. Setext headings
  * (text underlined with === or ---) are intentionally not handled —
@@ -18,6 +24,7 @@
  */
 
 #include "markdown_internal.h"
+#include "markdown_fields.h"
 #include "buf/buffer.h"
 #include "buf/row.h"
 #include "utils/fold_methods.h"
@@ -142,6 +149,20 @@ static void md_detect_folds(Buffer *buf) {
         start_lines[depth] = line;
         levels[depth]      = level;
         depth++;
+
+        /* Innermost fold: the contiguous `key:: value` field block ("tags")
+         * directly under this heading. Needs at least two field lines to be
+         * worth a fold. Nested inside the section fold above (smaller span,
+         * so fold_find_at_line picks it as the innermost). */
+        int fs = line + 1;
+        int fe = fs;
+        while (fe < buf->num_rows && md_is_field_line(&buf->rows[fe]))
+            fe++;
+        if (fe - 1 > fs) {
+            buf->rows[fs].fold_start    = true;
+            buf->rows[fe - 1].fold_end  = true;
+            fold_add_region(&buf->folds, fs, fe - 1);
+        }
     }
 
     /* Flush whatever's still open — those sections run to EOF. */

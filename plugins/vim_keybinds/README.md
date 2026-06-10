@@ -24,7 +24,7 @@ default `src/config.c`, so this is what you get on a fresh install.
 | `<C-b>` `<C-f>` | Page up / down |
 | `%` | Match bracket |
 | `n` `N` | Next / previous search match |
-| `*` `<C-*>` | Search word under cursor |
+| `*` `<C-*>` | Search word under cursor (visual: search selection, exits visual) |
 | `42G` | Jump to line 42 (numeric prefix + `G`) |
 | `5j` | Move down 5 lines (numeric prefix + motion) |
 
@@ -42,8 +42,13 @@ d$       delete to end of line
 y2j      yank current + 2 lines below
 ```
 
-Text objects: `iw` `aw` `i(` `a(` `i[` `a[` `i{` `a{` `i"` `a"` `i'`
-`a'` `` i` `` `` a` ``.
+Text objects: `iw` `aw` `iW` `aW` `i(` `a(` `i[` `a[` `i{` `a{` `i"`
+`a"` `i'` `a'` `` i` `` `` a` ``.
+
+Word objects follow Vim semantics: a run of whitespace counts as a
+word, so `iw` on a blank selects the blank run; `aw` selects the word
+plus trailing blanks (leading blanks if none follow), or — when the
+cursor is on whitespace — the blanks plus the following word.
 
 ## Modes — entering / leaving
 

@@ -51,6 +51,8 @@ static void buf_init(Buffer *buf) {
     buf->num_rows = 0;
     buf->all_cursors = NULL;
     buf->cursor = NULL;
+    buf->cursor_win_id = 0; /* unowned until a window binds it */
+    buf->cursor_sets = NULL;
     /* Always start with one active cursor at (0,0). */
     Cursor *c0 = calloc(1, sizeof(Cursor));
     if (c0) {
@@ -66,6 +68,7 @@ static void buf_init(Buffer *buf) {
     buf->readonly = 0; /* Default: not read-only */
     fold_list_init(&buf->folds);
     buf->fold_method = NULL; /* Filetype default applied on BUFFER_OPEN */
+    buf->fold_level = 0;
     undo_state_init(&buf->undo);
     vtext_init(buf);
     attrspan_init(&buf->render_spans);
@@ -201,6 +204,22 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
     }
 }
 
+/* Restore win->cursor from buf's live active cursor, clamped to the
+ * buffer's current contents (the stored position may predate edits
+ * made through another window). */
+static void win_restore_cursor_from(Buffer *buf, Window *win) {
+    if (!buf || !win || !buf->cursor) return;
+    int y = buf->cursor->y;
+    int x = buf->cursor->x;
+    if (y >= buf->num_rows) y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+    if (y < 0) y = 0;
+    int len = (y < buf->num_rows) ? (int)buf->rows[y].chars.len : 0;
+    if (x > len) x = len;
+    if (x < 0) x = 0;
+    win->cursor.y = y;
+    win->cursor.x = x;
+}
+
 /* Switch to a buffer by index and return EdError status */
 EdError buf_switch(int index) {
     if (!BOUNDS_CHECK(index, arrlen(E.buffers))) {
@@ -209,13 +228,14 @@ EdError buf_switch(int index) {
 
     /* Record current position before switching */
     Window *win = window_cur();
-    Buffer *buf = buf_cur();
+    buf_cursor_sync_from_window(buf_cur());
     E.current_buffer = index;
-    if (win){
+    Buffer *buf = &E.buffers[index];
+    if (win) {
         win->buffer_index = index;
-		win->cursor.x = buf->cursor->x;
-		win->cursor.y = buf->cursor->y;
-	}
+        buf_cursors_bind_window(buf, win);
+        win_restore_cursor_from(buf, win);
+    }
 
     /* Fire hook */
     HookBufferEvent event = {.buf = buf, .filename = buf->filename};
@@ -230,11 +250,16 @@ void buf_next(void) {
 
     /* Record current position before switching */
     Window *win = window_cur();
+    buf_cursor_sync_from_window(buf_cur());
 
     E.current_buffer = (E.current_buffer + 1) % arrlen(E.buffers);
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
+    if (win) {
+        buf_cursors_bind_window(buf, win);
+        win_restore_cursor_from(buf, win);
+    }
 
     /* Fire hook */
     HookBufferEvent event = {.buf = buf, .filename = buf->filename};
@@ -253,11 +278,16 @@ void buf_prev(void) {
 
     /* Record current position before switching */
     Window *win = window_cur();
+    buf_cursor_sync_from_window(buf_cur());
 
     E.current_buffer = (E.current_buffer - 1 + arrlen(E.buffers)) % arrlen(E.buffers);
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
+    if (win) {
+        buf_cursors_bind_window(buf, win);
+        win_restore_cursor_from(buf, win);
+    }
 
     if (win) {
         jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
@@ -303,6 +333,15 @@ EdError buf_close(int index) {
     arrfree(buf->all_cursors);
     buf->all_cursors = NULL;
     buf->cursor = NULL;
+    for (ptrdiff_t i = 0; i < arrlen(buf->cursor_sets); i++) {
+        CursorSet *set = &buf->cursor_sets[i];
+        for (ptrdiff_t j = 0; j < arrlen(set->cursors); j++)
+            free(set->cursors[j]);
+        arrfree(set->cursors);
+    }
+    arrfree(buf->cursor_sets);
+    buf->cursor_sets = NULL;
+    buf->cursor_win_id = 0;
     fold_list_free(&buf->folds);
     undo_state_free(&buf->undo);
     vtext_free(buf);
@@ -354,8 +393,8 @@ EdError buf_close(int index) {
         /* Restore window cursor from the new buffer's cursor. */
         Buffer *new_buf = buf_cur();
         if (was_current && win && new_buf && new_buf->cursor) {
-            win->cursor.x = new_buf->cursor->x;
-            win->cursor.y = new_buf->cursor->y;
+            buf_cursors_bind_window(new_buf, win);
+            win_restore_cursor_from(new_buf, win);
             HookBufferEvent ev = {.buf = new_buf, .filename = new_buf->filename};
             hook_fire_buffer(HOOK_BUFFER_SWITCH, &ev);
         }
@@ -427,69 +466,198 @@ void buf_cursor_sync_from_window(Buffer *buf) {
     buf->cursor->y = win->cursor.y;
 }
 
-/*** Auto-shift helpers — applied to non-active cursors after edits.
- * The active cursor (buf->cursor) is updated separately via
- * buf_cursor_sync_from_window(). ***/
+/*** Per-(buffer, window) cursor sets ***/
 
-static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
+static void cursor_set_free(CursorSet *set) {
+    if (!set) return;
+    for (ptrdiff_t i = 0; i < arrlen(set->cursors); i++)
+        free(set->cursors[i]);
+    arrfree(set->cursors);
+    set->cursors = NULL;
+    set->active = NULL;
+}
+
+/* Park the live set under its current owner id. */
+static void cursors_stash_live(Buffer *buf) {
+    if (!buf->all_cursors) return;
+    CursorSet set = {
+        .win_id  = buf->cursor_win_id,
+        .cursors = buf->all_cursors,
+        .active  = buf->cursor,
+    };
+    arrput(buf->cursor_sets, set);
+    buf->all_cursors = NULL;
+    buf->cursor = NULL;
+}
+
+void buf_cursors_bind_window(Buffer *buf, struct Window *win) {
+    if (!buf || !win || win->is_modal || win->id <= 0) return;
+    if (buf->cursor_win_id == win->id) return;
+    if (buf < E.buffers || buf >= E.buffers + arrlen(E.buffers)) return;
+    int buf_idx = (int)(buf - E.buffers);
+
+    /* Capture the previous owner's window position into the live set
+     * before parking it — its window cursor is the source of truth. */
+    Window *owner = window_find_by_id(buf->cursor_win_id);
+    int owner_alive = owner && !owner->is_modal &&
+                      owner->buffer_index == buf_idx;
+    if (owner_alive && buf->cursor) {
+        buf->cursor->x = owner->cursor.x;
+        buf->cursor->y = owner->cursor.y;
+    }
+
+    /* Drop parked sets whose window is gone or shows another buffer.
+     * (The "last window" set a buffer keeps is the live one, never a
+     * parked one, so this is pure garbage collection.) */
+    for (ptrdiff_t i = arrlen(buf->cursor_sets) - 1; i >= 0; i--) {
+        Window *w = window_find_by_id(buf->cursor_sets[i].win_id);
+        if (!w || w->is_modal || w->buffer_index != buf_idx) {
+            cursor_set_free(&buf->cursor_sets[i]);
+            arrdel(buf->cursor_sets, i);
+        }
+    }
+
+    ptrdiff_t mine = -1;
+    for (ptrdiff_t i = 0; i < arrlen(buf->cursor_sets); i++) {
+        if (buf->cursor_sets[i].win_id == win->id) { mine = i; break; }
+    }
+
+    if (mine >= 0) {
+        /* Restore the set previously parked for this window. */
+        CursorSet incoming = buf->cursor_sets[mine];
+        arrdel(buf->cursor_sets, mine);
+        if (owner_alive)
+            cursors_stash_live(buf);
+        else {
+            for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++)
+                free(buf->all_cursors[i]);
+            arrfree(buf->all_cursors);
+        }
+        buf->all_cursors = incoming.cursors;
+        buf->cursor = incoming.active ? incoming.active
+                                      : (arrlen(incoming.cursors) > 0
+                                             ? incoming.cursors[0]
+                                             : NULL);
+    } else if (owner_alive) {
+        /* The owner window still shows this buffer and keeps its set;
+         * the new pair starts fresh with a single cursor where the
+         * live set's active cursor is (vim-like second view). */
+        int sy = buf->cursor ? buf->cursor->y : 0;
+        int sx = buf->cursor ? buf->cursor->x : 0;
+        cursors_stash_live(buf);
+        Cursor *c0 = calloc(1, sizeof(Cursor));
+        if (c0) {
+            c0->y = sy;
+            c0->x = sx;
+            arrput(buf->all_cursors, c0);
+            buf->cursor = c0;
+        }
+    }
+    /* else: previous owner is gone — the live set is the buffer's
+     * "last window" set and this window adopts it unchanged. */
+
+    buf->cursor_win_id = win->id;
+}
+
+CursorVec buf_cursors_for_window(Buffer *buf, const struct Window *win,
+                                 Cursor **skip_active) {
+    if (skip_active) *skip_active = NULL;
+    if (!buf || !win || win->id <= 0) return NULL;
+    if (buf->cursor_win_id == win->id) {
+        if (skip_active) *skip_active = buf->cursor;
+        return buf->all_cursors;
+    }
+    for (ptrdiff_t i = 0; i < arrlen(buf->cursor_sets); i++) {
+        if (buf->cursor_sets[i].win_id == win->id)
+            return buf->cursor_sets[i].cursors;
+    }
+    return NULL;
+}
+
+/*** Auto-shift helpers — applied after edits to every cursor in the
+ * buffer except the live active one (buf->cursor), which is updated
+ * separately via buf_cursor_sync_from_window(). Parked sets (other
+ * windows / last-window leftovers) shift too so their cursors stay
+ * glued to the text they were placed on. ***/
+
+/* Run `fn(cursor, a, b)` over the live set (skipping the active
+ * cursor) and over every parked set (no skips — parked actives are
+ * not window-synced, they must shift like any other cursor). */
+static void cursors_shift_all(Buffer *buf,
+                              void (*fn)(Buffer *, Cursor *, int, int),
+                              int a, int b) {
     if (!buf) return;
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
         if (c == buf->cursor) continue;
-        if (c->y == iy && c->x >= ix) c->x++;
+        fn(buf, c, a, b);
     }
+    for (ptrdiff_t s = 0; s < arrlen(buf->cursor_sets); s++) {
+        CursorVec v = buf->cursor_sets[s].cursors;
+        for (ptrdiff_t i = 0; i < arrlen(v); i++)
+            fn(buf, v[i], a, b);
+    }
+}
+
+static void shift_insert_char(Buffer *buf, Cursor *c, int iy, int ix) {
+    (void)buf;
+    if (c->y == iy && c->x >= ix) c->x++;
+}
+
+static void shift_delete_char(Buffer *buf, Cursor *c, int iy, int ix) {
+    (void)buf;
+    if (c->y == iy && c->x > ix) c->x--;
+}
+
+static void shift_insert_newline(Buffer *buf, Cursor *c, int iy, int ix) {
+    (void)buf;
+    if (c->y > iy) {
+        c->y++;
+    } else if (c->y == iy && c->x >= ix) {
+        c->y++;
+        c->x -= ix;
+    }
+}
+
+static void shift_join_lines(Buffer *buf, Cursor *c, int iy, int join_at) {
+    (void)buf;
+    if (c->y == iy) {
+        c->y--;
+        c->x += join_at;
+    } else if (c->y > iy) {
+        c->y--;
+    }
+}
+
+static void shift_delete_line(Buffer *buf, Cursor *c, int iy, int unused) {
+    (void)unused;
+    if (c->y > iy) {
+        c->y--;
+    } else if (c->y == iy) {
+        /* Row gone; cursor lands on what's now at iy (or clamps). */
+        if (c->y >= buf->num_rows) c->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+        c->x = 0;
+    }
+}
+
+static void cursors_after_insert_char(Buffer *buf, int iy, int ix) {
+    cursors_shift_all(buf, shift_insert_char, iy, ix);
 }
 
 static void cursors_after_delete_char(Buffer *buf, int iy, int ix) {
-    if (!buf) return;
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c == buf->cursor) continue;
-        if (c->y == iy && c->x > ix) c->x--;
-    }
+    cursors_shift_all(buf, shift_delete_char, iy, ix);
 }
 
 static void cursors_after_insert_newline(Buffer *buf, int iy, int ix) {
-    if (!buf) return;
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c == buf->cursor) continue;
-        if (c->y > iy) {
-            c->y++;
-        } else if (c->y == iy && c->x >= ix) {
-            c->y++;
-            c->x -= ix;
-        }
-    }
+    cursors_shift_all(buf, shift_insert_newline, iy, ix);
 }
 
 static void cursors_after_join_lines(Buffer *buf, int iy, int join_at) {
-    if (!buf) return;
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c == buf->cursor) continue;
-        if (c->y == iy) {
-            c->y--;
-            c->x += join_at;
-        } else if (c->y > iy) {
-            c->y--;
-        }
-    }
+    cursors_shift_all(buf, shift_join_lines, iy, join_at);
 }
 
 static void cursors_after_delete_line(Buffer *buf, int iy) {
-    if (!buf) return;
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c == buf->cursor) continue;
-        if (c->y > iy) {
-            c->y--;
-        } else if (c->y == iy) {
-            /* Row gone; cursor lands on what's now at iy (or clamps). */
-            if (c->y >= buf->num_rows) c->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
-            c->x = 0;
-        }
-    }
+    cursors_shift_all(buf, shift_delete_line, iy, 0);
 }
 
 /*** Row operations ***/
@@ -677,9 +845,10 @@ void buf_delete_line_in(Buffer *buf) {
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
         return;
 
-    /* Update registers: numbered delete and unnamed */
-    regs_push_delete(buf->rows[win->cursor.y].chars.data,
-                     buf->rows[win->cursor.y].chars.len);
+    /* Update registers: numbered delete and unnamed. A whole-line delete
+     * is linewise, so `p` re-opens it as a new line (matches Vim dd/p). */
+    regs_push_delete_typed(buf->rows[win->cursor.y].chars.data,
+                           buf->rows[win->cursor.y].chars.len, REG_LINEWISE);
 
     /* Fire hook before deletion */
     HookLineEvent event = {buf, win->cursor.y,

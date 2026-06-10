@@ -32,6 +32,7 @@ void kb_operator_select(void);     /* Visual select via text object (v + motion)
 /* Note: cursor movements now handled by text object system */
 void kb_search_next(void);
 void kb_find_under_cursor(void);
+void kb_find_selection(void);      /* Visual `*`: search the selection */
 void kb_search_file_under_cursor(void);
 void kb_open_file_under_cursor(void);
 void kb_undo(void);
@@ -114,6 +115,7 @@ void kb_fold_open(void);      /* zo - Open fold at cursor */
 void kb_fold_close(void);     /* zc - Close fold at cursor */
 void kb_fold_open_all(void);  /* zR - Open all folds */
 void kb_fold_close_all(void); /* zM - Close all folds */
+void kb_fold_cycle_level(void); /* <S-Tab> - cycle fold level 1/2/100/0 */
 
 void kb_del_win(char direction);
 void kb_del_up(void);

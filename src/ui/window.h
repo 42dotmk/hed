@@ -21,6 +21,11 @@ typedef struct {
 } Selection;
 
 typedef struct Window {
+    /* Stable identity for per-(buffer,window) state (cursor sets).
+     * Assigned once at creation, never reused. 0 = no identity
+     * (modal windows), which opts the window out of cursor sets. */
+    int id;
+
     int top;          /* 1-based row on the terminal */
     int left;         /* 1-based column on the terminal */
     int height;       /* number of content rows */
@@ -46,6 +51,9 @@ typedef struct Window {
 /* Window management */
 void windows_init(void);
 Window *window_cur(void);
+/* Look up a layout window by its stable id. Returns NULL when the id
+ * is 0 or the window has been closed. */
+Window *window_find_by_id(int id);
 void win_attach_buf(Window *win, Buffer *buf);
 
 /* Simple 2-way splits */

@@ -468,8 +468,21 @@ int buf_get_word_under_cursor(SizedStr *out) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
         return 0;
+    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
+        return 0;
+    /* Vim <cword>: if the cursor sits on whitespace, use the next word on
+     * the line (textobj_word would yield the blank run itself). */
+    Row *cur_row = &buf->rows[win->cursor.y];
+    int cx = win->cursor.x;
+    if (cx >= (int)cur_row->chars.len)
+        cx = (int)cur_row->chars.len - 1;
+    while (cx >= 0 && cx < (int)cur_row->chars.len &&
+           (cur_row->chars.data[cx] == ' ' || cur_row->chars.data[cx] == '\t'))
+        cx++;
+    if (cx < 0 || cx >= (int)cur_row->chars.len)
+        return 0;
     TextSelection sel;
-    if (!textobj_word(buf, win->cursor.y, win->cursor.x, &sel))
+    if (!textobj_word(buf, win->cursor.y, cx, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
     sstr_free(out);
@@ -739,6 +752,35 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
  * Selection-based operations - unified interface for delete/yank/change
  */
 
+/* Delete a render-column rectangle [start_rx, end_rx_excl) on each row in
+ * sy..ey. Each row's byte span is resolved independently (tab/UTF-8 aware)
+ * so only the selected columns go — rows keep their content above and
+ * below the block, and shorter rows are left untouched. */
+void buf_delete_block(Buffer *buf, int sy, int ey, int start_rx,
+                      int end_rx_excl) {
+    if (!buf) return;
+    if (sy < 0) sy = 0;
+    if (ey >= buf->num_rows) ey = buf->num_rows - 1;
+    /* One undo group for the whole rectangle, so a single `u` restores it. */
+    undo_begin(buf, "block delete");
+    for (int y = sy; y <= ey; y++) {
+        Row *r = &buf->rows[y];
+        int c0 = buf_row_rx_to_cx(r, start_rx);
+        int c1 = buf_row_rx_to_cx(r, end_rx_excl);
+        if (c0 > (int)r->chars.len) c0 = (int)r->chars.len;
+        if (c1 > (int)r->chars.len) c1 = (int)r->chars.len;
+        if (c1 <= c0) continue;
+        undo_record_replace(buf, y);
+        size_t tail = r->chars.len - (size_t)c1;
+        memmove(r->chars.data + c0, r->chars.data + c1, tail);
+        r->chars.len -= (size_t)(c1 - c0);
+        r->chars.data[r->chars.len] = '\0';
+        buf_row_update(r);
+    }
+    undo_end(buf);
+    buf->dirty++;
+}
+
 void buf_delete_selection(TextSelection *sel) {
     if (!sel)
         return;
@@ -746,6 +788,23 @@ void buf_delete_selection(TextSelection *sel) {
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
+
+    /* Block selections are rectangular: never collapse the rows between
+     * start and end. Delete the column span on each row instead. (The vim
+     * block path resolves this via buf_delete_block directly; this guard
+     * keeps any other caller from triggering a linear line-spanning delete.) */
+    if (sel->type == SEL_VISUAL_BLOCK) {
+        int sy = sel->start.line, ey = sel->end.line;
+        if (sy > ey) { int t = sy; sy = ey; ey = t; }
+        Row *r0 = (sy >= 0 && sy < buf->num_rows) ? &buf->rows[sy] : NULL;
+        Row *r1 = (ey >= 0 && ey < buf->num_rows) ? &buf->rows[ey] : NULL;
+        int srx = r0 ? buf_row_cx_to_rx(r0, sel->start.col) : 0;
+        int erx = r1 ? buf_row_cx_to_rx(r1, sel->end.col) : sel->end.col;
+        buf_delete_block(buf, sy, ey, srx, erx);
+        win->cursor.y = sy;
+        win->cursor.x = sel->start.col;
+        return;
+    }
 
     /* Special case: whole-line deletion (dd command).
      * Pattern 1: end=(start.line+1, 0) and start.col=0  (normal lines)

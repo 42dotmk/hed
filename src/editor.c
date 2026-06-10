@@ -92,12 +92,68 @@ void ed_set_mode(EditorMode new_mode) {
 
 }
 
+/* --- Synchronous follow-on key capture/replay (see editor.h). --- */
+#define ED_KEY_REPLAY_MAX 64
+static int ed_key_capture_active = 0;
+static int ed_key_capture_buf[ED_KEY_REPLAY_MAX];
+static int ed_key_capture_len = 0;
+
+static int ed_key_replay_active = 0;
+static int ed_key_replay_buf[ED_KEY_REPLAY_MAX];
+static int ed_key_replay_len = 0;
+static int ed_key_replay_pos = 0;
+
+void ed_key_capture_begin(void) {
+    ed_key_capture_active = 1;
+    ed_key_capture_len = 0;
+}
+
+int ed_key_capture_end(const int **out_keys) {
+    ed_key_capture_active = 0;
+    if (out_keys) *out_keys = ed_key_capture_buf;
+    return ed_key_capture_len;
+}
+
+void ed_key_replay_begin(const int *keys, int n) {
+    if (n > ED_KEY_REPLAY_MAX) n = ED_KEY_REPLAY_MAX;
+    for (int i = 0; i < n; i++) ed_key_replay_buf[i] = keys[i];
+    ed_key_replay_len = n;
+    ed_key_replay_pos = 0;
+    ed_key_replay_active = 1;
+}
+
+void ed_key_replay_finish(void) {
+    ed_key_replay_active = 0;
+    ed_key_replay_len = 0;
+    ed_key_replay_pos = 0;
+}
+
 int ed_read_key(void) {
-    if (macro_queue_has_keys()) {
-        return macro_queue_get_key();
+    int key;
+
+    /* Replay takes precedence: feed captured follow-on keys, and once
+     * exhausted yield ESC so a handler reading more keys here than it did
+     * at the active cursor cancels cleanly instead of blocking. */
+    if (ed_key_replay_active) {
+        key = (ed_key_replay_pos < ed_key_replay_len)
+                  ? ed_key_replay_buf[ed_key_replay_pos++]
+                  : '\x1b';
+        if (ed_key_capture_active && ed_key_capture_len < ED_KEY_REPLAY_MAX)
+            ed_key_capture_buf[ed_key_capture_len++] = key;
+        return key;
     }
 
-    int key = ed_parse_key_from_fd(STDIN_FILENO);
+    if (macro_queue_has_keys()) {
+        key = macro_queue_get_key();
+        if (ed_key_capture_active && ed_key_capture_len < ED_KEY_REPLAY_MAX)
+            ed_key_capture_buf[ed_key_capture_len++] = key;
+        return key;
+    }
+
+    key = ed_parse_key_from_fd(STDIN_FILENO);
+
+    if (ed_key_capture_active && ed_key_capture_len < ED_KEY_REPLAY_MAX)
+        ed_key_capture_buf[ed_key_capture_len++] = key;
 
     if (macro_is_recording()) {
         int should_record = 1;
@@ -257,9 +313,20 @@ void ed_process_keypress(void) {
         ed_handle_paste();
         return;
     }
-    /* Stray end marker (e.g. terminal sent it without a start, or we
-     * lost sync somehow) — drop it rather than dispatching as a key. */
     if (c == KEY_PASTE_END) return;
+    /* Keep the (buffer, window) cursor-set pairing and the active
+     * cursor's stored position current before anything dispatches.
+     * Motions only move win->cursor; without this sync, cursor-list
+     * operations (e.g. multicursor <C-n>) would snapshot the active
+     * cursor at a stale position. */
+    {
+        Buffer *buf = buf_cur();
+        Window *win = window_cur();
+        if (buf && win && !win->is_modal) {
+            buf_cursors_bind_window(buf, win);
+            buf_cursor_sync_from_window(buf);
+        }
+    }
     HookKeyEvent kev = { c, 0 };
     hook_fire_key(HOOK_KEYPRESS, &kev);
     if (kev.consumed) return;

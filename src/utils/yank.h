@@ -32,6 +32,12 @@ typedef struct YankData {
 /* Core operations - all use TextSelection */
 EdError yank_selection(const TextSelection *sel);
 
+/* Block-wise yank of a render-column rectangle [start_rx, end_rx_excl)
+ * across rows sy..ey (inclusive). Resolves columns per row (tab/UTF-8
+ * aware) and stores blockwise into the yank/unnamed registers. */
+EdError yank_block(Buffer *buf, int sy, int ey, int start_rx,
+                   int end_rx_excl);
+
 /* Paste operations */
 EdError paste_from_register(Buffer *buf, char reg_name ,bool after);
 void yank_data_free(YankData *yd);

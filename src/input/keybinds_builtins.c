@@ -193,6 +193,16 @@ int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
 }
 
 static int visual_yank(Buffer *buf, Window *win, int block_mode) {
+    if (win->sel.type == SEL_VISUAL_BLOCK) {
+        int sy, ey, s_rx, e_rx;
+        if (!visual_block_range(buf, win, &sy, &ey, &s_rx, &e_rx))
+            return 0;
+        if (yank_block(buf, sy, ey, s_rx, e_rx) != ED_OK)
+            return 0;
+        ed_set_status_message("Yanked");
+        return 1;
+    }
+
     TextSelection sel;
     if (!kb_visual_to_textsel(buf, win, block_mode, &sel))
         return 0;
@@ -211,6 +221,21 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
     if (buf->readonly) {
         ed_set_status_message("Buffer is read-only");
         return 0;
+    }
+
+    /* Block delete: yank the rectangle, then remove only the selected
+     * columns on each row — not the lines between them. */
+    if (win->sel.type == SEL_VISUAL_BLOCK) {
+        int sy, ey, s_rx, e_rx;
+        if (!visual_block_range(buf, win, &sy, &ey, &s_rx, &e_rx))
+            return 0;
+        yank_block(buf, sy, ey, s_rx, e_rx);
+        buf_delete_block(buf, sy, ey, s_rx, e_rx);
+        win->cursor.y = sy;
+        win->cursor.x = buf_row_rx_to_cx(&buf->rows[sy], s_rx);
+        visual_clear(win);
+        ed_set_mode(MODE_NORMAL);
+        return 1;
     }
 
     TextSelection sel;
@@ -756,6 +781,38 @@ void kb_find_under_cursor(void) {
     jump_save_current();
     buf_find_in(buf_cur());
 }
+/* Visual-mode `*`: search for the selected text (single-line only,
+ * literal match). Exits visual mode before jumping so the search
+ * motion doesn't extend the selection. */
+void kb_find_selection(void) {
+    BUFWIN(buf, win)
+    if (buf->num_rows == 0) return;
+
+    int sy, sx, ey, ex;
+    if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex)) return;
+    if (sy != ey) {
+        ed_set_status_message("*: multi-line selection not supported");
+        return;
+    }
+    Row *row = &buf->rows[sy];
+    if (ex > (int)row->chars.len) ex = (int)row->chars.len;
+    if (ex <= sx) {
+        ed_set_status_message("*: empty selection");
+        return;
+    }
+
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(row->chars.data + sx, (size_t)(ex - sx));
+    E.search_is_regex = 0;
+
+    kb_visual_escape();
+    ed_set_status_message("* %.*s",
+                          (int)(E.search_query.len > 40 ? 40 : E.search_query.len),
+                          E.search_query.data);
+    jump_save_current();
+    buf_find_in(buf);
+}
+
 void kb_search_file_under_cursor(void) {
     SizedStr path = sstr_new();
     if (!buf_get_path_under_cursor(&path, NULL, NULL) || !path.data ||
@@ -1077,6 +1134,36 @@ void kb_fold_close_all(void) {
         }
     }
     ed_set_status_message("Closed %d fold%s", count, count == 1 ? "" : "s");
+}
+
+/* <S-Tab> - cycle the buffer's global fold level: 1 → 2 → 100 → 0 → 1.
+ * Levels follow vim foldlevel semantics (see fold_apply_level): 1 shows
+ * top-level sections, 2 shows two levels, 100 opens everything, 0
+ * collapses all to summaries. */
+static int fold_level_next(int cur) {
+    switch (cur) {
+    case 1:   return 2;
+    case 2:   return 3;
+    case 3:   return 100;
+    case 100: return 0;
+    case 0:   return 1;
+    default:  return 1; /* first press, or any out-of-cycle value */
+    }
+}
+
+void kb_fold_cycle_level(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+    int next = fold_level_next(buf->fold_level);
+    buf->fold_level = next;
+    fold_apply_level(&buf->folds, next);
+    if (next == 0)
+        ed_set_status_message("foldlevel=0 (all closed)");
+    else if (next >= 100)
+        ed_set_status_message("foldlevel=%d (all open)", next);
+    else
+        ed_set_status_message("foldlevel=%d", next);
 }
 
 void kb_del_win(char direction);

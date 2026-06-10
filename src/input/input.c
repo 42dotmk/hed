@@ -140,6 +140,7 @@ int ed_parse_key_from_fd(int fd) {
                 case 'D': key = KEY_ARROW_LEFT;  break;
                 case 'H': key = KEY_HOME;        break;
                 case 'F': key = KEY_END;         break;
+                case 'Z': key = KEY_BTAB;        break;
                 default:  key = '\x1b';          break;
                 }
             }

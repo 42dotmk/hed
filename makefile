@@ -4,10 +4,10 @@ CFLAGS = $(BASE_CFLAGS) -MMD -MP
 
 # Version derived from `git describe` at build time so the binary
 # reports the exact tag/commit it was built from. Falls back to "dev"
-# when git metadata is unavailable (e.g. release tarballs).
+# when git metadata is unavailable (e.g. release tarballs)
 HED_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
 ifeq ($(HED_VERSION),)
-HED_VERSION := dev
+HED_VERSION := d
 endif
 CFLAGS += -DHED_VERSION='"$(HED_VERSION)"'
 

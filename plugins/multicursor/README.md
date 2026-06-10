@@ -2,9 +2,31 @@
 
 # Multicursor
 
-Synchronized edits at multiple cursors. Add an extra cursor; every
-keystroke after that — motion, insert, operator, leader chord, mode
-change — fires once per cursor.
+Extra cursors with optional synchronized edits. Add extra cursors and
+hop between them while they hold their positions — or turn **sync**
+on, and every keystroke after that — motion, insert, operator, leader
+chord, mode change — fires once per cursor.
+
+## Two modes
+
+**Sync off (default).** Extra cursors are passive markers. You move
+and edit with the active cursor only; the others stay where you put
+them (core auto-shifts them when edits land before them, so they stay
+glued to their text). Use `:mc_jump_next` / `:mc_jump_prev`
+(`<space>mj` / `<space>mk`) to make another cursor the active one.
+
+**Sync on** (`:mc_sync` / `<space>ms`). Synchronized editing: every
+keypress runs the full per-mode dispatch once per cursor (see
+"How replay works" below).
+
+## Per-window cursor sets
+
+Cursor sets belong to a **(buffer, window) pair**. Two windows showing
+the same buffer each have their own set; switching focus or buffers
+parks one set and restores the other (handled by core,
+`buf_cursors_bind_window`). A buffer that's no longer shown in any
+window keeps the set of the last window that showed it, and the next
+window to show the buffer adopts that set.
 
 ## Commands
 
@@ -12,7 +34,13 @@ change — fires once per cursor.
 |---|---|
 | `:mc_add_below`  | Add an extra cursor on the line below |
 | `:mc_add_above`  | Add an extra cursor on the line above |
+| `:mc_add_here`   | Park a cursor at the current position and continue with the active one |
+| `:mc_toggle_here` | Toggle: remove the parked cursor under the active one, or park one here |
 | `:mc_next_match` | Add a cursor at the next match of the word under cursor (or visual selection) |
+| `:mc_prev_match` | Add a cursor at the previous match |
+| `:mc_jump_next`  | Make the next cursor (cyclic `(y, x)` order) the active one |
+| `:mc_jump_prev`  | Make the previous cursor the active one |
+| `:mc_sync [on\|off\|toggle]` | Enable/disable synchronized edits at all cursors |
 | `:mc_skip`       | Drop the active cursor and move to the next in cyclic order |
 | `:mc_clear`      | Drop the extras, keep only the active cursor |
 | `:mc_count`      | Show how many cursors are active |
@@ -20,12 +48,28 @@ change — fires once per cursor.
 
 ## Default keybinds
 
+Two mirrored clusters bind the same letters: `<space>m…` and `'…`.
+The `'` cluster always works; the `<space>m` cluster is shadowed by
+the tasks plugin inside markdown buffers (filetype-scoped bindings
+win). Bare `'` is deliberately unbound — an exact match fires
+immediately, which would make the two-key `'x` sequences unreachable;
+toggle is the double-tap `''` instead.
+
 | Key | Mode | Action |
 |---|---|---|
-| `<space>md` | normal | `:mc_add_below` |
-| `<space>mu` | normal | `:mc_add_above` |
-| `<space>mc` | normal | `:mc_clear` |
-| `<C-n>`     | normal, visual | `:mc_next_match` |
+| `<space>md` / `'d` | normal | `:mc_add_below` |
+| `<space>mu` / `'u` | normal | `:mc_add_above` |
+| `<space>ma` / `'a` | normal | `:mc_add_here` |
+| `<space>mt` / `''` | normal | `:mc_toggle_here` |
+| `<space>mc` / `'c` | normal | `:mc_clear` |
+| `<space>mj` / `'j` | normal | `:mc_jump_next` |
+| `<space>mk` / `'k` | normal | `:mc_jump_prev` |
+| `<space>ms` / `'s` | normal | `:mc_sync` (toggle) |
+| `<space>mn` / `'n` | normal | `:mc_next_match` |
+| `<space>mp` / `'p` | normal | `:mc_prev_match` |
+| `'n` / `<C-n>` | visual | `:mc_next_match` on the selection, exits visual |
+| `'p`           | visual | `:mc_prev_match` on the selection, exits visual |
+| `<C-n>`     | normal | `:mc_next_match` |
 | `Q`         | normal | `:mc_skip` |
 
 `<C-n>` mirrors VSCode's `Ctrl-D` ("select next occurrence"). On the
@@ -38,7 +82,7 @@ at the following match, wrapping past the end of the buffer.
 next cursor in `(y, x)` order, cycling back to the first when there's
 nothing after the current one.
 
-## How replay works
+## How replay works (sync on)
 
 Two phases.
 
@@ -68,8 +112,8 @@ re-firing the keypress hook on themselves.
 
 ### Skipped contexts
 
-The hook bails out (no replay, doesn't consume the event) when a
-single global UI is active:
+The hook bails out (no replay, doesn't consume the event) when sync
+is off, or when a single global UI is active:
 
 - **Prompt input** (`:` / `/` / `?`): replaying would type each
   character N times into the same prompt buffer.
