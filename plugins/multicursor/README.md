@@ -38,6 +38,7 @@ window to show the buffer adopts that set.
 | `:mc_toggle_here` | Toggle: remove the parked cursor under the active one, or park one here |
 | `:mc_next_match` | Add a cursor at the next match of the word under cursor (or visual selection) |
 | `:mc_prev_match` | Add a cursor at the previous match |
+| `:mc_match_all`  | Put a cursor at every match in the buffer |
 | `:mc_jump_next`  | Make the next cursor (cyclic `(y, x)` order) the active one |
 | `:mc_jump_prev`  | Make the previous cursor the active one |
 | `:mc_sync [on\|off\|toggle]` | Enable/disable synchronized edits at all cursors |
@@ -67,8 +68,10 @@ toggle is the double-tap `''` instead.
 | `<space>ms` / `'s` | normal | `:mc_sync` (toggle) |
 | `<space>mn` / `'n` | normal | `:mc_next_match` |
 | `<space>mp` / `'p` | normal | `:mc_prev_match` |
+| `'*` / `<M-n>` | normal | `:mc_match_all` |
 | `'n` / `<C-n>` | visual | `:mc_next_match` on the selection, exits visual |
 | `'p`           | visual | `:mc_prev_match` on the selection, exits visual |
+| `'*` / `<M-n>` | visual | `:mc_match_all` on the selection, exits visual |
 | `<C-n>`     | normal | `:mc_next_match` |
 | `Q`         | normal | `:mc_skip` |
 
@@ -77,6 +80,15 @@ first press it picks up the word under the cursor (or a single-line
 visual selection), seeds `E.search_query` with it, and puts a new
 cursor at the next match. Each subsequent press adds one more cursor
 at the following match, wrapping past the end of the buffer.
+
+`'*` / `<M-n>` mirrors VSCode's `Ctrl-Shift-L` ("select all
+occurrences"): one press puts a cursor at **every** match of the word
+under cursor (normal) or the single-line selection (visual) across
+the whole buffer, replacing the current cursor set. The active cursor
+stays on the occurrence the query came from. Matches are
+non-overlapping, scanned left to right. Follow with `'s` to turn sync
+on and edit them all at once, and `Q` to skip any match you don't
+want.
 
 `Q` is "skip this match": drop the active cursor and advance to the
 next cursor in `(y, x)` order, cycling back to the first when there's

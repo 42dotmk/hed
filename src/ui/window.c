@@ -162,6 +162,10 @@ static void windows_focus_set(int idx) {
     buf_cursors_bind_window(buf_cur(), &E.windows[idx]);
 }
 
+void windows_focus_index(int idx) {
+    windows_focus_set(idx);
+}
+
 /* Find neighbor window index in a given direction relative to current.
  * dir: 0=left, 1=right, 2=up, 3=down. Returns -1 if none. */
 static int windows_find_neighbor(int dir) {

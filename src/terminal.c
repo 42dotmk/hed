@@ -34,10 +34,33 @@ void die(const char *s) {
     exit(1);
 }
 
+/* Whether the user wants mouse reporting. The escapes themselves are
+ * re-issued by enable_raw_mode so the state survives shell-outs. */
+static int g_mouse_on = 0;
+
+static void term_mouse_write(int on) {
+    /* 1002 = button-event tracking (press/release/drag),
+     * 1006 = SGR encoding (unambiguous, no 223-column limit). */
+    if (on)
+        write(STDOUT_FILENO, "\x1b[?1002h\x1b[?1006h", 16);
+    else
+        write(STDOUT_FILENO, "\x1b[?1006l\x1b[?1002l", 16);
+}
+
+void term_mouse_set(int on) {
+    g_mouse_on = on ? 1 : 0;
+    term_mouse_write(g_mouse_on);
+}
+
+int term_mouse_get(void) {
+    return g_mouse_on;
+}
+
 void disable_raw_mode(void) {
-    /* Turn bracketed paste off before restoring termios. Harmless on
-     * terminals that don't support DEC 2004. */
+    /* Turn bracketed paste and mouse reporting off before restoring
+     * termios. Harmless on terminals that don't support them. */
     write(STDOUT_FILENO, "\x1b[?2004l", 8);
+    term_mouse_write(0);
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
         die("tcsetattr");
 }
@@ -62,6 +85,8 @@ void enable_raw_mode(void) {
      * ESC[201~ so the input parser can route the body around hooks
      * and keymap dispatch. */
     write(STDOUT_FILENO, "\x1b[?2004h", 8);
+    if (g_mouse_on)
+        term_mouse_write(1);
 }
 
 int get_cursor_position(int *rows, int *cols) {
@@ -329,6 +354,75 @@ static int window_gutter_width(const Window *win, int view_rows) {
     if (w < 2)
         w = 2;
     return w;
+}
+
+int window_screen_to_buffer(const Window *win, int srow, int scol,
+                            int *out_y, int *out_x) {
+    if (!win || !out_y || !out_x)
+        return 0;
+    Buffer *buf = NULL;
+    if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
+    if (!buf || buf->num_rows == 0)
+        return 0;
+
+    int vy = srow - win->top;
+    if (vy < 0 || vy >= win->height)
+        return 0;
+
+    int gutter = window_gutter_width(win, win->height);
+    int margin = gutter ? (gutter + 1) : 0;
+    int content_cols = win->width - margin;
+    if (content_cols < 1)
+        content_cols = 1;
+
+    /* Same walk as ed_draw_rows_win: row_offset is a visual row index;
+     * each visible line contributes its wrap sublines plus its
+     * block-below virtual rows. */
+    int target = win->row_offset + vy;
+    int y = 0;
+    int sub = 0;
+    int found = 0;
+    while (y < buf->num_rows) {
+        if (fold_is_line_hidden(&buf->folds, y)) {
+            y++;
+            continue;
+        }
+        int h_real = row_visual_height(&buf->rows[y], content_cols,
+                                       win->wrap);
+        int h_total = h_real + vtext_block_below_count(buf, y);
+        if (target < h_total) {
+            sub = target;
+            /* Virtual block-below row: snap to the anchor line's last
+             * real subline. */
+            if (sub >= h_real)
+                sub = h_real - 1;
+            found = 1;
+            break;
+        }
+        target -= h_total;
+        y++;
+    }
+    if (!found) {
+        /* Below EOF: clamp to the last visible line. */
+        y = buf->num_rows - 1;
+        while (y > 0 && fold_is_line_hidden(&buf->folds, y))
+            y--;
+        sub = row_visual_height(&buf->rows[y], content_cols, win->wrap) - 1;
+    }
+
+    int cell = scol - win->left - margin; /* 0-based content column */
+    if (cell < 0)
+        cell = 0;
+    if (cell >= content_cols)
+        cell = content_cols - 1;
+    int rx = win->wrap ? sub * content_cols + cell
+                       : win->col_offset + cell;
+
+    *out_y = y;
+    *out_x = buf_row_rx_to_cx(&buf->rows[y], rx);
+    return 1;
 }
 
 /* UTF-8 helpers for render slicing: use wcwidth() for proper wide char support

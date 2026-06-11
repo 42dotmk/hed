@@ -1,4 +1,20 @@
-# TODOS
+# TODOS and Whishlists
+
+## [TODO] multi cursor fuctionality to add cursor to all matches
+visual and normal (word under cursor).
+
+## [TODO] keybinding for mailsend when in mail
+
+## [TODO] url schema resolving for uri/path under cursor
+- mail should be mail:// and open the mail thread
+  
+## [TODO] capture functionality in the tasks plugin. 
+tasks plugin needs to have a default todo file where the todos will be appended.
+
+## [TODO] Treesitter based folding
+We are currently using a very basic folding mechanism, we should use treesitter to provide better folding, and also provide a way for plugins to define custom folding rules.
+
+## [TODO] tmux related commands should be shifted to x preffix instead of t, t is mainly for toggles.
 
 ## [TODO] Alternative to FZF :low:
 tags:: fzf,search,filter,plugin
@@ -68,4 +84,8 @@ If there is no new line sent we should esure to send new line at the end , so we
 Its not good at the moment, at all
    
 ## [DONE] Shell piping to/from buffer, yank register and system clipboard
+
+
+
+
 

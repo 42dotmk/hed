@@ -152,7 +152,11 @@ int ed_read_key(void) {
 
     key = ed_parse_key_from_fd(STDIN_FILENO);
 
-    if (ed_key_capture_active && ed_key_capture_len < ED_KEY_REPLAY_MAX)
+    /* KEY_MOUSE is never captured: its payload lives in a single
+     * static MouseEvent, so a replayed sentinel would dereference a
+     * stale (or different) event. */
+    if (ed_key_capture_active && ed_key_capture_len < ED_KEY_REPLAY_MAX &&
+        key != KEY_MOUSE)
         ed_key_capture_buf[ed_key_capture_len++] = key;
 
     if (macro_is_recording()) {
@@ -164,6 +168,11 @@ int ed_read_key(void) {
          * record them, and the paste body is read raw inside
          * ed_handle_paste() so it doesn't pass through here. */
         if (key == KEY_PASTE_START || key == KEY_PASTE_END) {
+            should_record = 0;
+        }
+        /* Mouse events are not keystrokes either — replaying a
+         * KEY_MOUSE would read whatever event happens to be latest. */
+        if (key == KEY_MOUSE) {
             should_record = 0;
         }
         if (should_record) {
@@ -314,6 +323,25 @@ void ed_process_keypress(void) {
         return;
     }
     if (c == KEY_PASTE_END) return;
+    if (c == KEY_MOUSE) {
+        /* Mouse bypasses keymap dispatch entirely; semantics live in
+         * HOOK_MOUSE handlers (plugins/mouse). Mirror ed_dispatch_key's
+         * cursor-move detection so cursor-follow plugins (quickfix
+         * preview etc.) see mouse motion too. */
+        Window *win = window_cur();
+        int old_x = win ? win->cursor.x : 0;
+        int old_y = win ? win->cursor.y : 0;
+        hook_fire_mouse(HOOK_MOUSE, ed_last_mouse());
+        win = window_cur();
+        Buffer *buf = buf_cur();
+        if (buf && win &&
+            (win->cursor.x != old_x || win->cursor.y != old_y)) {
+            HookCursorEvent ev = {buf, old_x, old_y,
+                                  win->cursor.x, win->cursor.y};
+            hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
+        }
+        return;
+    }
     /* Keep the (buffer, window) cursor-set pairing and the active
      * cursor's stored position current before anything dispatches.
      * Motions only move win->cursor; without this sync, cursor-list

@@ -23,6 +23,17 @@ SRC_DIR = src
 BUILD_DIR = build
 VENDOR_BUILD_DIR = vendor/build
 PLUGINS_DIR ?= plugins
+# Additional plugin dirs compiled on top of $(PLUGINS_DIR) — space-
+# separated, e.g. EXTRA_PLUGIN_DIRS=$(HOME)/my-hed-plugins. Plugin
+# symbol names must be unique across all dirs (duplicates are a link
+# error, by design).
+EXTRA_PLUGIN_DIRS ?=
+PLUGIN_DIRS = $(PLUGINS_DIR) $(EXTRA_PLUGIN_DIRS)
+PLUGIN_INC = $(foreach d,$(PLUGIN_DIRS),-I$(d))
+# Optional user config, compiled in when present. It defines
+# config_user_init(), which src/config.h calls (weakly) after the
+# stock defaults — additive, last-write-wins on keybinds.
+USER_CONFIG ?= $(wildcard $(HOME)/.config/hed/config.c)
 WITH_TREESITTER ?= 1
 
 # The tree-sitter runtime is a frozen vendored amalgam; building it is the
@@ -53,11 +64,30 @@ endif
 
 SOURCES = $(CORE_SOURCES) $(PLUGIN_SOURCES)
 HEADERS = $(shell find $(SRC_DIR) -type f -name "*.h") \
-          $(shell find $(PLUGINS_DIR) -type f -name "*.h" 2>/dev/null)
+          $(foreach d,$(PLUGIN_DIRS),$(shell find $(d) -type f -name "*.h" 2>/dev/null))
 
 CORE_OBJECTS   = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(CORE_SOURCES))
 PLUGIN_OBJECTS = $(patsubst $(PLUGINS_DIR)/%.c,$(BUILD_DIR)/plugins/%.o,$(PLUGIN_SOURCES))
-OBJECTS = $(CORE_OBJECTS) $(PLUGIN_OBJECTS)
+
+# Each extra plugin dir gets its own object subtree under
+# build/plugins_ext/<id>/ (id = absolute path with / -> _) so two
+# dirs containing a same-named plugin can't collide on object paths.
+extra_dir_id = $(subst /,_,$(patsubst /%,%,$(abspath $(1))))
+EXTRA_PLUGIN_OBJECTS =
+define EXTRA_PLUGIN_DIR_template
+EXTRA_SRC_$(2) := $$(shell find $(1) -type f -name "*.c" 2>/dev/null)
+EXTRA_PLUGIN_OBJECTS += $$(patsubst $(1)/%.c,$$(BUILD_DIR)/plugins_ext/$(2)/%.o,$$(EXTRA_SRC_$(2)))
+$$(BUILD_DIR)/plugins_ext/$(2)/%.o: $(1)/%.c
+	@mkdir -p $$(dir $$@)
+	$$(CC) $$(CFLAGS) $$(PLUGIN_INC) -c $$< -o $$@
+endef
+$(foreach d,$(EXTRA_PLUGIN_DIRS),$(eval $(call EXTRA_PLUGIN_DIR_template,$(patsubst %/,%,$(d)),$(call extra_dir_id,$(d)))))
+
+ifneq ($(USER_CONFIG),)
+USER_CONFIG_OBJ = $(BUILD_DIR)/user_config.o
+endif
+
+OBJECTS = $(CORE_OBJECTS) $(PLUGIN_OBJECTS) $(EXTRA_PLUGIN_OBJECTS) $(USER_CONFIG_OBJ)
 
 
 .PHONY: all clean distclean run test test_args ts-langs strip_build install uninstall publish fmt tags
@@ -93,11 +123,17 @@ $(TS_LIB_A): $(TS_LIB_DIR)/src/lib.c | $(VENDOR_BUILD_DIR)
 
 $(BUILD_DIR)/plugins/%.o: $(PLUGINS_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I$(PLUGINS_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(PLUGIN_INC) -c $< -o $@
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I$(PLUGINS_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(PLUGIN_INC) -c $< -o $@
+
+ifneq ($(USER_CONFIG),)
+$(USER_CONFIG_OBJ): $(USER_CONFIG)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(PLUGIN_INC) -c $< -o $@
+endif
 
 $(TSI): ts/ts_lang_install.c
 	$(CC) -Wall -Wextra -O2 -I/usr/include -o $@ $<
@@ -142,7 +178,7 @@ fmt:
 	clang-format -i $(SOURCES) $(HEADERS)
 
 tags:
-	ctags -R --languages=C $(SRC_DIR) $(PLUGINS_DIR)
+	ctags -R --languages=C $(SRC_DIR) $(PLUGIN_DIRS)
 
 run: $(TARGET)
 	./$(TARGET)

@@ -19,7 +19,7 @@
 #define CMD_HISTORY_MAX 1000
 
 /* Special key codes */
-#define KEY_DELETE 127
+#define KEY_DELETE 1009 /* forward-delete (CSI 3~), distinct from BS byte 127 */
 #define KEY_PAGE_UP 1000
 #define KEY_PAGE_DOWN 1001
 #define KEY_ARROW_UP 1002
@@ -48,6 +48,12 @@
  * hooks (auto-pair, smart-indent) and keymap dispatch on every byte. */
 #define KEY_PASTE_START 1030
 #define KEY_PASTE_END   1031
+
+/* Mouse sentinel (SGR mode 1006). A mouse event carries more data than
+ * one int (button, column, row, press/drag/release), so the parser
+ * stashes the decoded event and returns this; fetch the payload with
+ * ed_last_mouse() (input/input.h). */
+#define KEY_MOUSE 1032
 
 /* Modifier flags OR'd with the base key code. Out of range of the
  * special keys above and well above any byte value, so they never

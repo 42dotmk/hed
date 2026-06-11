@@ -83,6 +83,10 @@ void hook_register_key(HookType type, HookKeyCallback callback) {
     hook_push(type, -1, "*", (HookFn)callback);
 }
 
+void hook_register_mouse(HookType type, HookMouseCallback callback) {
+    hook_push(type, -1, "*", (HookFn)callback);
+}
+
 void hook_register_simple(HookType type, HookSimpleCallback callback) {
     hook_push(type, -1, "*", (HookFn)callback);
 }
@@ -166,6 +170,14 @@ void hook_fire_key(HookType type, HookKeyEvent *event) {
         ((HookKeyCallback)hooks[type][i].callback)(event);
         if (event->consumed)
             return;
+    }
+}
+
+void hook_fire_mouse(HookType type, const struct MouseEvent *event) {
+    if (type >= HOOK_TYPE_COUNT)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(hooks[type]); i++) {
+        ((HookMouseCallback)hooks[type][i].callback)(event);
     }
 }
 

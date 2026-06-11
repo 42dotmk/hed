@@ -53,6 +53,7 @@ static const char *macro_named_key(int base) {
     case KEY_END:        return "End";
     case KEY_PAGE_UP:    return "PageUp";
     case KEY_PAGE_DOWN:  return "PageDown";
+    case KEY_DELETE:     return "Del";
     default:             return NULL;
     }
 }
@@ -66,6 +67,7 @@ static int macro_named_code(const char *name, int len) {
         {"Left", KEY_ARROW_LEFT}, {"Right", KEY_ARROW_RIGHT},
         {"Home", KEY_HOME}, {"End", KEY_END},
         {"PageUp", KEY_PAGE_UP}, {"PageDown", KEY_PAGE_DOWN},
+        {"Del", KEY_DELETE},
         {"lt", '<'}, {"gt", '>'},
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {

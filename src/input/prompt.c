@@ -102,7 +102,7 @@ void prompt_handle_key(int key) {
 PromptResult prompt_default_on_key(Prompt *p, int key) {
     if (key == '\r')   return PROMPT_SUBMIT;
     if (key == '\x1b') return PROMPT_CANCEL;
-    if (key == KEY_DELETE || key == CTRL_KEY('h')) {
+    if (key == 127 || key == KEY_DELETE || key == CTRL_KEY('h')) {
         if (p->len > 0) p->len--;
         p->buf[p->len] = '\0';
         p->cursor = p->len;

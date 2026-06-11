@@ -6,6 +6,38 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+static MouseEvent g_last_mouse;
+
+const MouseEvent *ed_last_mouse(void) {
+    return &g_last_mouse;
+}
+
+/* Decode an SGR mouse report (button code + 1-based cell) into
+ * g_last_mouse. Button bits per xterm: 0-1 button, 4 Shift, 8 Meta,
+ * 16 Ctrl, 32 motion, 64 wheel. `release` is the 'm' terminator. */
+static int mouse_decode(int b, int x, int y, int release) {
+    MouseEvent ev = {0};
+    ev.x = x;
+    ev.y = y;
+    if (b & 4)  ev.mods |= KEY_SHIFT;
+    if (b & 8)  ev.mods |= KEY_META;
+    if (b & 16) ev.mods |= KEY_CTRL;
+    if (b & 64) {
+        ev.button = -1;
+        ev.type = ((b & 3) == 0) ? MOUSE_WHEEL_UP : MOUSE_WHEEL_DOWN;
+    } else {
+        ev.button = b & 3;
+        if (release)
+            ev.type = MOUSE_RELEASE;
+        else if (b & 32)
+            ev.type = MOUSE_DRAG;
+        else
+            ev.type = MOUSE_PRESS;
+    }
+    g_last_mouse = ev;
+    return KEY_MOUSE;
+}
+
 int ed_parse_key_from_fd(int fd) {
     int nread;
     char c;
@@ -48,7 +80,33 @@ int ed_parse_key_from_fd(int fd) {
             key = '\x1b';
         } else {
             /* seq[0] == '[': CSI escape sequence. */
-            if (seq[1] >= '0' && seq[1] <= '9') {
+            if (seq[1] == '<') {
+                /* SGR mouse: ESC [ < btn ; col ; row (M|m). */
+                int nums[3] = {0, 0, 0};
+                int ni = 0;
+                int parse_ok = 1;
+                char term = '\0';
+                for (;;) {
+                    char c2;
+                    if (read(fd, &c2, 1) != 1) { parse_ok = 0; break; }
+                    if (c2 >= '0' && c2 <= '9') {
+                        nums[ni] = nums[ni] * 10 + (c2 - '0');
+                        continue;
+                    }
+                    if (c2 == ';') {
+                        if (++ni > 2) { parse_ok = 0; break; }
+                        continue;
+                    }
+                    term = c2;
+                    break;
+                }
+                if (parse_ok && ni == 2 && (term == 'M' || term == 'm')) {
+                    key = mouse_decode(nums[0], nums[1], nums[2],
+                                       term == 'm');
+                } else {
+                    key = '\x1b';
+                }
+            } else if (seq[1] >= '0' && seq[1] <= '9') {
                 /* Read full digit run, then ';' (modifier) or '~' (terminator). */
                 char digits[8] = { seq[1] };
                 int dlen = 1;

@@ -286,19 +286,33 @@ void buf_duplicate_line(void) {
 }
 
 void buf_move_line_up(void) {
-	BUFWIN(buf, win);
+	ASSERT_EDIT(buf, win);
+    if (win->cursor.y <= 0)
+        return;
+    undo_begin(buf, "move line up");
+    undo_record_replace(buf, win->cursor.y - 1);
+    undo_record_replace(buf, win->cursor.y);
     Row temp = buf->rows[win->cursor.y];
     buf->rows[win->cursor.y] = buf->rows[win->cursor.y - 1];
     buf->rows[win->cursor.y - 1] = temp;
     win->cursor.y--;
+    undo_end(buf);
+    buf->dirty++;
 }
 
 void buf_move_line_down(void) {
-	BUFWIN(buf, win)
+	ASSERT_EDIT(buf, win)
+    if (win->cursor.y >= buf->num_rows - 1)
+        return;
+    undo_begin(buf, "move line down");
+    undo_record_replace(buf, win->cursor.y);
+    undo_record_replace(buf, win->cursor.y + 1);
     Row temp = buf->rows[win->cursor.y];
     buf->rows[win->cursor.y] = buf->rows[win->cursor.y + 1];
     buf->rows[win->cursor.y + 1] = temp;
     win->cursor.y++;
+    undo_end(buf);
+    buf->dirty++;
 }
 
 /*** Text manipulation helpers ***/

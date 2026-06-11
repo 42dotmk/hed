@@ -2,7 +2,8 @@
  *
  * Add extra cursors with :mc_add_below/_above (or leader keys), or with
  * <C-n> in NORMAL/VISUAL to put a cursor at the next occurrence of the
- * word under cursor (or current single-line selection). Capital Q drops
+ * word under cursor (or current single-line selection). <M-n> / '* puts
+ * a cursor at every occurrence in the buffer at once. Capital Q drops
  * the active cursor and advances to the next one in cyclic (y,x) order.
  * ` mj`/` mk` (:mc_jump_next/:mc_jump_prev) cycle the active cursor
  * through the set without dropping any.
@@ -233,6 +234,8 @@ static void on_keypress(HookKeyEvent *event) {
 
 /* --- next-match search --- */
 
+typedef struct { int y, x; } McPos;
+
 /* Case-sensitive substring search starting at (start_y, start_x),
  * wrapping past the last row. Fills *out_y / *out_x and returns 1 on
  * match; returns 0 if the query isn't found anywhere. */
@@ -286,6 +289,102 @@ static int mc_find_prev(Buffer *buf, const char *q, size_t qlen,
     return 0;
 }
 
+/* Extract the search query at the active cursor: the single-line
+ * visual selection in VISUAL mode, the word under cursor in NORMAL.
+ * On success fills *q (caller frees) plus the query's location in the
+ * buffer — (*sy, *sx) is the start, *ex one past the end — and
+ * returns 1. Returns 0 with a status message set otherwise. */
+static int mc_query_at_cursor(Buffer *buf, Window *win, SizedStr *q,
+                              int *sy, int *sx, int *ex) {
+    if (E.mode == MODE_VISUAL) {
+        /* The live end of the selection is win->cursor — sel.cursor_*
+         * is not updated by motions, only the anchor is real. */
+        int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
+        int cy = win->cursor.y, cx = win->cursor.x;
+        if (ay > cy || (ay == cy && ax > cx)) {
+            int ty = ay, tx = ax; ay = cy; ax = cx; cy = ty; cx = tx;
+        }
+        if (ay != cy) {
+            ed_set_status_message("multicursor: multi-line selection not supported");
+            return 0;
+        }
+        Row *row = &buf->rows[ay];
+        if (ax < 0) ax = 0;
+        if (cx > (int)row->chars.len - 1) cx = (int)row->chars.len - 1;
+        int sel_end = cx + 1; /* visual selection is inclusive on the cursor side */
+        if (sel_end > (int)row->chars.len) sel_end = (int)row->chars.len;
+        if (sel_end <= ax) {
+            ed_set_status_message("multicursor: empty selection");
+            return 0;
+        }
+        *q = sstr_from(row->chars.data + ax, (size_t)(sel_end - ax));
+        *sy = ay;
+        *sx = ax;
+        *ex = sel_end;
+        return 1;
+    }
+
+    if (!buf_get_word_under_cursor(q) || q->len == 0) {
+        ed_set_status_message("multicursor: no word under cursor");
+        sstr_free(q);
+        return 0;
+    }
+    Row *row = &buf->rows[win->cursor.y];
+    int b = win->cursor.x, e = win->cursor.x;
+    while (b > 0 &&
+           (isalnum((unsigned char)row->chars.data[b-1]) ||
+            row->chars.data[b-1] == '_'))
+        b--;
+    while (e < (int)row->chars.len &&
+           (isalnum((unsigned char)row->chars.data[e]) ||
+            row->chars.data[e] == '_'))
+        e++;
+    *sy = win->cursor.y;
+    *sx = b;
+    *ex = e;
+    return 1;
+}
+
+/* Mirror the term into E.search_query so `n` and `:ssearch` reuse
+ * the same word picker semantics as `*` would. */
+static void mc_seed_search(const SizedStr *q) {
+    sstr_free(&E.search_query);
+    E.search_query = sstr_from(q->data, q->len);
+    E.search_is_regex = 0;
+}
+
+/* Land the active cursor on match (my, mx): activate the existing
+ * cursor there if one already holds that position (no duplicates),
+ * otherwise add one and make it active. On a fresh cursor, drop the
+ * selection if we were in VISUAL so subsequent edits are positional. */
+static void mc_activate_match(Buffer *buf, Window *win, int my, int mx) {
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        Cursor *c = buf->all_cursors[i];
+        if (c->y == my && c->x == mx) {
+            buf->cursor = c;
+            win->cursor.y = my;
+            win->cursor.x = mx;
+            ed_set_status_message("multicursor: %d cursors (moved to existing match)",
+                                  buf_cursor_count(buf));
+            return;
+        }
+    }
+
+    Cursor *nc = buf_cursor_add(buf, my, mx);
+    if (!nc) {
+        ed_set_status_message("multicursor: out of memory");
+        return;
+    }
+    buf->cursor = nc;
+    win->cursor.y = my;
+    win->cursor.x = mx;
+    if (E.mode == MODE_VISUAL) {
+        win->sel.type = SEL_NONE;
+        ed_set_mode(MODE_NORMAL);
+    }
+    ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+}
+
 /* C-n: add a cursor at the next occurrence of the word under cursor
  * (NORMAL) or the active visual selection (VISUAL, single-line only).
  * Skipped during replay — adding a cursor is a global action, not a
@@ -300,95 +399,21 @@ static void kb_mc_add_next_match(void) {
     buf_cursor_sync_from_window(buf);
 
     SizedStr q = {0};
-    int from_y = win->cursor.y;
-    int from_x = win->cursor.x + 1;
+    int sy, sx, ex;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
 
-    if (E.mode == MODE_VISUAL) {
-        /* The live end of the selection is win->cursor — sel.cursor_*
-         * is not updated by motions, only the anchor is real. */
-        int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
-        int cy = win->cursor.y, cx = win->cursor.x;
-        if (ay > cy || (ay == cy && ax > cx)) {
-            int ty = ay, tx = ax; ay = cy; ax = cx; cy = ty; cx = tx;
-        }
-        if (ay != cy) {
-            ed_set_status_message("multicursor: multi-line selection not supported");
-            return;
-        }
-        Row *row = &buf->rows[ay];
-        if (ax < 0) ax = 0;
-        if (cx > (int)row->chars.len - 1) cx = (int)row->chars.len - 1;
-        int sel_end = cx + 1; /* visual selection is inclusive on the cursor side */
-        if (sel_end > (int)row->chars.len) sel_end = (int)row->chars.len;
-        if (sel_end <= ax) {
-            ed_set_status_message("multicursor: empty selection");
-            return;
-        }
-        q = sstr_from(row->chars.data + ax, (size_t)(sel_end - ax));
-        from_y = ay;
-        from_x = sel_end;
-    } else {
-        if (!buf_get_word_under_cursor(&q) || q.len == 0) {
-            ed_set_status_message("multicursor: no word under cursor");
-            sstr_free(&q);
-            return;
-        }
-        /* Start the search after the end of the current word so the
-         * same word at the cursor isn't matched again. */
-        Row *row = &buf->rows[win->cursor.y];
-        int x = win->cursor.x;
-        while (x < (int)row->chars.len &&
-               (isalnum((unsigned char)row->chars.data[x]) ||
-                row->chars.data[x] == '_'))
-            x++;
-        from_x = x;
-    }
-
-    /* Avoid creating a duplicate cursor at a position that already has
-     * one — instead, just move active there and report. */
+    /* Search from one past the end of the current word / selection so
+     * the occurrence at the cursor isn't matched again. */
     int my, mx;
-    if (!mc_find_next(buf, q.data, q.len, from_y, from_x, &my, &mx)) {
+    if (!mc_find_next(buf, q.data, q.len, sy, ex, &my, &mx)) {
         ed_set_status_message("multicursor: no more matches");
         sstr_free(&q);
         return;
     }
 
-    /* Mirror the term into E.search_query so `n` and `:ssearch` reuse
-     * the same word picker semantics as `*` would. */
-    sstr_free(&E.search_query);
-    E.search_query = sstr_from(q.data, q.len);
-    E.search_is_regex = 0;
+    mc_seed_search(&q);
     sstr_free(&q);
-
-    /* If a cursor already lives at (my, mx), just make it active. */
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c->y == my && c->x == mx) {
-            buf->cursor = c;
-            win->cursor.y = my;
-            win->cursor.x = mx;
-            ed_set_status_message("multicursor: %d cursors (moved to existing match)",
-                                  buf_cursor_count(buf));
-            return;
-        }
-    }
-
-    Cursor *nc = buf_cursor_add(buf, my, mx);
-    if (!nc) {
-        ed_set_status_message("multicursor: out of memory");
-        return;
-    }
-    buf->cursor = nc;
-    win->cursor.y = my;
-    win->cursor.x = mx;
-    /* C-n is most useful from NORMAL — leave VISUAL mode alone so the
-     * caller's selection visualization stays, but drop the selection
-     * if we were in VISUAL so subsequent edits are positional. */
-    if (E.mode == MODE_VISUAL) {
-        win->sel.type = SEL_NONE;
-        ed_set_mode(MODE_NORMAL);
-    }
-    ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+    mc_activate_match(buf, win, my, mx);
 }
 
 /* Mirror of kb_mc_add_next_match walking backward — leaves a cursor at
@@ -401,86 +426,111 @@ static void kb_mc_add_prev_match(void) {
     buf_cursor_sync_from_window(buf);
 
     SizedStr q = {0};
-    int from_y = win->cursor.y;
-    int from_x = win->cursor.x;
+    int sy, sx, ex;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
+    (void)ex;
 
-    if (E.mode == MODE_VISUAL) {
-        /* Live selection end is win->cursor, not sel.cursor_* (stale). */
-        int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
-        int cy = win->cursor.y, cx = win->cursor.x;
-        if (ay > cy || (ay == cy && ax > cx)) {
-            int ty = ay, tx = ax; ay = cy; ax = cx; cy = ty; cx = tx;
-        }
-        if (ay != cy) {
-            ed_set_status_message("multicursor: multi-line selection not supported");
-            return;
-        }
-        Row *row = &buf->rows[ay];
-        if (ax < 0) ax = 0;
-        if (cx > (int)row->chars.len - 1) cx = (int)row->chars.len - 1;
-        int sel_end = cx + 1;
-        if (sel_end > (int)row->chars.len) sel_end = (int)row->chars.len;
-        if (sel_end <= ax) {
-            ed_set_status_message("multicursor: empty selection");
-            return;
-        }
-        q = sstr_from(row->chars.data + ax, (size_t)(sel_end - ax));
-        from_y = ay;
-        from_x = ax;
-    } else {
-        if (!buf_get_word_under_cursor(&q) || q.len == 0) {
-            ed_set_status_message("multicursor: no word under cursor");
-            sstr_free(&q);
-            return;
-        }
-        /* Walk back to the start of the current word so we look for an
-         * earlier occurrence, not this one again. */
-        Row *row = &buf->rows[win->cursor.y];
-        int x = win->cursor.x;
-        while (x > 0 &&
-               (isalnum((unsigned char)row->chars.data[x-1]) ||
-                row->chars.data[x-1] == '_'))
-            x--;
-        from_x = x;
-    }
-
+    /* Search backward from the start of the current word / selection
+     * so we look for an earlier occurrence, not this one again. */
     int my, mx;
-    if (!mc_find_prev(buf, q.data, q.len, from_y, from_x, &my, &mx)) {
+    if (!mc_find_prev(buf, q.data, q.len, sy, sx, &my, &mx)) {
         ed_set_status_message("multicursor: no more matches");
         sstr_free(&q);
         return;
     }
 
-    sstr_free(&E.search_query);
-    E.search_query = sstr_from(q.data, q.len);
-    E.search_is_regex = 0;
+    mc_seed_search(&q);
     sstr_free(&q);
+    mc_activate_match(buf, win, my, mx);
+}
 
-    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
-        Cursor *c = buf->all_cursors[i];
-        if (c->y == my && c->x == mx) {
-            buf->cursor = c;
-            win->cursor.y = my;
-            win->cursor.x = mx;
-            ed_set_status_message("multicursor: %d cursors (moved to existing match)",
-                                  buf_cursor_count(buf));
-            return;
+/* '*: put a cursor at every occurrence of the word under cursor
+ * (NORMAL) or the single-line visual selection (VISUAL) in the whole
+ * buffer. The existing cursor set is replaced — afterwards there is
+ * exactly one cursor per match, the active one on the occurrence the
+ * query came from. Matches are non-overlapping, scanned left to
+ * right. */
+static void kb_mc_match_all(void) {
+    if (in_replay) return;
+    BUFWIN(buf, win)
+    if (buf->num_rows == 0) return;
+    buf_cursor_sync_from_window(buf);
+
+    SizedStr q = {0};
+    int sy, sx, ex;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
+    (void)ex;
+
+    McPos *matches = NULL;
+    for (int y = 0; y < buf->num_rows; y++) {
+        Row *row = &buf->rows[y];
+        int len = (int)row->chars.len;
+        int x = 0;
+        while (x + (int)q.len <= len) {
+            if (memcmp(row->chars.data + x, q.data, q.len) == 0) {
+                McPos p = { y, x };
+                arrput(matches, p);
+                x += (int)q.len;
+            } else {
+                x++;
+            }
         }
     }
 
-    Cursor *nc = buf_cursor_add(buf, my, mx);
-    if (!nc) {
-        ed_set_status_message("multicursor: out of memory");
+    int n = (int)arrlen(matches);
+    if (n == 0) { /* can't happen — the query was read out of the buffer */
+        ed_set_status_message("multicursor: no matches");
+        arrfree(matches);
+        sstr_free(&q);
         return;
     }
-    buf->cursor = nc;
-    win->cursor.y = my;
-    win->cursor.x = mx;
+
+    mc_seed_search(&q);
+    sstr_free(&q);
+
+    /* Active match: the occurrence the query came from. If overlap
+     * skipping ate that exact start position, fall back to the first
+     * match at or after it, then to the first match overall. */
+    int active = -1;
+    for (int i = 0; i < n; i++) {
+        if (matches[i].y == sy && matches[i].x == sx) { active = i; break; }
+    }
+    if (active < 0) {
+        for (int i = 0; i < n; i++) {
+            if (matches[i].y > sy ||
+                (matches[i].y == sy && matches[i].x >= sx)) {
+                active = i;
+                break;
+            }
+        }
+    }
+    if (active < 0) active = 0;
+
+    /* Rebuild the cursor set: one cursor per match, nothing else. */
+    buf_cursor_clear_extras(buf);
+    buf->cursor->y = matches[active].y;
+    buf->cursor->x = matches[active].x;
+    int oom = 0;
+    for (int i = 0; i < n; i++) {
+        if (i == active) continue;
+        if (!buf_cursor_add(buf, matches[i].y, matches[i].x)) {
+            oom = 1;
+            break;
+        }
+    }
+    win->cursor.y = matches[active].y;
+    win->cursor.x = matches[active].x;
+    arrfree(matches);
+
     if (E.mode == MODE_VISUAL) {
         win->sel.type = SEL_NONE;
         ed_set_mode(MODE_NORMAL);
     }
-    ed_set_status_message("multicursor: %d cursors", buf_cursor_count(buf));
+    if (oom)
+        ed_set_status_message("multicursor: out of memory");
+    else
+        ed_set_status_message("multicursor: %d cursors (all matches)",
+                              buf_cursor_count(buf));
 }
 
 /* Q: drop the active cursor; activate the next in cyclic (y,x) order.
@@ -694,6 +744,11 @@ static void cmd_mc_prev_match(const char *args) {
     kb_mc_add_prev_match();
 }
 
+static void cmd_mc_match_all(const char *args) {
+    (void)args;
+    kb_mc_match_all();
+}
+
 static void cmd_mc_skip(const char *args) {
     (void)args;
     kb_mc_skip();
@@ -759,6 +814,7 @@ static int multicursor_init(void) {
     cmd("mc_count",      cmd_mc_count,      "multicursor: show cursor count");
     cmd("mc_next_match", cmd_mc_next_match, "multicursor: add cursor at next match");
     cmd("mc_prev_match", cmd_mc_prev_match, "multicursor: add cursor at previous match");
+    cmd("mc_match_all",  cmd_mc_match_all,  "multicursor: cursor at every match");
     cmd("mc_skip",       cmd_mc_skip,       "multicursor: skip current cursor");
     cmd("mc_jump_next",  cmd_mc_jump_next,  "multicursor: jump to next cursor");
     cmd("mc_jump_prev",  cmd_mc_jump_prev,  "multicursor: jump to previous cursor");
@@ -778,6 +834,7 @@ static int multicursor_init(void) {
     mapn("'s", kb_mc_sync_toggle,    "multicursor: toggle synced edits");
     mapn("'n", kb_mc_add_next_match, "multicursor: cursor at next match");
     mapn("'p", kb_mc_add_prev_match, "multicursor: cursor at previous match");
+    mapn("'*", kb_mc_match_all,      "multicursor: cursor at every match");
 
     mapn("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
     mapn("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
@@ -785,11 +842,14 @@ static int multicursor_init(void) {
     mapi("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
 
     mapn("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match");
+    mapn("<M-n>", kb_mc_match_all,      "multicursor: cursor at every match");
 
     /* In VISUAL these match the selected text and drop back to NORMAL. */
     mapv("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match of selection");
+    mapv("<M-n>", kb_mc_match_all,      "multicursor: cursor at every match of selection");
     mapv("'n",    kb_mc_add_next_match, "multicursor: cursor at next match of selection");
     mapv("'p",    kb_mc_add_prev_match, "multicursor: cursor at previous match of selection");
+    mapv("'*",    kb_mc_match_all,      "multicursor: cursor at every match of selection");
 
     mapn("Q",     kb_mc_skip,           "multicursor: skip cursor / cycle to next");
 

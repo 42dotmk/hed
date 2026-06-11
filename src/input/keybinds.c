@@ -57,6 +57,9 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         case KEY_ARROW_RIGHT: named = "Right"; break;
         case KEY_HOME:        named = "Home";  break;
         case KEY_END:         named = "End";   break;
+        case KEY_PAGE_UP:     named = "PageUp";   break;
+        case KEY_PAGE_DOWN:   named = "PageDown"; break;
+        case KEY_DELETE:      named = "Del";   break;
         }
         if (named) {
             snprintf(buf, bufsize, "%s%s>", prefix, named);
@@ -107,6 +110,12 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
     } else if (key >= 1 && key <= 26) {
         /* Ctrl+letter */
         snprintf(buf, bufsize, "<C-%c>", key + 'a' - 1);
+    } else if (key >= 28 && key <= 31) {
+        /* Ctrl+punctuation control bytes: FS GS RS US. Note most
+         * terminals send Ctrl+/ as 0x1F, i.e. <C-_>. */
+        snprintf(buf, bufsize, "<C-%c>", "\\]^_"[key - 28]);
+    } else if (key == KEY_DELETE) {
+        snprintf(buf, bufsize, "<Del>");
     } else {
         /* Unknown key */
         snprintf(buf, bufsize, "<%d>", key);

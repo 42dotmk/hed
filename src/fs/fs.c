@@ -162,6 +162,7 @@ char *fs_path_detect_filetype(const char *path) {
     if (strcmp(ext, "sh") == 0)                                  return strdup("shell");
     if (strcmp(ext, "md") == 0)                                  return strdup("markdown");
     if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)     return strdup("html");
+    if (strcmp(ext, "cs") == 0 )     							 return strdup("csharp");
 
     return strdup(ext);
 }

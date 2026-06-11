@@ -19,6 +19,7 @@
 #include "lsp/lsp_plugin.h"
 #include "mail/mail.h"
 #include "mail_git_patch/mail_git_patch.h"
+#include "mouse/mouse.h"
 #include "multicursor/multicursor.h"
 #include "open/open.h"
 #include "pickers/pickers.h"
@@ -44,7 +45,9 @@
 #include "whichkey/whichkey.h"
 #include "yazi/yazi.h"
 
-void config_init(void) {
+/* Stock plugin set. 1 = enabled now, 0 = loaded but inactive
+ * (available for runtime swap, e.g. via :keymap). */
+static void config_load_default_plugins(void) {
     plugin_load(&plugin_core,             1);
     plugin_load(&plugin_vim_keybinds,     1);
     plugin_load(&plugin_emacs_keybinds,   0);
@@ -74,6 +77,7 @@ void config_init(void) {
     plugin_load(&plugin_reload,           1);
     plugin_load(&plugin_session,          1);
     plugin_load(&plugin_multicursor,      1);
+    plugin_load(&plugin_mouse,            1);
     plugin_load(&plugin_whichkey,         1);
     plugin_load(&plugin_yazi,             1);
     plugin_load(&plugin_copilot,          1);
@@ -84,25 +88,15 @@ void config_init(void) {
     plugin_load(&plugin_mail,             1);
     plugin_load(&plugin_mail_git_patch,   1);
     plugin_load(&plugin_open,             1);
+}
 
+/* Default settings + leader keybind cluster. Last-write-wins: the
+ * user config runs after this, so anything here can be overridden
+ * by rebinding the same key there. */
+static void config_load_defaults(void) {
     theme_activate("tokyo-night");
     translate_set_default_target("en");
-    mail_set_mbsync_profile("-a");
 
-    mail_add_view("Inbox", "tag:inbox");
-    mail_add_view("Unread", "tag:unread");
-    mail_add_view("Today", "date:today..");
-    mail_add_view("Week", "date:1w..");
-    mail_add_view("Attachments", "tag:attachment");
-    mail_add_view("Contact", "to:contact@codechem.com");
-    mail_add_view("Core", "to:core@codechem.com");
-    mail_set_from("Costa Halicea <costa@codechem.com>");
-    mail_set_query("tag:inbox");
-    
-
-    aishell_set_spawn_cmd("pi");
-    
-    cmapn("mm",    "mail",                  "mail");
     cmapn("  ",    "fzf",                  "find files");
     cmapn(" bb",   "ls",                   "buffer list");
     cmapn(" bo",   "b#",                   "alt buffer");
@@ -121,7 +115,6 @@ void config_init(void) {
     cmapn(" qq",   "q!",                   "quit (force)");
     cmapn(" rm",   "shell make",           "run make");
     cmapn(" rt",   "shell make test",      "run make test");
-    cmapn(" nn",   "shell --skipwait nnn", "open nnn");
     cmapn(" dd",   "e .",                  "open cwd in dired");
     cmapn(" sd",   "rg",                   "ripgrep");
     cmapn(" ss",   "ssearch",              "buffer search");
@@ -131,8 +124,6 @@ void config_init(void) {
     cmapn(" tt",   "tmux_toggle",          "toggle tmux pane");
     cmapn(" tT",   "tmux_kill",            "kill tmux pane");
     cmapn(" gg",   "git",                  "lazygit");
-//    mapn (" gp",   kb_mail_git_patch_prompt, "open :mail-git-patch prompt (Enter for -1 HEAD)");
-    cmapn_ft("mail-message", " ga", "mail-git-am", "apply this patch email via git am");
     cmapn(" tl",   "ln",                   "toggle line numbers");
     cmapn(" wd",   "wclose",               "close window");
     cmapn(" ws",   "split",                "split horizontal");
@@ -162,8 +153,20 @@ void config_init(void) {
     cmapn(" fy",   "yazi",                 "pick file with yazi");
     cmapn(" z",    "scratch",              "scratch buffer");
     cmapn("<C-s>", "shell", "open shell prompt");
-    cmapn(" jh","fzf /home/halicea/probe/hed", "hed dir");
     cmapn(" lt", "translate",          "translate buffer/selection");
     cmapv(" lt", "translate",          "translate selection");
+}
+
+/* Optional user config: ~/.config/hed/config.c (or USER_CONFIG=path).
+ * The Makefile compiles it in when present; it runs after the stock
+ * defaults, so plugin_load and keybinds there are additive and
+ * override defaults via last-write-wins. Declared weak so the build
+ * links cleanly when no user config exists. */
+void config_user_init(void) __attribute__((weak));
+
+void config_init(void) {
+    config_load_default_plugins();
+    config_load_defaults();
+    if (config_user_init) config_user_init();
 }
 #endif
