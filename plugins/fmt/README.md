@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # fmt
 
 `:fmt` runs an external formatter against the current buffer's file

@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # Multicursor
 
 Extra cursors with optional synchronized edits. Add extra cursors and

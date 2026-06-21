@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # shell
 
 `:shell` runs an external command. With no arguments it opens a `!`

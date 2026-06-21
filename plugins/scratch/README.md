@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # scratch
 
 An ephemeral, unnamed buffer always one command away. Useful for

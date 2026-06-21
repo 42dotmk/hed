@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # clipboard
 
 Mirrors yanks into the system clipboard via OSC 52 — the terminal

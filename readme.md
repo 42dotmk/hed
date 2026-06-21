@@ -70,6 +70,21 @@ The extras — portable `fzf`/`ripgrep`, tree-sitter grammars, and
 `copilot-language-server` (for `:copilot login`) — are fetched by the
 one-line `install.sh` above, not by the build.
 
+### Man pages
+
+`make man` generates roff man pages from this README and every
+`plugins/*/README.md` (one per plugin) into `man/man1/` — `hed.1`,
+`hed-tmux.1`, `hed-vim_keybinds.1`, and so on. Requires `pandoc`.
+
+The build bakes that path into the binary, so the `man` plugin can
+open them from inside the editor with `:man hed`, `:man hed-tmux`,
+etc. — no system install needed. To put them on the system `MANPATH`
+(so `man hed` / `apropos hed` work in any shell too):
+
+```zsh
+make install-man        # -> ~/.local/share/man/man1
+```
+
 ---
 
 ## Plugins

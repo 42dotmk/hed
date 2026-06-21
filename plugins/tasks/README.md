@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # tasks
 
 A literate-programming task tracker that lives entirely in markdown.

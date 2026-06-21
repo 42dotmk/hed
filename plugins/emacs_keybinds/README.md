@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # emacs_keybinds
 
 Emacs-flavored keymap. Modeless — the editor stays in INSERT

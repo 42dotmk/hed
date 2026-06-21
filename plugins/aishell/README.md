@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # aishell
 
 Opens an AI assistant (Claude Code, Copilot, etc.) in a dedicated tmux

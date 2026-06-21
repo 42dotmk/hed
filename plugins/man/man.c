@@ -18,10 +18,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* Global helper from buf/buffer.c; not exposed in any header. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
 #define MAN_FILETYPE "man"
+
+/* Absolute path to hed's bundled man pages, baked in at build time (see
+ * makefile MAN_DIR). When set, it's prepended to MANPATH with a trailing
+ * empty entry so man-db still appends the system search path after it —
+ * this is what lets `:man hed-tmux` resolve the in-tree pages. */
+#ifndef HED_MAN_DIR
+#define HED_MAN_DIR ""
+#endif
 
 static int find_man_buffer(const char *title) {
     for (int i = 0; i < (int)arrlen(E.buffers); i++) {
@@ -32,69 +37,6 @@ static int find_man_buffer(const char *title) {
             return i;
     }
     return -1;
-}
-
-/* Run cmd, slurp its stdout. Caller frees *out. Returns 1 if output is
- * non-empty (we don't trust the exit code through a `| col` pipeline). */
-static int run_capture(const char *cmd, char **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    FILE *fp = popen(cmd, "r");
-    if (!fp) return 0;
-
-    size_t cap = 8192, len = 0;
-    char *buf = malloc(cap);
-    if (!buf) { pclose(fp); return 0; }
-
-    char chunk[4096];
-    size_t n;
-    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
-        if (len + n + 1 > cap) {
-            while (cap < len + n + 1) cap *= 2;
-            char *r = realloc(buf, cap);
-            if (!r) { free(buf); pclose(fp); return 0; }
-            buf = r;
-        }
-        memcpy(buf + len, chunk, n);
-        len += n;
-    }
-    pclose(fp);
-    buf[len] = '\0';
-    *out = buf;
-    *out_len = len;
-    return len > 0;
-}
-
-static void insert_lines(Buffer *dst, const char *text, size_t len) {
-    while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r'))
-        len--;
-    size_t start = 0;
-    for (size_t i = 0; i <= len; i++) {
-        if (i == len || text[i] == '\n') {
-            size_t llen = i - start;
-            if (llen && text[start + llen - 1] == '\r') llen--;
-            buf_row_insert_in(dst, dst->num_rows, text + start, llen);
-            start = i + 1;
-        }
-    }
-    if (dst->num_rows == 0)
-        buf_row_insert_in(dst, 0, "", 0);
-}
-
-/* Shell-escape into a fixed buffer; truncates on overflow. */
-static void shell_quote(const char *in, char *out, size_t outsz) {
-    size_t o = 0;
-    if (o + 1 < outsz) out[o++] = '\'';
-    for (const char *p = in; *p && o + 4 < outsz; p++) {
-        if (*p == '\'') {
-            const char *esc = "'\\''";
-            for (int k = 0; k < 4 && o + 1 < outsz; k++) out[o++] = esc[k];
-        } else {
-            out[o++] = *p;
-        }
-    }
-    if (o + 1 < outsz) out[o++] = '\'';
-    out[o] = '\0';
 }
 
 static void open_man_page(const char *topic, const char *section) {
@@ -120,44 +62,48 @@ static void open_man_page(const char *topic, const char *section) {
     if (cols > 200) cols = 200;
 
     char qtopic[256], qsect[32];
-    shell_quote(topic, qtopic, sizeof(qtopic));
+    shell_escape_single(topic, qtopic, sizeof(qtopic));
     if (section && *section)
-        shell_quote(section, qsect, sizeof(qsect));
+        shell_escape_single(section, qsect, sizeof(qsect));
     else
         qsect[0] = '\0';
+
+    /* Prepend hed's bundled man dir to MANPATH (trailing ':' keeps the
+     * system pages reachable) so :man hed-<plugin> finds the in-tree docs. */
+    const char *man_dir = HED_MAN_DIR;
+    char manpath[512];
+    manpath[0] = '\0';
+    if (man_dir[0])
+        snprintf(manpath, sizeof(manpath), "MANPATH='%s:' ", man_dir);
 
     char cmd[1024];
     if (qsect[0])
         snprintf(cmd, sizeof(cmd),
-                 "MANWIDTH=%d MANPAGER=cat man %s %s 2>/dev/null | col -bx",
-                 cols, qsect, qtopic);
+                 "%sMANWIDTH=%d MANPAGER=cat man %s %s 2>/dev/null | col -bx",
+                 manpath, cols, qsect, qtopic);
     else
         snprintf(cmd, sizeof(cmd),
-                 "MANWIDTH=%d MANPAGER=cat man %s 2>/dev/null | col -bx",
-                 cols, qtopic);
+                 "%sMANWIDTH=%d MANPAGER=cat man %s 2>/dev/null | col -bx",
+                 manpath, cols, qtopic);
 
-    char *out = NULL;
-    size_t out_len = 0;
-    if (!run_capture(cmd, &out, &out_len)) {
-        free(out);
+    char **lines = NULL;
+    int lcnt = 0;
+    if (!term_cmd_capture(cmd, &lines, &lcnt) || lcnt == 0) {
+        term_cmd_free(lines, lcnt);
         ed_set_status_message("man: no entry for %s", topic);
         return;
     }
 
     int idx = -1;
-    if (buf_new(NULL, &idx) != ED_OK) {
-        free(out);
+    if (buf_open_readonly(title, MAN_FILETYPE, NULL, 0, &idx) != ED_OK) {
+        term_cmd_free(lines, lcnt);
         ed_set_status_message("man: failed to create buffer");
         return;
     }
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);    buf->title    = strdup(title);
-    free(buf->filename); buf->filename = NULL;
-    free(buf->filetype); buf->filetype = strdup(MAN_FILETYPE);
-    buf->readonly = 1;
-
-    insert_lines(buf, out, out_len);
-    free(out);
+    for (int i = 0; i < lcnt; i++)
+        buf_row_insert_in(buf, buf->num_rows, lines[i], strlen(lines[i]));
+    term_cmd_free(lines, lcnt);
     buf->dirty = 0;
 
     buf_switch(idx);

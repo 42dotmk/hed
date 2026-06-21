@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # git
 
 Launches [lazygit](https://github.com/jesseduffield/lazygit) as a

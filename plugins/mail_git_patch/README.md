@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # mail_git_patch
 
 Turns `git format-patch` output of the cwd repo into a mail-compose

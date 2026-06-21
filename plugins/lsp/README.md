@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # lsp
 
 A minimal Language Server Protocol client. Speaks LSP over a TCP

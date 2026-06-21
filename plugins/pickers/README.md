@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # pickers
 
 fzf-driven views over editor state. Pure UI on top of

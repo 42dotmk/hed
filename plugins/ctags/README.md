@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # ctags
 
 Goto-definition via a [universal-ctags](https://ctags.io/) `tags`

@@ -1,5 +1,3 @@
-← [hed](../../readme.md)
-
 # sed
 
 `:sed <expression>` pipes the active buffer through an external `sed`
