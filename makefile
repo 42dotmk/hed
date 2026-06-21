@@ -56,6 +56,18 @@ TS_LIB_A   := $(VENDOR_BUILD_DIR)/libtree-sitter.a
 TARGET = $(BUILD_DIR)/hed
 TSI    = $(BUILD_DIR)/tsi
 
+# Packaging / system install. PREFIX + DESTDIR follow the GNU/FHS
+# convention so distro packaging (deb/rpm/PKGBUILD/xbps) can stage into
+# $(DESTDIR)$(PREFIX). For an FHS build whose baked-in man path matches
+# where the package installs the pages, build and install like:
+#   make PREFIX=/usr MAN_DIR=/usr/share/man
+#   make install PREFIX=/usr MAN_DIR=/usr/share/man DESTDIR=/path/to/pkgroot
+PREFIX  ?= /usr/local
+DESTDIR ?=
+BINDIR  ?= $(PREFIX)/bin
+MANDIR  ?= $(PREFIX)/share/man
+
+# Dev-convenience symlink location, used by `make install-dev`.
 INSTALL_DIR ?= $(HOME)/.local/bin
 
 # Core sources: everything under src/ except the in-tree plugins subtree.
@@ -99,7 +111,7 @@ endif
 OBJECTS = $(CORE_OBJECTS) $(PLUGIN_OBJECTS) $(EXTRA_PLUGIN_OBJECTS) $(USER_CONFIG_OBJ)
 
 
-.PHONY: all clean distclean run test test_args ts-langs strip_build install uninstall publish fmt tags man install-man
+.PHONY: all clean distclean run test test_args ts-langs strip_build install install-dev uninstall uninstall-dev publish fmt tags man install-man
 
 all: $(TARGET) $(TSI)
 
@@ -148,7 +160,26 @@ $(TSI): ts/ts_lang_install.c
 	$(CC) -Wall -Wextra -O2 -I/usr/include -o $@ $<
 
 
+# FHS install for packaging and system-wide use. Copies the binaries and
+# the pre-generated man pages into $(DESTDIR)$(PREFIX). Does not require
+# pandoc — it ships the committed man/man1/*.1; run `make man` to refresh
+# them first if needed.
+MAN_SRC_DIR = $(if $(MAN_DIR),$(MAN_DIR),man)
 install: $(TARGET) $(TSI)
+	install -Dm755 $(TARGET) $(DESTDIR)$(BINDIR)/hed
+	install -Dm755 $(TSI)    $(DESTDIR)$(BINDIR)/tsi
+	@if ls $(MAN_SRC_DIR)/man1/*.1 >/dev/null 2>&1; then \
+	  install -d $(DESTDIR)$(MANDIR)/man1; \
+	  install -m644 $(MAN_SRC_DIR)/man1/*.1 $(DESTDIR)$(MANDIR)/man1/; \
+	  echo "Installed hed, tsi and man pages -> $(DESTDIR)$(PREFIX)"; \
+	else \
+	  echo "Installed hed and tsi -> $(DESTDIR)$(BINDIR) (no man pages; run 'make man')"; \
+	fi
+
+# Dev convenience: symlink the in-tree build output onto your PATH so
+# rebuilds are picked up without reinstalling. (This was the old behaviour
+# of `make install`.)
+install-dev: $(TARGET) $(TSI)
 	@mkdir -p $(INSTALL_DIR)
 	ln -sf $(abspath $(TARGET)) $(INSTALL_DIR)/hed
 	ln -sf $(abspath $(TSI))    $(INSTALL_DIR)/tsi
@@ -159,7 +190,14 @@ publish: $(TARGET) $(TSI)
 	cp $(TARGET) /usr/local/bin/hed
 	cp $(TSI) /usr/local/bin/tsi
 
+# Remove an FHS install (mirror of `install`).
 uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/hed $(DESTDIR)$(BINDIR)/tsi
+	rm -f $(DESTDIR)$(MANDIR)/man1/hed.1 $(DESTDIR)$(MANDIR)/man1/hed-*.1
+	@echo "Removed hed and tsi from $(DESTDIR)$(PREFIX)"
+
+# Remove the dev-convenience symlinks (mirror of `install-dev`).
+uninstall-dev:
 	rm -f $(INSTALL_DIR)/hed $(INSTALL_DIR)/tsi
 	@echo "Removed hed and tsi symlinks from $(INSTALL_DIR)"
 

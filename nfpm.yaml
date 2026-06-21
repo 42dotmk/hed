@@ -1,0 +1,63 @@
+# nfpm config — builds the hed .deb and .rpm from the compiled binaries.
+# Docs: https://nfpm.goreleaser.com
+#
+# CI invokes this on tag push (see .github/workflows/c-cpp.yml). To build
+# packages locally, compile with a matching man path, then run nfpm:
+#
+#   make clean && make MAN_DIR=/usr/share/man
+#   cp build/hed hed-linux-x86_64 && cp build/tsi tsi-linux-x86_64
+#   VERSION=1.18.1 nfpm package -f nfpm.yaml -p deb -t .
+#   VERSION=1.18.1 nfpm package -f nfpm.yaml -p rpm -t .
+#
+# $VERSION must be the bare semver (no leading "v"); nfpm expands env vars.
+
+name: hed
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: editors
+priority: optional
+maintainer: "Costa Halicea <costa@codechem.com>"
+homepage: https://github.com/42dotmk/hed
+description: |
+  Small, plugin-based terminal editor written in C.
+  Vim-style modal editing by default, with Emacs and VSCode keymaps that
+  swap at runtime. Tree-sitter highlighting (statically linked),
+  ripgrep/fzf pickers, tmux runner panes and OSC 52 clipboard.
+# TODO: the repo has no LICENSE file yet — set this once one is added
+# (deb "License:" / rpm "License:" field). Leaving it empty for now.
+license: ""
+
+contents:
+  - src: ./hed-linux-x86_64
+    dst: /usr/bin/hed
+  - src: ./tsi-linux-x86_64
+    dst: /usr/bin/tsi
+  - src: ./man/man1/*.1
+    dst: /usr/share/man/man1/
+
+# Only libc is a hard dependency — the tree-sitter runtime is statically
+# linked and every external tool is probed at runtime, so fzf/ripgrep/tmux/
+# git/ctags are weak deps (the editor degrades gracefully without them).
+overrides:
+  deb:
+    depends:
+      - libc6
+    recommends:
+      - fzf
+      - ripgrep
+      - git
+    suggests:
+      - tmux
+      - universal-ctags
+      - clang-format
+  rpm:
+    depends:
+      - glibc
+    recommends:
+      - fzf
+      - ripgrep
+      - git
+    suggests:
+      - tmux
+      - ctags
