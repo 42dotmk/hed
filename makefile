@@ -164,7 +164,12 @@ $(TSI): ts/ts_lang_install.c
 # the pre-generated man pages into $(DESTDIR)$(PREFIX). Does not require
 # pandoc — it ships the committed man/man1/*.1; run `make man` to refresh
 # them first if needed.
-MAN_SRC_DIR = $(if $(MAN_DIR),$(MAN_DIR),man)
+#
+# MAN_SRC_DIR is the *source* of the pages (the in-repo man/ tree), kept
+# independent of MAN_DIR (the path baked into the binary): packaging sets
+# MAN_DIR=/usr/share/man for the baked lookup, but the pages are still read
+# from the repo, not from the host's system man dir.
+MAN_SRC_DIR ?= man
 install: $(TARGET) $(TSI)
 	install -Dm755 $(TARGET) $(DESTDIR)$(BINDIR)/hed
 	install -Dm755 $(TSI)    $(DESTDIR)$(BINDIR)/tsi
