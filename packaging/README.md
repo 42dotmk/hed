@@ -43,7 +43,22 @@ Source package for the AUR. Builds from the tagged release and vendors the
 tree-sitter submodule from a local clone. Bump by editing `pkgver`.
 
 ```sh
-cd packaging/arch && makepkg -si
+cd packaging/arch && makepkg -si        # build + install locally
+```
+
+`arch/.SRCINFO` is the committed metadata. Publishing to the AUR is a push
+to your AUR git remote (needs an AUR account with your SSH key registered):
+
+```sh
+# one-time: clone the AUR repo (empty until first push)
+git clone ssh://aur@aur.archlinux.org/hed.git aur-hed
+cp packaging/arch/PKGBUILD packaging/arch/.SRCINFO aur-hed/
+cd aur-hed
+# after any PKGBUILD edit, regenerate metadata on an Arch box:
+#   makepkg --printsrcinfo > .SRCINFO
+git add PKGBUILD .SRCINFO
+git commit -m "hed 1.18.1"
+git push                                 # authenticated as you, via SSH
 ```
 
 ## Void (`void/template`)
@@ -52,6 +67,31 @@ Copy to `srcpkgs/hed/template` in a `void-packages` checkout, fill the
 checksum placeholders with `xgensum -i srcpkgs/hed/template`, then
 `./xbps-src pkg hed`. It pulls tree-sitter as a second distfile (the GitHub
 source tarball omits submodules).
+
+## Hosted APT / YUM repo (GitHub Pages)
+
+`.github/workflows/pages-repo.yml` publishes the release's `.deb`/`.rpm` into
+an APT + YUM repo served from GitHub Pages, so users can `apt`/`dnf install
+hed`. Setup, once:
+
+1. **Settings → Pages → Source: GitHub Actions.**
+2. Add repo secrets `GPG_PRIVATE_KEY` (ASCII-armored) and `GPG_PASSPHRASE`
+   to sign the metadata. Without them the repo publishes **unsigned** (usable
+   with `[trusted=yes]` / `gpgcheck=0`).
+
+It then runs on every published release. Install instructions render at the
+Pages URL (`packaging/repo-index.html`).
+
+## Homebrew tap
+
+Lives in its own repo, [`42dotmk/homebrew-hed`](https://github.com/42dotmk/homebrew-hed):
+
+```sh
+brew tap 42dotmk/hed && brew install hed
+```
+
+Ships the prebuilt linux/x86_64 binary; bump `version` + the two `sha256`
+values in `Formula/hed.rb` when a new tag ships.
 
 ## The tree-sitter submodule
 

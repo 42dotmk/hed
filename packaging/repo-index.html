@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hed package repository</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; }
+  h1 { margin-bottom: 0; }
+  p.sub { color: #666; margin-top: .25rem; }
+  pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; }
+  a { color: #0366d6; }
+</style>
+</head>
+<body>
+<h1>hed</h1>
+<p class="sub">APT &amp; YUM repository for <a href="https://github.com/42dotmk/hed">hed</a>,
+a small plugin-based terminal editor written in C.</p>
+
+<h2>Debian / Ubuntu (APT)</h2>
+<pre><code>curl -fsSL https://42dotmk.github.io/hed/hed-archive-keyring.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hed.gpg
+echo "deb [signed-by=/usr/share/keyrings/hed.gpg] https://42dotmk.github.io/hed/deb ./" \
+  | sudo tee /etc/apt/sources.list.d/hed.list
+sudo apt update &amp;&amp; sudo apt install hed</code></pre>
+
+<h2>Fedora / RHEL (DNF)</h2>
+<pre><code>sudo tee /etc/yum.repos.d/hed.repo &lt;&lt;'EOF'
+[hed]
+name=hed
+baseurl=https://42dotmk.github.io/hed/rpm
+enabled=1
+gpgcheck=1
+gpgkey=https://42dotmk.github.io/hed/hed-archive-keyring.asc
+EOF
+sudo dnf install hed</code></pre>
+
+<p>If the repository is published unsigned (no signing key configured), use
+<code>[trusted=yes]</code> for APT and <code>gpgcheck=0</code> for DNF.</p>
+
+<p>Other install paths — one-line installer, Homebrew tap, Arch (AUR), Void —
+are in the <a href="https://github.com/42dotmk/hed#install-in-10-seconds">project README</a>.</p>
+</body>
+</html>

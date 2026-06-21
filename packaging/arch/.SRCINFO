@@ -1,0 +1,21 @@
+pkgbase = hed
+	pkgdesc = Small, plugin-based terminal editor written in C
+	pkgver = 1.18.1
+	pkgrel = 1
+	url = https://github.com/42dotmk/hed
+	arch = x86_64
+	license = MIT
+	makedepends = git
+	depends = glibc
+	optdepends = fzf: fuzzy file/command pickers
+	optdepends = ripgrep: :rg / :ssearch / :rgword
+	optdepends = tmux: runner pane integration
+	optdepends = git: VCS integration and tree-sitter grammar install
+	optdepends = ctags: :tag / gd symbol navigation
+	optdepends = clang: clang-format for :fmt
+	source = hed::git+https://github.com/42dotmk/hed.git#tag=v1.18.1
+	source = tree-sitter::git+https://github.com/tree-sitter/tree-sitter.git
+	sha256sums = SKIP
+	sha256sums = SKIP
+
+pkgname = hed
