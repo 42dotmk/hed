@@ -10,6 +10,22 @@ char *strdup(const char *s);
  * (0 when s is NULL). The single source of truth for line-ending chomp. */
 size_t str_chomp(char *s);
 
+/* True if `s` begins with `prefix` / ends with `suffix`. NULL-safe: returns
+ * 0 if either argument is NULL. */
+int str_starts_with(const char *s, const char *prefix);
+int str_ends_with(const char *s, const char *suffix);
+
+/* Escape `in` for safe use inside a POSIX shell single-quoted context,
+ * writing the quoted form (including the surrounding quotes) to `out`.
+ * Embedded single quotes are emitted as the '\'' pattern. Always NUL-
+ * terminates; truncates rather than overflowing. The fixed-buffer analogue
+ * of strbuf_append_shell_quoted(). */
+void shell_escape_single(const char *in, char *out, size_t outsz);
+
+/* Parse a non-negative integer from `s`, clamped to [0, 100000]. Returns
+ * `def` when `s` is NULL, empty, or not a number. */
+int parse_int_default(const char *s, int def);
+
 /* Copy input string with leading/trailing ASCII whitespace removed.
  * Returns the number of bytes written to out (excluding NUL). */
 size_t str_trim_whitespace(const char *in, char *out, size_t out_sz);

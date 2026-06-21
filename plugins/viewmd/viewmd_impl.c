@@ -121,8 +121,7 @@ static int viewmd_launch(void) {
     const char *prefix = "VIEWMD_SOCKET=";
     size_t plen = strlen(prefix);
     if (strncmp(line, prefix, plen) == 0) {
-        strncpy(viewmd_socket, line + plen, sizeof(viewmd_socket) - 1);
-        viewmd_socket[sizeof(viewmd_socket) - 1] = '\0';
+        safe_strcpy(viewmd_socket, line + plen, sizeof(viewmd_socket));
         return 1;
     }
 

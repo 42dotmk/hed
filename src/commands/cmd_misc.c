@@ -13,7 +13,7 @@
 #include "utils/fold.h"
 #include "utils/fold_methods.h"
 #include "input/keybinds.h"
-#include "commands/cmd_util.h"
+#include "lib/strutil.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

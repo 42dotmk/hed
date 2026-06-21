@@ -1,7 +1,7 @@
 #include "input/keybinds_builtins.h"
 #include "commands/cmd_misc.h"
 #include "input/command_mode.h"
-#include "commands/cmd_util.h"
+#include "lib/strutil.h"
 #include "commands/commands_ui.h"
 #include "fs/fs.h"
 #include "utils/fold.h"

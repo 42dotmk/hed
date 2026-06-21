@@ -53,6 +53,16 @@ void fs_path_expand_tilde(const char *in, char *out, size_t out_sz);
 /* "$HOME/<name>" into `out`. Falls back to "<name>" if HOME is unset. */
 bool fs_path_home_join(const char *name, char *out, size_t out_sz);
 
+/* Build a "file://<absolute-path>" URI from `path`. A relative path is
+ * resolved against `base_dir` (when non-empty) or the current working
+ * directory. Returns a malloc'd string the caller must free, or NULL on
+ * allocation failure / NULL path. */
+char *fs_path_to_file_uri(const char *path, const char *base_dir);
+
+/* Inverse of fs_path_to_file_uri: returns a pointer past a leading
+ * "file://" prefix, or `uri` unchanged if absent. Does not allocate. */
+const char *fs_uri_to_path(const char *uri);
+
 /* "~/.cache/hed/<encoded-cwd>/<name>", creating the directory.
  * The cwd is encoded by replacing '/' with '%'. */
 bool fs_path_cache_for_cwd(const char *name, char *out, size_t out_sz);

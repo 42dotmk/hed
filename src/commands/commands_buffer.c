@@ -13,7 +13,7 @@
 #include "lib/strutil.h"
 #include "input/picker.h"
 #include "terminal.h"
-#include "commands/cmd_util.h"
+#include "lib/strutil.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>

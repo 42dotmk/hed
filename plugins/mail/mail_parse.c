@@ -1,5 +1,6 @@
 #include "mail_parse.h"
 #include "lib/strbuf.h"
+#include "lib/strutil.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,10 +74,6 @@ static int marker_field(const char *line, const char *key,
     while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '\t')) n--;
     out[n] = '\0';
     return 1;
-}
-
-static int starts_with(const char *s, const char *prefix) {
-    return strncmp(s, prefix, strlen(prefix)) == 0;
 }
 
 static int header_match(const char *line, const char *name,
@@ -341,7 +338,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         const char *line = raw[i] ? raw[i] : "";
 
         /* --- markers ------------------------------------------------- */
-        if (starts_with(line, "\fmessage{")) {
+        if (str_starts_with(line, "\fmessage{")) {
             if (in_message)
                 msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
             in_message       = 1;
@@ -366,7 +363,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         if (strcmp(line, "\fbody{")   == 0) { continue; }
         if (strcmp(line, "\fbody}")   == 0) { continue; }
 
-        if (starts_with(line, "\fpart{")) {
+        if (str_starts_with(line, "\fpart{")) {
             int mode = 0;
             char ct[128] = "";
             marker_field(line, "Content-type:", ct, sizeof(ct), 1);
@@ -385,7 +382,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
             continue;
         }
 
-        if (starts_with(line, "\fattachment{")) {
+        if (str_starts_with(line, "\fattachment{")) {
             memset(&cur_att, 0, sizeof(cur_att));
             char id[16] = "";
             if (marker_field(line, "ID:", id, sizeof(id), 1))

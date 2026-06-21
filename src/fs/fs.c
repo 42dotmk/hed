@@ -136,6 +136,38 @@ bool fs_path_home_join(const char *name, char *out, size_t out_sz) {
     return n > 0 && (size_t)n < out_sz;
 }
 
+char *fs_path_to_file_uri(const char *path, const char *base_dir) {
+    if (!path)
+        return NULL;
+    char cwd[PATH_MAX] = {0};
+    const char *base = NULL;
+    if (path[0] != '/') {
+        if (base_dir && base_dir[0])
+            base = base_dir;
+        else if (fs_getcwd(cwd, sizeof(cwd)))
+            base = cwd;
+    }
+    size_t need = strlen("file://") + strlen(path) + 2; /* '/' + NUL */
+    if (base)
+        need += strlen(base);
+    char *uri = malloc(need);
+    if (!uri)
+        return NULL;
+    if (base)
+        snprintf(uri, need, "file://%s/%s", base, path);
+    else
+        snprintf(uri, need, "file://%s", path);
+    return uri;
+}
+
+const char *fs_uri_to_path(const char *uri) {
+    if (!uri)
+        return NULL;
+    if (strncmp(uri, "file://", 7) == 0)
+        return uri + 7;
+    return uri;
+}
+
 char *fs_path_detect_filetype(const char *path) {
     if (!path)
         return strdup("txt");

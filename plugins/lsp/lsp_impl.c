@@ -104,45 +104,8 @@ static LspServer *lsp_server_for_buffer(Buffer *buf) {
 }
 
 /* Build full document text from buffer rows (not from disk). */
-static char *lsp_build_content(Buffer *buf) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1; /* +1 for '\n' */
-    char  *s   = malloc(total + 1);
-    if (!s) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    return s;
-}
-
 static char *lsp_get_file_uri(const char *filepath) {
-    if (!filepath) return NULL;
-    char cwd[1024] = {0};
-    int have_cwd = (filepath[0] != '/' && fs_getcwd(cwd, sizeof(cwd)));
-    /* "file://" (7) + cwd + "/" + filepath + NUL, plus a little slack. */
-    size_t need = strlen(filepath) + 16;
-    if (have_cwd) need += strlen(cwd);
-    char *uri = malloc(need);
-    if (!uri) return NULL;
-    if (filepath[0] == '/')
-        sprintf(uri, "file://%s", filepath);
-    else if (have_cwd)
-        sprintf(uri, "file://%s/%s", cwd, filepath);
-    else
-        sprintf(uri, "file://%s", filepath);
-    return uri;
-}
-
-/* Strip "file://" prefix from a URI to get a filesystem path. */
-static const char *lsp_uri_to_path(const char *uri) {
-    if (!uri) return NULL;
-    if (strncmp(uri, "file://", 7) == 0) return uri + 7;
-    return uri;
+    return fs_path_to_file_uri(filepath, NULL);
 }
 
 /* -------------------------------------------------- pending request table */
@@ -632,7 +595,7 @@ static void lsp_handle_definition_result(cJSON *result) {
         }
     }
 
-    const char *path = lsp_uri_to_path(uri);
+    const char *path = fs_uri_to_path(uri);
     log_msg("LSP definition: %s:%d:%d", path, line + 1, col + 1);
 
     buf_open_or_switch(path, true);
@@ -728,7 +691,7 @@ void lsp_cmd_diagnostics(void) {
     int total = 0;
     for (ptrdiff_t f = 0; f < arrlen(g_diags); f++) {
         LspDiagFile *df = &g_diags[f];
-        const char  *fp = lsp_uri_to_path(df->uri);
+        const char  *fp = fs_uri_to_path(df->uri);
         for (ptrdiff_t i = 0; i < arrlen(df->items); i++) {
             LspDiag *d = &df->items[i];
             const char *sev = (d->severity == 1) ? "E"
@@ -928,7 +891,7 @@ void lsp_on_buffer_open(Buffer *buf) {
     if (!srv || !srv->initialized) return;
 
     char *uri     = lsp_get_file_uri(buf->filename);
-    char *content = lsp_build_content(buf);
+    char *content = buf_to_text(buf, NULL);
     if (!uri || !content) { free(uri); free(content); return; }
 
     cJSON *params   = cJSON_CreateObject();
@@ -982,7 +945,7 @@ void lsp_on_buffer_changed(Buffer *buf) {
     if (!srv || !srv->initialized) return;
 
     char *uri     = lsp_get_file_uri(buf->filename);
-    char *content = lsp_build_content(buf);
+    char *content = buf_to_text(buf, NULL);
     if (!uri || !content) { free(uri); free(content); return; }
 
     cJSON *params   = cJSON_CreateObject();

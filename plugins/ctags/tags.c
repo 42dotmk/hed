@@ -5,7 +5,7 @@
 #include "buf/buf_helpers.h"
 #include "lib/strbuf.h"
 #include "utils/term_cmd.h"
-#include "commands/cmd_util.h"
+#include "lib/strutil.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

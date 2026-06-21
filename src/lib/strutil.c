@@ -20,6 +20,56 @@ size_t str_chomp(char *s) {
     return n;
 }
 
+int str_starts_with(const char *s, const char *prefix) {
+    if (!s || !prefix)
+        return 0;
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+int str_ends_with(const char *s, const char *suffix) {
+    if (!s || !suffix)
+        return 0;
+    size_t ls = strlen(s), lsuf = strlen(suffix);
+    return lsuf <= ls && memcmp(s + ls - lsuf, suffix, lsuf) == 0;
+}
+
+void shell_escape_single(const char *in, char *out, size_t outsz) {
+    size_t o = 0;
+    if (o < outsz)
+        out[o++] = '\'';
+    for (const char *p = in; *p && o + 4 < outsz; p++) {
+        if (*p == '\'') {
+            /* Emit '\'' pattern */
+            out[o++] = '\'';
+            out[o++] = '\\';
+            out[o++] = '\'';
+            out[o++] = '\'';
+        } else {
+            out[o++] = *p;
+        }
+    }
+    if (o < outsz)
+        out[o++] = '\'';
+    if (o < outsz)
+        out[o] = '\0';
+    else
+        out[outsz - 1] = '\0';
+}
+
+int parse_int_default(const char *s, int def) {
+    if (!s || !*s)
+        return def;
+    char *end = NULL;
+    long v = strtol(s, &end, 10);
+    if (end == s)
+        return def;
+    if (v < 0)
+        v = 0;
+    if (v > 100000)
+        v = 100000;
+    return (int)v;
+}
+
 static int _is_space_char(char c) {
     return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
 }

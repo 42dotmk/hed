@@ -145,21 +145,6 @@ void ts_on_buffer_close(HookBufferEvent *e) {
     ts_state_destroy(e->buf);
 }
 
-static size_t build_source(Buffer *buf, char **out) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    char *s = malloc(total + 1);
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    *out = s;
-    return off;
-}
 
 static void ts_default_base(char *out, size_t out_sz) {
     if (!out || out_sz == 0)
@@ -411,7 +396,7 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
 
     if (!load_lang_dl(lang_name, &st->lang, &st->dl_handle))
         return 0;
-    strncpy(st->lang_name, lang_name, sizeof(st->lang_name) - 1);
+    safe_strcpy(st->lang_name, lang_name, sizeof(st->lang_name));
     st->parser = ts_parser_new();
     if (!ts_parser_set_language(st->parser, st->lang))
         return 0;
@@ -584,7 +569,7 @@ static TSSubLang *get_or_create_sub_lang(TSState *st, const char *lang_name) {
     }
     s = &st->sub_langs[st->num_sub_langs++];
     memset(s, 0, sizeof(*s));
-    strncpy(s->lang_name, lang_name, sizeof(s->lang_name) - 1);
+    safe_strcpy(s->lang_name, lang_name, sizeof(s->lang_name));
 
     if (!load_lang_dl(lang_name, &s->lang, &s->dl_handle)) {
         log_msg("TS: failed to load sub-language '%s'", lang_name);
@@ -628,7 +613,7 @@ static void add_injection(TSState *st, const char *lang_name, uint32_t s,
     }
     TSInjectionRange *ir = &st->injections[st->num_injections++];
     memset(ir, 0, sizeof(*ir));
-    strncpy(ir->lang_name, lang_name, sizeof(ir->lang_name) - 1);
+    safe_strcpy(ir->lang_name, lang_name, sizeof(ir->lang_name));
     ir->start_byte = s;
     ir->end_byte = e;
 }
@@ -710,8 +695,7 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
                 break;
             }
         if (!found) {
-            strncpy(langs[nlangs], ln, 31);
-            langs[nlangs][31] = '\0';
+            safe_strcpy(langs[nlangs], ln, sizeof(langs[nlangs]));
             nlangs++;
         }
     }
@@ -769,8 +753,8 @@ void ts_buffer_reparse(Buffer *buf) {
         return;
     if (st->parsed_dirty == buf->dirty && st->tree)
         return;
-    char *src = NULL;
-    size_t len = build_source(buf, &src);
+    size_t len = 0;
+    char *src = buf_to_text(buf, &len);
     if (!src)
         return;
 

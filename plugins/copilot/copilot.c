@@ -27,20 +27,7 @@ static int  g_enabled   = 1;   /* default on once spawned + signed in */
 /* ----- helpers ----- */
 
 static char *cp_uri_for(const char *filepath) {
-    if (!filepath) return NULL;
-    char  cwd[1024] = {0};
-    char *uri = malloc(strlen(filepath) + strlen(E.cwd) + 32);
-    if (!uri) return NULL;
-    if (filepath[0] == '/') {
-        sprintf(uri, "file://%s", filepath);
-    } else if (E.cwd[0]) {
-        sprintf(uri, "file://%s/%s", E.cwd, filepath);
-    } else if (fs_getcwd(cwd, sizeof(cwd))) {
-        sprintf(uri, "file://%s/%s", cwd, filepath);
-    } else {
-        sprintf(uri, "file://%s", filepath);
-    }
-    return uri;
+    return fs_path_to_file_uri(filepath, E.cwd);
 }
 
 static const char *cp_language_id(Buffer *buf) {
@@ -498,8 +485,7 @@ static void cp_handle_check_status(cJSON *result) {
         int was_signed_in = CP.signed_in;
         CP.signed_in = 1;
         if (user) {
-            strncpy(CP.user_login, user, sizeof(CP.user_login) - 1);
-            CP.user_login[sizeof(CP.user_login) - 1] = '\0';
+            safe_strcpy(CP.user_login, user, sizeof(CP.user_login));
         }
         ed_set_status_message("copilot: signed in as %s",
                               user ? user : "(unknown)");
@@ -521,8 +507,7 @@ static void cp_handle_sign_in_initiate(cJSON *result) {
         ed_set_status_message("copilot: signInInitiate returned no userCode");
         return;
     }
-    strncpy(CP.user_code, code, sizeof(CP.user_code) - 1);
-    CP.user_code[sizeof(CP.user_code) - 1] = '\0';
+    safe_strcpy(CP.user_code, code, sizeof(CP.user_code));
     ed_set_status_message(
         "copilot: open %s and enter code %s, then :copilot login %s",
         uri, code, code);
@@ -536,8 +521,7 @@ static void cp_handle_sign_in_confirm(cJSON *result) {
         int was_signed_in = CP.signed_in;
         CP.signed_in = 1;
         if (user) {
-            strncpy(CP.user_login, user, sizeof(CP.user_login) - 1);
-            CP.user_login[sizeof(CP.user_login) - 1] = '\0';
+            safe_strcpy(CP.user_login, user, sizeof(CP.user_login));
         }
         ed_set_status_message("copilot: signed in as %s",
                               user ? user : "(unknown)");

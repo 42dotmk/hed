@@ -28,7 +28,6 @@
 /* Core modules */
 #include "commands/registry.h"
 #include "commands/cmd_builtins.h"
-#include "commands/cmd_util.h"
 #include "editor.h"
 #include "hook_builtins.h"
 #include "hooks.h"
