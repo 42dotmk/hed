@@ -1,0 +1,53 @@
+# Maintainer: Costa Halicea <costa@codechem.com>
+#
+# Source package for the AUR. Builds hed from the tagged release, vendoring
+# the tree-sitter submodule from a local clone (no network during the
+# submodule step, so the build is reproducible). To bump: change pkgver to
+# the new tag and reset pkgrel=1.
+#
+# A lighter `hed-bin` package (repackaging the prebuilt release binary) is a
+# trivial follow-up if you want to avoid compiling — see the release assets
+# hed-linux-x86_64 / tsi-linux-x86_64.
+
+pkgname=hed
+pkgver=1.18.1
+pkgrel=1
+pkgdesc="Small, plugin-based terminal editor written in C"
+arch=('x86_64')
+url="https://github.com/42dotmk/hed"
+license=('MIT')
+depends=('glibc')
+makedepends=('git')
+optdepends=('fzf: fuzzy file/command pickers'
+            'ripgrep: :rg / :ssearch / :rgword'
+            'tmux: runner pane integration'
+            'git: VCS integration and tree-sitter grammar install'
+            'ctags: :tag / gd symbol navigation'
+            'clang: clang-format for :fmt')
+source=("$pkgname::git+https://github.com/42dotmk/hed.git#tag=v$pkgver"
+        "tree-sitter::git+https://github.com/tree-sitter/tree-sitter.git")
+sha256sums=('SKIP'
+            'SKIP')
+
+prepare() {
+	cd "$srcdir/$pkgname"
+	# Point the vendored submodule at the locally-cloned tree-sitter and
+	# check out the exact pinned commit (.gitmodules records the path).
+	git submodule init
+	git config submodule.vendor/tree-sitter.url "$srcdir/tree-sitter"
+	git -c protocol.file.allow=always submodule update
+}
+
+build() {
+	cd "$srcdir/$pkgname"
+	# PREFIX + MAN_DIR must match so the :man path baked into the binary
+	# resolves the pages installed below.
+	make PREFIX=/usr MAN_DIR=/usr/share/man
+}
+
+package() {
+	cd "$srcdir/$pkgname"
+	make install PREFIX=/usr MAN_DIR=/usr/share/man DESTDIR="$pkgdir"
+	# Arch convention: install the license text under /usr/share/licenses.
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

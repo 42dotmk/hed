@@ -1,0 +1,47 @@
+# Template file for 'hed'
+#
+# Place this at srcpkgs/hed/template inside a void-packages checkout, then:
+#   ./xbps-src pkg hed
+#
+# NOTE: the two checksums below are placeholders. After copying the file in,
+# fill them automatically with:
+#   ./xbps-src update-check hed   # (optional) confirm latest version
+#   xgensum -i srcpkgs/hed/template
+# xgensum downloads the distfiles and writes the real sha256 checksums.
+#
+# The build vendors the tree-sitter submodule from a second distfile because
+# the GitHub source tarball does not include submodules. _ts_commit is the
+# commit recorded in .gitmodules (tree-sitter v0.26.3); bump it together with
+# the submodule when updating.
+
+pkgname=hed
+version=1.18.1
+revision=1
+_ts_commit=cd4b6e2ef996d4baca12caadb78dffc8b55bc869
+build_style=gnu-makefile
+make_build_args="PREFIX=/usr MAN_DIR=/usr/share/man"
+make_install_args="PREFIX=/usr MAN_DIR=/usr/share/man"
+short_desc="Small, plugin-based terminal editor written in C"
+maintainer="Costa Halicea <costa@codechem.com>"
+license="MIT"
+homepage="https://github.com/42dotmk/hed"
+distfiles="https://github.com/42dotmk/hed/archive/refs/tags/v${version}.tar.gz
+ https://github.com/tree-sitter/tree-sitter/archive/${_ts_commit}.tar.gz>tree-sitter-${_ts_commit}.tar.gz"
+checksum="@@FILL_IN_hed_v${version}_sha256@@
+ @@FILL_IN_tree-sitter_${_ts_commit}_sha256@@"
+skip_extraction="tree-sitter-${_ts_commit}.tar.gz"
+
+# Optional runtime tools — the editor degrades gracefully without them.
+# Listed for discoverability; xbps has no soft-dependency mechanism.
+# fzf ripgrep tmux git ctags
+
+post_extract() {
+	# The build expects the tree-sitter submodule at vendor/tree-sitter.
+	mkdir -p vendor/tree-sitter
+	bsdtar -xf "${XBPS_SRCDISTDIR}/tree-sitter-${_ts_commit}.tar.gz" \
+		--strip-components=1 -C vendor/tree-sitter
+}
+
+post_install() {
+	vlicense LICENSE
+}

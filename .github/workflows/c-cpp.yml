@@ -23,10 +23,12 @@ jobs:
       # Single full build (WITH_TREESITTER=1). The treesitter plugin
       # uses dlopen for grammars and weak refs into ts_*, so the binary
       # remains usable even on hosts without grammar .so files.
+      # MAN_DIR=/usr/share/man bakes the FHS man path into the binary so
+      # in-editor `:man` resolves the pages shipped by the deb/rpm.
       - name: build
         run: |
           make clean
-          make
+          make MAN_DIR=/usr/share/man
           cp build/hed hed-linux-x86_64
           cp build/tsi tsi-linux-x86_64
 
@@ -46,7 +48,23 @@ jobs:
             tsi-linux-x86_64
             install.sh
 
-      # Attach the same binaries to a GitHub Release on tag push.
+      # Build .deb and .rpm from the compiled binaries (tag push only).
+      # nfpm reads nfpm.yaml; $VERSION is the tag without its leading "v".
+      - name: build-packages
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' \
+            | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+          export VERSION="${REF_NAME#v}"
+          nfpm package -f nfpm.yaml -p deb -t .
+          nfpm package -f nfpm.yaml -p rpm -t .
+          ls -1 *.deb *.rpm
+
+      # Attach the binaries and the deb/rpm packages to a GitHub Release.
       - name: github-release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -55,4 +73,6 @@ jobs:
             hed-linux-x86_64
             tsi-linux-x86_64
             install.sh
+            *.deb
+            *.rpm
           generate_release_notes: true

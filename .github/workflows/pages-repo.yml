@@ -1,0 +1,107 @@
+name: publish-apt-rpm-repo
+
+# Publishes the release's .deb and .rpm into an APT + YUM repository served
+# from GitHub Pages, so users can `apt`/`dnf install hed`. Runs after a
+# release is published (the build workflow attaches the packages), or
+# manually for a chosen tag.
+#
+# Setup required once:
+#   1. Settings > Pages > Source: "GitHub Actions".
+#   2. (Recommended) add repo secrets GPG_PRIVATE_KEY (ASCII-armored) and
+#      GPG_PASSPHRASE to sign the repo metadata. Without them the repo is
+#      published unsigned and must be added with [trusted=yes] / gpgcheck=0.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.18.1)"
+        required: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-repo
+  cancel-in-progress: true
+
+jobs:
+  build-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install repo tooling
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev createrepo-c gnupg
+
+      - name: fetch packages from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          mkdir -p site/deb/pool site/rpm
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*.deb' -D site/deb/pool
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*.rpm' -D site/rpm
+
+      - name: import signing key
+        id: gpg
+        env:
+          KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "$KEY" | gpg --batch --import
+            gpg --armor --export > site/hed-archive-keyring.asc
+            echo "signing=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "No GPG_PRIVATE_KEY secret — publishing an UNSIGNED repo." >&2
+            echo "signing=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: build APT repo (flat)
+        env:
+          PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          SIGNING: ${{ steps.gpg.outputs.signing }}
+        run: |
+          cd site/deb
+          dpkg-scanpackages --multiversion pool > Packages
+          gzip -9c Packages > Packages.gz
+          apt-ftparchive release . > Release
+          if [ "$SIGNING" = "yes" ]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+              -abs -o Release.gpg Release
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+              --clearsign -o InRelease Release
+          fi
+
+      - name: build YUM repo
+        env:
+          PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          SIGNING: ${{ steps.gpg.outputs.signing }}
+        run: |
+          cd site/rpm
+          createrepo_c .
+          if [ "$SIGNING" = "yes" ]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+              --detach-sign --armor repodata/repomd.xml
+          fi
+
+      - name: landing page
+        run: cp packaging/repo-index.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build-repo
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
