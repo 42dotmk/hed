@@ -19,6 +19,8 @@
 #include "lsp/lsp_plugin.h"
 #include "mail/mail.h"
 #include "mail_git_patch/mail_git_patch.h"
+#include "man/man.h"
+#include "mcp_server/mcp_server.h"
 #include "mouse/mouse.h"
 #include "multicursor/multicursor.h"
 #include "open/open.h"
@@ -87,6 +89,8 @@ static void config_load_default_plugins(void) {
     plugin_load(&plugin_pickers,          1);
     plugin_load(&plugin_mail,             1);
     plugin_load(&plugin_mail_git_patch,   1);
+    plugin_load(&plugin_man,              1);
+    plugin_load(&plugin_mcp_server,       1);
     plugin_load(&plugin_open,             1);
 }
 
@@ -111,6 +115,7 @@ static void config_load_defaults(void) {
     cmapn(" fs",   "w",                    "save file");
     cmapn(" fc",   "c",                    "find commands");
     cmapn(" fm",   "keybinds",             "find keybinds");
+    cmapn(" hm",   "man",                  "man pages");
     cmapn(" cf",   "fmt",                  "format code");
     cmapn(" qq",   "q!",                   "quit (force)");
     cmapn(" rm",   "shell make",           "run make");

@@ -9,3 +9,4 @@ tags
 /lsp-servers
 test/test_textobj
 test/test_input
+.understand-anything/
