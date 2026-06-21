@@ -449,16 +449,16 @@ static void lsp_completion_pick(int idx, const char *item, void *user) {
     if (cur_cx > (int)row->chars.len) cur_cx = (int)row->chars.len;
 
     /* Splice: chars[0..word_cx) + insert + chars[cur_cx..len). Done via
-     * a new SizedStr to avoid an N-call delete/insert loop. */
+     * a new StrBuf to avoid an N-call delete/insert loop. */
     const char *ins   = ctx->insert[idx];
     size_t      ilen  = strlen(ins);
     size_t      tail  = row->chars.len - (size_t)cur_cx;
-    SizedStr    fresh = sstr_new();
-    sstr_reserve(&fresh, (size_t)word_cx + ilen + tail);
-    sstr_append(&fresh, row->chars.data, (size_t)word_cx);
-    sstr_append(&fresh, ins, ilen);
-    sstr_append(&fresh, row->chars.data + cur_cx, tail);
-    sstr_free(&row->chars);
+    StrBuf    fresh = strbuf_new();
+    strbuf_reserve(&fresh, (size_t)word_cx + ilen + tail);
+    strbuf_append(&fresh, row->chars.data, (size_t)word_cx);
+    strbuf_append(&fresh, ins, ilen);
+    strbuf_append(&fresh, row->chars.data + cur_cx, tail);
+    strbuf_free(&row->chars);
     row->chars = fresh;
     buf_row_update(row);
 

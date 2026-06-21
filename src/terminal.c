@@ -168,7 +168,7 @@ EdError buf_save_in(Buffer *buf) {
 static inline void ab_append_ch(Abuf *ab, char c) { ab_append(ab, &c, 1); }
 
 static int window_gutter_width(const Window *win, int view_rows);
-static int render_cols_ss(const SizedStr *r);
+static int render_cols_ss(const StrBuf *r);
 
 /* Append EOL virtual-text marks for `filerow` to `ab`, clipped to
  * `avail` render columns. Uses byte-count == column-count clipping —
@@ -407,10 +407,10 @@ int window_screen_to_buffer(const Window *win, int srow, int scol,
 
 /* UTF-8 helpers for render slicing: use wcwidth() for proper wide char support
  */
-static int render_cols_ss(const SizedStr *r) {
+static int render_cols_ss(const StrBuf *r) {
     return utf8_display_width(r->data, r->len);
 }
-static void render_slice_ss(const SizedStr *r, int start_col, int want_cols,
+static void render_slice_ss(const StrBuf *r, int start_col, int want_cols,
                             int *out_start, int *out_len) {
     utf8_slice_by_columns(r->data, r->len, start_col, want_cols, out_start,
                           out_len);

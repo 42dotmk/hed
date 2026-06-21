@@ -2,7 +2,7 @@
 #define HED_VIRTUAL_TEXT_H
 
 #include <stddef.h>
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 typedef struct Buffer Buffer;
 
@@ -20,7 +20,7 @@ typedef struct {
     int          ns_id;
     int          line;        /* buffer row index */
     VtPlacement  place;
-    SizedStr     text;        /* owned by the table */
+    StrBuf     text;        /* owned by the table */
     const char  *sgr;         /* borrowed; expected to point at a Theme
                                  literal or other static SGR string */
     int          priority;

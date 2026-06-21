@@ -152,7 +152,7 @@ void cmd_registers(const char *args) {
                               '5', '6', '7', '8', '9', ':'};
 
     for (size_t i = 0; i < sizeof(regs_list); i++) {
-        const SizedStr *s = regs_get(regs_list[i]);
+        const StrBuf *s = regs_get(regs_list[i]);
         if (!s)
             continue;
         int wrote =
@@ -168,7 +168,7 @@ void cmd_registers(const char *args) {
 
     /* named registers */
     for (char c = 'a'; c <= 'z'; c++) {
-        const SizedStr *s = regs_get(c);
+        const StrBuf *s = regs_get(c);
         if (!s || s->len == 0)
             continue;
         int wrote =
@@ -194,7 +194,7 @@ void cmd_put(const char *args) {
         if (*args)
             reg = *args;
     }
-    const SizedStr *s = regs_get(reg);
+    const StrBuf *s = regs_get(reg);
     if (!s || s->len == 0) {
         ed_set_status_message("Register %c empty", reg);
         return;
@@ -225,7 +225,7 @@ void cmd_redo(const char *args) {
 void cmd_repeat(const char *args) {
     (void)args;
     /* Get the last executed keybind sequence from '.' register */
-    const SizedStr *dot_reg = regs_get('.');
+    const StrBuf *dot_reg = regs_get('.');
     if (!dot_reg || !dot_reg->data || dot_reg->len == 0) {
         ed_set_status_message("No previous command to repeat");
         return;

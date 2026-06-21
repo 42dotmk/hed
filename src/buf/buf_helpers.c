@@ -348,7 +348,7 @@ void buf_join_lines(void) {
 
     /* Optional space insertion at end of current line */
     if (need_space) {
-        sstr_append_char(&current->chars, ' ');
+        strbuf_append_char(&current->chars, ' ');
         buf_row_update(current);
     }
 
@@ -412,7 +412,7 @@ void buf_indent_line(void) {
 
     /* Insert TAB_STOP spaces at the beginning */
     for (int i = 0; i < TAB_STOP; i++) {
-        sstr_insert_char(&row->chars, 0, ' ');
+        strbuf_insert_char(&row->chars, 0, ' ');
     }
 
     buf_row_update(row);
@@ -446,7 +446,7 @@ void buf_unindent_line(void) {
     }
 
     for (int i = 0; i < spaces_to_remove; i++) {
-        sstr_delete_char(&row->chars, 0);
+        strbuf_delete_char(&row->chars, 0);
     }
 
     buf_row_update(row);
@@ -504,14 +504,14 @@ void buf_toggle_comment(void) {
     if (is_commented) {
         /* Remove comment */
         for (int i = 0; i < comment_len; i++) {
-            sstr_delete_char(&row->chars, 0);
+            strbuf_delete_char(&row->chars, 0);
         }
         win->cursor.x -= comment_len;
         if (win->cursor.x < 0)
             win->cursor.x = 0;
     } else {
         for (int i = comment_len - 1; i >= 0; i--) {
-            sstr_insert_char(&row->chars, 0, comment[i]);
+            strbuf_insert_char(&row->chars, 0, comment[i]);
         }
         win->cursor.x += comment_len;
     }
@@ -540,7 +540,7 @@ void buf_goto_line(int line_num) {
     win->cursor.x = 0;
 }
 
-int buf_get_line_under_cursor(SizedStr *out) {
+int buf_get_line_under_cursor(StrBuf *out) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
@@ -549,13 +549,13 @@ int buf_get_line_under_cursor(SizedStr *out) {
     if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
-    sstr_free(out);
-    *out = sstr_from(row->chars.data + sel.start.col,
+    strbuf_free(out);
+    *out = strbuf_from(row->chars.data + sel.start.col,
                      (size_t)(sel.end.col - sel.start.col));
     return 1;
 }
 
-int buf_get_word_under_cursor(SizedStr *out) {
+int buf_get_word_under_cursor(StrBuf *out) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
@@ -577,8 +577,8 @@ int buf_get_word_under_cursor(SizedStr *out) {
     if (!textobj_word(buf, win->cursor.y, cx, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
-    sstr_free(out);
-    *out = sstr_from(row->chars.data + sel.start.col,
+    strbuf_free(out);
+    *out = strbuf_from(row->chars.data + sel.start.col,
                      (size_t)(sel.end.col - sel.start.col));
     return 1;
 }
@@ -612,7 +612,7 @@ static int parse_number_slice(const char *start, size_t len) {
     return atoi(tmp);
 }
 
-static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {
+static void strip_path_position(StrBuf *path, int *out_line, int *out_col) {
     if (out_line)
         *out_line = 0;
     if (out_col)
@@ -661,7 +661,7 @@ static void strip_path_position(SizedStr *path, int *out_line, int *out_col) {
     }
 }
 
-int buf_get_path_under_cursor(SizedStr *out, int *out_line, int *out_col) {
+int buf_get_path_under_cursor(StrBuf *out, int *out_line, int *out_col) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
@@ -707,23 +707,23 @@ int buf_get_path_under_cursor(SizedStr *out, int *out_line, int *out_col) {
     if (end <= start)
         return 0;
 
-    sstr_free(out);
-    *out = sstr_from(s + start, (size_t)(end - start));
+    strbuf_free(out);
+    *out = strbuf_from(s + start, (size_t)(end - start));
     if (!out->data || out->len == 0) {
-        sstr_free(out);
+        strbuf_free(out);
         return 0;
     }
 
     strip_path_position(out, out_line, out_col);
     if (!out->data || out->len == 0) {
-        sstr_free(out);
+        strbuf_free(out);
         return 0;
     }
 
     return 1;
 }
 
-int buf_get_paragraph_under_cursor(SizedStr *out) {
+int buf_get_paragraph_under_cursor(StrBuf *out) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
@@ -731,8 +731,8 @@ int buf_get_paragraph_under_cursor(SizedStr *out) {
     TextSelection sel;
     if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
         return 0;
-    sstr_free(out);
-    *out = sstr_new();
+    strbuf_free(out);
+    *out = strbuf_new();
     for (int y = sel.start.line; y <= sel.end.line; y++) {
         Row *r = &buf->rows[y];
         int start_col = (y == sel.start.line) ? sel.start.col : 0;
@@ -742,11 +742,11 @@ int buf_get_paragraph_under_cursor(SizedStr *out) {
         if (end_col > (int)r->chars.len)
             end_col = (int)r->chars.len;
         if (end_col > start_col) {
-            sstr_append(out, r->chars.data + start_col,
+            strbuf_append(out, r->chars.data + start_col,
                         (size_t)(end_col - start_col));
         }
         if (y != sel.end.line)
-            sstr_append_char(out, '\n');
+            strbuf_append_char(out, '\n');
     }
     return 1;
 }
@@ -830,11 +830,11 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
             lrx = 0;
         if (lrx > (int)last->chars.len)
             lrx = (int)last->chars.len;
-        SizedStr tail =
-            sstr_from(last->chars.data + lrx, last->chars.len - lrx);
+        StrBuf tail =
+            strbuf_from(last->chars.data + lrx, last->chars.len - lrx);
         buf_row_del_in(buf, sy + 1);
         buf_row_append_in(buf, first, &tail);
-        sstr_free(&tail);
+        strbuf_free(&tail);
         win->cursor.y = sy;
         win->cursor.x = sx;
     }
@@ -1303,15 +1303,15 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
                 /* Multiple lines: split current line and insert between */
                 /* Save text after cursor */
                 undo_record_replace(buf, at_line);
-                SizedStr rest = sstr_new();
+                StrBuf rest = strbuf_new();
                 if (insert_col < (int)r->chars.len) {
-                    sstr_append(&rest, r->chars.data + insert_col,
+                    strbuf_append(&rest, r->chars.data + insert_col,
                                r->chars.len - (size_t)insert_col);
                     r->chars.len = (size_t)insert_col;
                 }
 
                 /* Append first yank row to current line */
-                sstr_append(&r->chars, yd->rows[0].data, yd->rows[0].len);
+                strbuf_append(&r->chars, yd->rows[0].data, yd->rows[0].len);
                 buf_row_update(r);
 
                 /* Insert middle rows as new lines */
@@ -1322,14 +1322,14 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
 
                 /* Insert last row with saved rest */
                 int last_idx = at_line + yd->num_rows - 1;
-                SizedStr last_line = sstr_new();
-                sstr_append(&last_line, yd->rows[yd->num_rows - 1].data,
+                StrBuf last_line = strbuf_new();
+                strbuf_append(&last_line, yd->rows[yd->num_rows - 1].data,
                            yd->rows[yd->num_rows - 1].len);
-                sstr_append(&last_line, rest.data, rest.len);
+                strbuf_append(&last_line, rest.data, rest.len);
                 buf_row_insert_in(buf, last_idx, last_line.data, last_line.len);
 
-                sstr_free(&last_line);
-                sstr_free(&rest);
+                strbuf_free(&last_line);
+                strbuf_free(&rest);
             }
             break;
         }
@@ -1365,7 +1365,7 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
                 if ((int)r->chars.len < insert_col) {
                     undo_record_replace(buf, target_line);
                     while ((int)r->chars.len < insert_col)
-                        sstr_append_char(&r->chars, ' ');
+                        strbuf_append_char(&r->chars, ' ');
                 }
 
                 /* Insert the block segment */

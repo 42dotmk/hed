@@ -294,7 +294,7 @@ static int mc_find_prev(Buffer *buf, const char *q, size_t qlen,
  * On success fills *q (caller frees) plus the query's location in the
  * buffer — (*sy, *sx) is the start, *ex one past the end — and
  * returns 1. Returns 0 with a status message set otherwise. */
-static int mc_query_at_cursor(Buffer *buf, Window *win, SizedStr *q,
+static int mc_query_at_cursor(Buffer *buf, Window *win, StrBuf *q,
                               int *sy, int *sx, int *ex) {
     if (E.mode == MODE_VISUAL) {
         /* The live end of the selection is win->cursor — sel.cursor_*
@@ -317,7 +317,7 @@ static int mc_query_at_cursor(Buffer *buf, Window *win, SizedStr *q,
             ed_set_status_message("multicursor: empty selection");
             return 0;
         }
-        *q = sstr_from(row->chars.data + ax, (size_t)(sel_end - ax));
+        *q = strbuf_from(row->chars.data + ax, (size_t)(sel_end - ax));
         *sy = ay;
         *sx = ax;
         *ex = sel_end;
@@ -326,7 +326,7 @@ static int mc_query_at_cursor(Buffer *buf, Window *win, SizedStr *q,
 
     if (!buf_get_word_under_cursor(q) || q->len == 0) {
         ed_set_status_message("multicursor: no word under cursor");
-        sstr_free(q);
+        strbuf_free(q);
         return 0;
     }
     Row *row = &buf->rows[win->cursor.y];
@@ -347,9 +347,9 @@ static int mc_query_at_cursor(Buffer *buf, Window *win, SizedStr *q,
 
 /* Mirror the term into E.search_query so `n` and `:ssearch` reuse
  * the same word picker semantics as `*` would. */
-static void mc_seed_search(const SizedStr *q) {
-    sstr_free(&E.search_query);
-    E.search_query = sstr_from(q->data, q->len);
+static void mc_seed_search(const StrBuf *q) {
+    strbuf_free(&E.search_query);
+    E.search_query = strbuf_from(q->data, q->len);
     E.search_is_regex = 0;
 }
 
@@ -398,7 +398,7 @@ static void kb_mc_add_next_match(void) {
      * cursor, or it would land where the cursor was long ago. */
     buf_cursor_sync_from_window(buf);
 
-    SizedStr q = {0};
+    StrBuf q = {0};
     int sy, sx, ex;
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
 
@@ -407,12 +407,12 @@ static void kb_mc_add_next_match(void) {
     int my, mx;
     if (!mc_find_next(buf, q.data, q.len, sy, ex, &my, &mx)) {
         ed_set_status_message("multicursor: no more matches");
-        sstr_free(&q);
+        strbuf_free(&q);
         return;
     }
 
     mc_seed_search(&q);
-    sstr_free(&q);
+    strbuf_free(&q);
     mc_activate_match(buf, win, my, mx);
 }
 
@@ -425,7 +425,7 @@ static void kb_mc_add_prev_match(void) {
     if (buf->num_rows == 0) return;
     buf_cursor_sync_from_window(buf);
 
-    SizedStr q = {0};
+    StrBuf q = {0};
     int sy, sx, ex;
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
     (void)ex;
@@ -435,12 +435,12 @@ static void kb_mc_add_prev_match(void) {
     int my, mx;
     if (!mc_find_prev(buf, q.data, q.len, sy, sx, &my, &mx)) {
         ed_set_status_message("multicursor: no more matches");
-        sstr_free(&q);
+        strbuf_free(&q);
         return;
     }
 
     mc_seed_search(&q);
-    sstr_free(&q);
+    strbuf_free(&q);
     mc_activate_match(buf, win, my, mx);
 }
 
@@ -456,7 +456,7 @@ static void kb_mc_match_all(void) {
     if (buf->num_rows == 0) return;
     buf_cursor_sync_from_window(buf);
 
-    SizedStr q = {0};
+    StrBuf q = {0};
     int sy, sx, ex;
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
     (void)ex;
@@ -481,12 +481,12 @@ static void kb_mc_match_all(void) {
     if (n == 0) { /* can't happen — the query was read out of the buffer */
         ed_set_status_message("multicursor: no matches");
         arrfree(matches);
-        sstr_free(&q);
+        strbuf_free(&q);
         return;
     }
 
     mc_seed_search(&q);
-    sstr_free(&q);
+    strbuf_free(&q);
 
     /* Active match: the occurrence the query came from. If overlap
      * skipping ate that exact start position, fall back to the first

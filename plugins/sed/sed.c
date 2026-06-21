@@ -31,17 +31,17 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
     }
 
     /* 3. Build `printf '%s' <content> | sed <expr> 2>&1`, shell-quoting
-     *    both arguments into a growable SizedStr (no fixed bound). */
-    SizedStr cmd = sstr_new();
-    sstr_append(&cmd, "printf '%s' ", 12);
-    sstr_append_shell_quoted(&cmd, input);
-    sstr_append(&cmd, " | sed ", 7);
-    sstr_append_shell_quoted(&cmd, sed_expr);
-    sstr_append(&cmd, " 2>&1", 5);
+     *    both arguments into a growable StrBuf (no fixed bound). */
+    StrBuf cmd = strbuf_new();
+    strbuf_append(&cmd, "printf '%s' ", 12);
+    strbuf_append_shell_quoted(&cmd, input);
+    strbuf_append(&cmd, " | sed ", 7);
+    strbuf_append_shell_quoted(&cmd, sed_expr);
+    strbuf_append(&cmd, " 2>&1", 5);
     free(input); /* Don't need original input anymore */
 
-    char *cmd_str = sstr_to_cstr(&cmd);
-    sstr_free(&cmd);
+    char *cmd_str = strbuf_to_cstr(&cmd);
+    strbuf_free(&cmd);
     if (!cmd_str) {
         ed_set_status_message("sed: memory allocation failed");
         return ED_ERR_NOMEM;

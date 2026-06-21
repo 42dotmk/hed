@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #include "lib/path_limits.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "lib/strutil.h"
 
 /* =====================================================================
@@ -56,15 +56,15 @@ static const char *fs__find_last_sep(const char *path) {
     return slash;
 }
 
-bool fs_path_dirname(const char *path, SizedStr *out) {
+bool fs_path_dirname(const char *path, StrBuf *out) {
     if (!path || !out)
         return false;
     const char *sep = fs__find_last_sep(path);
     if (!sep)
         return false;
     size_t len = (size_t)(sep - path);
-    sstr_free(out);
-    *out = sstr_from(path, len);
+    strbuf_free(out);
+    *out = strbuf_from(path, len);
     return true;
 }
 

@@ -22,7 +22,7 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
         return NULL;
     }
 
-    SizedStr result = sstr_new();
+    StrBuf result = strbuf_new();
 
     /* Serialize based on type */
     switch (yd->type) {
@@ -30,24 +30,24 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
         case SEL_VISUAL_LINE:
             /* Join rows with newlines */
             for (int i = 0; i < yd->num_rows; i++) {
-                sstr_append(&result, yd->rows[i].data, yd->rows[i].len);
+                strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
                 if (i < yd->num_rows - 1) {
-                    sstr_append_char(&result, '\n');
+                    strbuf_append_char(&result, '\n');
                 }
             }
             /* Trailing newline marks the yank as line-wise so paste
              * inserts as new lines (matches vim yy/p semantics). */
             if (yd->type == SEL_VISUAL_LINE) {
-                sstr_append_char(&result, '\n');
+                strbuf_append_char(&result, '\n');
             }
             break;
 
         case SEL_VISUAL_BLOCK:
             /* Join rows with newlines (preserving block structure) */
             for (int i = 0; i < yd->num_rows; i++) {
-                sstr_append(&result, yd->rows[i].data, yd->rows[i].len);
+                strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
                 if (i < yd->num_rows - 1) {
-                    sstr_append_char(&result, '\n');
+                    strbuf_append_char(&result, '\n');
                 }
             }
             break;
@@ -63,7 +63,7 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
         memcpy(data, result.data, result.len);
         data[result.len] = '\0';
     }
-    sstr_free(&result);
+    strbuf_free(&result);
     return data;
 }
 
@@ -71,7 +71,7 @@ void yank_data_free(YankData *yd) {
     if (!yd) return;
     if (yd->rows) {
         for (int i = 0; i < yd->num_rows; i++) {
-            sstr_free(&yd->rows[i]);
+            strbuf_free(&yd->rows[i]);
         }
         free(yd->rows);
     }
@@ -98,7 +98,7 @@ YankData yank_data_new(Buffer *buf, const TextSelection *sel) {
     YankData yd = {
         .type = sel->type,
         .num_rows = num_rows,
-        .rows = calloc((size_t)num_rows, sizeof(SizedStr))
+        .rows = calloc((size_t)num_rows, sizeof(StrBuf))
     };
 
     switch (sel->type) {
@@ -116,7 +116,7 @@ YankData yank_data_new(Buffer *buf, const TextSelection *sel) {
 
                 if (end_col > start_col) {
                     int idx = y - sy;
-                    sstr_append(&yd.rows[idx], r->chars.data + start_col,
+                    strbuf_append(&yd.rows[idx], r->chars.data + start_col,
                                (size_t)(end_col - start_col));
                 }
             }
@@ -137,7 +137,7 @@ YankData yank_data_new(Buffer *buf, const TextSelection *sel) {
 
                 int idx = y - sy;
                 if (end_col > start_col) {
-                    sstr_append(&yd.rows[idx], r->chars.data + start_col,
+                    strbuf_append(&yd.rows[idx], r->chars.data + start_col,
                                (size_t)(end_col - start_col));
                 }
                 /* For block mode, rows can be empty if the line is shorter */
@@ -192,7 +192,7 @@ EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
     if (ey >= buf->num_rows) ey = buf->num_rows - 1;
     if (sy > ey) return ED_ERR_INVALID_ARG;
 
-    SizedStr out = sstr_new();
+    StrBuf out = strbuf_new();
     for (int y = sy; y <= ey; y++) {
         Row *r = &buf->rows[y];
         int c0 = buf_row_rx_to_cx(r, start_rx);
@@ -200,14 +200,14 @@ EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
         if (c0 > (int)r->chars.len) c0 = (int)r->chars.len;
         if (c1 > (int)r->chars.len) c1 = (int)r->chars.len;
         if (c1 > c0)
-            sstr_append(&out, r->chars.data + c0, (size_t)(c1 - c0));
+            strbuf_append(&out, r->chars.data + c0, (size_t)(c1 - c0));
         if (y < ey)
-            sstr_append_char(&out, '\n');
+            strbuf_append_char(&out, '\n');
     }
 
     last_yank_was_block = true;
     regs_set_yank_typed(out.data, out.len, REG_BLOCKWISE);
-    sstr_free(&out);
+    strbuf_free(&out);
     return ED_OK;
 }
 
@@ -222,7 +222,7 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
         return ED_ERR_BUFFER_READONLY;
     }
 
-    const SizedStr *reg = regs_get(reg_name);
+    const StrBuf *reg = regs_get(reg_name);
     if (!reg || reg->len == 0) {
         return ED_OK; /* Nothing to paste */
     }
@@ -240,7 +240,7 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     if (st == SEL_VISUAL_LINE && len > 0 && reg->data[len - 1] == '\n')
         len--;
 
-    /* Split the register text into one SizedStr per line. */
+    /* Split the register text into one StrBuf per line. */
     int num_rows = 1;
     for (size_t i = 0; i < len; i++)
         if (reg->data[i] == '\n') num_rows++;
@@ -248,7 +248,7 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     YankData yd = {
         .type = st,
         .num_rows = num_rows,
-        .rows = calloc((size_t)num_rows, sizeof(SizedStr)),
+        .rows = calloc((size_t)num_rows, sizeof(StrBuf)),
     };
     if (!yd.rows) return ED_ERR_NOMEM;
 
@@ -256,7 +256,7 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     int idx = 0;
     for (size_t i = 0; i <= len; i++) {
         if (i == len || reg->data[i] == '\n') {
-            yd.rows[idx++] = sstr_from(reg->data + start, i - start);
+            yd.rows[idx++] = strbuf_from(reg->data + start, i - start);
             start = i + 1;
         }
     }

@@ -22,7 +22,7 @@
 #include <stddef.h>
 
 #include "lib/errors.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 /* =====================================================================
  * Paths — pure string operations, no I/O.
@@ -32,7 +32,7 @@
 bool fs_path_is_absolute(const char *path);
 
 /* Directory portion (everything before the final separator). */
-bool fs_path_dirname(const char *path, SizedStr *out);
+bool fs_path_dirname(const char *path, StrBuf *out);
 void fs_path_dirname_buf(const char *path, char *out, size_t out_sz);
 
 /* Basename (everything after the final separator), or `path` itself

@@ -376,7 +376,7 @@ void ed_init_state() {
     E.expand_tab = 0;
     E.tab_size = TAB_STOP;
     E.cwd[0] = '\0';
-    E.search_query = sstr_new();
+    E.search_query = strbuf_new();
     E.search_is_regex = 1;
 }
 

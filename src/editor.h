@@ -7,7 +7,7 @@
 #include "utils/jump_list.h"
 #include "utils/quickfix.h"
 #include "utils/recent_files.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "stb_ds.h"
 #include "ui/window.h"
 
@@ -108,7 +108,7 @@ typedef struct {
 
     char status_msg[4096];
 
-    SizedStr search_query;
+    StrBuf search_query;
     int search_is_regex; /* 1=regex search, 0=literal */
     Qf qf;
     Window *modal_window; /* Current modal window (NULL if none) */

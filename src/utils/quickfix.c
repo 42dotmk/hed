@@ -146,8 +146,8 @@ static void qf_buf_row_insert(Buffer *buf, int at, const char *s, size_t len) {
     memmove(&buf->rows[at + 1], &buf->rows[at],
             sizeof(Row) * (buf->num_rows - at));
 
-    buf->rows[at].chars = sstr_from(s, len);
-    buf->rows[at].render = sstr_new();
+    buf->rows[at].chars = strbuf_from(s, len);
+    buf->rows[at].render = strbuf_new();
     buf_row_update(&buf->rows[at]);
 
     buf->num_rows++;

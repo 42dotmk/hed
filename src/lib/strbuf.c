@@ -1,14 +1,14 @@
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 
-SizedStr sstr_new(void) {
-    SizedStr s = {NULL, 0, 0};
+StrBuf strbuf_new(void) {
+    StrBuf s = {NULL, 0, 0};
     return s;
 }
 
-SizedStr sstr_from(const char *data, size_t len) {
-    SizedStr s = {NULL, 0, 0};
+StrBuf strbuf_from(const char *data, size_t len) {
+    StrBuf s = {NULL, 0, 0};
     if (len > 0) {
         s.data = malloc(len + 1);
         if (!s.data)
@@ -21,11 +21,11 @@ SizedStr sstr_from(const char *data, size_t len) {
     return s;
 }
 
-SizedStr sstr_from_cstr(const char *cstr) {
-    return sstr_from(cstr, strlen(cstr));
+StrBuf strbuf_from_cstr(const char *cstr) {
+    return strbuf_from(cstr, strlen(cstr));
 }
 
-void sstr_free(SizedStr *s) {
+void strbuf_free(StrBuf *s) {
     if (s->data) {
         free(s->data);
         s->data = NULL;
@@ -34,14 +34,14 @@ void sstr_free(SizedStr *s) {
     s->cap = 0;
 }
 
-void sstr_clear(SizedStr *s) {
+void strbuf_clear(StrBuf *s) {
     s->len = 0;
     if (s->data) {
         s->data[0] = '\0';
     }
 }
 
-void sstr_reserve(SizedStr *s, size_t capacity) {
+void strbuf_reserve(StrBuf *s, size_t capacity) {
     if (capacity > s->cap) {
         char *new_data = realloc(s->data, capacity);
         if (!new_data)
@@ -54,44 +54,44 @@ void sstr_reserve(SizedStr *s, size_t capacity) {
     }
 }
 
-void sstr_append_char(SizedStr *s, int c) {
+void strbuf_append_char(StrBuf *s, int c) {
     if (s->len + 2 > s->cap) {
-        sstr_reserve(s, s->cap == 0 ? 32 : s->cap * 2);
+        strbuf_reserve(s, s->cap == 0 ? 32 : s->cap * 2);
     }
     s->data[s->len++] = c;
     s->data[s->len] = '\0';
 }
 
-void sstr_append(SizedStr *s, const char *data, size_t len) {
+void strbuf_append(StrBuf *s, const char *data, size_t len) {
     if (len == 0)
         return;
     if (s->len + len + 1 > s->cap) {
-        sstr_reserve(s, s->len + len + 1);
+        strbuf_reserve(s, s->len + len + 1);
     }
     memcpy(s->data + s->len, data, len);
     s->len += len;
     s->data[s->len] = '\0';
 }
 
-void sstr_insert_char(SizedStr *s, size_t pos, int c) {
+void strbuf_insert_char(StrBuf *s, size_t pos, int c) {
     if (pos > s->len)
         pos = s->len;
     if (s->len + 2 > s->cap) {
-        sstr_reserve(s, s->cap == 0 ? 32 : s->cap * 2);
+        strbuf_reserve(s, s->cap == 0 ? 32 : s->cap * 2);
     }
     memmove(s->data + pos + 1, s->data + pos, s->len - pos + 1);
     s->data[pos] = c;
     s->len++;
 }
 
-void sstr_delete_char(SizedStr *s, size_t pos) {
+void strbuf_delete_char(StrBuf *s, size_t pos) {
     if (pos >= s->len)
         return;
     memmove(s->data + pos, s->data + pos + 1, s->len - pos);
     s->len--;
 }
 
-char *sstr_to_cstr(const SizedStr *s) {
+char *strbuf_to_cstr(const StrBuf *s) {
     if (!s->data)
         return NULL;
     char *result = malloc(s->len + 1);
@@ -102,13 +102,13 @@ char *sstr_to_cstr(const SizedStr *s) {
     return result;
 }
 
-void sstr_append_shell_quoted(SizedStr *s, const char *in) {
-    sstr_append_char(s, '\'');
+void strbuf_append_shell_quoted(StrBuf *s, const char *in) {
+    strbuf_append_char(s, '\'');
     for (const char *p = in; p && *p; p++) {
         if (*p == '\'')
-            sstr_append(s, "'\\''", 4);
+            strbuf_append(s, "'\\''", 4);
         else
-            sstr_append_char(s, *p);
+            strbuf_append_char(s, *p);
     }
-    sstr_append_char(s, '\'');
+    strbuf_append_char(s, '\'');
 }

@@ -158,7 +158,7 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
             } else if (tok == 'n') {
                 ok = sh_append_escaped(&out, &len, &cap, base, strlen(base));
             } else /* 'y' */ {
-                const SizedStr *r = regs_get('"');
+                const StrBuf *r = regs_get('"');
                 const char *ydata = (r && r->data) ? r->data : "";
                 size_t ylen = r ? r->len : 0;
                 ok = sh_append_escaped(&out, &len, &cap, ydata, ylen);
@@ -203,7 +203,7 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
 
     undo_begin(buf, desc);
 
-    SizedStr tail = sstr_from(buf->rows[ey].chars.data + ex,
+    StrBuf tail = strbuf_from(buf->rows[ey].chars.data + ex,
                               buf->rows[ey].chars.len - ex);
 
     {
@@ -222,9 +222,9 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
         const char *s0 = lines[0] ? lines[0] : "";
         size_t s0len = strlen(s0);
         if (s0len > 0) {
-            SizedStr s = sstr_from(s0, s0len);
+            StrBuf s = strbuf_from(s0, s0len);
             buf_row_append_in(buf, &buf->rows[sy], &s);
-            sstr_free(&s);
+            strbuf_free(&s);
         }
         for (int i = 1; i < count; i++) {
             const char *s = lines[i] ? lines[i] : "";
@@ -237,7 +237,7 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
 
     if (tail.len > 0)
         buf_row_append_in(buf, &buf->rows[end_y], &tail);
-    sstr_free(&tail);
+    strbuf_free(&tail);
 
     if (buf->num_rows == 0)
         buf_row_insert_in(buf, 0, "", 0);
@@ -544,7 +544,7 @@ static void shell_kb_visual_to_prompt(void) {
     int blen = 0;
     int cap = (int)sizeof(buf2) - 1;
     for (int i = 0; i < yd.num_rows && blen < cap; i++) {
-        const SizedStr *r = &yd.rows[i];
+        const StrBuf *r = &yd.rows[i];
         if (i > 0) {
             const char *sep = " \\\n";
             for (int k = 0; k < 3 && blen < cap; k++) buf2[blen++] = sep[k];

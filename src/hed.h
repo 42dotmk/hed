@@ -19,7 +19,7 @@
 #include "fs/fs.h"
 #include "lib/log.h"
 #include "lib/safe_string.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "lib/strutil.h"
 #include "lib/theme.h"
 #include "lib/vector.h"

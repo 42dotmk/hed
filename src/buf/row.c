@@ -67,22 +67,22 @@ void buf_row_update(Row *row) {
         if (row->chars.data[j] == '\t')
             tabs++;
 
-    sstr_free(&row->render);
-    row->render = sstr_new();
-    sstr_reserve(&row->render, row->chars.len + tabs * (TAB_STOP - 1) + 1);
+    strbuf_free(&row->render);
+    row->render = strbuf_new();
+    strbuf_reserve(&row->render, row->chars.len + tabs * (TAB_STOP - 1) + 1);
 
     for (size_t j = 0; j < row->chars.len; j++) {
         if (row->chars.data[j] == '\t') {
-            sstr_append_char(&row->render, ' ');
+            strbuf_append_char(&row->render, ' ');
             while (row->render.len % TAB_STOP != 0)
-                sstr_append_char(&row->render, ' ');
+                strbuf_append_char(&row->render, ' ');
         } else {
-            sstr_append_char(&row->render, row->chars.data[j]);
+            strbuf_append_char(&row->render, row->chars.data[j]);
         }
     }
 }
 
 void row_free(Row *row) {
-    sstr_free(&row->chars);
-    sstr_free(&row->render);
+    strbuf_free(&row->chars);
+    strbuf_free(&row->render);
 }

@@ -103,16 +103,16 @@ static void cmd_tmux_panes(const char *args) {
  * Exposed both as a keybind callback and as the `:tmux_send_line`
  * command. Defaults to the runner pane until something else is focused. */
 static void kb_tmux_send_line(void) {
-    SizedStr para = sstr_new();
+    StrBuf para = strbuf_new();
     if (!buf_get_paragraph_under_cursor(&para) || para.len == 0) {
-        sstr_free(&para);
+        strbuf_free(&para);
         ed_set_status_message("tmux: no paragraph to send");
         return;
     }
 
     char *cmd_str = malloc(para.len + 1);
     if (!cmd_str) {
-        sstr_free(&para);
+        strbuf_free(&para);
         ed_set_status_message("tmux: out of memory");
         return;
     }
@@ -122,7 +122,7 @@ static void kb_tmux_send_line(void) {
     tmux_pane_send_focused(cmd_str);
 
     free(cmd_str);
-    sstr_free(&para);
+    strbuf_free(&para);
 }
 
 static void cmd_tmux_send_line(const char *args) {
@@ -154,22 +154,22 @@ static void kb_tmux_send_selection(void) {
         return;
     }
 
-    SizedStr joined = sstr_new();
+    StrBuf joined = strbuf_new();
     for (int i = 0; i < yd.num_rows; i++) {
-        sstr_append(&joined, yd.rows[i].data, yd.rows[i].len);
+        strbuf_append(&joined, yd.rows[i].data, yd.rows[i].len);
         if (i < yd.num_rows - 1)
-            sstr_append_char(&joined, '\n');
+            strbuf_append_char(&joined, '\n');
     }
     yank_data_free(&yd);
 
     if (joined.len == 0) {
-        sstr_free(&joined);
+        strbuf_free(&joined);
         ed_set_status_message("tmux: empty selection");
         return;
     }
 
-    char *cmd_str = sstr_to_cstr(&joined);
-    sstr_free(&joined);
+    char *cmd_str = strbuf_to_cstr(&joined);
+    strbuf_free(&joined);
     if (!cmd_str) {
         ed_set_status_message("tmux: out of memory");
         return;

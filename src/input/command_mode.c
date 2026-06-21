@@ -396,8 +396,8 @@ static void search_on_submit(Prompt *p, const char *line, int len) {
     SearchState *s = p->state;
     Buffer *buf = buf_cur();
     if (!buf) return;
-    sstr_free(&E.search_query);
-    E.search_query    = sstr_from(line, (size_t)len);
+    strbuf_free(&E.search_query);
+    E.search_query    = strbuf_from(line, (size_t)len);
     E.search_is_regex = s->use_regex;
     buf_find_in(buf);
 }

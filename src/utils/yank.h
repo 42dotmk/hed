@@ -3,7 +3,7 @@
 #include "buf/buffer.h"
 #include "buf/textobj.h"
 #include "lib/errors.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 /*
  * Yank Module - Centralized clipboard operations
@@ -25,7 +25,7 @@
 typedef struct YankData {
     SelectionType type;     /* Type of selection (char/line/block) */
     int num_rows;           /* Number of rows in the yank */
-    SizedStr *rows;         /* Array of strings, one per row */
+    StrBuf *rows;         /* Array of strings, one per row */
 } YankData;
 
 

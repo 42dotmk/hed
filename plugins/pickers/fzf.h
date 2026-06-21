@@ -1,7 +1,7 @@
 #ifndef PICKERS_FZF_H
 #define PICKERS_FZF_H
 
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 /* Low-level fzf wrappers. Lives inside the pickers plugin because
  * pickers owns the fzf integration end-to-end.
@@ -48,7 +48,7 @@ void fzf_free(char **lines, int count);
  *     fzf_input_free(&in);
  */
 typedef struct {
-    SizedStr cmd;
+    StrBuf cmd;
     int      ncols;
 } FzfInput;
 

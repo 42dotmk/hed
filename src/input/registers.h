@@ -1,7 +1,7 @@
 #ifndef REGISTERS_H
 #define REGISTERS_H
 
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 /* Simple Vim-like registers */
 
@@ -49,6 +49,6 @@ void regs_set_cmd(const char *data, size_t len);
 void regs_set_dot(const char *data, size_t len);
 
 /* Get register by name: '"', '0', '1'..'9', 'a'..'z', ':', '.' */
-const SizedStr *regs_get(char name);
+const StrBuf *regs_get(char name);
 
 #endif /* REGISTERS_H */

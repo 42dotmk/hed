@@ -38,32 +38,32 @@ int fzf_run(const char *input_cmd, int multi, char ***out_lines,
 
 void fzf_input_init(FzfInput *in, int ncols) {
     in->ncols = ncols < 1 ? 1 : ncols;
-    in->cmd   = sstr_new();
-    sstr_append(&in->cmd, "printf '", 8);
+    in->cmd   = strbuf_new();
+    strbuf_append(&in->cmd, "printf '", 8);
     for (int i = 0; i < in->ncols; i++) {
         if (i)
-            sstr_append_char(&in->cmd, '\t');
-        sstr_append(&in->cmd, "%s", 2);
+            strbuf_append_char(&in->cmd, '\t');
+        strbuf_append(&in->cmd, "%s", 2);
     }
-    sstr_append(&in->cmd, "\\n' ", 4);
+    strbuf_append(&in->cmd, "\\n' ", 4);
 }
 
 void fzf_input_row(FzfInput *in, const char *const *fields) {
     for (int i = 0; i < in->ncols; i++) {
-        sstr_append_shell_quoted(&in->cmd, fields[i] ? fields[i] : "");
-        sstr_append_char(&in->cmd, ' ');
+        strbuf_append_shell_quoted(&in->cmd, fields[i] ? fields[i] : "");
+        strbuf_append_char(&in->cmd, ' ');
     }
 }
 
 const char *fzf_input_cmd(FzfInput *in) {
     /* NUL-terminate without counting the terminator in len, so any
      * further rows overwrite it. */
-    sstr_append_char(&in->cmd, '\0');
+    strbuf_append_char(&in->cmd, '\0');
     in->cmd.len--;
     return in->cmd.data;
 }
 
-void fzf_input_free(FzfInput *in) { sstr_free(&in->cmd); }
+void fzf_input_free(FzfInput *in) { strbuf_free(&in->cmd); }
 
 int fzf_pick_list(const char **items, int count, int multi, char ***out_lines,
                   int *out_count) {

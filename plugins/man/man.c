@@ -192,9 +192,9 @@ static void cmd_man(const char *args) {
 }
 
 static void kb_man_word_under_cursor(void) {
-    SizedStr w = sstr_new();
+    StrBuf w = strbuf_new();
     if (!buf_get_word_under_cursor(&w) || w.len == 0) {
-        sstr_free(&w);
+        strbuf_free(&w);
         ed_set_status_message("man: no word under cursor");
         return;
     }
@@ -202,7 +202,7 @@ static void kb_man_word_under_cursor(void) {
     size_t n = w.len < sizeof(topic) - 1 ? w.len : sizeof(topic) - 1;
     memcpy(topic, w.data, n);
     topic[n] = '\0';
-    sstr_free(&w);
+    strbuf_free(&w);
     open_man_page(topic, NULL);
 }
 

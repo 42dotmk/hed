@@ -1,15 +1,15 @@
 #include "editor.h"
 #include "input/registers.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 typedef struct {
-    SizedStr unnamed;   /* '"' */
-    SizedStr yank0;     /* '0' */
-    SizedStr num[9];    /* '1'..'9' */
-    SizedStr named[26]; /* 'a'..'z' */
-    SizedStr cmd;       /* ':' */
-    SizedStr dot;       /* '.' last executed keybind sequence */
+    StrBuf unnamed;   /* '"' */
+    StrBuf yank0;     /* '0' */
+    StrBuf num[9];    /* '1'..'9' */
+    StrBuf named[26]; /* 'a'..'z' */
+    StrBuf cmd;       /* ':' */
+    StrBuf dot;       /* '.' last executed keybind sequence */
 
     /* Paste type per register, kept in lockstep with the contents above.
      * The unnamed register mirrors whichever register was last written. */
@@ -22,35 +22,35 @@ typedef struct {
 static Registers R;
 extern Ed E;
 
-static void rs_assign(SizedStr *dst, const char *data, size_t len) {
-    sstr_free(dst);
+static void rs_assign(StrBuf *dst, const char *data, size_t len) {
+    strbuf_free(dst);
     if (!data || len == 0) {
-        *dst = sstr_new();
+        *dst = strbuf_new();
     } else {
-        *dst = sstr_from(data, len);
+        *dst = strbuf_from(data, len);
     }
 }
 
 void regs_init(void) {
-    R.unnamed = sstr_new();
-    R.yank0 = sstr_new();
+    R.unnamed = strbuf_new();
+    R.yank0 = strbuf_new();
     for (int i = 0; i < 9; i++)
-        R.num[i] = sstr_new();
+        R.num[i] = strbuf_new();
     for (int i = 0; i < 26; i++)
-        R.named[i] = sstr_new();
-    R.cmd = sstr_new();
-    R.dot = sstr_new();
+        R.named[i] = strbuf_new();
+    R.cmd = strbuf_new();
+    R.dot = strbuf_new();
 }
 
 void regs_free(void) {
-    sstr_free(&R.unnamed);
-    sstr_free(&R.yank0);
+    strbuf_free(&R.unnamed);
+    strbuf_free(&R.yank0);
     for (int i = 0; i < 9; i++)
-        sstr_free(&R.num[i]);
+        strbuf_free(&R.num[i]);
     for (int i = 0; i < 26; i++)
-        sstr_free(&R.named[i]);
-    sstr_free(&R.cmd);
-    sstr_free(&R.dot);
+        strbuf_free(&R.named[i]);
+    strbuf_free(&R.cmd);
+    strbuf_free(&R.dot);
 }
 
 void regs_set_unnamed(const char *data, size_t len) {
@@ -75,13 +75,13 @@ void regs_set_yank(const char *data, size_t len) {
 
 void regs_push_delete_typed(const char *data, size_t len, RegType type) {
     /* Rotate '9' <- '8' <- ... <- '1' (types ride along with contents) */
-    sstr_free(&R.num[8]);
+    strbuf_free(&R.num[8]);
     for (int i = 8; i >= 1; i--) {
         R.num[i] = R.num[i - 1];
         R.t_num[i] = R.t_num[i - 1];
     }
     /* Copy into '1' */
-    R.num[0] = sstr_new();
+    R.num[0] = strbuf_new();
     if (data && len)
         rs_assign(&R.num[0], data, len);
     R.t_num[0] = type;
@@ -114,7 +114,7 @@ void regs_append_named(char name, const char *data, size_t len) {
         return;
 
     int idx = name - 'a';
-    SizedStr *reg = &R.named[idx];
+    StrBuf *reg = &R.named[idx];
 
     /* Calculate new size */
     size_t new_len = reg->len + len;
@@ -134,7 +134,7 @@ void regs_append_named(char name, const char *data, size_t len) {
     new_data[new_len] = '\0';
 
     /* Replace register contents */
-    sstr_free(reg);
+    strbuf_free(reg);
     reg->data = new_data;
     reg->len = new_len;
     reg->cap = new_len + 1;
@@ -148,7 +148,7 @@ void regs_set_dot(const char *data, size_t len) {
     rs_assign(&R.dot, data, len);
 }
 
-const SizedStr *regs_get(char name) {
+const StrBuf *regs_get(char name) {
     if (name == '"')
         return &R.unnamed;
     if (name == '0')

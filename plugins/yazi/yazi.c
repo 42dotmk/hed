@@ -63,15 +63,15 @@ static void cmd_yazi(const char *args) {
     const char *start_arg = (args && *args) ? args
                             : (auto_start[0] ? auto_start : NULL);
 
-    SizedStr cmd = sstr_new();
-    sstr_append(&cmd, "yazi --chooser-file=", 20);
-    sstr_append(&cmd, tmppath, strlen(tmppath));
+    StrBuf cmd = strbuf_new();
+    strbuf_append(&cmd, "yazi --chooser-file=", 20);
+    strbuf_append(&cmd, tmppath, strlen(tmppath));
     if (start_arg) {
-        sstr_append_char(&cmd, ' ');
-        sstr_append_shell_quoted(&cmd, start_arg);
+        strbuf_append_char(&cmd, ' ');
+        strbuf_append_shell_quoted(&cmd, start_arg);
     }
-    char *cmd_str = sstr_to_cstr(&cmd);
-    sstr_free(&cmd);
+    char *cmd_str = strbuf_to_cstr(&cmd);
+    strbuf_free(&cmd);
     if (!cmd_str) {
         ed_set_status_message("yazi: out of memory");
         fs_unlink(tmppath);

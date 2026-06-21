@@ -22,7 +22,7 @@
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 void buf_row_del_in(Buffer *buf, int at);
 void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
-void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
+void buf_row_append_in(Buffer *buf, Row *row, const StrBuf *str);
 void buf_row_del_char_in(Buffer *buf, Row *row, int at);
 
 Buffer *buf_cur(void) {
@@ -680,8 +680,8 @@ void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len) {
     memmove(&buf->rows[at + 1], &buf->rows[at],
             sizeof(Row) * (buf->num_rows - at));
 
-    buf->rows[at].chars = sstr_from(s, len);
-    buf->rows[at].render = sstr_new();
+    buf->rows[at].chars = strbuf_from(s, len);
+    buf->rows[at].render = strbuf_new();
     buf->rows[at].fold_start = false;
     buf->rows[at].fold_end = false;
     buf_row_update(&buf->rows[at]);
@@ -712,18 +712,18 @@ void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c) {
     if (!buf || !row)
         return;
     undo_record_replace(buf, (int)(row - buf->rows));
-    sstr_insert_char(&row->chars, at, c);
+    strbuf_insert_char(&row->chars, at, c);
     buf_row_update(row);
     buf->dirty++;
 }
 
 /* Legacy wrapper removed; use buf_row_insert_char_in */
 
-void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str) {
+void buf_row_append_in(Buffer *buf, Row *row, const StrBuf *str) {
     if (!buf || !row || !str)
         return;
     undo_record_replace(buf, (int)(row - buf->rows));
-    sstr_append(&row->chars, str->data, str->len);
+    strbuf_append(&row->chars, str->data, str->len);
     buf_row_update(row);
     buf->dirty++;
 }
@@ -734,7 +734,7 @@ void buf_row_del_char_in(Buffer *buf, Row *row, int at) {
     if (at < 0 || at >= (int)row->chars.len)
         return;
     undo_record_replace(buf, (int)(row - buf->rows));
-    sstr_delete_char(&row->chars, at);
+    strbuf_delete_char(&row->chars, at);
     buf_row_update(row);
     buf->dirty++;
 }

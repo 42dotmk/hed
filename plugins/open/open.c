@@ -9,14 +9,14 @@
 
 #include "hed.h"
 #include "buf/buf_helpers.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
-static void sstr_cat(SizedStr *s, const char *cstr) {
-    sstr_append(s, cstr, strlen(cstr));
+static void strbuf_cat(StrBuf *s, const char *cstr) {
+    strbuf_append(s, cstr, strlen(cstr));
 }
 
 #if defined(__APPLE__)
@@ -41,7 +41,7 @@ static int is_url_char(unsigned char c) {
 
 /* Extract a URL- or path-like token around the cursor. Falls back to
  * buf_get_path_under_cursor's notion of a path if no URL chars cluster. */
-static int extract_target_under_cursor(SizedStr *out) {
+static int extract_target_under_cursor(StrBuf *out) {
     BUF(buf);
     WIN(win);
     if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows)) return 0;
@@ -77,8 +77,8 @@ static int extract_target_under_cursor(SizedStr *out) {
     }
     if (end <= start) return 0;
 
-    sstr_free(out);
-    *out = sstr_from(s + start, (size_t)(end - start));
+    strbuf_free(out);
+    *out = strbuf_from(s + start, (size_t)(end - start));
     return out->data && out->len > 0;
 }
 
@@ -87,16 +87,16 @@ void open_path(const char *target) {
         ed_set_status_message("open: nothing to open");
         return;
     }
-    SizedStr cmd = sstr_new();
-    sstr_cat(&cmd, OPEN_CMD " ");
-    sstr_append_shell_quoted(&cmd, target);
-    sstr_cat(&cmd, " >/dev/null 2>&1 &");
+    StrBuf cmd = strbuf_new();
+    strbuf_cat(&cmd, OPEN_CMD " ");
+    strbuf_append_shell_quoted(&cmd, target);
+    strbuf_cat(&cmd, " >/dev/null 2>&1 &");
     /* Background — fire and forget; don't block the editor on viewer
      * startup. system() is fine here, no raw-mode dance needed. */
     int rc = system(cmd.data);
     (void)rc;
     ed_set_status_message("open: %s", target);
-    sstr_free(&cmd);
+    strbuf_free(&cmd);
 }
 
 /* --- commands --- */
@@ -107,14 +107,14 @@ static void cmd_open(const char *args) {
         open_path(args);
         return;
     }
-    SizedStr target = sstr_new();
+    StrBuf target = strbuf_new();
     if (!extract_target_under_cursor(&target)) {
         ed_set_status_message("open: no path/URL under cursor");
-        sstr_free(&target);
+        strbuf_free(&target);
         return;
     }
     open_path(target.data);
-    sstr_free(&target);
+    strbuf_free(&target);
 }
 
 static void cmd_open_file(const char *args) {
@@ -136,9 +136,9 @@ static void cmd_open_dir(const char *args) {
         open_path(".");
         return;
     }
-    SizedStr dir = sstr_from(fn, (size_t)(slash - fn));
+    StrBuf dir = strbuf_from(fn, (size_t)(slash - fn));
     open_path(dir.data ? dir.data : ".");
-    sstr_free(&dir);
+    strbuf_free(&dir);
 }
 
 /* --- keybind --- */

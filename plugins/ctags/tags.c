@@ -3,7 +3,7 @@
 #include "lib/log.h"
 #include "editor.h"
 #include "buf/buf_helpers.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "utils/term_cmd.h"
 #include "commands/cmd_util.h"
 #include <ctype.h>
@@ -212,9 +212,9 @@ int goto_tag(const char *tag_name) {
 
     /* If no tag_name provided, get word under cursor */
     if (!tag_name || !*tag_name) {
-        SizedStr word = sstr_new();
+        StrBuf word = strbuf_new();
         if (!buf_get_word_under_cursor(&word) || word.len == 0) {
-            sstr_free(&word);
+            strbuf_free(&word);
             ed_set_status_message(
                 "No tag name provided and no word under cursor");
             return 0;
@@ -225,7 +225,7 @@ int goto_tag(const char *tag_name) {
             copy_len = sizeof(tag_buf) - 1;
         memcpy(tag_buf, word.data, copy_len);
         tag_buf[copy_len] = '\0';
-        sstr_free(&word);
+        strbuf_free(&word);
 
         tag_name = tag_buf;
     }

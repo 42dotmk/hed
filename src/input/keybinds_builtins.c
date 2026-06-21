@@ -769,15 +769,15 @@ void kb_search_next(void) {
 }
 
 void kb_find_under_cursor(void) {
-    SizedStr w = sstr_new();
+    StrBuf w = strbuf_new();
     if (!buf_get_word_under_cursor(&w)) {
-        sstr_free(&w);
+        strbuf_free(&w);
         return;
     }
-    sstr_free(&E.search_query);
-    E.search_query = sstr_from(w.data, w.len);
+    strbuf_free(&E.search_query);
+    E.search_query = strbuf_from(w.data, w.len);
     ed_set_status_message("* %.*s", (int)(w.len > 40 ? 40 : w.len), w.data);
-    sstr_free(&w);
+    strbuf_free(&w);
     jump_save_current();
     buf_find_in(buf_cur());
 }
@@ -801,8 +801,8 @@ void kb_find_selection(void) {
         return;
     }
 
-    sstr_free(&E.search_query);
-    E.search_query = sstr_from(row->chars.data + sx, (size_t)(ex - sx));
+    strbuf_free(&E.search_query);
+    E.search_query = strbuf_from(row->chars.data + sx, (size_t)(ex - sx));
     E.search_is_regex = 0;
 
     kb_visual_escape();
@@ -814,10 +814,10 @@ void kb_find_selection(void) {
 }
 
 void kb_search_file_under_cursor(void) {
-    SizedStr path = sstr_new();
+    StrBuf path = strbuf_new();
     if (!buf_get_path_under_cursor(&path, NULL, NULL) || !path.data ||
         path.len == 0) {
-        sstr_free(&path);
+        strbuf_free(&path);
         ed_set_status_message("gF: no path under cursor");
         return;
     }
@@ -828,23 +828,23 @@ void kb_search_file_under_cursor(void) {
         copy_len = sizeof(query) - 1;
     memcpy(query, path.data, copy_len);
     query[copy_len] = '\0';
-    sstr_free(&path);
+    strbuf_free(&path);
 
     if (!picker_invoke("files", query))
         ed_set_status_message("gF: no files picker installed");
 }
 void kb_open_file_under_cursor(void) {
-    SizedStr path = sstr_new();
+    StrBuf path = strbuf_new();
     int line = 0, col = 0;
     if (!buf_get_path_under_cursor(&path, &line, &col) || !path.data ||
         path.len == 0) {
-        sstr_free(&path);
+        strbuf_free(&path);
         ed_set_status_message("gf: no path under cursor");
         return;
     }
 
     if (path.len >= PATH_MAX) {
-        sstr_free(&path);
+        strbuf_free(&path);
         ed_set_status_message("gf: path too long");
         return;
     }
@@ -870,14 +870,14 @@ void kb_open_file_under_cursor(void) {
     const char *target = expanded;
     if (!fs_path_is_absolute(expanded) && base[0]) {
         if (!fs_path_join(resolved, sizeof(resolved), base, expanded)) {
-            sstr_free(&path);
+            strbuf_free(&path);
             ed_set_status_message("gf: path too long");
             return;
         }
         target = resolved;
     }
 
-    sstr_free(&path);
+    strbuf_free(&path);
     bool found = fs_is_file(target);
     if (!found && !fs_path_is_absolute(expanded)) {
         /* Fall back to CWD for relative paths */

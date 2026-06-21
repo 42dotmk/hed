@@ -88,7 +88,7 @@ void mail_compose(void) {
 static int header_has_value(Buffer *buf, const char *name) {
     size_t nlen = strlen(name);
     for (int i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
+        StrBuf *s = &buf->rows[i].chars;
         if (s->len == 0) return 0; /* end of headers */
         if (s->len <= nlen + 1) continue;
         if (strncasecmp(s->data, name, nlen) != 0) continue;
@@ -172,7 +172,7 @@ static int collect_attach_paths(Buffer *buf, char ***out_paths,
     int    cnt = 0, cap = 0;
     int    i;
     for (i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
+        StrBuf *s = &buf->rows[i].chars;
         if (s->len == 0) { i++; break; }
         if (s->len > 7 && strncasecmp(s->data, "Attach:", 7) == 0) {
             size_t k = 7;
@@ -206,7 +206,7 @@ static int write_headers_with_mime(Buffer *buf, FILE *fp,
                                    const char *boundary) {
     int wrote_mime = 0;
     for (int i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
+        StrBuf *s = &buf->rows[i].chars;
         /* Skip Attach: pseudo-headers — they're consumed into the
          * MIME envelope, not emitted to the wire. */
         if (s->len > 7 && strncasecmp(s->data, "Attach:", 7) == 0)
@@ -235,7 +235,7 @@ static int write_multipart(Buffer *buf, FILE *fp,
     fprintf(fp, "Content-Type: text/plain; charset=utf-8\r\n");
     fprintf(fp, "Content-Transfer-Encoding: 8bit\r\n\r\n");
     for (int i = body_start; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
+        StrBuf *s = &buf->rows[i].chars;
         if (s->len) fwrite(s->data, 1, s->len, fp);
         fputs("\r\n", fp);
     }
@@ -310,7 +310,7 @@ void mail_send_current(void) {
         wr_err = write_multipart(buf, fp, att_paths, att_count, boundary);
     } else {
         for (int i = 0; i < buf->num_rows; i++) {
-            SizedStr *s = &buf->rows[i].chars;
+            StrBuf *s = &buf->rows[i].chars;
             if (s->len) fwrite(s->data, 1, s->len, fp);
             fputc('\n', fp);
         }
@@ -365,7 +365,7 @@ static const char *current_thread_id(Buffer *buf) {
 static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
     size_t nlen = strlen(name);
     for (int i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
+        StrBuf *s = &buf->rows[i].chars;
         if (s->len == 0) return 0; /* end of headers */
         if (s->len <= nlen + 1) continue;
         if (strncasecmp(s->data, name, nlen) != 0) continue;
@@ -691,7 +691,7 @@ void mail_forward(void) {
     int body_end = src->num_rows;
     if (body_start >= 0) {
         for (int i = body_start; i < src->num_rows; i++) {
-            const SizedStr *s = &src->rows[i].chars;
+            const StrBuf *s = &src->rows[i].chars;
             /* mail_parse uses a long "─" run as the per-message divider. */
             if (s->len >= 3 && (unsigned char)s->data[0] == 0xE2 &&
                 (unsigned char)s->data[1] == 0x94 &&
@@ -770,7 +770,7 @@ void mail_forward(void) {
     }
     lines[n++] = strdup("");
     for (int i = 0; i < body_lines && n < cap; i++) {
-        const SizedStr *s = &src->rows[body_start + i].chars;
+        const StrBuf *s = &src->rows[body_start + i].chars;
         char *dup = malloc(s->len + 1);
         if (dup) {
             if (s->len) memcpy(dup, s->data, s->len);

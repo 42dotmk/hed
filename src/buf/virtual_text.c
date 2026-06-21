@@ -45,7 +45,7 @@ static int vtext_clear_auto(Buffer *b) {
     for (ptrdiff_t i = arrlen(b->vtext.marks) - 1; i >= 0; i--) {
         VtMark *m = &b->vtext.marks[i];
         if (vtext_ns_auto_clear(m->ns_id)) {
-            sstr_free(&m->text);
+            strbuf_free(&m->text);
             arrdel(b->vtext.marks, i);
             dropped++;
         }
@@ -62,7 +62,7 @@ void vtext_init(Buffer *b) {
 void vtext_free(Buffer *b) {
     if (!b) return;
     for (ptrdiff_t i = 0; i < arrlen(b->vtext.marks); i++) {
-        sstr_free(&b->vtext.marks[i].text);
+        strbuf_free(&b->vtext.marks[i].text);
     }
     arrfree(b->vtext.marks);
     b->vtext.marks = NULL;
@@ -79,7 +79,7 @@ int vtext_set_eol(Buffer *b, int ns, int line,
         .ns_id    = ns,
         .line     = line,
         .place    = VT_PLACE_EOL,
-        .text     = sstr_from(text, n),
+        .text     = strbuf_from(text, n),
         .sgr      = sgr,
         .priority = 0,
     };
@@ -93,7 +93,7 @@ int vtext_clear_line(Buffer *b, int ns, int line) {
     for (ptrdiff_t i = arrlen(b->vtext.marks) - 1; i >= 0; i--) {
         VtMark *m = &b->vtext.marks[i];
         if (m->ns_id == ns && m->line == line) {
-            sstr_free(&m->text);
+            strbuf_free(&m->text);
             arrdel(b->vtext.marks, i);
             dropped++;
         }
@@ -107,7 +107,7 @@ int vtext_clear_ns(Buffer *b, int ns) {
     for (ptrdiff_t i = arrlen(b->vtext.marks) - 1; i >= 0; i--) {
         VtMark *m = &b->vtext.marks[i];
         if (m->ns_id == ns) {
-            sstr_free(&m->text);
+            strbuf_free(&m->text);
             arrdel(b->vtext.marks, i);
             dropped++;
         }
@@ -119,7 +119,7 @@ int vtext_clear_all(Buffer *b) {
     if (!b) return -1;
     int n = (int)arrlen(b->vtext.marks);
     for (ptrdiff_t i = 0; i < arrlen(b->vtext.marks); i++) {
-        sstr_free(&b->vtext.marks[i].text);
+        strbuf_free(&b->vtext.marks[i].text);
     }
     arr_reset(b->vtext.marks);
     return n;
@@ -132,7 +132,7 @@ int vtext_set_block_below(Buffer *b, int ns, int line,
         .ns_id    = ns,
         .line     = line,
         .place    = VT_PLACE_BLOCK_BELOW,
-        .text     = sstr_from(text, n),
+        .text     = strbuf_from(text, n),
         .sgr      = sgr,
         .priority = 0,
     };

@@ -290,7 +290,7 @@ void macro_play(char register_name) {
         return;
 
     /* Get the macro from the register */
-    const SizedStr *reg = regs_get(register_name);
+    const StrBuf *reg = regs_get(register_name);
     if (!reg || !reg->data || reg->len == 0)
         return;
 

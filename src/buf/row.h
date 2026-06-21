@@ -1,11 +1,11 @@
 #ifndef ROW_H
 #define ROW_H
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include <stdbool.h>
 
 typedef struct {
-    SizedStr chars;  /* Original text */
-    SizedStr render; /* Rendered text (with tabs expanded) */
+    StrBuf chars;  /* Original text */
+    StrBuf render; /* Rendered text (with tabs expanded) */
 
     /* Fold markers */
     bool fold_start; /* True if this line starts a fold region */

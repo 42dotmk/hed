@@ -5,17 +5,17 @@ EdError session_save(const char *path) {
     if (!path || !*path) return ED_ERR_INVALID_INDEX;
 
     /* Compose the whole session into one buffer, then write atomically. */
-    SizedStr txt = sstr_new();
+    StrBuf txt = strbuf_new();
     for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         const Buffer *b = &E.buffers[i];
         if (!b->filename || !*b->filename) continue;
-        sstr_append(&txt, ((int)i == E.current_buffer) ? "* " : "  ", 2);
-        sstr_append(&txt, b->filename, strlen(b->filename));
-        sstr_append_char(&txt, '\n');
+        strbuf_append(&txt, ((int)i == E.current_buffer) ? "* " : "  ", 2);
+        strbuf_append(&txt, b->filename, strlen(b->filename));
+        strbuf_append_char(&txt, '\n');
     }
 
     EdError err = fs_file_write_atomic(path, txt.data ? txt.data : "", txt.len);
-    sstr_free(&txt);
+    strbuf_free(&txt);
     return err == ED_OK ? ED_OK : ED_ERR_INVALID_INDEX;
 }
 
