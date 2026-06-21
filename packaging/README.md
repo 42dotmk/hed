@@ -82,6 +82,17 @@ hed`. Setup, once:
 It then runs on every published release. Install instructions render at the
 Pages URL (`packaging/repo-index.html`).
 
+The repo is signed with a dedicated key (not a personal identity); its
+public half is committed at `packaging/hed-signing-key.asc` and also served
+from Pages as `hed-archive-keyring.asc`. Fingerprint:
+
+```
+405E 3235 4302 2A4A 91C6  8737 95C6 0021 B3C8 B4E1
+```
+
+The matching private key + passphrase live in the repo secrets
+`GPG_PRIVATE_KEY` / `GPG_PASSPHRASE`.
+
 ## Homebrew tap
 
 Lives in its own repo, [`42dotmk/homebrew-hed`](https://github.com/42dotmk/homebrew-hed):
