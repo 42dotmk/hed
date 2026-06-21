@@ -11,6 +11,15 @@ char *strdup(const char *s) {
     return copy;
 }
 
+size_t str_chomp(char *s) {
+    if (!s)
+        return 0;
+    size_t n = strlen(s);
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r'))
+        s[--n] = '\0';
+    return n;
+}
+
 static int _is_space_char(char c) {
     return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
 }

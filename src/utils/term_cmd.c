@@ -1,18 +1,9 @@
 #include "utils/term_cmd.h"
+#include "lib/strutil.h"
 #include "terminal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* Helper: trim trailing newline/carriage return */
-static void trim_eol(char *s) {
-    if (!s)
-        return;
-    size_t n = strlen(s);
-    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r')) {
-        s[--n] = '\0';
-    }
-}
 
 int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
     if (!cmd)
@@ -35,7 +26,7 @@ int term_cmd_run(const char *cmd, char ***out_lines, int *out_count) {
     char line_buf[2048];
 
     while (fgets(line_buf, sizeof(line_buf), fp)) {
-        trim_eol(line_buf);
+        str_chomp(line_buf);
 
         /* Grow array if needed */
         if (count + 1 > capacity) {

@@ -25,7 +25,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,10 +36,7 @@ typedef struct TrJob {
     int   from_fd;        /* child stdout read end (non-blocking) */
     char  in_path[PATH_MAX]; /* temp input file, unlink on finish */
 
-    /* Output accumulator (grown with realloc). */
-    char  *out;
-    size_t out_len;
-    size_t out_cap;
+    StrBuf out;           /* stdout accumulator */
 
     /* Context captured at invocation time so the result is correct even
      * if the user has since switched buffers. */
@@ -62,7 +58,7 @@ void translate_set_default_target(const char *lang) {
 
 static void job_free(TrJob *j) {
     if (!j) return;
-    free(j->out);
+    strbuf_free(&j->out);
     free(j->src_filetype);
     free(j->src_base);
     free(j);
@@ -106,21 +102,6 @@ static int write_temp(const char *data, size_t len, char *path_out,
 
 /* ----- async machinery --------------------------------------------- */
 
-static int out_append(TrJob *j, const char *data, size_t n) {
-    if (j->out_len + n + 1 > j->out_cap) {
-        size_t ncap = j->out_cap ? j->out_cap * 2 : 4096;
-        while (ncap < j->out_len + n + 1) ncap *= 2;
-        char *r = realloc(j->out, ncap);
-        if (!r) return -1;
-        j->out = r;
-        j->out_cap = ncap;
-    }
-    memcpy(j->out + j->out_len, data, n);
-    j->out_len += n;
-    j->out[j->out_len] = '\0';
-    return 0;
-}
-
 /* Finalize: reap child, build dst buffer (or surface error), tear down. */
 static void job_finalize(TrJob *j) {
     ed_loop_unregister(j->from_fd);
@@ -132,10 +113,10 @@ static void job_finalize(TrJob *j) {
     fs_unlink(j->in_path);
 
     int exit_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    if (!exit_ok || j->out_len == 0) {
+    if (!exit_ok || j->out.len == 0) {
         ed_set_status_message(
             "translate: trans failed%s (is 'trans' installed?)",
-            j->out_len == 0 ? " (empty output)" : "");
+            j->out.len == 0 ? " (empty output)" : "");
         job_active = NULL;
         job_free(j);
         return;
@@ -156,7 +137,7 @@ static void job_finalize(TrJob *j) {
     free(dst->filetype); dst->filetype = j->src_filetype; /* take ownership */
     j->src_filetype = NULL;
 
-    buf_append_text_lines(dst, j->out, j->out_len);
+    buf_append_text_lines(dst, j->out.data, j->out.len);
     dst->dirty = 0;
 
     windows_split_vertical();
@@ -179,12 +160,7 @@ static void on_readable(int fd, void *ud) {
         char chunk[4096];
         ssize_t n = read(fd, chunk, sizeof(chunk));
         if (n > 0) {
-            if (out_append(j, chunk, (size_t)n) != 0) {
-                /* OOM — kill the child and bail. */
-                kill(j->pid, SIGTERM);
-                job_finalize(j);
-                return;
-            }
+            strbuf_append(&j->out, chunk, (size_t)n);
             continue;
         }
         if (n == 0) {                  /* EOF — trans is done */

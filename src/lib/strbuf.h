@@ -34,7 +34,10 @@ char *strbuf_to_cstr(const StrBuf *s);
 
 /* Append `in` wrapped in POSIX single quotes, escaping embedded single
  * quotes via the '\'' pattern. The growable analogue of
- * shell_escape_single() for callers building unbounded commands. */
+ * shell_escape_single() for callers building unbounded commands.
+ * The _n form quotes exactly `n` bytes (allowing embedded NULs / slices);
+ * the cstr form quotes up to the NUL (NULL is treated as empty). */
+void strbuf_append_shell_quoted_n(StrBuf *s, const char *in, size_t n);
 void strbuf_append_shell_quoted(StrBuf *s, const char *in);
 
 /* ---- StrView (borrowed) helpers ---- */

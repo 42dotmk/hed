@@ -66,7 +66,12 @@ void strbuf_append(StrBuf *s, const char *data, size_t len) {
     if (len == 0)
         return;
     if (s->len + len + 1 > s->cap) {
-        strbuf_reserve(s, s->len + len + 1);
+        /* Grow geometrically so repeated appends stay amortised O(1) —
+         * important for streaming/byte-at-a-time builders. */
+        size_t want = s->cap ? s->cap : 32;
+        while (want < s->len + len + 1)
+            want *= 2;
+        strbuf_reserve(s, want);
     }
     memcpy(s->data + s->len, data, len);
     s->len += len;
@@ -102,15 +107,19 @@ char *strbuf_to_cstr(const StrBuf *s) {
     return result;
 }
 
-void strbuf_append_shell_quoted(StrBuf *s, const char *in) {
+void strbuf_append_shell_quoted_n(StrBuf *s, const char *in, size_t n) {
     strbuf_append_char(s, '\'');
-    for (const char *p = in; p && *p; p++) {
-        if (*p == '\'')
+    for (size_t i = 0; i < n; i++) {
+        if (in[i] == '\'')
             strbuf_append(s, "'\\''", 4);
         else
-            strbuf_append_char(s, *p);
+            strbuf_append_char(s, in[i]);
     }
     strbuf_append_char(s, '\'');
+}
+
+void strbuf_append_shell_quoted(StrBuf *s, const char *in) {
+    strbuf_append_shell_quoted_n(s, in, in ? strlen(in) : 0);
 }
 
 /* ---- StrView (borrowed) helpers ---- */

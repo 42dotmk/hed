@@ -21,14 +21,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Strip a single trailing space character from `s` (in place). git
- * format-patch indents commit-body lines with a leading space which
- * we want to keep — only trim CR/LF. */
-static void rstrip_eol(char *s) {
-    size_t n = strlen(s);
-    while (n > 0 && (s[n-1] == '\n' || s[n-1] == '\r')) s[--n] = '\0';
-}
-
 static void cmd_mail_git_patch(const char *args) {
     /* Verify we're inside a git work tree. `git rev-parse` prints
      * "true" / "false" and exits non-zero outside one. */
@@ -106,7 +98,7 @@ static void cmd_mail_git_patch(const char *args) {
         const char *l = raw[i] ? raw[i] : "";
         char *line = strdup(l);
         if (!line) break;
-        rstrip_eol(line);
+        str_chomp(line);
 
         if (in_header) {
             if (line[0] == '\0') {

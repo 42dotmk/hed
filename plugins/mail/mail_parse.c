@@ -1,4 +1,5 @@
 #include "mail_parse.h"
+#include "lib/strbuf.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -179,12 +180,8 @@ typedef struct {
     char msg_id[256];
     int  depth;
 
-    /* body text accumulator (plain text/plain content) */
-    char  *plain;
-    size_t plain_len, plain_cap;
-    /* fallback html accumulator */
-    char  *html;
-    size_t html_len, html_cap;
+    StrBuf plain;          /* text/plain body accumulator */
+    StrBuf html;           /* fallback text/html accumulator */
     int    have_plain;
 
     /* indices into render->attaches for this message */
@@ -195,26 +192,9 @@ typedef struct {
     int attach_count;
 } MsgState;
 
-static void buf_append(char **buf, size_t *len, size_t *cap,
-                       const char *s, size_t n, int add_nl) {
-    size_t need = *len + n + (add_nl ? 1 : 0) + 1;
-    if (need > *cap) {
-        size_t ncap = *cap ? *cap : 1024;
-        while (ncap < need) ncap *= 2;
-        char *nb = realloc(*buf, ncap);
-        if (!nb) return;
-        *buf = nb;
-        *cap = ncap;
-    }
-    if (n) memcpy(*buf + *len, s, n);
-    *len += n;
-    if (add_nl) (*buf)[(*len)++] = '\n';
-    (*buf)[*len] = '\0';
-}
-
 static void msg_state_reset(MsgState *m) {
-    free(m->plain);
-    free(m->html);
+    strbuf_free(&m->plain);
+    strbuf_free(&m->html);
     memset(m, 0, sizeof(*m));
 }
 
@@ -269,9 +249,9 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
     /* Body: prefer plain. Fall back to html via w3m/lynx. */
     char  *body     = NULL;
     size_t body_len = 0;
-    if (m->have_plain && m->plain_len > 0) {
-        body     = m->plain;
-        body_len = m->plain_len;
+    if (m->have_plain && m->plain.len > 0) {
+        body     = m->plain.data;
+        body_len = m->plain.len;
     }
     if (body) {
         /* Strip leading and trailing blank lines while splitting. */
@@ -306,8 +286,8 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
             lines_push(r, body + p, q - p);
             p = q + 1;
         }
-    } else if (m->html && m->html_len > 0) {
-        render_html(m->html, m->html_len, r);
+    } else if (m->html.data && m->html.len > 0) {
+        render_html(m->html.data, m->html.len, r);
     } else {
         lines_pushz(r, "(empty body)");
     }
@@ -445,16 +425,18 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
             continue;
         }
 
-        /* Body content — only when the innermost open part says so. */
+        /* Body content — only when the innermost open part says so.
+         * Each captured line carries a trailing newline. */
         if (pstack_depth > 0) {
             int mode = pstack_mode[pstack_depth - 1];
             size_t llen = strlen(line);
-            if (mode == 1)
-                buf_append(&msg.plain, &msg.plain_len, &msg.plain_cap,
-                           line, llen, 1);
-            else if (mode == 2)
-                buf_append(&msg.html,  &msg.html_len,  &msg.html_cap,
-                           line, llen, 1);
+            StrBuf *acc = (mode == 1) ? &msg.plain
+                        : (mode == 2) ? &msg.html
+                                      : NULL;
+            if (acc) {
+                strbuf_append(acc, line, llen);
+                strbuf_append_char(acc, '\n');
+            }
         }
     }
 

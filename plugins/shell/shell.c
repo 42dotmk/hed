@@ -28,40 +28,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---------- growable string helpers ---------- */
-
-static int sh_append(char **out, size_t *len, size_t *cap,
-                     const char *src, size_t n) {
-    if (*len + n + 1 > *cap) {
-        size_t newcap = *cap ? *cap : 64;
-        while (newcap < *len + n + 1)
-            newcap *= 2;
-        char *p = realloc(*out, newcap);
-        if (!p) return 0;
-        *out = p;
-        *cap = newcap;
-    }
-    memcpy(*out + *len, src, n);
-    *len += n;
-    (*out)[*len] = '\0';
-    return 1;
-}
-
-/* Append a single-quote shell-escaped form of src[0..n) to a growable
- * string. Mirrors shell_escape_single but unbounded. */
-static int sh_append_escaped(char **out, size_t *len, size_t *cap,
-                             const char *src, size_t n) {
-    if (!sh_append(out, len, cap, "'", 1)) return 0;
-    for (size_t i = 0; i < n; i++) {
-        if (src[i] == '\'') {
-            if (!sh_append(out, len, cap, "'\\''", 4)) return 0;
-        } else {
-            if (!sh_append(out, len, cap, &src[i], 1)) return 0;
-        }
-    }
-    return sh_append(out, len, cap, "'", 1);
-}
-
 /* ---------- capture token parsing ---------- */
 
 typedef enum {
@@ -121,18 +87,16 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
         if (dirlen == 0) dirlen = 1;
     }
 
-    char *out = NULL;
-    size_t len = 0, cap = 0;
-    if (!sh_append(&out, &len, &cap, "", 0)) return NULL;
+    StrBuf out = strbuf_new();
 
     for (size_t i = 0; i < total; ) {
         if (src[i] != '%') {
-            if (!sh_append(&out, &len, &cap, &src[i], 1)) goto oom;
+            strbuf_append_char(&out, src[i]);
             i++;
             continue;
         }
         if (i + 1 >= total) {
-            if (!sh_append(&out, &len, &cap, "%", 1)) goto oom;
+            strbuf_append_char(&out, '%');
             i++;
             continue;
         }
@@ -140,40 +104,38 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
         char after = (i + 2 < total) ? src[i + 2] : '\0';
         int boundary = !isalpha((unsigned char)after);
         if (tok == '%') {
-            if (!sh_append(&out, &len, &cap, "%", 1)) goto oom;
+            strbuf_append_char(&out, '%');
             i += 2;
         } else if (boundary && (tok == 'b' || tok == 'p' ||
                                 tok == 'd' || tok == 'n' || tok == 'y')) {
-            int ok = 1;
             if (tok == 'b') {
                 size_t blen = 0;
                 char *txt = buf_to_text(buf, &blen);
-                if (!txt) goto oom;
-                ok = sh_append_escaped(&out, &len, &cap, txt, blen);
+                if (!txt) { strbuf_free(&out); return NULL; }
+                strbuf_append_shell_quoted_n(&out, txt, blen);
                 free(txt);
             } else if (tok == 'p') {
-                ok = sh_append_escaped(&out, &len, &cap, fname, strlen(fname));
+                strbuf_append_shell_quoted(&out, fname);
             } else if (tok == 'd') {
-                ok = sh_append_escaped(&out, &len, &cap, fname, dirlen);
+                strbuf_append_shell_quoted_n(&out, fname, dirlen);
             } else if (tok == 'n') {
-                ok = sh_append_escaped(&out, &len, &cap, base, strlen(base));
+                strbuf_append_shell_quoted(&out, base);
             } else /* 'y' */ {
                 const StrBuf *r = regs_get('"');
                 const char *ydata = (r && r->data) ? r->data : "";
                 size_t ylen = r ? r->len : 0;
-                ok = sh_append_escaped(&out, &len, &cap, ydata, ylen);
+                strbuf_append_shell_quoted_n(&out, ydata, ylen);
             }
-            if (!ok) goto oom;
             i += 2;
         } else {
-            if (!sh_append(&out, &len, &cap, &src[i], 1)) goto oom;
+            strbuf_append_char(&out, src[i]);
             i++;
         }
     }
-    return out;
-oom:
-    free(out);
-    return NULL;
+    /* Empty template -> "" (not NULL); NULL is reserved for real OOM. */
+    char *result = out.data ? strbuf_to_cstr(&out) : strdup("");
+    strbuf_free(&out);
+    return result;
 }
 
 /* ---------- buffer splice helpers ---------- */
