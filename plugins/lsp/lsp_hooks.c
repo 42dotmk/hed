@@ -24,6 +24,8 @@ static void lsp_hook_buffer_save(HookBufferEvent *event) {
 static void lsp_hook_mode_change(const HookModeEvent *event) {
     if (!event) return;
     if (event->old_mode == MODE_INSERT && event->new_mode == MODE_NORMAL) {
+        /* Completion pane is an INSERT-mode feature; close on exit. */
+        if (lsp_completion_pane_is_open()) lsp_completion_pane_close();
         Buffer *buf = buf_cur();
         if (buf) lsp_on_buffer_changed(buf);
     }

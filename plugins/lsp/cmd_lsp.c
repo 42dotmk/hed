@@ -115,12 +115,16 @@ void cmd_lsp_definition(const char *args) {
     lsp_request_definition(buf, buf->cursor->y, buf->cursor->x);
 }
 
-/* :lsp_completion */
+/* :lsp_completion — back-compat alias, toggles the bottom pane. */
 void cmd_lsp_completion(const char *args) {
     (void)args;
-    Buffer *buf = buf_cur();
-    if (!buf) { ed_set_status_message("LSP: no buffer"); return; }
-    lsp_request_completion(buf, buf->cursor->y, buf->cursor->x);
+    lsp_completion_pane_toggle();
+}
+
+/* :lsp_completion_toggle — open/close the completion pane. */
+void cmd_lsp_completion_toggle(const char *args) {
+    (void)args;
+    lsp_completion_pane_toggle();
 }
 
 /* :lsp_diagnostics — dump the stored diagnostics into the quickfix list. */

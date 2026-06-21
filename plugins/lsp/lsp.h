@@ -47,4 +47,11 @@ void lsp_cmd_status(void);
 /* Dump all stored diagnostics into E.qf and open the quickfix pane. */
 void lsp_cmd_diagnostics(void);
 
+/* Bottom completion pane (overlay drawn at the bottom of the screen).
+ * The pane stays open across keystrokes and re-requests completion as
+ * the user types; closing it stops all completion traffic. */
+void lsp_completion_pane_toggle(void);
+void lsp_completion_pane_close(void);
+int  lsp_completion_pane_is_open(void);
+
 #endif /* LSP_H */

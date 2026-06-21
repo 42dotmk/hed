@@ -21,12 +21,13 @@ static int lsp_plugin_init(void) {
     cmd("lsp_status",     cmd_lsp_status,     "show LSP server status");
     cmd("lsp_hover",      cmd_lsp_hover,      "LSP hover info");
     cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
-    cmd("lsp_completion", cmd_lsp_completion, "LSP completion");
-    cmd("lsp_diagnostics", cmd_lsp_diagnostics, "list LSP diagnostics in quickfix");
+    cmd("lsp_completion",        cmd_lsp_completion,        "toggle LSP completion pane");
+    cmd("lsp_completion_toggle", cmd_lsp_completion_toggle, "toggle LSP completion pane");
+    cmd("lsp_diagnostics",       cmd_lsp_diagnostics,       "list LSP diagnostics in quickfix");
 
-    /* Ctrl+Space in insert mode → trigger completion. Terminals send
-     * \x00 for C-Space; key_to_string encodes that as "<0>". */
-    cmapi("<0>", "lsp_completion", "LSP completion");
+    /* Ctrl+Space in insert mode → toggle completion pane. Terminals
+     * send \x00 for C-Space; key_to_string encodes that as "<0>". */
+    cmapi("<0>", "lsp_completion_toggle", "toggle LSP completion pane");
 
     return 0;
 }

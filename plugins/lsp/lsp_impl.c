@@ -4,7 +4,9 @@
 #include "lsp_hooks.h"
 #include "lsp_servers.h"
 #include "select_loop.h"
-#include "selectlist/selectlist.h"
+#include "ui/abuf.h"
+#include "lib/ansi.h"
+#include "utils/bottom_ui.h"
 #include "utils/quickfix.h"
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -87,6 +89,22 @@ typedef struct {
 } LspDiagFile;
 
 static LspDiagFile *g_diags = NULL; /* stb_ds */
+
+/* Pending completion request that hit a server still in `initialize`.
+ * We replay it once the server is ready so the user doesn't have to
+ * press Ctrl+Space twice on the first invocation. */
+typedef struct {
+    char *lang;     /* server we're waiting for; NULL = no pending request */
+    int   buf_idx;
+    int   line;
+    int   col;
+} LspDeferredCompletion;
+static LspDeferredCompletion g_deferred_completion = {0};
+
+static void lsp_clear_deferred_completion(void) {
+    free(g_deferred_completion.lang);
+    g_deferred_completion.lang = NULL;
+}
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -401,20 +419,67 @@ static void lsp_show_popup(const char *title, const char *text) {
 
 /* ----- completion ------------------------------------------------- */
 
-/* Completion context captured at request time, replayed on pick. The
- * SelectList callback runs after this handler returns, so we stash
- * everything it needs on the heap and free it inside the callback. */
-typedef struct {
-    int   buf_idx;
-    int   req_line;   /* 0-based, LSP coords */
-    int   req_col;    /* 0-based, LSP coords */
-    int   n;
-    char *insert[];   /* `insertText` (or label) per item, deep-copied */
-} LspComplCtx;
+/* ===== completion bottom-pane ====================================
+ *
+ * The completion UI is a transient overlay strip drawn at the bottom
+ * of the screen via HOOK_RENDER_OVERLAY. It does not take focus —
+ * typing continues in the source window — and it stays open across
+ * keystrokes, re-issuing textDocument/completion on every char insert
+ * so results follow what you type.
+ *
+ *   <C-Space>      toggle pane (insert mode)
+ *   <C-n> / <Down> next item
+ *   <C-p> / <Up>   previous item
+ *   <Tab>          accept selected; insert at word-start; re-request
+ *   <Esc>          close pane (does NOT exit insert mode)
+ *
+ * When the pane is closed nothing is sent to the LSP server. */
 
-/* Walk back over identifier characters from `(line, cx)` to find the
- * start of the partial word being completed. Returns the column of the
- * first identifier char. cx is a 0-based byte index into the row. */
+typedef struct {
+    int    open;
+    int    buf_idx;       /* host buffer for this session */
+    int    anchor_line;   /* 0-based row in the buffer */
+    int    word_start;    /* 0-based byte col where replacement begins */
+    int    selected;      /* highlighted item index */
+    int    scroll;        /* first visible item */
+    int    height;        /* visible rows for items (capped) */
+    int    n;
+    char **labels;
+    char **inserts;
+} LspCompletionPane;
+
+static LspCompletionPane g_pane = { 0 };
+
+#define LSP_PANE_HEIGHT       8
+#define LSP_PANE_MAX_ITEMS  200
+
+static void lsp_pane_free_items(void) {
+    for (int i = 0; i < g_pane.n; i++) {
+        free(g_pane.labels[i]);
+        free(g_pane.inserts[i]);
+    }
+    free(g_pane.labels);
+    free(g_pane.inserts);
+    g_pane.labels  = NULL;
+    g_pane.inserts = NULL;
+    g_pane.n       = 0;
+}
+
+static void lsp_pane_close_internal(void) {
+    lsp_pane_free_items();
+    memset(&g_pane, 0, sizeof(g_pane));
+    g_pane.buf_idx = -1;
+}
+
+int lsp_completion_pane_is_open(void) { return g_pane.open; }
+
+void lsp_completion_pane_close(void) {
+    if (!g_pane.open) return;
+    lsp_pane_close_internal();
+}
+
+/* Walk back over identifier characters to find the start of the
+ * partial word being completed (0-based byte index). */
 static int lsp_word_start_col(Buffer *buf, int line, int cx) {
     if (!buf || line < 0 || line >= buf->num_rows) return cx;
     const char *s = buf->rows[line].chars.data;
@@ -427,31 +492,53 @@ static int lsp_word_start_col(Buffer *buf, int line, int cx) {
     return i;
 }
 
-static void lsp_completion_pick(int idx, const char *item, void *user) {
-    (void)item;
-    LspComplCtx *ctx = user;
-    if (!ctx) return;
-    if (idx < 0 || idx >= ctx->n) goto done;
-    if (ctx->buf_idx < 0 || ctx->buf_idx >= (int)arrlen(E.buffers)) goto done;
+void lsp_completion_pane_toggle(void) {
+    if (g_pane.open) { lsp_pane_close_internal(); return; }
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->cursor || !buf->filename) {
+        ed_set_status_message("LSP completion: no buffer");
+        return;
+    }
+    int buf_idx = (int)(buf - E.buffers);
+    g_pane.open        = 1;
+    g_pane.buf_idx     = buf_idx;
+    g_pane.anchor_line = buf->cursor->y;
+    g_pane.word_start  = lsp_word_start_col(buf, buf->cursor->y, buf->cursor->x);
+    g_pane.selected    = 0;
+    g_pane.scroll      = 0;
+    g_pane.height      = LSP_PANE_HEIGHT;
+    /* Kick off the first completion request. The response handler
+     * will populate items; the renderer shows "loading…" until then. */
+    lsp_request_completion(buf, buf->cursor->y, buf->cursor->x);
+}
 
-    Buffer *buf = &E.buffers[ctx->buf_idx];
-    if (!buf->cursor) goto done;
-    int line = ctx->req_line;
-    if (line < 0 || line >= buf->num_rows) goto done;
+/* Apply the highlighted item: replace [word_start, cursor) with the
+ * insertText, move cursor to end, then re-request to refresh. */
+static void lsp_pane_accept(void) {
+    if (!g_pane.open || g_pane.n <= 0) return;
+    int idx = g_pane.selected;
+    if (idx < 0 || idx >= g_pane.n) return;
+    if (g_pane.buf_idx < 0 || g_pane.buf_idx >= (int)arrlen(E.buffers)) return;
 
-    /* Replacement range: [word_start, current_cursor) on `line`. */
-    int cur_cx   = buf->cursor->x;
-    int word_cx  = lsp_word_start_col(buf, line, ctx->req_col);
+    Buffer *buf  = &E.buffers[g_pane.buf_idx];
+    int     line = g_pane.anchor_line;
+    if (line < 0 || line >= buf->num_rows) return;
+
+    Window *hw = NULL;
+    for (ptrdiff_t w = 0; w < arrlen(E.windows); w++) {
+        if (E.windows[w].buffer_index == g_pane.buf_idx) {
+            hw = &E.windows[w]; break;
+        }
+    }
+    int word_cx = g_pane.word_start;
+    int cur_cx  = hw ? hw->cursor.x : (buf->cursor ? buf->cursor->x : word_cx);
     if (cur_cx < word_cx) cur_cx = word_cx;
-
     Row *row = &buf->rows[line];
     if (cur_cx > (int)row->chars.len) cur_cx = (int)row->chars.len;
 
-    /* Splice: chars[0..word_cx) + insert + chars[cur_cx..len). Done via
-     * a new SizedStr to avoid an N-call delete/insert loop. */
-    const char *ins   = ctx->insert[idx];
-    size_t      ilen  = strlen(ins);
-    size_t      tail  = row->chars.len - (size_t)cur_cx;
+    const char *ins  = g_pane.inserts[idx];
+    size_t      ilen = strlen(ins);
+    size_t      tail = row->chars.len - (size_t)cur_cx;
     SizedStr    fresh = sstr_new();
     sstr_reserve(&fresh, (size_t)word_cx + ilen + tail);
     sstr_append(&fresh, row->chars.data, (size_t)word_cx);
@@ -461,41 +548,50 @@ static void lsp_completion_pick(int idx, const char *item, void *user) {
     row->chars = fresh;
     buf_row_update(row);
 
-    buf->cursor->x = word_cx + (int)ilen;
+    int new_cx = word_cx + (int)ilen;
+    if (buf->cursor) { buf->cursor->x = new_cx; buf->cursor->y = line; }
+    if (hw)          { hw->cursor.x  = new_cx; hw->cursor.y  = line; }
     buf->dirty++;
 
-done:
-    for (int i = 0; i < ctx->n; i++) free(ctx->insert[i]);
-    free(ctx);
+    /* Re-anchor at the new cursor position and re-request to refresh
+     * (e.g., after picking `foo` we may want fields/methods of foo). */
+    g_pane.anchor_line = line;
+    g_pane.word_start  = lsp_word_start_col(buf, line, new_cx);
+    g_pane.selected    = 0;
+    g_pane.scroll      = 0;
+    /* Drop current items so the renderer shows "loading…" until the
+     * next response lands. */
+    lsp_pane_free_items();
+    lsp_request_completion(buf, line, new_cx);
 }
 
-static void lsp_handle_completion_result(LspServer *srv,
-                                         const LspPending *pop,
-                                         cJSON *result) {
-    if (!result || cJSON_IsNull(result)) {
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
-        return;
-    }
-    /* result is either CompletionItem[] or { items: CompletionItem[] }. */
-    cJSON *items = cJSON_IsArray(result)
-                       ? result
-                       : json_get_array(result, "items");
-    int n = items ? cJSON_GetArraySize(items) : 0;
-    if (n <= 0) {
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
-        return;
-    }
-    if (n > 200) n = 200;
+static void lsp_pane_move(int delta) {
+    if (!g_pane.open || g_pane.n <= 0) return;
+    g_pane.selected += delta;
+    if (g_pane.selected < 0)            g_pane.selected = 0;
+    if (g_pane.selected >= g_pane.n)    g_pane.selected = g_pane.n - 1;
+    /* Keep selection in view */
+    if (g_pane.selected < g_pane.scroll)
+        g_pane.scroll = g_pane.selected;
+    int last_visible = g_pane.scroll + g_pane.height - 1;
+    if (g_pane.selected > last_visible)
+        g_pane.scroll = g_pane.selected - g_pane.height + 1;
+    if (g_pane.scroll < 0) g_pane.scroll = 0;
+}
 
-    /* Build display labels + the strings to insert. Display = label;
-     * if `detail` is set we append " : detail" so the user sees types. */
-    char       **labels  = malloc(sizeof(char *) * (size_t)n);
-    LspComplCtx *ctx     = malloc(sizeof(LspComplCtx) + sizeof(char *) * (size_t)n);
-    if (!labels || !ctx) { free(labels); free(ctx); return; }
-    ctx->buf_idx  = pop->buf_idx;
-    ctx->req_line = pop->req_line;
-    ctx->req_col  = pop->req_col;
-    ctx->n        = n;
+/* Build labels + inserts from a CompletionList JSON. */
+static int lsp_compl_extract(cJSON *result,
+                             char ***out_labels, char ***out_inserts) {
+    *out_labels = NULL; *out_inserts = NULL;
+    cJSON *items = cJSON_IsArray(result) ? result
+                                         : json_get_array(result, "items");
+    int n = items ? cJSON_GetArraySize(items) : 0;
+    if (n <= 0) return 0;
+    if (n > LSP_PANE_MAX_ITEMS) n = LSP_PANE_MAX_ITEMS;
+
+    char **labels  = malloc(sizeof(char *) * (size_t)n);
+    char **inserts = malloc(sizeof(char *) * (size_t)n);
+    if (!labels || !inserts) { free(labels); free(inserts); return 0; }
 
     int kept = 0;
     for (int i = 0; i < n; i++) {
@@ -505,49 +601,174 @@ static void lsp_handle_completion_result(LspServer *srv,
         const char *detail = json_get_string(it, "detail");
         if (!insert || !*insert) insert = label;
         if (!label  || !*label)  continue;
-
-        char buf[512];
-        if (detail && *detail)
-            snprintf(buf, sizeof(buf), "%s : %s", label, detail);
-        else
-            snprintf(buf, sizeof(buf), "%s", label);
-        labels[kept]      = strdup(buf);
-        ctx->insert[kept] = strdup(insert);
+        char tmp[512];
+        if (detail && *detail) snprintf(tmp, sizeof(tmp), "%s : %s", label, detail);
+        else                   snprintf(tmp, sizeof(tmp), "%s", label);
+        labels[kept]  = strdup(tmp);
+        inserts[kept] = strdup(insert);
         kept++;
     }
+    if (kept == 0) { free(labels); free(inserts); return 0; }
+    *out_labels  = labels;
+    *out_inserts = inserts;
+    return kept;
+}
+
+static void lsp_handle_completion_result(LspServer *srv,
+                                         const LspPending *pop,
+                                         cJSON *result) {
+    /* If the user closed the pane while the request was in flight,
+     * silently drop the response. */
+    if (!g_pane.open) return;
+    /* Only accept responses that match the open session's buffer. */
+    if (pop->buf_idx != g_pane.buf_idx) return;
+
+    char **labels  = NULL;
+    char **inserts = NULL;
+    int    kept    = 0;
+    if (result && !cJSON_IsNull(result))
+        kept = lsp_compl_extract(result, &labels, &inserts);
+
+    /* Replace the items either way (zero items also clears stale data). */
+    lsp_pane_free_items();
+    g_pane.labels   = labels;
+    g_pane.inserts  = inserts;
+    g_pane.n        = kept;
+    g_pane.selected = 0;
+    g_pane.scroll   = 0;
     if (kept == 0) {
-        free(labels); free(ctx);
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
+        log_msg("LSP[%s]: no completions", srv->lang);
+    }
+}
+
+/* ---- pane render & input ---- */
+
+static void lsp_pane_draw(struct Abuf *ab) {
+    if (!g_pane.open) return;
+    Layout lo;
+    layout_compute(&lo);
+    /* Place pane just above the status bar, eating the bottom of the
+     * content area. status_row is 1-based; pane_top is the first row
+     * we'll draw on. */
+    int pane_top = lo.status_row - g_pane.height;
+    if (pane_top < 1) {
+        /* Screen too small; cap to whatever rows we have. */
+        g_pane.height = lo.status_row - 1;
+        pane_top      = 1;
+        if (g_pane.height < 1) return;
+    }
+
+    int cols = lo.term_cols > 0 ? lo.term_cols : 80;
+    if (cols > 256) cols = 256;
+    char line[260];
+
+    for (int r = 0; r < g_pane.height; r++) {
+        int item_idx = g_pane.scroll + r;
+        ansi_move(ab, pane_top + r, 1);
+        ansi_clear_eol(ab);
+
+        if (item_idx == 0 && g_pane.n == 0) {
+            const char *empty = "  (no completions — type or press <C-Space> to close)";
+            int len = (int)strlen(empty);
+            if (len > cols) len = cols;
+            ab_append(ab, empty, len);
+            continue;
+        }
+        if (item_idx >= g_pane.n) continue;
+
+        int is_sel = (item_idx == g_pane.selected);
+        if (is_sel) ab_append(ab, "\x1b[7m", 4); /* reverse video */
+
+        const char *label = g_pane.labels[item_idx];
+        int n = snprintf(line, sizeof(line), "  %s", label);
+        if (n < 0) n = 0;
+        if (n > cols) n = cols;
+        ab_append(ab, line, n);
+        /* pad to full width so the highlight bar is visible */
+        for (int p = n; p < cols; p++) ab_append(ab, " ", 1);
+
+        if (is_sel) ab_append(ab, "\x1b[m", 3);
+    }
+
+    /* Top divider */
+    if (pane_top >= 2) {
+        ansi_move(ab, pane_top - 1, 1);
+        ansi_clear_eol(ab);
+        char hdr[80];
+        int  hl = snprintf(hdr, sizeof(hdr),
+                           "── completion %d/%d ", g_pane.selected + 1,
+                           g_pane.n > 0 ? g_pane.n : 0);
+        if (hl < 0) hl = 0;
+        if (hl > cols) hl = cols;
+        ab_append(ab, hdr, hl);
+        for (int p = hl; p < cols; p++) ab_append(ab, "─", 3);
+    }
+}
+
+/* Keypress hook: while the pane is open, intercept selection/accept/
+ * close keys. Everything else (printable chars, backspace, etc.)
+ * falls through to normal insert-mode handling — and HOOK_CHAR_INSERT
+ * (registered separately) will re-issue the completion request. */
+static void lsp_pane_keypress(HookKeyEvent *event) {
+    if (!event || !g_pane.open) return;
+    int key = event->key;
+
+    if (key == KEY_ARROW_DOWN || key == ('n' & 0x1f)) {
+        lsp_pane_move(+1); event->consumed = 1; return;
+    }
+    if (key == KEY_ARROW_UP   || key == ('p' & 0x1f)) {
+        lsp_pane_move(-1); event->consumed = 1; return;
+    }
+    if (key == '\t') {
+        lsp_pane_accept(); event->consumed = 1; return;
+    }
+    if (key == '\x1b') {
+        /* Esc closes the pane; the user can press Esc again to leave
+         * INSERT mode. We consume so the editor doesn't switch modes
+         * unexpectedly. */
+        lsp_pane_close_internal();
+        event->consumed = 1;
         return;
     }
-    ctx->n = kept;
-
-    /* Anchor at the buffer's current cursor (in screen cells). */
-    Window *cur = arrlen(E.windows) > 0 ? &E.windows[E.current_window] : NULL;
-    int anchor_x = 1, anchor_y = 1;
-    if (cur) {
-        anchor_y = (cur->cursor.y - cur->row_offset) + cur->top;
-        anchor_x = cur->left;
-        Buffer *cb = (cur->buffer_index >= 0 &&
-                      cur->buffer_index < (int)arrlen(E.buffers))
-                         ? &E.buffers[cur->buffer_index] : NULL;
-        if (cb && cur->cursor.y < cb->num_rows) {
-            int rx   = buf_row_cx_to_rx(&cb->rows[cur->cursor.y], cur->cursor.x);
-            anchor_x = (rx - cur->col_offset) + cur->left;
-        }
+    /* Treat C-Space (NUL byte) as the toggle even while open → close. */
+    if (key == 0) {
+        lsp_pane_close_internal();
+        event->consumed = 1;
+        return;
     }
+}
 
-    int rc = selectlist_open_anchored(anchor_x, anchor_y, 40,
-                                      (const char *const *)labels, kept,
-                                      WMODAL_AUTO,
-                                      lsp_completion_pick, ctx);
-    for (int i = 0; i < kept; i++) free(labels[i]);
-    free(labels);
+/* HOOK_CHAR_INSERT: any printable typed in INSERT mode fires this
+ * after the editor has applied the edit. While the pane is open we
+ * use it to re-issue the completion request. We also close the pane
+ * if the user moved off the anchor line or backspaced past the word
+ * start (HOOK_CHAR_INSERT only fires for inserts; for backspace we
+ * use HOOK_LINE_DELETE — handled in lsp_pane_line_delete below). */
+static void lsp_pane_char_insert(const HookCharEvent *ev) {
+    if (!g_pane.open || !ev || !ev->buf) return;
+    int buf_idx = (int)(ev->buf - E.buffers);
+    if (buf_idx != g_pane.buf_idx) return;
+    if (ev->row != g_pane.anchor_line) {
+        lsp_pane_close_internal(); return;
+    }
+    /* Re-request completion at the new cursor position. */
+    lsp_request_completion(ev->buf, ev->row, ev->col);
+}
 
-    if (rc != 0) {
-        for (int i = 0; i < ctx->n; i++) free(ctx->insert[i]);
-        free(ctx);
-        ed_set_status_message("LSP: completion picker failed");
+static void lsp_pane_cursor_move(const HookCursorEvent *ev) {
+    if (!g_pane.open || !ev || !ev->buf) return;
+    int buf_idx = (int)(ev->buf - E.buffers);
+    if (buf_idx != g_pane.buf_idx) {
+        lsp_pane_close_internal(); return;
+    }
+    if (ev->new_y != g_pane.anchor_line ||
+        ev->new_x < g_pane.word_start) {
+        lsp_pane_close_internal(); return;
+    }
+    /* Cursor moved horizontally on the same line (e.g., backspace).
+     * Re-request so the list narrows/widens with the new prefix. */
+    if (ev->new_x != ev->old_x) {
+        lsp_request_completion(ev->buf, ev->new_y, ev->new_x);
     }
 }
 
@@ -663,6 +884,22 @@ static void lsp_process_response(LspServer *srv, cJSON *json) {
         lsp_pending_pop(srv, id);
         lsp_send_initialized(srv);
         lsp_notify_existing_buffers(srv);
+        /* Replay a completion request that arrived during the handshake,
+         * so the user doesn't have to press C-Space again once init
+         * completes. didOpen has just been sent so the server has the
+         * doc state it needs. */
+        if (g_deferred_completion.lang &&
+            strcmp(g_deferred_completion.lang, srv->lang) == 0 &&
+            g_deferred_completion.buf_idx >= 0 &&
+            g_deferred_completion.buf_idx < (int)arrlen(E.buffers)) {
+            Buffer *dbuf = &E.buffers[g_deferred_completion.buf_idx];
+            int    dline = g_deferred_completion.line;
+            int    dcol  = g_deferred_completion.col;
+            lsp_clear_deferred_completion();
+            lsp_request_completion(dbuf, dline, dcol);
+        } else {
+            lsp_clear_deferred_completion();
+        }
         return;
     }
 
@@ -791,6 +1028,15 @@ static void lsp_handle_message(LspServer *srv, const char *msg, int len) {
 void lsp_init(void) {
     for (int i = 0; i < LSP_MAX_SERVERS; i++) g_servers[i] = NULL;
     g_servers_count = 0;
+    g_pane.buf_idx  = -1;
+
+    /* Completion-pane hooks: render overlay, key interception while
+     * the pane is open, and reactivity to typing/cursor moves. */
+    hook_register_render_overlay(lsp_pane_draw);
+    hook_register_key(HOOK_KEYPRESS, lsp_pane_keypress);
+    hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", lsp_pane_char_insert);
+    hook_register_cursor(HOOK_CURSOR_MOVE, -1, "*", lsp_pane_cursor_move);
+
     log_msg("LSP: init");
 }
 
@@ -1072,7 +1318,15 @@ void lsp_request_completion(Buffer *buf, int line, int col) {
         return;
     }
     if (!srv->initialized) {
-        ed_set_status_message("LSP[%s]: still initializing, try again", srv->lang);
+        /* Defer until the server finishes its initialize handshake.
+         * The most-recent request wins; rapid-fire C-Space is fine. */
+        lsp_clear_deferred_completion();
+        g_deferred_completion.lang    = strdup(srv->lang);
+        g_deferred_completion.buf_idx = (int)(buf - E.buffers);
+        g_deferred_completion.line    = line;
+        g_deferred_completion.col     = col;
+        ed_set_status_message("LSP[%s]: starting up, completion will appear shortly...",
+                              srv->lang);
         return;
     }
     char *uri = lsp_get_file_uri(buf->filename);

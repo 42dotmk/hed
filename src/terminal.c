@@ -855,6 +855,10 @@ void ed_render_frame(void) {
     draw_status_bar(&ab, &lo);
     draw_message_bar(&ab, &lo);
 
+    /* Plugin overlays (completion pane, which-key, etc.) draw last so
+     * they sit on top of windows but under the cursor positioning. */
+    hook_fire_render_overlay(&ab);
+
     Buffer *buf = NULL;
     if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
         win->buffer_index < (int)arrlen(E.buffers))

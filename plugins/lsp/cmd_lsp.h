@@ -8,6 +8,7 @@ void cmd_lsp_status(const char *args);
 void cmd_lsp_hover(const char *args);
 void cmd_lsp_definition(const char *args);
 void cmd_lsp_completion(const char *args);
+void cmd_lsp_completion_toggle(const char *args);
 void cmd_lsp_diagnostics(const char *args);
 
 #endif /* CMD_LSP_H */

@@ -87,6 +87,16 @@ void hook_register_simple(HookType type, HookSimpleCallback callback) {
     hook_push(type, -1, "*", (HookFn)callback);
 }
 
+void hook_register_render_overlay(HookRenderOverlayCallback callback) {
+    hook_push(HOOK_RENDER_OVERLAY, -1, "*", (HookFn)callback);
+}
+
+void hook_fire_render_overlay(struct Abuf *ab) {
+    for (ptrdiff_t i = 0; i < arrlen(hooks[HOOK_RENDER_OVERLAY]); i++) {
+        ((HookRenderOverlayCallback)hooks[HOOK_RENDER_OVERLAY][i].callback)(ab);
+    }
+}
+
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb) {
     hook_push(type, -1, "*", (HookFn)cb);
 }

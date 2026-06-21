@@ -54,6 +54,15 @@ typedef enum {
      * Payload is the binding being invoked plus the repeat count. */
     HOOK_KEYBIND_INVOKE,
 
+    /* Fires near the end of ed_render_frame, after windows + status +
+     * message bars have been drawn but before the cursor is positioned.
+     * Payload is an Abuf* (the frame's append buffer) — handlers cast
+     * it from the simple-callback signature via a small adapter, see
+     * hook_register_render_overlay() / hook_fire_render_overlay() in
+     * src/hooks.h. Use this for transient overlays (completion pane,
+     * which-key, etc.) that don't need their own Window. */
+    HOOK_RENDER_OVERLAY,
+
     HOOK_TYPE_COUNT
 } HookType;
 
@@ -148,6 +157,13 @@ void hook_register_cursor(HookType type, int mode, const char *filetype,
 void hook_register_key(HookType type, HookKeyCallback callback);
 /* Simple, payload-free hooks (always fire). */
 void hook_register_simple(HookType type, HookSimpleCallback callback);
+
+/* Render overlay hook. Forward-declare Abuf to avoid pulling in
+ * ui/abuf.h here (handlers cast back to it). */
+struct Abuf;
+typedef void (*HookRenderOverlayCallback)(struct Abuf *ab);
+void hook_register_render_overlay(HookRenderOverlayCallback callback);
+void hook_fire_render_overlay(struct Abuf *ab);
 /* Keybind dispatch hooks always fire regardless of mode or filetype. */
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb);
 void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb);
