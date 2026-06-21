@@ -177,15 +177,26 @@ install-man: man
 	@echo "Installed hed man pages -> $(MAN_INSTALL_DIR)"
 
 ts-langs: $(BUILD_DIR)
-	@echo "Tree-sitter source files:"
-	cp -rf ts-langs build/ts-langs
-	cp -rf ts-langs/* ~/.config/hed/ts/
+	@echo "Staging tree-sitter grammars into $(BUILD_DIR)/ts-langs"
+	@ts_user="$${XDG_CONFIG_HOME:-$$HOME/.config}/hed/ts"; \
+	ts_src=""; \
+	if [ -d ts-langs ]; then ts_src=ts-langs; \
+	elif [ -d "$$ts_user" ]; then ts_src="$$ts_user"; fi; \
+	if [ -z "$$ts_src" ]; then \
+	  echo "  warning: no grammars found (ts-langs/ or $$ts_user) — skipping"; \
+	else \
+	  echo "  from $$ts_src"; \
+	  mkdir -p $(BUILD_DIR)/ts-langs; \
+	  cp -rf "$$ts_src/." $(BUILD_DIR)/ts-langs/; \
+	  if [ "$$ts_src" = ts-langs ]; then mkdir -p "$$ts_user"; cp -rf ts-langs/. "$$ts_user/"; fi; \
+	fi
 
 strip_build: $(BUILD_DIR) $(TARGET) $(TSI) ts-langs
 	@# Strip debug/symbol tables from the final binaries
 	strip --strip-all $(TARGET) $(TSI)
-	@# Keep only final binaries in $(BUILD_DIR)
-	@find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name 'hed' ! -name 'tsi' -exec rm -rf {} +
+	@# Keep only the final binaries and the staged grammars in $(BUILD_DIR)
+	@find $(BUILD_DIR) -mindepth 1 -maxdepth 1 \
+		! -name 'hed' ! -name 'tsi' ! -name 'ts-langs' -exec rm -rf {} +
 
 clean:
 	rm -rf $(BUILD_DIR)
