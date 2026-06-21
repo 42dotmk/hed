@@ -168,6 +168,9 @@ MAN_SRC_DIR = $(if $(MAN_DIR),$(MAN_DIR),man)
 install: $(TARGET) $(TSI)
 	install -Dm755 $(TARGET) $(DESTDIR)$(BINDIR)/hed
 	install -Dm755 $(TSI)    $(DESTDIR)$(BINDIR)/tsi
+	@if [ -f LICENSE ]; then \
+	  install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/doc/hed/copyright; \
+	fi
 	@if ls $(MAN_SRC_DIR)/man1/*.1 >/dev/null 2>&1; then \
 	  install -d $(DESTDIR)$(MANDIR)/man1; \
 	  install -m644 $(MAN_SRC_DIR)/man1/*.1 $(DESTDIR)$(MANDIR)/man1/; \
@@ -194,6 +197,7 @@ publish: $(TARGET) $(TSI)
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/hed $(DESTDIR)$(BINDIR)/tsi
 	rm -f $(DESTDIR)$(MANDIR)/man1/hed.1 $(DESTDIR)$(MANDIR)/man1/hed-*.1
+	rm -rf $(DESTDIR)$(PREFIX)/share/doc/hed
 	@echo "Removed hed and tsi from $(DESTDIR)$(PREFIX)"
 
 # Remove the dev-convenience symlinks (mirror of `install-dev`).

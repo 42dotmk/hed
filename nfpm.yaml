@@ -24,9 +24,7 @@ description: |
   Vim-style modal editing by default, with Emacs and VSCode keymaps that
   swap at runtime. Tree-sitter highlighting (statically linked),
   ripgrep/fzf pickers, tmux runner panes and OSC 52 clipboard.
-# TODO: the repo has no LICENSE file yet — set this once one is added
-# (deb "License:" / rpm "License:" field). Leaving it empty for now.
-license: ""
+license: MIT
 
 contents:
   - src: ./hed-linux-x86_64
@@ -35,6 +33,8 @@ contents:
     dst: /usr/bin/tsi
   - src: ./man/man1/*.1
     dst: /usr/share/man/man1/
+  - src: ./LICENSE
+    dst: /usr/share/doc/hed/copyright
 
 # Only libc is a hard dependency — the tree-sitter runtime is statically
 # linked and every external tool is probed at runtime, so fzf/ripgrep/tmux/
