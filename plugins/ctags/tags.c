@@ -212,9 +212,8 @@ int goto_tag(const char *tag_name) {
 
     /* If no tag_name provided, get word under cursor */
     if (!tag_name || !*tag_name) {
-        StrBuf word = strbuf_new();
-        if (!buf_get_word_under_cursor(&word) || word.len == 0) {
-            strbuf_free(&word);
+        StrView word;
+        if (!buf_word_view_under_cursor(&word) || word.len == 0) {
             ed_set_status_message(
                 "No tag name provided and no word under cursor");
             return 0;
@@ -225,7 +224,6 @@ int goto_tag(const char *tag_name) {
             copy_len = sizeof(tag_buf) - 1;
         memcpy(tag_buf, word.data, copy_len);
         tag_buf[copy_len] = '\0';
-        strbuf_free(&word);
 
         tag_name = tag_buf;
     }

@@ -769,15 +769,13 @@ void kb_search_next(void) {
 }
 
 void kb_find_under_cursor(void) {
-    StrBuf w = strbuf_new();
-    if (!buf_get_word_under_cursor(&w)) {
-        strbuf_free(&w);
+    StrView w;
+    if (!buf_word_view_under_cursor(&w)) {
         return;
     }
     strbuf_free(&E.search_query);
-    E.search_query = strbuf_from(w.data, w.len);
+    E.search_query = strbuf_from_view(w);
     ed_set_status_message("* %.*s", (int)(w.len > 40 ? 40 : w.len), w.data);
-    strbuf_free(&w);
     jump_save_current();
     buf_find_in(buf_cur());
 }

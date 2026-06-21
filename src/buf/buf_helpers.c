@@ -555,7 +555,11 @@ int buf_get_line_under_cursor(StrBuf *out) {
     return 1;
 }
 
-int buf_get_word_under_cursor(StrBuf *out) {
+/* Borrow the word under the cursor as a view into the row's own buffer —
+ * no allocation. The view is valid only until that buffer is next edited,
+ * so consume it before mutating. Callers that need to keep the bytes
+ * should copy via strbuf_from_view(). */
+int buf_word_view_under_cursor(StrView *out) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
@@ -577,9 +581,19 @@ int buf_get_word_under_cursor(StrBuf *out) {
     if (!textobj_word(buf, win->cursor.y, cx, &sel))
         return 0;
     Row *row = &buf->rows[sel.start.line];
+    *out = strview(row->chars.data + sel.start.col,
+                   (size_t)(sel.end.col - sel.start.col));
+    return 1;
+}
+
+int buf_get_word_under_cursor(StrBuf *out) {
+    if (!PTR_VALID(out))
+        return 0;
+    StrView v;
+    if (!buf_word_view_under_cursor(&v))
+        return 0;
     strbuf_free(out);
-    *out = strbuf_from(row->chars.data + sel.start.col,
-                     (size_t)(sel.end.col - sel.start.col));
+    *out = strbuf_from_view(v);
     return 1;
 }
 

@@ -238,9 +238,8 @@ static void cmd_rg(const char *args) {
 static void cmd_rg_word(const char *args) {
     (void)args;
     /* Get word under cursor */
-    StrBuf w = strbuf_new();
-    if (!buf_get_word_under_cursor(&w) || w.len == 0) {
-        strbuf_free(&w);
+    StrView w;
+    if (!buf_word_view_under_cursor(&w) || w.len == 0) {
         ed_set_status_message("rgword: no word under cursor");
         return;
     }
@@ -251,7 +250,6 @@ static void cmd_rg_word(const char *args) {
         n = sizeof(pattern) - 1;
     memcpy(pattern, w.data, n);
     pattern[n] = '\0';
-    strbuf_free(&w);
 
     char esc_pat[1024];
     shell_escape_single(pattern, esc_pat, sizeof(esc_pat));

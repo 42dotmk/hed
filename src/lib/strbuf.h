@@ -10,6 +10,15 @@ typedef struct {
     size_t cap; /* allocated bytes, including the trailing NUL */
 } StrBuf;
 
+/* StrView: a borrowed, read-only slice of bytes. Does NOT own its data
+ * and is NOT guaranteed NUL-terminated. Never free a StrView, and never
+ * hold one past the lifetime of the storage it points into (e.g. a row
+ * buffer is invalidated by the next edit). Pass it by value. */
+typedef struct {
+    const char *data;
+    size_t len;
+} StrView;
+
 /* StrBuf helper functions */
 StrBuf strbuf_new(void);
 StrBuf strbuf_from(const char *s, size_t len);
@@ -27,5 +36,16 @@ char *strbuf_to_cstr(const StrBuf *s);
  * quotes via the '\'' pattern. The growable analogue of
  * shell_escape_single() for callers building unbounded commands. */
 void strbuf_append_shell_quoted(StrBuf *s, const char *in);
+
+/* ---- StrView (borrowed) helpers ---- */
+
+StrView strview(const char *data, size_t len);
+StrView strview_from_cstr(const char *s);
+StrView strbuf_view(const StrBuf *s);          /* borrow a StrBuf, no copy */
+int     strview_eq(StrView a, StrView b);
+
+/* Bridges from a borrowed view back to owned StrBuf storage (these copy). */
+StrBuf strbuf_from_view(StrView v);
+void   strbuf_append_view(StrBuf *s, StrView v);
 
 #endif
