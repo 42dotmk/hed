@@ -60,15 +60,32 @@ make
 - `build/hed` — the editor
 - `build/tsi` — the tree-sitter grammar installer
 
-Then symlink both into `~/.local/bin`:
+Then symlink both into `~/.local/bin` (rebuilds are picked up
+automatically — no reinstall needed):
 
 ```zsh
-make install
+make install-dev
+```
+
+For a system-wide / packaging install instead, `make install` copies the
+binaries, man pages and license into an FHS layout under `PREFIX`
+(default `/usr/local`), honoring `DESTDIR`:
+
+```zsh
+sudo make install PREFIX=/usr            # -> /usr/bin, /usr/share/man, ...
+make install PREFIX=/usr DESTDIR=./stage # stage for a package
 ```
 
 The extras — portable `fzf`/`ripgrep`, tree-sitter grammars, and
 `copilot-language-server` (for `:copilot login`) — are fetched by the
 one-line `install.sh` above, not by the build.
+
+### Packages
+
+Pre-built `.deb` and `.rpm` are attached to each
+[release](https://github.com/42dotmk/hed/releases/latest). Distro recipes
+(Arch `PKGBUILD`, Void template) and the full packaging notes live in
+[`packaging/`](packaging/README.md).
 
 ### Man pages
 
