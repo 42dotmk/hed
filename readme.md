@@ -82,10 +82,18 @@ one-line `install.sh` above, not by the build.
 
 ### Packages
 
+Homebrew (Linux x86_64):
+
+```zsh
+brew tap 42dotmk/hed && brew install hed
+```
+
 Pre-built `.deb` and `.rpm` are attached to each
-[release](https://github.com/42dotmk/hed/releases/latest). Distro recipes
-(Arch `PKGBUILD`, Void template) and the full packaging notes live in
-[`packaging/`](packaging/README.md).
+[release](https://github.com/42dotmk/hed/releases/latest), and an
+`apt`/`dnf` repo is served from GitHub Pages once enabled (see
+[`packaging/`](packaging/README.md)). Distro recipes (Arch `PKGBUILD`, Void
+template) and the full packaging notes — including how to publish to the
+AUR — live in [`packaging/`](packaging/README.md) too.
 
 ### Man pages
 
