@@ -1,4 +1,6 @@
 #include "utils/recent_files.h"
+#include "fs/fs.h"
+#include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,17 +11,8 @@
 
 static const char *recent_files_filename = ".hed_recent_files";
 
-static char *recent_files_path(void) {
-    const char *home = getenv("HOME");
-    if (home && *home) {
-        size_t len = strlen(home) + 1 + strlen(recent_files_filename) + 1;
-        char *p = malloc(len);
-        if (!p)
-            return NULL;
-        snprintf(p, len, "%s/%s", home, recent_files_filename);
-        return p;
-    }
-    return strdup(recent_files_filename);
+static bool recent_files_path(char *out, size_t out_sz) {
+    return fs_path_home_join(recent_files_filename, out, out_sz);
 }
 
 static void recent_files_clear_items(RecentFiles *rf) {
@@ -79,33 +72,28 @@ static void recent_files_save(const RecentFiles *rf) {
     if (!rf)
         return;
 
-    char *path = recent_files_path();
-    if (!path)
+    char path[PATH_MAX];
+    if (!recent_files_path(path, sizeof(path)))
         return;
 
-    char tmppath[4096];
-    snprintf(tmppath, sizeof(tmppath), "%s.tmp", path);
+    /* Concatenate items + '\n' into one buffer, then write atomically. */
+    size_t total = 0;
+    for (ptrdiff_t i = 0; i < arrlen(rf->items); i++)
+        total += strlen(rf->items[i]) + 1;
 
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        fp = fopen(path, "w");
-        if (!fp) {
-            free(path);
-            return;
-        }
-    }
-
+    char *buf = malloc(total + 1);
+    if (!buf)
+        return;
+    size_t off = 0;
     for (ptrdiff_t i = 0; i < arrlen(rf->items); i++) {
-        fprintf(fp, "%s\n", rf->items[i]);
+        size_t n = strlen(rf->items[i]);
+        memcpy(buf + off, rf->items[i], n);
+        off += n;
+        buf[off++] = '\n';
     }
-
-    fclose(fp);
-
-    if (strstr(tmppath, ".tmp")) {
-        rename(tmppath, path);
-    }
-
-    free(path);
+    if (fs_file_write_atomic(path, buf, off) != ED_OK)
+        fs_file_write(path, buf, off);
+    free(buf);
 }
 
 void recent_files_init(RecentFiles *rf) {
@@ -114,36 +102,23 @@ void recent_files_init(RecentFiles *rf) {
 
     rf->items = NULL;
 
-    char *path = recent_files_path();
-    if (!path)
+    char path[PATH_MAX];
+    if (!recent_files_path(path, sizeof(path)))
         return;
 
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        free(path);
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK)
         return;
-    }
 
-    char *line = NULL;
-    size_t cap = 0;
-    ssize_t r;
-
-    while ((r = getline(&line, &cap, fp)) != -1) {
-        while (r > 0 && (line[r - 1] == '\n' || line[r - 1] == '\r'))
-            r--;
-        line[r] = '\0';
-
-        if (r > 0) {
+    const char *line;
+    size_t      len;
+    while (fs_lines_next(r, &line, &len)) {
+        if (len > 0)
             recent_files_append(rf, line);
-        }
-
         if ((int)arrlen(rf->items) >= RECENT_FILES_MAX)
             break;
     }
-
-    free(line);
-    fclose(fp);
-    free(path);
+    fs_lines_close(r);
 
     recent_files_dedup(rf);
 }

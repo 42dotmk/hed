@@ -16,6 +16,15 @@ static inline void ansi_move(Abuf *ab, int row, int col) {
 }
 static inline void ansi_invert_on(Abuf *ab) { ab_append(ab, "\x1b[7m", 4); }
 static inline void ansi_sgr_reset(Abuf *ab) { ab_append(ab, "\x1b[m", 3); }
+/* Soft reset: cancels bold/italic/underline/strikethrough + foreground
+ * without touching reverse video. Used by the renderer when closing a
+ * syntax span inside a selection so the selection's inverse-video stays
+ * on. Must clear every attribute a span can set (the tasks plugin's
+ * CANCELLED status uses SGR 9), else the attribute leaks past the span
+ * and bleeds into the rest of the frame and following buffers. */
+static inline void ansi_sgr_soft_reset(Abuf *ab) {
+    ab_append(ab, "\x1b[22;23;24;29;39m", 17);
+}
 static inline void ansi_set_fg_color(Abuf *ab, int color) {
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "\x1b[38;5;%dm", color);

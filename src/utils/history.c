@@ -1,4 +1,6 @@
 #include "utils/history.h"
+#include "fs/fs.h"
+#include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,17 +11,8 @@
 
 static const char *history_filename = ".hed_history"; /* $HOME fallback */
 
-static char *hist_path(void) {
-    const char *home = getenv("HOME");
-    if (home && *home) {
-        size_t len = strlen(home) + 1 + strlen(history_filename) + 1;
-        char *p = malloc(len);
-        if (!p)
-            return NULL;
-        snprintf(p, len, "%s/%s", home, history_filename);
-        return p;
-    }
-    return strdup(history_filename);
+static bool hist_path(char *out, size_t out_sz) {
+    return fs_path_home_join(history_filename, out, out_sz);
 }
 
 static void hist_clear_items(CmdHistory *h) {
@@ -63,27 +56,13 @@ static void hist_append(CmdHistory *h, const char *line) {
 static void hist_prepend_to_file(const char *line) {
     if (!line || !*line)
         return;
-    char *path = hist_path();
-    if (!path)
+    char path[PATH_MAX];
+    if (!hist_path(path, sizeof(path)))
         return;
 
-    FILE *fp = fopen(path, "r");
-    char *old = NULL;
+    char  *old   = NULL;
     size_t oldsz = 0;
-    if (fp) {
-        fseek(fp, 0, SEEK_END);
-        long sz = ftell(fp);
-        if (sz > 0) {
-            fseek(fp, 0, SEEK_SET);
-            old = malloc((size_t)sz + 1);
-            if (old) {
-                fread(old, 1, (size_t)sz, fp);
-                old[sz] = '\0';
-                oldsz = (size_t)sz;
-            }
-        }
-        fclose(fp);
-    }
+    (void)fs_file_read(path, &old, &oldsz);   /* ok if file doesn't exist */
 
     size_t llen = strlen(line);
     size_t keep_bytes = 0;
@@ -104,35 +83,21 @@ static void hist_prepend_to_file(const char *line) {
         }
     }
     size_t newsz = llen + 1 + keep_bytes;
-    char *buf = malloc(newsz + 1);
+    char *buf = malloc(newsz);
     if (!buf) {
         free(old);
-        free(path);
         return;
     }
     memcpy(buf, line, llen);
     buf[llen] = '\n';
     if (keep_bytes)
         memcpy(buf + llen + 1, old, keep_bytes);
-    buf[newsz] = '\0';
 
-    char tmppath[4096];
-    snprintf(tmppath, sizeof(tmppath), "%s.tmp", path);
-    FILE *tfp = fopen(tmppath, "w");
-    if (tfp) {
-        fwrite(buf, 1, newsz, tfp);
-        fclose(tfp);
-        rename(tmppath, path);
-    } else {
-        tfp = fopen(path, "w");
-        if (tfp) {
-            fwrite(buf, 1, newsz, tfp);
-            fclose(tfp);
-        }
-    }
+    if (fs_file_write_atomic(path, buf, newsz) != ED_OK)
+        fs_file_write(path, buf, newsz);
+
     free(buf);
     free(old);
-    free(path);
 }
 
 void hist_init(CmdHistory *h) {
@@ -145,28 +110,20 @@ void hist_init(CmdHistory *h) {
     h->saved_line[0] = '\0';
     h->prefix[0] = '\0';
 
-    char *path = hist_path();
-    if (!path)
+    char path[PATH_MAX];
+    if (!hist_path(path, sizeof(path)))
         return;
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        free(path);
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK)
         return;
-    }
-    char *line = NULL;
-    size_t cap = 0;
-    ssize_t r;
-    while ((r = getline(&line, &cap, fp)) != -1) {
-        while (r > 0 && (line[r - 1] == '\n' || line[r - 1] == '\r'))
-            r--;
-        line[r] = '\0';
+    const char *line;
+    size_t      len;
+    while (fs_lines_next(r, &line, &len)) {
         hist_append(h, line);
         if ((int)arrlen(h->items) >= CMD_HISTORY_MAX)
             break;
     }
-    free(line);
-    fclose(fp);
-    free(path);
+    fs_lines_close(r);
 }
 
 void hist_free(CmdHistory *h) { hist_clear_items(h); }

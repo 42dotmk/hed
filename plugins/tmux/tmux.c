@@ -6,11 +6,11 @@
 
 #include "hed.h"
 #include "tmux.h"
-#include "utils/fzf.h"
+#include "utils/term_cmd.h"
 #include "utils/yank.h"
-#include "keybinds_builtins.h"
-#include "command_mode.h"
-#include "prompt.h"
+#include "input/keybinds_builtins.h"
+#include "input/command_mode.h"
+#include "input/prompt.h"
 #include <string.h>
 
 static void cmd_tmux_toggle(const char *args) {
@@ -44,25 +44,37 @@ static void cmd_tmux_attach(const char *args) {
         ed_set_status_message("Usage: :tmux_attach <name>");
         return;
     }
-    char **sel = NULL;
-    int cnt = 0;
+    /* Enumerate panes via tmux, then hand the list to the picker —
+     * keeps this plugin agnostic to whichever picker backend is loaded. */
+    char **lines = NULL;
+    int lcnt = 0;
     const char *list_cmd =
         "tmux list-panes -a -F "
         "'#{pane_id} #{session_name}:#{window_name}.#{pane_index} "
         "#{pane_current_command} | #{pane_title}'";
-    if (!fzf_run(list_cmd, 0, &sel, &cnt) || cnt <= 0 || !sel[0] || !sel[0][0]) {
-        fzf_free(sel, cnt);
+    if (!term_cmd_capture(list_cmd, &lines, &lcnt) || lcnt <= 0) {
+        term_cmd_free(lines, lcnt);
+        ed_set_status_message("tmux: no panes");
+        return;
+    }
+
+    char **sel = NULL;
+    int cnt = 0;
+    int ok = picker_list((const char **)lines, lcnt, 0, &sel, &cnt);
+    term_cmd_free(lines, lcnt);
+    if (!ok || cnt <= 0 || !sel[0] || !sel[0][0]) {
+        picker_list_free(sel, cnt);
         return;
     }
     /* First whitespace-separated field of the picked line is the pane id. */
     char pane_id[64] = {0};
     if (sscanf(sel[0], "%63s", pane_id) != 1 || !pane_id[0]) {
         ed_set_status_message("tmux: could not parse pane id");
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         return;
     }
     tmux_pane_attach(args, pane_id);
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 }
 
 #define TMUX_PANE_LIST_MAX 16
@@ -78,29 +90,29 @@ static void cmd_tmux_panes(const char *args) {
 
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_pick_list(names, n, 0, &sel, &cnt) || cnt <= 0 || !sel[0] ||
+    if (!picker_list(names, n, 0, &sel, &cnt) || cnt <= 0 || !sel[0] ||
         !sel[0][0]) {
-        fzf_free(sel, cnt);
+        picker_list_free(sel, cnt);
         return;
     }
     tmux_pane_focus(sel[0]);
-    fzf_free(sel, cnt);
+    picker_list_free(sel, cnt);
 }
 
 /* Send the paragraph under cursor to whichever pane was last focused.
  * Exposed both as a keybind callback and as the `:tmux_send_line`
  * command. Defaults to the runner pane until something else is focused. */
 static void kb_tmux_send_line(void) {
-    SizedStr para = sstr_new();
+    StrBuf para = strbuf_new();
     if (!buf_get_paragraph_under_cursor(&para) || para.len == 0) {
-        sstr_free(&para);
+        strbuf_free(&para);
         ed_set_status_message("tmux: no paragraph to send");
         return;
     }
 
     char *cmd_str = malloc(para.len + 1);
     if (!cmd_str) {
-        sstr_free(&para);
+        strbuf_free(&para);
         ed_set_status_message("tmux: out of memory");
         return;
     }
@@ -110,7 +122,7 @@ static void kb_tmux_send_line(void) {
     tmux_pane_send_focused(cmd_str);
 
     free(cmd_str);
-    sstr_free(&para);
+    strbuf_free(&para);
 }
 
 static void cmd_tmux_send_line(const char *args) {
@@ -142,22 +154,22 @@ static void kb_tmux_send_selection(void) {
         return;
     }
 
-    SizedStr joined = sstr_new();
+    StrBuf joined = strbuf_new();
     for (int i = 0; i < yd.num_rows; i++) {
-        sstr_append(&joined, yd.rows[i].data, yd.rows[i].len);
+        strbuf_append(&joined, yd.rows[i].data, yd.rows[i].len);
         if (i < yd.num_rows - 1)
-            sstr_append_char(&joined, '\n');
+            strbuf_append_char(&joined, '\n');
     }
     yank_data_free(&yd);
 
     if (joined.len == 0) {
-        sstr_free(&joined);
+        strbuf_free(&joined);
         ed_set_status_message("tmux: empty selection");
         return;
     }
 
-    char *cmd_str = sstr_to_cstr(&joined);
-    sstr_free(&joined);
+    char *cmd_str = strbuf_to_cstr(&joined);
+    strbuf_free(&joined);
     if (!cmd_str) {
         ed_set_status_message("tmux: out of memory");
         return;
@@ -221,7 +233,7 @@ static int tmux_plugin_init(void) {
     cmd("tmux_panes",          cmd_tmux_panes,          "tmux fzf-pick a registered pane");
     cmd("tmux_attach",         cmd_tmux_attach,         "tmux bind a live pane to a name");
     mapn(" ts", kb_tmux_send_line,      "send paragraph to last focused tmux pane");
-    mapv(" ts", kb_tmux_send_selection, "send selection to last focused tmux pane");
+    mapv(" t",  kb_tmux_send_selection, "send selection to last focused tmux pane");
 
     cmd_prompt_history_register(tmux_send_history_hook, NULL);
     return 0;

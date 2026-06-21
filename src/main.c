@@ -1,23 +1,32 @@
 #include "editor.h"
+#include "fs/fs.h"
 #include "lib/log.h"
 #include "hooks.h"
-#include "commands.h"
+#include "commands/registry.h"
 #include "terminal.h"
 #include "select_loop.h"
-#include "macros.h"
-#include "lib/file_helpers.h"
+#include "input/macros.h"
+#include "buf/buffer.h"
+#include "ui/window.h"
+#include "stb_ds.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+/* Internal helper from buf/buffer.c, not exposed in buffer.h. */
+void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 typedef struct {
     const char  *startup_cmd;  /* -c argument; not owned */
     char       **files;        /* heap array of argv pointers */
     int          file_count;
 } CliArgs;
+
 
 /* ------------------------------------------------------------------------- */
 /* Argument parsing                                                          */
@@ -66,7 +75,7 @@ static int parse_args(int argc, char *argv[], CliArgs *out) {
 
 static void init_logging(int argc) {
     char log_path[4096];
-    if (path_cache_file_for_cwd("log", log_path, sizeof(log_path)))
+    if (fs_path_cache_for_cwd("log", log_path, sizeof(log_path)))
         log_init(log_path);
     else
         log_init(".hedlog");
@@ -86,7 +95,10 @@ static void open_initial_buffers(char **files, int file_count) {
 
     if (arrlen(E.buffers) == 0) {
         int empty_idx = -1;
-        if (buf_new(NULL, &empty_idx) == ED_OK) {
+        if (E.fallback_buf_fn) empty_idx = E.fallback_buf_fn();
+        if (empty_idx < 0 && buf_new(NULL, &empty_idx) != ED_OK)
+            empty_idx = -1;
+        if (empty_idx >= 0) {
             E.current_buffer = empty_idx;
             Window *win = window_cur();
             if (win) win->buffer_index = empty_idx;
@@ -170,19 +182,121 @@ static void event_loop(void) {
     }
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* Pager mode: handle being invoked with stdin attached to a pipe            */
+/*                                                                           */
+/* When something like aerc, git, or a shell pipeline runs `hed` as a pager, */
+/* fd 0 is a pipe, not a tty. Calling tcgetattr() on it fails with ENOTTY    */
+/* ("Inappropriate ioctl for device") and the editor dies before raw mode    */
+/* is even set up. Fix: slurp every byte off the pipe into a heap buffer,    */
+/* then reopen /dev/tty over fd 0 so the rest of startup runs against the    */
+/* user's actual terminal. The slurped content is dropped into a scratch     */
+/* `[stdin]` buffer once ed_init has run.                                    */
+
+static char  *g_pipe_buf  = NULL;
+static size_t g_pipe_len  = 0;
+
+static void capture_stdin_if_pipe(void) {
+    if (isatty(STDIN_FILENO)) return;
+
+    size_t cap = 4096, len = 0;
+    char  *buf = malloc(cap);
+    if (!buf) return;
+    for (;;) {
+        if (len == cap) {
+            size_t nc  = cap * 2;
+            char  *nb  = realloc(buf, nc);
+            if (!nb) { free(buf); return; }
+            buf = nb;
+            cap = nc;
+        }
+        ssize_t n = read(STDIN_FILENO, buf + len, cap - len);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (n == 0) break;
+        len += (size_t)n;
+    }
+    g_pipe_buf = buf;
+    g_pipe_len = len;
+
+    /* Re-attach fd 0 to the controlling terminal. Without this, raw
+     * mode setup and every subsequent read() would still see the
+     * (now closed) pipe. /dev/tty is the controlling terminal of
+     * the session; opening it RDWR lets us both read keystrokes and
+     * write escape sequences. */
+    int tty = open("/dev/tty", O_RDWR);
+    if (tty >= 0) {
+        dup2(tty, STDIN_FILENO);
+        if (tty > 2) close(tty);
+    }
+}
+
+static void open_pipe_buffer(void) {
+    if (!g_pipe_buf) return;
+
+    int idx = -1;
+    if (buf_new(NULL, &idx) != ED_OK) {
+        free(g_pipe_buf);
+        g_pipe_buf = NULL;
+        g_pipe_len = 0;
+        return;
+    }
+    Buffer *b = &E.buffers[idx];
+    free(b->filename); b->filename = NULL;
+    free(b->title);    b->title    = strdup("[stdin]");
+
+    /* Split on '\n', tolerant of an optional trailing '\r'. */
+    size_t start = 0;
+    for (size_t i = 0; i <= g_pipe_len; i++) {
+        if (i == g_pipe_len || g_pipe_buf[i] == '\n') {
+            size_t llen = i - start;
+            if (llen > 0 && g_pipe_buf[start + llen - 1] == '\r') llen--;
+            buf_row_insert_in(b, b->num_rows, g_pipe_buf + start, llen);
+            start = i + 1;
+        }
+    }
+
+    b->dirty    = 0;
+    b->readonly = 1;
+
+    E.current_buffer = idx;
+    Window *win = window_cur();
+    if (win) win->buffer_index = idx;
+
+    free(g_pipe_buf);
+    g_pipe_buf = NULL;
+    g_pipe_len = 0;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Entry point                                                               */
 
 int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+            printf("hed %s\n", HED_VERSION);
+            return 0;
+        }
+    }
+
     CliArgs args;
     if (parse_args(argc, argv, &args) != 0)
         return 1;
 
+    /* Must run before raw mode: tcgetattr() on a pipe is fatal. */
+    capture_stdin_if_pipe();
+
     init_logging(argc);
     enable_raw_mode();
-    ed_init(args.file_count == 0);
+    /* Skip the empty default buffer if we'll be filling one from the
+     * pipe. */
+    ed_init(args.file_count == 0 && !g_pipe_buf);
 
     open_initial_buffers(args.files, args.file_count);
+    open_pipe_buffer();
     free(args.files);
 
     run_startup_command(args.startup_cmd);

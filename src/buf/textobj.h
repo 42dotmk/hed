@@ -20,6 +20,12 @@ typedef struct TextSelection {
 
 /* Text-object helpers. All return 1 on success, 0 on failure. */
 int textobj_word(Buffer *buf, int line, int col, TextSelection *sel);
+/* Vim "aw": word plus trailing blanks (leading if none after); on blanks,
+ * the blank run plus the following word. */
+int textobj_word_around(Buffer *buf, int line, int col, TextSelection *sel);
+/* Vim "iW"/"aW": same as above but blank-delimited (any non-blank run). */
+int textobj_WORD(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_WORD_around(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_line(Buffer *buf, int line, int col, TextSelection *sel);
 /* Brackets/quotes: inner selection inferred from nearest enclosing pair. */
 int textobj_brackets(Buffer *buf, int line, int col, TextSelection *sel);

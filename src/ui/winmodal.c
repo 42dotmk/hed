@@ -31,6 +31,7 @@ Window *winmodal_create(int x, int y, int width, int height) {
         y = 1;
 
     /* Initialize window fields */
+    modal->id = 0; /* modals carry no per-(buffer,window) cursor set */
     modal->left = x;
     modal->top = y;
     modal->width = width;
@@ -154,6 +155,7 @@ Window *winmodal_from_current(void) {
 
     /* Copy all window state */
     *modal = *current;
+    modal->id = 0; /* modals carry no per-(buffer,window) cursor set */
 
     /* Resize modal to half screen size and center it */
     int width = E.screen_cols / 2;

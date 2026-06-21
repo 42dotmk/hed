@@ -4,6 +4,10 @@ queries
 ts/tsi
 ts-langs
 .hedlog
-tasks
+/tasks
 tags
 /lsp-servers
+test/test_textobj
+test/test_input
+.understand-anything/
+/man/

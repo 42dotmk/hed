@@ -9,9 +9,8 @@
 
 #include "hed.h"
 #include "ts.h"
-
-/* Forward decl from cmd_misc — used to launch the tsi installer. */
-void cmd_shell(const char *args);
+#include "theme.h"
+#include "shell/shell.h"
 
 static void cmd_ts(const char *args) {
     if (!args || !*args) {
@@ -68,10 +67,67 @@ static void cmd_tsi(const char *args) {
     cmd_shell(cmd_str);
 }
 
+static void cmd_theme(const char *args) {
+    if (args && *args) {
+        if (theme_activate(args) != 0) {
+            ed_set_status_message("theme: unknown '%s'", args);
+            return;
+        }
+        ed_set_status_message("theme: %s", args);
+        return;
+    }
+
+    /* No args → fzf picker over the registered themes. */
+    const char *const *names = theme_list();
+    if (!names || !names[0]) {
+        const char *active = theme_active_name();
+        ed_set_status_message("theme: %s (no themes registered)",
+                              active ? active : "default");
+        return;
+    }
+    int n = 0;
+    while (names[n])
+        n++;
+
+    char **sel = NULL;
+    int    cnt = 0;
+    /* picker_list takes const char **; theme_list returns const char *const *.
+     * The cast is safe — picker_list never writes through the array. */
+    if (!picker_list((const char **)names, n, 0, &sel, &cnt) || cnt <= 0 ||
+        !sel[0] || !sel[0][0]) {
+        picker_list_free(sel, cnt);
+        return;
+    }
+    if (theme_activate(sel[0]) != 0)
+        ed_set_status_message("theme: unknown '%s'", sel[0]);
+    else
+        ed_set_status_message("theme: %s", sel[0]);
+    picker_list_free(sel, cnt);
+}
+
 static int treesitter_init(void) {
+    ts_seed_default_theme();
     cmd("ts",     cmd_ts,     "ts on|off|auto");
     cmd("tslang", cmd_tslang, "tslang <name>");
     cmd("tsi",    cmd_tsi,    "install ts lang");
+    cmd("theme",  cmd_theme,  "theme [name]");
+    /* Phase-1 renderer abstraction: tree-sitter is the first
+     * highlighter to emit AttrSpans instead of bytes. Registers for
+     * every filetype — ts_render_pre_hook itself no-ops when the
+     * buffer has no parsed tree. */
+    hook_register_render(HOOK_RENDER_PRE, -1, "*",
+                         (HookRenderCallback)ts_render_pre_hook);
+    /* Own the per-buffer lifecycle entirely from the plugin side —
+     * core no longer carries any tree-sitter-shaped slots or calls. */
+    hook_register_buffer(HOOK_BUFFER_OPEN,  -1, "*", ts_on_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", ts_on_buffer_close);
+    /* Existing buffers (the placeholder buf_new at startup) get the
+     * same treatment as buffers opened later. */
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        HookBufferEvent ev = {.buf = &E.buffers[i],
+                              .filename = E.buffers[i].filename};
+        ts_on_buffer_open(&ev);
+    }
     return 0;
 }
 

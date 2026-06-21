@@ -7,17 +7,19 @@
 #include "utils/jump_list.h"
 #include "utils/quickfix.h"
 #include "utils/recent_files.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "stb_ds.h"
 #include "ui/window.h"
 
-#define HED_VERSION "0.2.0"
+#ifndef HED_VERSION
+#define HED_VERSION "dev"
+#endif
 #define TAB_STOP 4
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define CMD_HISTORY_MAX 1000
 
 /* Special key codes */
-#define KEY_DELETE 127
+#define KEY_DELETE 1009 /* forward-delete (CSI 3~), distinct from BS byte 127 */
 #define KEY_PAGE_UP 1000
 #define KEY_PAGE_DOWN 1001
 #define KEY_ARROW_UP 1002
@@ -26,6 +28,7 @@
 #define KEY_ARROW_LEFT 1005
 #define KEY_HOME 1006
 #define KEY_END 1007
+#define KEY_BTAB 1008 /* Shift+Tab (backtab), CSI Z */
 #define KEY_F1  1010
 #define KEY_F2  1011
 #define KEY_F3  1012
@@ -38,6 +41,19 @@
 #define KEY_F10 1019
 #define KEY_F11 1020
 #define KEY_F12 1021
+
+/* Bracketed paste markers (DEC mode 2004). Terminals wrap a paste in
+ * ESC[200~ ... ESC[201~ so the editor can distinguish "user typed N
+ * keystrokes" from "user pasted N bytes" and avoid running per-char
+ * hooks (auto-pair, smart-indent) and keymap dispatch on every byte. */
+#define KEY_PASTE_START 1030
+#define KEY_PASTE_END   1031
+
+/* Mouse sentinel (SGR mode 1006). A mouse event carries more data than
+ * one int (button, column, row, press/drag/release), so the parser
+ * stashes the decoded event and returns this; fetch the payload with
+ * ed_last_mouse() (input/input.h). */
+#define KEY_MOUSE 1032
 
 /* Modifier flags OR'd with the base key code. Out of range of the
  * special keys above and well above any byte value, so they never
@@ -92,7 +108,7 @@ typedef struct {
 
     char status_msg[4096];
 
-    SizedStr search_query;
+    StrBuf search_query;
     int search_is_regex; /* 1=regex search, 0=literal */
     Qf qf;
     Window *modal_window; /* Current modal window (NULL if none) */
@@ -119,6 +135,12 @@ typedef struct {
         char register_name;   /* Register being recorded to (a-z) */
         char last_played;     /* Last register played with @ (for @@) */
     } macro_recording;
+
+    /* Called when the editor needs a fallback buffer (startup with no
+     * files, last buffer closed). Returns an index into E.buffers, or
+     * -1 to let the caller create a plain empty buffer. The scratch
+     * plugin installs this so the scratch buffer is the fallback. */
+    int (*fallback_buf_fn)(void);
 } Ed;
 
 /* Global editor state */
@@ -126,6 +148,29 @@ extern Ed E;
 
 /* Input handling */
 int ed_read_key(void);
+
+/* Synchronous follow-on key capture/replay.
+ *
+ * Some keybinds read further keys synchronously inside their handler via
+ * ed_read_key() — operators (`d`/`c`/`y` + text object), `r`<char>,
+ * `f`/`t`<char>. Multicursor replays a top-level key at every extra
+ * cursor, but those nested reads would otherwise block on the terminal
+ * (or, worse, consume the user's next keystrokes) at each extra cursor.
+ *
+ * Capture wraps the first (active-cursor) dispatch to record exactly the
+ * follow-on keys the handler consumed; replay feeds that identical
+ * sequence to the handler at each extra cursor. While a replay is active,
+ * an exhausted buffer yields ESC so a handler whose read count differs at
+ * some cursor cancels cleanly instead of blocking. */
+void ed_key_capture_begin(void);
+/* Stops capture; sets *out_keys to an internal buffer of the captured
+ * keys (valid until the next capture_begin) and returns the count. */
+int  ed_key_capture_end(const int **out_keys);
+/* Loads keys for replay and activates strict replay (exhaustion -> ESC). */
+void ed_key_replay_begin(const int *keys, int n);
+/* Deactivates replay; ed_read_key reverts to macro queue / terminal. */
+void ed_key_replay_finish(void);
+
 /* Pure key parser lives in input.h (`ed_parse_key_from_fd`). */
 void ed_process_keypress(void);
 /* Run the per-mode dispatch for one key (the part of ed_process_keypress

@@ -8,9 +8,11 @@
 
 #include "hed.h"
 #include "hooks.h"
-#include "keybinds.h"
-#include "commands.h"
+#include "input/keybinds.h"
+#include "commands/registry.h"
 #include "select_loop.h"
+#include "buf/buffer.h"
+#include "editor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,6 +209,114 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
 
     if (truncated && off + 8 < outsz) {
         off += (size_t)snprintf(out + off, outsz - off, " ...\n");
+    }
+
+    /* Append a "Filetype (<ft>)" section listing every ft-specific
+     * binding registered for the current buffer's filetype that isn't
+     * already in the prefix-match list. The dispatcher only surfaces
+     * bindings that share the current sequence prefix; this widens
+     * the discovery surface to all ft bindings while you're paused
+     * mid-chord in (e.g.) a mail-message or dired buffer. */
+    const char *cur_ft = NULL;
+    {
+        Buffer *cb = buf_cur();
+        if (cb) cur_ft = cb->filetype;
+    }
+    if (cur_ft && *cur_ft) {
+        /* Collect ft bindings for the current mode that aren't already
+         * listed under the prefix match section. */
+        int total = keybind_get_count();
+        const char **ft_seqs = NULL, **ft_descs = NULL; /* stb_ds arrays */
+
+        for (int i = 0; i < total; i++) {
+            const char *seq = NULL, *desc = NULL, *ft = NULL, *cmd = NULL;
+            int kmode = 0;
+            if (!keybind_get_at_ext(i, &seq, &desc, &kmode, &ft, &cmd))
+                continue;
+            if (kmode != (int)E.mode) continue;
+            if (!ft || strcmp(ft, cur_ft) != 0) continue;
+            if (!seq) continue;
+
+            /* Skip anything that already appeared in the prefix list. */
+            int seen = 0;
+            for (int j = 0; j < e->match_count; j++) {
+                if (e->matches[j].sequence &&
+                    strcmp(e->matches[j].sequence, seq) == 0) {
+                    seen = 1; break;
+                }
+            }
+            if (seen) continue;
+
+            /* Fall back to the cmap's command line if no description
+             * was attached at registration time. */
+            const char *display_desc = (desc && *desc) ? desc
+                                       : (cmd ? cmd : "");
+            arrput(ft_seqs, seq);
+            arrput(ft_descs, display_desc);
+        }
+
+        int ft_n = (int)arrlen(ft_seqs);
+        if (ft_n > 0) {
+            /* Section header on its own row. */
+            if (off + 64 < outsz) {
+                off += (size_t)snprintf(out + off, outsz - off,
+                                        "\n── Filetype (%s) ──\n", cur_ft);
+            }
+            int ft_max_tail = 1;
+            for (int i = 0; i < ft_n; i++) {
+                int t = (int)strlen(ft_seqs[i]);
+                if (t > ft_max_tail) ft_max_tail = t;
+            }
+            int ft_tail_w = ft_max_tail;
+            if (ft_tail_w > col_w / 3) ft_tail_w = col_w / 3;
+            int ft_desc_w = col_w - ft_tail_w - 2;
+            if (ft_desc_w < 4) ft_desc_w = 4;
+
+            int ft_max_cells = MAX_LINES * ncols;
+            int ft_cells = ft_n < ft_max_cells ? ft_n : ft_max_cells;
+            int ft_truncated = ft_cells < ft_n;
+            int ft_rows = (ft_cells + ncols - 1) / ncols;
+            if (ft_rows < 1) ft_rows = 1;
+
+            for (int r = 0; r < ft_rows; r++) {
+                for (int c = 0; c < ncols; c++) {
+                    int idx = c * ft_rows + r;
+                    int last_col = (c == ncols - 1);
+                    if (idx >= ft_cells) {
+                        if (off + (size_t)col_w + 4 > outsz) {
+                            ft_truncated = 1; break;
+                        }
+                        off += (size_t)snprintf(out + off, outsz - off,
+                                                " %-*s %-*s",
+                                                ft_tail_w, "", ft_desc_w, "");
+                    } else {
+                        if (off + (size_t)col_w + 4 > outsz) {
+                            ft_truncated = 1; break;
+                        }
+                        char tbuf[64], dbuf[256];
+                        snprintf(tbuf, sizeof(tbuf), "%.*s",
+                                 ft_tail_w, ft_seqs[idx]);
+                        snprintf(dbuf, sizeof(dbuf), "%.*s",
+                                 ft_desc_w, ft_descs[idx]);
+                        off += (size_t)snprintf(out + off, outsz - off,
+                                                " %-*s %-*s",
+                                                ft_tail_w, tbuf,
+                                                ft_desc_w, dbuf);
+                    }
+                    if (last_col) {
+                        if (off < outsz) out[off++] = '\n';
+                    } else {
+                        off += (size_t)snprintf(out + off, outsz - off,
+                                                "%s", COL_SEP);
+                    }
+                }
+                if (ft_truncated) break;
+            }
+            if (ft_truncated && off + 8 < outsz)
+                off += (size_t)snprintf(out + off, outsz - off, " ...\n");
+        }
+        arrfree(ft_seqs);
+        arrfree(ft_descs);
     }
 
     /* Drop trailing newline so the message bar doesn't reserve a

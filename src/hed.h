@@ -16,26 +16,26 @@
 /* Library helpers - must come first for type definitions */
 #include "lib/ansi.h"
 #include "lib/errors.h"
-#include "lib/file_helpers.h"
+#include "fs/fs.h"
 #include "lib/log.h"
 #include "lib/safe_string.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include "lib/strutil.h"
 #include "lib/theme.h"
 #include "lib/vector.h"
 #include "stb_ds.h"
 
 /* Core modules */
-#include "commands.h"
+#include "commands/registry.h"
 #include "commands/cmd_builtins.h"
-#include "commands/cmd_util.h"
 #include "editor.h"
 #include "hook_builtins.h"
 #include "hooks.h"
-#include "keybinds.h"
-#include "keybinds_builtins.h"
+#include "input/keybinds.h"
+#include "input/keybinds_builtins.h"
+#include "input/picker.h"
 #include "plugin.h"
-#include "registers.h"
+#include "input/registers.h"
 #include "terminal.h"
 #include "utils/undo.h"
 
@@ -47,8 +47,7 @@
 #include "buf/virtual_text.h"
 
 /* Utilities */
-#include "utils/bottom_ui.h"
-#include "utils/fzf.h"
+#include "ui/bottom_ui.h"
 #include "utils/history.h"
 #include "utils/jump_list.h"
 #include "utils/quickfix.h"
@@ -57,6 +56,7 @@
 
 /* UI */
 #include "ui/abuf.h"
+#include "ui/ask.h"
 #include "ui/window.h"
 #include "ui/winmodal.h"
 #include "ui/wlayout.h"

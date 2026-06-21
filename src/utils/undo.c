@@ -20,7 +20,7 @@ void buf_row_update(Row *row);
 static void rec_clear(UndoRec *r) {
     if (!r)
         return;
-    sstr_free(&r->data);
+    strbuf_free(&r->data);
 }
 
 static void group_free(UndoGroup *g) {
@@ -193,8 +193,8 @@ void undo_record_replace(struct Buffer *buf, int row_idx) {
     r->kind = UR_REPLACE;
     r->row_idx = row_idx;
     Row *row = &buf->rows[row_idx];
-    r->data = sstr_new();
-    sstr_append(&r->data, row->chars.data, row->chars.len);
+    r->data = strbuf_new();
+    strbuf_append(&r->data, row->chars.data, row->chars.len);
 }
 
 void undo_record_insert(struct Buffer *buf, int row_idx, const char *data,
@@ -209,9 +209,9 @@ void undo_record_insert(struct Buffer *buf, int row_idx, const char *data,
         return;
     r->kind = UR_INSERT;
     r->row_idx = row_idx;
-    r->data = sstr_new();
+    r->data = strbuf_new();
     if (data && len)
-        sstr_append(&r->data, data, len);
+        strbuf_append(&r->data, data, len);
 }
 
 void undo_record_delete(struct Buffer *buf, int row_idx, const char *data,
@@ -226,9 +226,9 @@ void undo_record_delete(struct Buffer *buf, int row_idx, const char *data,
         return;
     r->kind = UR_DELETE;
     r->row_idx = row_idx;
-    r->data = sstr_new();
+    r->data = strbuf_new();
     if (data && len)
-        sstr_append(&r->data, data, len);
+        strbuf_append(&r->data, data, len);
 }
 
 /* ===================================================================
@@ -241,7 +241,7 @@ static void apply_rec(struct Buffer *buf, UndoRec *r, int dir) {
         if (r->row_idx < 0 || r->row_idx >= buf->num_rows)
             return;
         Row *row = &buf->rows[r->row_idx];
-        SizedStr tmp = row->chars;
+        StrBuf tmp = row->chars;
         row->chars = r->data;
         r->data = tmp;
         buf_row_update(row);

@@ -146,8 +146,8 @@ static void qf_buf_row_insert(Buffer *buf, int at, const char *s, size_t len) {
     memmove(&buf->rows[at + 1], &buf->rows[at],
             sizeof(Row) * (buf->num_rows - at));
 
-    buf->rows[at].chars = sstr_from(s, len);
-    buf->rows[at].render = sstr_new();
+    buf->rows[at].chars = strbuf_from(s, len);
+    buf->rows[at].render = strbuf_new();
     buf_row_update(&buf->rows[at]);
 
     buf->num_rows++;
@@ -351,6 +351,33 @@ void qf_clear(Qf *qf) {
     qf->scroll = 0;
     if (qf->open)
         qf_sync_buffer(qf);
+}
+
+int qf_parse_grep_line(char *line, char **out_file, int *out_line,
+                       int *out_col, const char **out_text) {
+    if (!line)
+        return 0;
+    char *p1 = strchr(line, ':');
+    if (!p1)
+        return 0;
+    char *p2 = strchr(p1 + 1, ':');
+    if (!p2)
+        return 0; /* need at least file:line: */
+    *p1 = '\0';
+    *p2 = '\0';
+    int   lno  = atoi(p1 + 1);
+    int   col  = atoi(p2 + 1);
+    const char *text = "";
+    char *p3 = strchr(p2 + 1, ':');
+    if (p3) {
+        *p3  = '\0';
+        text = p3 + 1;
+    }
+    if (out_file) *out_file = line;
+    if (out_line) *out_line = lno;
+    if (out_col)  *out_col  = col;
+    if (out_text) *out_text = text;
+    return 1;
 }
 
 int qf_add(Qf *qf, const char *filename, int line, int col, const char *text) {

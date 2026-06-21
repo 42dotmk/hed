@@ -4,8 +4,11 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "buf/attrspan.h"
+
 typedef struct Buffer Buffer;
 struct KeybindMatchView;
+struct MouseEvent; /* defined in input/input.h */
 
 /* Hook event types */
 typedef enum {
@@ -38,6 +41,12 @@ typedef enum {
      * Set event->consumed = 1 to prevent further processing. */
     HOOK_KEYPRESS,
 
+    /* Fires for every decoded mouse event (KEY_MOUSE from the input
+     * parser). Payload is the MouseEvent from input/input.h. Core only
+     * parses and forwards — click/drag/scroll semantics live in
+     * plugins (see plugins/mouse/). */
+    HOOK_MOUSE,
+
     /* Fires once, after ed_init + cli file opens + startup -c command,
      * just before the main loop begins. No event payload. Use this to
      * run plugin-side post-init logic that needs the editor fully set
@@ -63,6 +72,13 @@ typedef enum {
      * which-key, etc.) that don't need their own Window. */
     HOOK_RENDER_OVERLAY,
 
+    /* Fires from the renderer once per visible window, before the
+     * window's buffer is drawn. Handlers append AttrSpans to
+     * event->spans for rows in [row_start, row_end). The span table
+     * is cleared before the hook fires, so handlers see an empty
+     * canvas and can recompute freely. */
+    HOOK_RENDER_PRE,
+
     HOOK_TYPE_COUNT
 } HookType;
 
@@ -81,7 +97,7 @@ typedef struct {
     size_t len;
 } HookLineEvent;
 
-typedef struct {
+typedef struct HookBufferEvent {
     Buffer *buf;
     const char *filename;
     /* For *_PRE intercept hooks: handler sets to 1 to claim ownership.
@@ -126,6 +142,13 @@ typedef struct {
     int repeat;
 } HookKeybindInvokeEvent;
 
+typedef struct HookRenderEvent {
+    Buffer    *buf;
+    int        row_start;  /* first visible row (inclusive) */
+    int        row_end;    /* one past last visible row */
+    AttrSpans *spans;      /* handlers append into this */
+} HookRenderEvent;
+
 /* Callback function pointer types */
 typedef void (*HookCharCallback)(const HookCharEvent *event);
 typedef void (*HookLineCallback)(const HookLineEvent *event);
@@ -133,9 +156,11 @@ typedef void (*HookBufferCallback)(HookBufferEvent *event); /* non-const: handle
 typedef void (*HookModeCallback)(const HookModeEvent *event);
 typedef void (*HookCursorCallback)(const HookCursorEvent *event);
 typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may set consumed */
+typedef void (*HookMouseCallback)(const struct MouseEvent *event);
 typedef void (*HookSimpleCallback)(void);              /* payload-free hooks (e.g., HOOK_STARTUP_DONE) */
 typedef void (*HookKeybindFeedCallback)(const HookKeybindFeedEvent *event);
 typedef void (*HookKeybindInvokeCallback)(const HookKeybindInvokeEvent *event);
+typedef void (*HookRenderCallback)(const HookRenderEvent *event);
 
 /* Hook API */
 void hook_init(void);
@@ -155,6 +180,8 @@ void hook_register_cursor(HookType type, int mode, const char *filetype,
                           HookCursorCallback callback);
 /* Keypress hooks always fire regardless of mode or filetype. */
 void hook_register_key(HookType type, HookKeyCallback callback);
+/* Mouse hooks always fire regardless of mode or filetype. */
+void hook_register_mouse(HookType type, HookMouseCallback callback);
 /* Simple, payload-free hooks (always fire). */
 void hook_register_simple(HookType type, HookSimpleCallback callback);
 
@@ -167,6 +194,10 @@ void hook_fire_render_overlay(struct Abuf *ab);
 /* Keybind dispatch hooks always fire regardless of mode or filetype. */
 void hook_register_keybind_feed(HookType type, HookKeybindFeedCallback cb);
 void hook_register_keybind_invoke(HookType type, HookKeybindInvokeCallback cb);
+/* Render hooks fire per visible window; mode/filetype filters apply
+ * (use "*" for all filetypes). */
+void hook_register_render(HookType type, int mode, const char *filetype,
+                          HookRenderCallback cb);
 
 /* Generic function-pointer alias. The hook table stores callbacks as
  * `void (*)(void)` so dispatch casts stay function-pointer-to-function-
@@ -186,9 +217,11 @@ void hook_fire_buffer(HookType type, HookBufferEvent *event);
 void hook_fire_mode(HookType type, const HookModeEvent *event);
 void hook_fire_cursor(HookType type, const HookCursorEvent *event);
 void hook_fire_key(HookType type, HookKeyEvent *event);
+void hook_fire_mouse(HookType type, const struct MouseEvent *event);
 void hook_fire_simple(HookType type);
 void hook_fire_keybind_feed(HookType type, const HookKeybindFeedEvent *event);
 void hook_fire_keybind_invoke(HookType type, const HookKeybindInvokeEvent *event);
+void hook_fire_render(HookType type, const HookRenderEvent *event);
 
 
 #endif

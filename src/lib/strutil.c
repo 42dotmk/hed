@@ -11,6 +11,65 @@ char *strdup(const char *s) {
     return copy;
 }
 
+size_t str_chomp(char *s) {
+    if (!s)
+        return 0;
+    size_t n = strlen(s);
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r'))
+        s[--n] = '\0';
+    return n;
+}
+
+int str_starts_with(const char *s, const char *prefix) {
+    if (!s || !prefix)
+        return 0;
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+int str_ends_with(const char *s, const char *suffix) {
+    if (!s || !suffix)
+        return 0;
+    size_t ls = strlen(s), lsuf = strlen(suffix);
+    return lsuf <= ls && memcmp(s + ls - lsuf, suffix, lsuf) == 0;
+}
+
+void shell_escape_single(const char *in, char *out, size_t outsz) {
+    size_t o = 0;
+    if (o < outsz)
+        out[o++] = '\'';
+    for (const char *p = in; *p && o + 4 < outsz; p++) {
+        if (*p == '\'') {
+            /* Emit '\'' pattern */
+            out[o++] = '\'';
+            out[o++] = '\\';
+            out[o++] = '\'';
+            out[o++] = '\'';
+        } else {
+            out[o++] = *p;
+        }
+    }
+    if (o < outsz)
+        out[o++] = '\'';
+    if (o < outsz)
+        out[o] = '\0';
+    else
+        out[outsz - 1] = '\0';
+}
+
+int parse_int_default(const char *s, int def) {
+    if (!s || !*s)
+        return def;
+    char *end = NULL;
+    long v = strtol(s, &end, 10);
+    if (end == s)
+        return def;
+    if (v < 0)
+        v = 0;
+    if (v > 100000)
+        v = 100000;
+    return (int)v;
+}
+
 static int _is_space_char(char c) {
     return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
 }
@@ -129,6 +188,28 @@ static size_t utf8_decode_char(const unsigned char *p, size_t remaining,
 
     /* Invalid UTF-8 sequence */
     return 0;
+}
+
+int utf8_char_width(const char *str, size_t byte_len, int *out_adv) {
+    if (!str || byte_len == 0) {
+        if (out_adv)
+            *out_adv = 0;
+        return 0;
+    }
+    wchar_t wc;
+    size_t char_len = utf8_decode_char((const unsigned char *)str, byte_len, &wc);
+    if (char_len == 0) {
+        /* Invalid byte: render as a single replacement column. */
+        if (out_adv)
+            *out_adv = 1;
+        return 1;
+    }
+    int w = wcwidth(wc);
+    if (w < 0)
+        w = 0; /* combining / control: zero width */
+    if (out_adv)
+        *out_adv = (int)char_len;
+    return w;
 }
 
 int utf8_display_width(const char *str, size_t byte_len) {

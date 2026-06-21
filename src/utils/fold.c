@@ -1,4 +1,5 @@
 #include "utils/fold.h"
+#include "buf/buffer.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -113,6 +114,37 @@ bool fold_expand_at_line(FoldList *list, int line) {
     return true;
 }
 
+/* Nesting level of region `idx` (1-based): one more than the number of
+ * regions that strictly contain it. Containment is by line span; an
+ * identical span does not count (avoids two equal folds inflating each
+ * other's level). */
+static int fold_region_level(const FoldList *list, int idx) {
+    const FoldRegion *b = &list->regions[idx];
+    int level = 1;
+    for (int j = 0; j < list->count; j++) {
+        if (j == idx)
+            continue;
+        const FoldRegion *a = &list->regions[j];
+        bool contains = a->start_line <= b->start_line &&
+                        a->end_line >= b->end_line &&
+                        (a->start_line != b->start_line ||
+                         a->end_line != b->end_line);
+        if (contains)
+            level++;
+    }
+    return level;
+}
+
+void fold_apply_level(FoldList *list, int level) {
+    if (!list)
+        return;
+    /* Vim foldlevel semantics: folds deeper than `level` close, the rest
+     * open. level 0 collapses everything to top-level summaries; a large
+     * level (e.g. 100) opens every fold. */
+    for (int i = 0; i < list->count; i++)
+        list->regions[i].is_collapsed = fold_region_level(list, i) > level;
+}
+
 bool fold_is_line_hidden(const FoldList *list, int line) {
     if (!list || line < 0)
         return false;
@@ -147,4 +179,14 @@ void fold_clear_all(FoldList *list) {
     if (!list)
         return;
     list->count = 0;
+}
+
+void fold_reset_buffer(struct Buffer *buf) {
+    if (!buf)
+        return;
+    fold_clear_all(&buf->folds);
+    for (int i = 0; i < buf->num_rows; i++) {
+        buf->rows[i].fold_start = false;
+        buf->rows[i].fold_end   = false;
+    }
 }

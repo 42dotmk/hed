@@ -56,7 +56,18 @@ bool fold_is_line_hidden(const FoldList *list, int line);
 /* Get the visible line count (accounting for collapsed folds) */
 int fold_get_visible_line_count(const FoldList *list, int total_lines);
 
+/* Collapse folds deeper than `level`, expand the rest (vim foldlevel
+ * semantics). level 0 = collapse all to top-level summaries; a large
+ * level opens everything. Region levels are derived from span nesting. */
+void fold_apply_level(FoldList *list, int level);
+
 /* Clear all folds */
 void fold_clear_all(FoldList *list);
+
+/* Clear all fold regions AND reset every row's fold_start/fold_end
+ * flags — the standard "start a fresh detection pass" reset that fold
+ * methods (bracket/indent/markdown) run before re-scanning a buffer. */
+struct Buffer;
+void fold_reset_buffer(struct Buffer *buf);
 
 #endif /* FOLD_H */

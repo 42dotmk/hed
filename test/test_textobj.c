@@ -12,10 +12,38 @@ void tearDown(void) { }
     } while (0)
 
 void test_textobj_word(void) {
-    totc(textobj_word, 
-		 "hello [wo^$rld] there", 
+    totc(textobj_word,
+		 "hello [wo^$rld] there",
 		 "hello [worl^$d] there",
-         "hello [^$a] there");
+         "hello [^$a] there",
+         "hello[^$ ]there",      // vim iw: a single blank is a word
+         "hello[ ^$  ]there",    // vim iw: a blank run is a word
+         "hello world[^$   ]");  // trailing blanks at end of line
+}
+
+void test_textobj_word_around(void) {
+    totc(textobj_word_around,
+         "hello [wo^$rld ]there",   // word + trailing blanks
+         "hello[ wor^$ld]",         // no trailing blanks -> leading blanks
+         "hello[^$ there] end",     // on blank: blanks + following word
+         "hello[ ^$  there] end",   // on blank run: blanks + following word
+         "hello [world^$  ]");      // trailing blanks, no word after -> word before
+}
+
+void test_textobj_WORD(void) {
+    totc(textobj_WORD,
+         "hello [foo.b^$ar] there",  // WORD spans punctuation
+         "x [^$--flag] y",
+         "hello[ ^$  ]x.y",          // a blank run is a WORD too
+         "a.b c.d[^$   ]");          // trailing blanks at end of line
+}
+
+void test_textobj_WORD_around(void) {
+    totc(textobj_WORD_around,
+         "hello [foo.^$bar ]there",  // WORD + trailing blanks
+         "hello[ foo.b^$ar]",        // no trailing blanks -> leading blanks
+         "hello[^$ a.b] end",        // on blank: blanks + following WORD
+         "hello [a.b^$  ]");         // trailing blanks, no WORD after -> WORD before
 }
 
 void test_textobj_to_word_end(void) {
@@ -99,6 +127,9 @@ void test_textobj_paragraphs(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_textobj_word);
+    RUN_TEST(test_textobj_word_around);
+    RUN_TEST(test_textobj_WORD);
+    RUN_TEST(test_textobj_WORD_around);
     RUN_TEST(test_textobj_to_word_end);
     RUN_TEST(test_textobj_to_word_start);
     RUN_TEST(test_textobj_char_at_cursor);

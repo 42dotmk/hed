@@ -6,7 +6,7 @@
 #include "select_loop.h"
 #include "ui/abuf.h"
 #include "lib/ansi.h"
-#include "utils/bottom_ui.h"
+#include "ui/bottom_ui.h"
 #include "utils/quickfix.h"
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -17,7 +17,6 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 #define LSP_MAX_SERVERS   8
 #define LSP_READ_BUF_SIZE 65536
@@ -123,43 +122,8 @@ static LspServer *lsp_server_for_buffer(Buffer *buf) {
 }
 
 /* Build full document text from buffer rows (not from disk). */
-static char *lsp_build_content(Buffer *buf) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1; /* +1 for '\n' */
-    char  *s   = malloc(total + 1);
-    if (!s) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    return s;
-}
-
 static char *lsp_get_file_uri(const char *filepath) {
-    if (!filepath) return NULL;
-    char  cwd[1024] = {0};
-    char *uri        = malloc(strlen(filepath) + 32);
-    if (!uri) return NULL;
-    if (filepath[0] == '/') {
-        sprintf(uri, "file://%s", filepath);
-    } else {
-        if (getcwd(cwd, sizeof(cwd)))
-            sprintf(uri, "file://%s/%s", cwd, filepath);
-        else
-            sprintf(uri, "file://%s", filepath);
-    }
-    return uri;
-}
-
-/* Strip "file://" prefix from a URI to get a filesystem path. */
-static const char *lsp_uri_to_path(const char *uri) {
-    if (!uri) return NULL;
-    if (strncmp(uri, "file://", 7) == 0) return uri + 7;
-    return uri;
+    return fs_path_to_file_uri(filepath, NULL);
 }
 
 /* -------------------------------------------------- pending request table */
@@ -536,15 +500,17 @@ static void lsp_pane_accept(void) {
     Row *row = &buf->rows[line];
     if (cur_cx > (int)row->chars.len) cur_cx = (int)row->chars.len;
 
-    const char *ins  = g_pane.inserts[idx];
-    size_t      ilen = strlen(ins);
-    size_t      tail = row->chars.len - (size_t)cur_cx;
-    SizedStr    fresh = sstr_new();
-    sstr_reserve(&fresh, (size_t)word_cx + ilen + tail);
-    sstr_append(&fresh, row->chars.data, (size_t)word_cx);
-    sstr_append(&fresh, ins, ilen);
-    sstr_append(&fresh, row->chars.data + cur_cx, tail);
-    sstr_free(&row->chars);
+    /* Splice: chars[0..word_cx) + insert + chars[cur_cx..len). Done via
+     * a new StrBuf to avoid an N-call delete/insert loop. */
+    const char *ins   = g_pane.inserts[idx];
+    size_t      ilen  = strlen(ins);
+    size_t      tail  = row->chars.len - (size_t)cur_cx;
+    StrBuf      fresh = strbuf_new();
+    strbuf_reserve(&fresh, (size_t)word_cx + ilen + tail);
+    strbuf_append(&fresh, row->chars.data, (size_t)word_cx);
+    strbuf_append(&fresh, ins, ilen);
+    strbuf_append(&fresh, row->chars.data + cur_cx, tail);
+    strbuf_free(&row->chars);
     row->chars = fresh;
     buf_row_update(row);
 
@@ -852,7 +818,7 @@ static void lsp_handle_definition_result(cJSON *result) {
         }
     }
 
-    const char *path = lsp_uri_to_path(uri);
+    const char *path = fs_uri_to_path(uri);
     log_msg("LSP definition: %s:%d:%d", path, line + 1, col + 1);
 
     buf_open_or_switch(path, true);
@@ -964,7 +930,7 @@ void lsp_cmd_diagnostics(void) {
     int total = 0;
     for (ptrdiff_t f = 0; f < arrlen(g_diags); f++) {
         LspDiagFile *df = &g_diags[f];
-        const char  *fp = lsp_uri_to_path(df->uri);
+        const char  *fp = fs_uri_to_path(df->uri);
         for (ptrdiff_t i = 0; i < arrlen(df->items); i++) {
             LspDiag *d = &df->items[i];
             const char *sev = (d->severity == 1) ? "E"
@@ -1173,7 +1139,7 @@ void lsp_on_buffer_open(Buffer *buf) {
     if (!srv || !srv->initialized) return;
 
     char *uri     = lsp_get_file_uri(buf->filename);
-    char *content = lsp_build_content(buf);
+    char *content = buf_to_text(buf, NULL);
     if (!uri || !content) { free(uri); free(content); return; }
 
     cJSON *params   = cJSON_CreateObject();
@@ -1227,7 +1193,7 @@ void lsp_on_buffer_changed(Buffer *buf) {
     if (!srv || !srv->initialized) return;
 
     char *uri     = lsp_get_file_uri(buf->filename);
-    char *content = lsp_build_content(buf);
+    char *content = buf_to_text(buf, NULL);
     if (!uri || !content) { free(uri); free(content); return; }
 
     cJSON *params   = cJSON_CreateObject();
@@ -1494,39 +1460,6 @@ static int lsp_spawn_process(LspServer *srv, const char *const *argv) {
 /* Walk up from `start` looking for any of `markers`. Returns 0 and writes
  * the absolute path of the first directory that contains a marker into
  * `out` (size `out_sz`); returns -1 if none found. */
-static int lsp_find_root(const char *start, const char *const *markers,
-                         char *out, size_t out_sz) {
-    if (!start || !markers || !out || out_sz == 0) return -1;
-    char dir[1024];
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-truncation"
-    snprintf(dir, sizeof(dir), "%s", start);
-#pragma GCC diagnostic pop
-    /* If start is a file path, drop the trailing component. */
-    struct stat st;
-    if (stat(dir, &st) == 0 && S_ISREG(st.st_mode)) {
-        char *slash = strrchr(dir, '/');
-        if (slash && slash != dir) *slash = '\0';
-        else if (slash == dir) dir[1] = '\0';
-    }
-
-    while (1) {
-        for (int i = 0; markers[i]; i++) {
-            char probe[2048];
-            snprintf(probe, sizeof(probe), "%s/%s", dir, markers[i]);
-            if (access(probe, F_OK) == 0) {
-                snprintf(out, out_sz, "%s", dir);
-                return 0;
-            }
-        }
-        if (dir[0] == '/' && dir[1] == '\0') return -1;
-        char *slash = strrchr(dir, '/');
-        if (!slash) return -1;
-        if (slash == dir) dir[1] = '\0';
-        else *slash = '\0';
-    }
-}
-
 /* :lsp_start <lang>  — spawn from the registry. If `hint_path` is non-NULL
  * it's used as the root-detection starting point (typically a buffer
  * filename); otherwise E.cwd is used. */
@@ -1546,8 +1479,8 @@ int lsp_cmd_start(const char *lang, const char *hint_path) {
     }
 
     char root_dir[1024];
-    if (lsp_find_root(hint_path && *hint_path ? hint_path : E.cwd,
-                      def->root_markers, root_dir, sizeof(root_dir)) != 0) {
+    if (!fs_find_root_marker(hint_path && *hint_path ? hint_path : E.cwd,
+                             def->root_markers, root_dir, sizeof(root_dir))) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(root_dir, sizeof(root_dir), "%s", E.cwd);

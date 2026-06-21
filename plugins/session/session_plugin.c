@@ -14,7 +14,7 @@
 #include "session.h"
 
 static int session_default_path(char *out, size_t cap) {
-    return path_cache_file_for_cwd("session", out, cap) ? 1 : 0;
+    return fs_path_cache_for_cwd("session", out, cap) ? 1 : 0;
 }
 
 static void cmd_session_save(const char *args) {
@@ -53,7 +53,7 @@ static void on_startup_done(void) {
     if (!session_default_path(path, sizeof(path))) return;
 
     if (session_restore(path) == ED_OK) {
-        unlink(path);
+        fs_unlink(path);
     }
 }
 

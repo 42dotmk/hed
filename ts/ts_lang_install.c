@@ -233,34 +233,40 @@ int main(int argc, char **argv) {
 
         if (custom_url) {
             snprintf(repo_url, sizeof(repo_url), "%s", custom_url);
-        } else {
-            snprintf(repo_url, sizeof(repo_url),
-                     "git@github.com:tree-sitter-grammars/tree-sitter-%s.git",
-                     lang);
-        }
-        snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
-                 repo_url, build_dir);
-        fprintf(stderr, "Cloning %s into %s\n", repo_url, build_dir);
-        if (run_cmd(cmd) == 0) {
-            cloned = 1;
-        } else if (!custom_url) {
-            fprintf(stderr,
-                    "First clone attempt failed, trying upstream tree-sitter org...\n");
-            /* Fallback: original tree-sitter org */
-            snprintf(repo_url, sizeof(repo_url),
-                     "git@github.com:tree-sitter/tree-sitter-%s.git",
-                     lang);
             snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
                      repo_url, build_dir);
             fprintf(stderr, "Cloning %s into %s\n", repo_url, build_dir);
             if (run_cmd(cmd) == 0) {
                 cloned = 1;
             }
+        } else {
+            /* Try HTTPS first (no credentials needed), then SSH, for each
+             * org. Whichever succeeds first wins; a failed clone removes
+             * its target dir, so the next attempt clones cleanly. */
+            const char *url_fmts[] = {
+                "https://github.com/tree-sitter-grammars/tree-sitter-%s.git",
+                "git@github.com:tree-sitter-grammars/tree-sitter-%s.git",
+                "https://github.com/tree-sitter/tree-sitter-%s.git",
+                "git@github.com:tree-sitter/tree-sitter-%s.git",
+            };
+            size_t n = sizeof(url_fmts) / sizeof(url_fmts[0]);
+            for (size_t i = 0; i < n && !cloned; i++) {
+                snprintf(repo_url, sizeof(repo_url), url_fmts[i], lang);
+                snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
+                         repo_url, build_dir);
+                fprintf(stderr, "Cloning %s into %s\n", repo_url, build_dir);
+                if (run_cmd(cmd) == 0) {
+                    cloned = 1;
+                } else if (i + 1 < n) {
+                    fprintf(stderr,
+                            "Clone attempt failed, trying next source...\n");
+                }
+            }
         }
 
         if (!cloned) {
             fprintf(stderr,
-                    "Failed to clone Tree-sitter grammar for '%s' from both sources.\n",
+                    "Failed to clone Tree-sitter grammar for '%s' from all sources.\n",
                     lang);
             return 1;
         }

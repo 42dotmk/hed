@@ -153,7 +153,9 @@ esac
 
 latest_tag() {
     # $1 = owner/repo. Echoes "vX.Y.Z" on success.
-    $DL_STDOUT "https://api.github.com/repos/$1/releases/latest" \
+    local json
+    json=$($DL_STDOUT "https://api.github.com/repos/$1/releases/latest") || return 1
+    printf '%s\n' "$json" \
         | grep -m1 '"tag_name"' \
         | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
 }

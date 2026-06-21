@@ -7,7 +7,7 @@
  */
 
 #include "commands/commands_ui.h"
-#include "commands/cmd_util.h"
+#include "lib/strutil.h"
 #include "editor.h"
 #include "ui/wlayout.h"
 #include <stdlib.h>

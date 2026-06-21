@@ -28,13 +28,15 @@ static void register_text_objects(void) {
 
     /* Inner objects */
     textobj_register("iw", textobj_word, "inner word");
+    textobj_register("iW", textobj_WORD, "inner WORD");
     textobj_register("ip", textobj_paragraph, "inner paragraph");
     textobj_register("i(", textobj_brackets, "inner parentheses");
     textobj_register("i)", textobj_brackets, "inner parentheses");
     textobj_register("ib", textobj_brackets, "inner brackets");
 
     /* Around objects */
-    textobj_register("aw", textobj_word, "around word");
+    textobj_register("aw", textobj_word_around, "around word");
+    textobj_register("aW", textobj_WORD_around, "around WORD");
     textobj_register("ap", textobj_paragraph, "around paragraph");
 }
 
@@ -65,6 +67,7 @@ static int vim_keybinds_init(void) {
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
     mapn("*", kb_find_under_cursor, "find word");
+    mapv("*", kb_find_selection,    "find selection (exits visual)");
     mapn("<C-*>", kb_find_under_cursor, "find word");
 
     /* --- Visual mode --- */
@@ -135,6 +138,7 @@ static int vim_keybinds_init(void) {
     mapn("zM", kb_fold_close_all, "close all folds");
     mapn("zo", kb_fold_open, "fold open");
     mapn("zR", kb_fold_open_all, "open all folds");
+    mapn("<S-Tab>", kb_fold_cycle_level, "cycle fold level 1/2/all/none");
     mapn("zz", buf_center_screen, "center screen");
     mapn("~", kb_toggle_case, "toggle case");
     mapn("D", kb_delete_to_line_end, "del to line end");

@@ -11,14 +11,17 @@
 static void cmd_reload(const char *args) {
     (void)args;
 
-    int status = term_cmd_run_interactive("make -j16", true);
+    /* `make install` depends on $(TARGET), so this builds and refreshes
+     * the ~/.local/bin/hed symlink in one step — subsequent shell
+     * invocations of `hed` pick up the new binary too. */
+    int status = term_cmd_run_interactive("make -j16 install", true);
     if (status != 0) {
         ed_set_status_message("reload: build failed (status %d)", status);
         return;
     }
 
     char path[4096];
-    if (path_cache_file_for_cwd("session", path, sizeof(path))) {
+    if (fs_path_cache_for_cwd("session", path, sizeof(path))) {
         session_save(path);
         setenv("HED_RELOAD", "1", 1);
     }

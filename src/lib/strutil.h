@@ -6,6 +6,26 @@
 /* Portable strdup — not part of C11, added in C23/POSIX */
 char *strdup(const char *s);
 
+/* Strip trailing CR/LF bytes from `s` in place. Returns the new length
+ * (0 when s is NULL). The single source of truth for line-ending chomp. */
+size_t str_chomp(char *s);
+
+/* True if `s` begins with `prefix` / ends with `suffix`. NULL-safe: returns
+ * 0 if either argument is NULL. */
+int str_starts_with(const char *s, const char *prefix);
+int str_ends_with(const char *s, const char *suffix);
+
+/* Escape `in` for safe use inside a POSIX shell single-quoted context,
+ * writing the quoted form (including the surrounding quotes) to `out`.
+ * Embedded single quotes are emitted as the '\'' pattern. Always NUL-
+ * terminates; truncates rather than overflowing. The fixed-buffer analogue
+ * of strbuf_append_shell_quoted(). */
+void shell_escape_single(const char *in, char *out, size_t outsz);
+
+/* Parse a non-negative integer from `s`, clamped to [0, 100000]. Returns
+ * `def` when `s` is NULL, empty, or not a number. */
+int parse_int_default(const char *s, int def);
+
 /* Copy input string with leading/trailing ASCII whitespace removed.
  * Returns the number of bytes written to out (excluding NUL). */
 size_t str_trim_whitespace(const char *in, char *out, size_t out_sz);
@@ -20,6 +40,15 @@ size_t str_expand_tilde(const char *in, char *out, size_t out_sz);
  * Handles wide characters (CJK, emoji) correctly.
  * Invalid UTF-8 sequences are counted as 1 column each. */
 int utf8_display_width(const char *str, size_t byte_len);
+
+/* Decode the single UTF-8 codepoint at `str` (with `byte_len` bytes available)
+ * and return its display width in columns (via wcwidth(): 0 for combining /
+ * control marks, 1 for invalid bytes, 2 for wide CJK/emoji). The byte length of
+ * the codepoint is written to *out_adv (always >= 1 unless byte_len == 0).
+ * This is the single source of truth for "how many columns / bytes is this
+ * char" — cursor movement, cx<->rx conversion and the renderer all use it so
+ * they stay in agreement. */
+int utf8_char_width(const char *str, size_t byte_len, int *out_adv);
 
 /* Extract a substring by column positions (not byte positions).
  * str: input UTF-8 string

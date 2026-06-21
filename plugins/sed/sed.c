@@ -1,42 +1,6 @@
 #include "hed.h"
 #include "sed.h"
 
-/* Forward declarations of internal buffer functions */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
-/* Serialize buffer rows to a single string with newlines */
-static char *buf_rows_to_string(Buffer *buf, size_t *out_len) {
-    if (!buf || !out_len) {
-        return NULL;
-    }
-
-    *out_len = 0;
-
-    /* Calculate total size needed */
-    size_t totlen = 0;
-    for (int j = 0; j < buf->num_rows; j++) {
-        totlen += buf->rows[j].chars.len + 1; /* +1 for newline */
-    }
-
-    /* Allocate buffer */
-    char *buffer = malloc(totlen + 1); /* +1 for null terminator */
-    if (!buffer) {
-        return NULL;
-    }
-
-    /* Copy each row with newline */
-    char *p = buffer;
-    for (int j = 0; j < buf->num_rows; j++) {
-        memcpy(p, buf->rows[j].chars.data, buf->rows[j].chars.len);
-        p += buf->rows[j].chars.len;
-        *p++ = '\n';
-    }
-    *p = '\0';
-
-    *out_len = totlen;
-    return buffer;
-}
-
 EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
     /* 1. Validate inputs */
     if (!PTR_VALID(buf)) {
@@ -60,39 +24,35 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
 
     /* 2. Serialize buffer to string */
     size_t input_len = 0;
-    char *input = buf_rows_to_string(buf, &input_len);
+    char *input = buf_to_text(buf, &input_len);
     if (!input) {
         ed_set_status_message("sed: memory allocation failed");
         return ED_ERR_NOMEM;
     }
 
-    /* 3. Escape buffer content and sed expression for safe shell execution */
-    char escaped_input[input_len * 4 + 128]; /* Worst case: every char needs escaping */
-    char escaped_expr[4096];
+    /* 3. Build `printf '%s' <content> | sed <expr> 2>&1`, shell-quoting
+     *    both arguments into a growable StrBuf (no fixed bound). */
+    StrBuf cmd = strbuf_new();
+    strbuf_append(&cmd, "printf '%s' ", 12);
+    strbuf_append_shell_quoted(&cmd, input);
+    strbuf_append(&cmd, " | sed ", 7);
+    strbuf_append_shell_quoted(&cmd, sed_expr);
+    strbuf_append(&cmd, " 2>&1", 5);
+    free(input); /* Don't need original input anymore */
 
-    shell_escape_single(input, escaped_input, sizeof(escaped_input));
-    shell_escape_single(sed_expr, escaped_expr, sizeof(escaped_expr));
-
-    /* 4. Build sed command: printf <content> | sed <expression> */
-    size_t cmd_size = strlen(escaped_input) + strlen(escaped_expr) + 128;
-    char *cmd = malloc(cmd_size);
-    if (!cmd) {
-        free(input);
+    char *cmd_str = strbuf_to_cstr(&cmd);
+    strbuf_free(&cmd);
+    if (!cmd_str) {
         ed_set_status_message("sed: memory allocation failed");
         return ED_ERR_NOMEM;
     }
 
-    snprintf(cmd, cmd_size, "printf '%%s' %s | sed %s 2>&1",
-             escaped_input, escaped_expr);
-
-    free(input); /* Don't need original input anymore */
-
-    /* 5. Execute sed and capture output */
+    /* 4. Execute sed and capture output */
     char **output_lines = NULL;
     int output_count = 0;
-    int success = term_cmd_run(cmd, &output_lines, &output_count);
+    int success = term_cmd_run(cmd_str, &output_lines, &output_count);
 
-    free(cmd);
+    free(cmd_str);
 
     if (!success) {
         ed_set_status_message("sed: execution failed (check sed syntax)");

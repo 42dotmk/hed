@@ -13,8 +13,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-void buf_row_del_in(Buffer *buf, int at);
 
 static struct {
     int     active;
@@ -108,7 +106,7 @@ static void sl_passthrough_insert(int ch) {
     Row *row = &hb->rows[line];
     if (hw->cursor.x < 0) hw->cursor.x = 0;
     if (hw->cursor.x > (int)row->chars.len) hw->cursor.x = (int)row->chars.len;
-    sstr_insert_char(&row->chars, (size_t)hw->cursor.x, ch);
+    strbuf_insert_char(&row->chars, (size_t)hw->cursor.x, ch);
     buf_row_update(row);
     hw->cursor.x++;
     if (hb->cursor) { hb->cursor->x = hw->cursor.x; hb->cursor->y = line; }
@@ -130,7 +128,7 @@ static void sl_passthrough_backspace(void) {
     if (line < 0 || line >= hb->num_rows) return;
     if (hw->cursor.x <= 0) return; /* never merge lines from inside picker */
     Row *row = &hb->rows[line];
-    sstr_delete_char(&row->chars, (size_t)(hw->cursor.x - 1));
+    strbuf_delete_char(&row->chars, (size_t)(hw->cursor.x - 1));
     buf_row_update(row);
     hw->cursor.x--;
     if (hb->cursor) { hb->cursor->x = hw->cursor.x; hb->cursor->y = line; }
@@ -220,13 +218,11 @@ static int sl_attach(Window *modal,
                      SelectListCallback cb, void *user,
                      const SelectListOptions *opts) {
     int buf_idx = -1;
-    if (buf_new(NULL, &buf_idx) != ED_OK) {
+    if (buf_new_scratch("select", &buf_idx) != ED_OK) {
         winmodal_destroy(modal);
         return -1;
     }
     Buffer *buf = &E.buffers[buf_idx];
-    free(buf->filename); buf->filename = NULL;
-    free(buf->title);    buf->title    = strdup("select");
 
     modal->buffer_index = buf_idx;
 

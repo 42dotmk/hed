@@ -35,7 +35,7 @@ static void osc52_copy(const char *data, size_t len) {
 }
 
 static void sync_unnamed(void) {
-    const SizedStr *r = regs_get('"');
+    const StrBuf *r = regs_get('"');
     if (r && r->data && r->len > 0) osc52_copy(r->data, r->len);
 }
 

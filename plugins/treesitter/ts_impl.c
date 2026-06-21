@@ -1,4 +1,6 @@
 #include "ts.h"
+#include "highlight.h"
+#include "theme.h"
 #include "hed.h"
 #include <dlfcn.h>
 #include <limits.h>
@@ -55,15 +57,43 @@ typedef struct {
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
 int ts_is_enabled(void) { return g_ts_enabled; }
 
-void ts_buffer_init(Buffer *buf) {
-    if (!buf)
-        return;
-    if (buf->ts_internal)
-        return;
-    buf->ts_internal = calloc(1, sizeof(TSState));
-    if (buf->ts_internal) {
-        ((TSState *)buf->ts_internal)->parsed_dirty = -1;
-    }
+/* ===================================================================
+ * Per-buffer state, plugin-owned. A small stb_ds vector keyed by
+ * Buffer* so core doesn't carry a tree-sitter-shaped slot on Buffer.
+ *
+ * Linear scan is fine here: a typical session has < 100 buffers and
+ * lookups happen O(once per frame per visible buffer). Using stb_ds's
+ * hash map (hmput / hmgeti / hmdel) would need typeof, which our
+ * `-std=c11 -pedantic` build rejects.
+ * =================================================================== */
+typedef struct { Buffer *key; TSState *value; } TSStateEntry;
+static TSStateEntry *g_states = NULL;
+
+static int ts_state_index(Buffer *buf) {
+    int n = (int)arrlen(g_states);
+    for (int i = 0; i < n; i++)
+        if (g_states[i].key == buf) return i;
+    return -1;
+}
+
+static TSState *ts_state_get(Buffer *buf) {
+    if (!buf) return NULL;
+    int i = ts_state_index(buf);
+    return i < 0 ? NULL : g_states[i].value;
+}
+
+/* Lazily allocate a TSState for `buf`. Idempotent: returns the
+ * existing state when one is already attached. */
+static TSState *ts_state_create(Buffer *buf) {
+    if (!buf) return NULL;
+    TSState *st = ts_state_get(buf);
+    if (st) return st;
+    st = calloc(1, sizeof(TSState));
+    if (!st) return NULL;
+    st->parsed_dirty = -1;
+    TSStateEntry e = { .key = buf, .value = st };
+    arrput(g_states, e);
+    return st;
 }
 
 static void free_sub_lang(TSSubLang *s) {
@@ -80,46 +110,41 @@ static void free_sub_lang(TSSubLang *s) {
     memset(s, 0, sizeof(*s));
 }
 
-void ts_buffer_free(Buffer *buf) {
-    if (!buf || !buf->ts_internal)
-        return;
-    TSState *st = (TSState *)buf->ts_internal;
-    if (st->tree)
-        ts_tree_delete(st->tree);
-    if (st->parser)
-        ts_parser_delete(st->parser);
-    if (st->query)
-        ts_query_delete(st->query);
-    if (st->inject_query)
-        ts_query_delete(st->inject_query);
-    if (st->dl_handle)
-        dlclose(st->dl_handle);
-    if (st->injections)
-        free(st->injections);
-    if (st->sub_langs) {
-        for (int i = 0; i < st->num_sub_langs; i++)
-            free_sub_lang(&st->sub_langs[i]);
-        free(st->sub_langs);
+static void ts_state_destroy(Buffer *buf) {
+    if (!buf) return;
+    int i = ts_state_index(buf);
+    if (i < 0) return;
+    TSState *st = g_states[i].value;
+    if (st) {
+        if (st->tree)         ts_tree_delete(st->tree);
+        if (st->parser)       ts_parser_delete(st->parser);
+        if (st->query)        ts_query_delete(st->query);
+        if (st->inject_query) ts_query_delete(st->inject_query);
+        if (st->dl_handle)    dlclose(st->dl_handle);
+        if (st->injections)   free(st->injections);
+        if (st->sub_langs) {
+            for (int j = 0; j < st->num_sub_langs; j++)
+                free_sub_lang(&st->sub_langs[j]);
+            free(st->sub_langs);
+        }
+        free(st);
     }
-    free(buf->ts_internal);
-    buf->ts_internal = NULL;
+    arrdel(g_states, i);
 }
 
-static size_t build_source(Buffer *buf, char **out) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    char *s = malloc(total + 1);
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    *out = s;
-    return off;
+/* Public hook handlers — registered by treesitter_init. */
+void ts_on_buffer_open(HookBufferEvent *e) {
+    if (!e || !e->buf) return;
+    if (!g_ts_enabled) return;
+    if (ts_buffer_autoload(e->buf))
+        ts_buffer_reparse(e->buf);
 }
+
+void ts_on_buffer_close(HookBufferEvent *e) {
+    if (!e || !e->buf) return;
+    ts_state_destroy(e->buf);
+}
+
 
 static void ts_default_base(char *out, size_t out_sz) {
     if (!out || out_sz == 0)
@@ -190,20 +215,10 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
 static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
     if (!qpath || !*qpath)
         return NULL;
-    FILE *fp = fopen(qpath, "r");
-    if (!fp)
+    char  *buf = NULL;
+    size_t sz  = 0;
+    if (fs_file_read(qpath, &buf, &sz) != ED_OK)
         return NULL;
-    fseek(fp, 0, SEEK_END);
-    long sz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    char *buf = malloc((size_t)sz + 1);
-    if (!buf) {
-        fclose(fp);
-        return NULL;
-    }
-    fread(buf, 1, (size_t)sz, fp);
-    buf[sz] = '\0';
-    fclose(fp);
     uint32_t err_offset;
     TSQueryError err_type;
     TSQuery *q =
@@ -216,14 +231,101 @@ static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
     return q;
 }
 
-/* Try {base}/queries/<lang>/<qname>, then queries/<lang>/<qname>. */
+/* Plugin-registered query strings. Keyed by "<lang>/<qname>"; values
+ * are borrowed pointers to caller-owned static strings. */
+typedef struct {
+    char       *key;
+    const char *value;
+} QEntry;
+static QEntry *g_query_registry = NULL;
+static int     g_query_registry_inited = 0;
+
+static void make_qkey(char *out, size_t out_sz, const char *lang,
+                      const char *qname) {
+    snprintf(out, out_sz, "%s/%s", lang, qname);
+}
+
+int ts_register_query(const char *lang_name, const char *qname,
+                      const char *content) {
+    if (!lang_name || !qname || !content)
+        return -1;
+    if (!g_query_registry_inited) {
+        sh_new_strdup(g_query_registry);
+        g_query_registry_inited = 1;
+    }
+    char key[128];
+    make_qkey(key, sizeof(key), lang_name, qname);
+    shput(g_query_registry, key, content);
+    return 0;
+}
+
+static const char *find_registered_query(const char *lang_name,
+                                         const char *qname) {
+    if (!g_query_registry_inited)
+        return NULL;
+    char key[128];
+    make_qkey(key, sizeof(key), lang_name, qname);
+    QEntry *e = shgetp_null(g_query_registry, key);
+    return e ? e->value : NULL;
+}
+
+static TSQuery *parse_query_string(TSLanguage *lang, const char *src,
+                                   const char *origin) {
+    if (!lang || !src)
+        return NULL;
+    uint32_t      err_offset;
+    TSQueryError  err_type;
+    TSQuery      *q = ts_query_new(lang, src, (uint32_t)strlen(src),
+                                   &err_offset, &err_type);
+    if (!q) {
+        log_msg("TS query parse error in %s at offset %u (err=%d)",
+                origin ? origin : "<embedded>", err_offset, (int)err_type);
+    }
+    return q;
+}
+
+/* Lookup order:
+ *   1. <base>/queries.local/<lang>/<qname>   — user override (handwritten)
+ *   2. plugin-registered embedded string      — enhanced defaults shipped
+ *                                               by a plugin (e.g. markdown)
+ *   3. <base>/queries/<lang>/<qname>          — tsi-installed defaults from
+ *                                               upstream nvim-treesitter
+ *   4. ./queries/<lang>/<qname>               — cwd-local (development)
+ *
+ * Rationale: tsi-installed XDG queries are just bundled upstream defaults
+ * and shouldn't beat a plugin shipping enhanced defaults at the editor
+ * level. Users who want to override a plugin's queries drop their file in
+ * <base>/queries.local/, which wins over everything. */
 static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
                                 const char *qname) {
     char base[PATH_MAX];
     ts_default_base(base, sizeof(base));
     char qpath[PATH_MAX];
+
+    /* 1. user override */
     if (base[0]) {
-        /* Truncation harmless: an over-long path just fails to load below. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+        snprintf(qpath, sizeof(qpath), "%s/queries.local/%s/%s", base,
+                 lang_name, qname);
+#pragma GCC diagnostic pop
+        TSQuery *q = load_query_file(lang, qpath);
+        if (q)
+            return q;
+    }
+
+    /* 2. plugin-registered embedded string */
+    const char *embedded = find_registered_query(lang_name, qname);
+    if (embedded) {
+        char origin[64];
+        snprintf(origin, sizeof(origin), "embedded:%s/%s", lang_name, qname);
+        TSQuery *q = parse_query_string(lang, embedded, origin);
+        if (q)
+            return q;
+    }
+
+    /* 3. tsi-installed defaults */
+    if (base[0]) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(qpath, sizeof(qpath), "%s/queries/%s/%s", base, lang_name,
@@ -233,6 +335,8 @@ static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
         if (q)
             return q;
     }
+
+    /* 4. cwd-local */
     snprintf(qpath, sizeof(qpath), "queries/%s/%s", lang_name, qname);
     return load_query_file(lang, qpath);
 }
@@ -246,8 +350,7 @@ static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     if (!buf)
         return 0;
-    ts_buffer_init(buf);
-    TSState *st = (TSState *)buf->ts_internal;
+    TSState *st = ts_state_create(buf);
     if (!st)
         return 0;
 
@@ -293,7 +396,7 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
 
     if (!load_lang_dl(lang_name, &st->lang, &st->dl_handle))
         return 0;
-    strncpy(st->lang_name, lang_name, sizeof(st->lang_name) - 1);
+    safe_strcpy(st->lang_name, lang_name, sizeof(st->lang_name));
     st->parser = ts_parser_new();
     if (!ts_parser_set_language(st->parser, st->lang))
         return 0;
@@ -308,15 +411,18 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
 int ts_buffer_autoload(Buffer *buf) {
     if (!buf || !buf->filename)
         return 0;
-    ts_buffer_init(buf);
-    TSState *st = (TSState *)buf->ts_internal;
+    TSState *st = ts_state_create(buf);
+    if (!st)
+        return 0;
     const char *want = NULL;
 
-    /* Detect by extension */
-    const char *ext = strrchr(buf->filename, '.');
-    if (ext && ext[1]) {
-        ext++;
-
+    /* Detect by extension. NOTE: the map targets tree-sitter grammar
+     * names (c-sharp, commonlisp, typescript, …), which intentionally
+     * differ from the filetype strings fs_path_detect_filetype yields —
+     * so it stays a local table, but the extension itself comes from the
+     * shared, basename-aware fs_path_extension. */
+    const char *ext = fs_path_extension(buf->filename);
+    if (*ext) {
         if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
             want = "c";
         else if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
@@ -351,15 +457,21 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "json";
         else if (strcmp(ext, "yml") == 0 || strcmp(ext, "yaml") == 0)
             want = "yaml";
-        else if (strcmp(ext, "toml") == 0)
+        else if (strcmp(ext, "toml") == 0 || strcmp(ext, "conf") == 0)
             want = "toml";
+        else if (strcmp(ext, "diff") == 0 || strcmp(ext, "patch") == 0)
+            want = "diff";
+        else if (strcmp(ext, "ini") == 0)
+            want = "ini";
         else if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
             want = "markdown";
     }
 
-    if (!want && (strcmp(buf->filename, "makefile") == 0 ||
-                  strcmp(buf->filename, "Makefile") == 0))
-        want = "make";
+    if (!want) {
+        const char *base = fs_path_basename(buf->filename);
+        if (strcmp(base, "makefile") == 0 || strcmp(base, "Makefile") == 0)
+            want = "make";
+    }
 
     if (!want)
         return 0;
@@ -457,7 +569,7 @@ static TSSubLang *get_or_create_sub_lang(TSState *st, const char *lang_name) {
     }
     s = &st->sub_langs[st->num_sub_langs++];
     memset(s, 0, sizeof(*s));
-    strncpy(s->lang_name, lang_name, sizeof(s->lang_name) - 1);
+    safe_strcpy(s->lang_name, lang_name, sizeof(s->lang_name));
 
     if (!load_lang_dl(lang_name, &s->lang, &s->dl_handle)) {
         log_msg("TS: failed to load sub-language '%s'", lang_name);
@@ -501,7 +613,7 @@ static void add_injection(TSState *st, const char *lang_name, uint32_t s,
     }
     TSInjectionRange *ir = &st->injections[st->num_injections++];
     memset(ir, 0, sizeof(*ir));
-    strncpy(ir->lang_name, lang_name, sizeof(ir->lang_name) - 1);
+    safe_strcpy(ir->lang_name, lang_name, sizeof(ir->lang_name));
     ir->start_byte = s;
     ir->end_byte = e;
 }
@@ -583,8 +695,7 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
                 break;
             }
         if (!found) {
-            strncpy(langs[nlangs], ln, 31);
-            langs[nlangs][31] = '\0';
+            safe_strcpy(langs[nlangs], ln, sizeof(langs[nlangs]));
             nlangs++;
         }
     }
@@ -636,15 +747,14 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
 }
 
 void ts_buffer_reparse(Buffer *buf) {
-    if (!buf || !buf->ts_internal)
-        return;
-    TSState *st = (TSState *)buf->ts_internal;
-    if (!st->parser || !st->lang)
+    if (!buf) return;
+    TSState *st = ts_state_get(buf);
+    if (!st || !st->parser || !st->lang)
         return;
     if (st->parsed_dirty == buf->dirty && st->tree)
         return;
-    char *src = NULL;
-    size_t len = build_source(buf, &src);
+    size_t len = 0;
+    char *src = buf_to_text(buf, &len);
     if (!src)
         return;
 
@@ -664,249 +774,182 @@ void ts_buffer_reparse(Buffer *buf) {
 }
 
 /* ===================================================================
- * Capture name → SGR.
+ * Default palette + role mapping.
+ *
+ * The palette is what themes change. The role mapping (capture name →
+ * palette token) is theme-independent: if a theme replaces "string" in
+ * the palette, every role that maps to "string" follows automatically.
+ *
+ * Roles are looked up walk-by-dot (string.special.symbol → string.special
+ * → string), so a more specific role wins when registered.
  * =================================================================== */
+void ts_seed_default_theme(void) {
+    /* --- Palette: bundled "default" colours, mirrors src/lib/theme.h.
+     *     A theme plugin (e.g. tokyo_night) may overwrite any of these. --- */
+    theme_palette_set("string",     COLOR_STRING);
+    theme_palette_set("comment",    COLOR_COMMENT);
+    theme_palette_set("variable",   COLOR_VARIABLE);
+    theme_palette_set("constant",   COLOR_CONSTANT);
+    theme_palette_set("number",     COLOR_NUMBER);
+    theme_palette_set("keyword",    COLOR_KEYWORD);
+    theme_palette_set("type",       COLOR_TYPE);
+    theme_palette_set("function",   COLOR_FUNCTION);
+    theme_palette_set("attribute",  COLOR_ATTRIBUTE);
+    theme_palette_set("label",      COLOR_LABEL);
+    theme_palette_set("operator",   COLOR_OPERATOR);
+    theme_palette_set("punctuation", COLOR_PUNCT);
+    theme_palette_set("title",      COLOR_TITLE);
+    theme_palette_set("uri",        COLOR_URI);
+    theme_palette_set("diag.error", COLOR_DIAG_ERROR);
+    theme_palette_set("diag.warn",  COLOR_DIAG_WARN);
+    theme_palette_set("diag.note",  COLOR_DIAG_NOTE);
+
+    /* --- Role map: capture name → palette token. Plugins can overwrite
+     *     individual entries (e.g. markdown plugin re-maps text.emphasis
+     *     to a raw italic SGR). --- */
+    highlight_set("string",         "string");
+    highlight_set("escape",         "string");
+    highlight_set("comment",        "comment");
+    highlight_set("variable",       "variable");
+    highlight_set("constant",       "constant");
+    highlight_set("number",         "number");
+    highlight_set("keyword",        "keyword");
+    highlight_set("conditional",    "keyword");
+    highlight_set("repeat",         "keyword");
+    highlight_set("include",        "keyword");
+    highlight_set("type",           "type");
+    highlight_set("module",         "type");
+    highlight_set("constructor",    "type");
+    highlight_set("function",       "function");
+    highlight_set("property",       "attribute");
+    highlight_set("attribute",      "attribute");
+    highlight_set("label",          "label");
+    highlight_set("operator",       "operator");
+    highlight_set("punctuation",    "punctuation");
+    highlight_set("delimiter",      "punctuation");
+    highlight_set("text",           "comment");
+    highlight_set("text.title",     "title");
+    highlight_set("text.literal",   "string");
+    highlight_set("text.uri",       "uri");
+    highlight_set("text.reference", "type");
+    highlight_set("text.danger",    "diag.error");
+    highlight_set("text.warning",   "diag.warn");
+    highlight_set("text.note",      "diag.note");
+    highlight_set("exception",      "diag.error");
+}
+
 static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
-    if (nlen >= 6 && strncmp(name, "string", 6) == 0)
-        return COLOR_STRING;
-    if (nlen >= 6 && strncmp(name, "escape", 6) == 0)
-        return COLOR_STRING;
-    if (nlen >= 7 && strncmp(name, "comment", 7) == 0)
-        return COLOR_COMMENT;
-    if (nlen >= 8 && strncmp(name, "variable", 8) == 0)
-        return COLOR_VARIABLE;
-    if (nlen >= 8 && strncmp(name, "constant", 8) == 0)
-        return COLOR_CONSTANT;
-    if (nlen >= 6 && strncmp(name, "number", 6) == 0)
-        return COLOR_NUMBER;
-    if ((nlen >= 7 && strncmp(name, "keyword", 7) == 0) ||
-        (nlen >= 11 && strncmp(name, "conditional", 11) == 0) ||
-        (nlen >= 6 && strncmp(name, "repeat", 6) == 0) ||
-        (nlen >= 7 && strncmp(name, "include", 7) == 0))
-        return COLOR_KEYWORD;
-    if ((nlen >= 4 && strncmp(name, "type", 4) == 0) ||
-        (nlen >= 6 && strncmp(name, "module", 6) == 0) ||
-        (nlen >= 11 && strncmp(name, "constructor", 11) == 0))
-        return COLOR_TYPE;
-    if (nlen >= 8 && strncmp(name, "function", 8) == 0)
-        return COLOR_FUNCTION;
-    if ((nlen >= 8 && strncmp(name, "property", 8) == 0) ||
-        (nlen >= 9 && strncmp(name, "attribute", 9) == 0))
-        return COLOR_ATTRIBUTE;
-    if (nlen >= 5 && strncmp(name, "label", 5) == 0)
-        return COLOR_LABEL;
-    if (nlen >= 8 && strncmp(name, "operator", 8) == 0)
-        return COLOR_OPERATOR;
-    if ((nlen >= 11 && strncmp(name, "punctuation", 11) == 0) ||
-        (nlen >= 9 && strncmp(name, "delimiter", 9) == 0))
-        return COLOR_PUNCT;
-    if (nlen >= 4 && strncmp(name, "text", 4) == 0) {
-        if (nlen >= 10 && strncmp(name, "text.title", 10) == 0)
-            return COLOR_TITLE;
-        if (nlen >= 12 && strncmp(name, "text.literal", 12) == 0)
-            return COLOR_STRING;
-        if (nlen >= 8 && strncmp(name, "text.uri", 8) == 0)
-            return COLOR_URI;
-        if (nlen >= 14 && strncmp(name, "text.reference", 14) == 0)
-            return COLOR_TYPE;
-        if (nlen >= 11 && strncmp(name, "text.danger", 11) == 0)
-            return COLOR_DIAG_ERROR;
-        if (nlen >= 12 && strncmp(name, "text.warning", 12) == 0)
-            return COLOR_DIAG_WARN;
-        if (nlen >= 9 && strncmp(name, "text.note", 9) == 0)
-            return COLOR_DIAG_NOTE;
-        return COLOR_COMMENT;
-    }
-    if (nlen >= 9 && strncmp(name, "exception", 9) == 0)
-        return COLOR_DIAG_ERROR;
-    return NULL;
+    return highlight_lookup(name, nlen);
 }
 
 /* ===================================================================
- * Segment collection from a (tree, query) over a byte range.
+ * HOOK_RENDER_PRE: push AttrSpans for the whole buffer.
  * =================================================================== */
-typedef struct {
-    uint32_t s, e;
-    const char *sgr;
-} Seg;
 
-/* Closes a syntax segment without disturbing reverse video, so visual
- * selection (rendered with ESC[7m) survives across highlight boundaries.
- *   22 = normal intensity (cancels bold from COLOR_TITLE)
- *   24 = no underline    (cancels underline from COLOR_URI)
- *   39 = default foreground
- * Reverse video (7/27) is intentionally untouched. */
-#define TS_SEG_RESET "\x1b[22;24;39m"
-
-static int collect_segments(TSTree *tree, TSQuery *query, uint32_t cur_start,
-                            uint32_t cur_end, uint32_t clip_start,
-                            uint32_t clip_end, Seg *segs, int seg_cap,
-                            int seg_count) {
-    if (!tree || !query)
-        return seg_count;
+/* Push spans for one (tree, query) over a byte range, splitting each
+ * query capture by line boundaries. `line_starts[r]` is the chars-
+ * space byte offset where row r begins. */
+static void push_spans_from_tree(TSTree *tree, TSQuery *query,
+                                 uint32_t range_start, uint32_t range_end,
+                                 uint32_t clip_start, uint32_t clip_end,
+                                 const uint32_t *line_starts,
+                                 const int *line_lens, int num_rows,
+                                 AttrSpans *spans) {
+    if (!tree || !query) return;
     TSNode root = ts_tree_root_node(tree);
     TSQueryCursor *cur = ts_query_cursor_new();
     ts_query_cursor_exec(cur, query, root);
-    ts_query_cursor_set_byte_range(cur, cur_start, cur_end);
+    ts_query_cursor_set_byte_range(cur, range_start, range_end);
 
     TSQueryMatch m;
-    while (ts_query_cursor_next_match(cur, &m) && seg_count < seg_cap) {
-        for (uint32_t i = 0; i < m.capture_count && seg_count < seg_cap; i++) {
+    while (ts_query_cursor_next_match(cur, &m)) {
+        for (uint32_t i = 0; i < m.capture_count; i++) {
             TSQueryCapture c = m.captures[i];
             const char *name;
             uint32_t nlen;
             name = ts_query_capture_name_for_id(query, c.index, &nlen);
-            if (!name)
-                continue;
+            if (!name) continue;
             const char *sgr = capture_name_to_sgr(name, nlen);
-            if (!sgr)
-                continue;
+            if (!sgr) continue;
             uint32_t s = ts_node_start_byte(c.node);
             uint32_t e = ts_node_end_byte(c.node);
-            if (e <= clip_start || s >= clip_end)
-                continue;
-            if (s < clip_start)
-                s = clip_start;
-            if (e > clip_end)
-                e = clip_end;
-            segs[seg_count++] = (Seg){s, e, sgr};
+            if (e <= clip_start || s >= clip_end) continue;
+            if (s < clip_start) s = clip_start;
+            if (e > clip_end)   e = clip_end;
+
+            /* Walk the rows this capture intersects and push one span
+             * per row's slice. Linear scan from a binary-searched
+             * starting row keeps multi-line tokens cheap. */
+            int lo = 0, hi = num_rows - 1, row = 0;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                if (line_starts[mid] <= s) { row = mid; lo = mid + 1; }
+                else                       { hi = mid - 1; }
+            }
+            while (row < num_rows && line_starts[row] < e) {
+                uint32_t row_start = line_starts[row];
+                uint32_t row_end   = row_start + (uint32_t)line_lens[row];
+                uint32_t cs = s > row_start ? s : row_start;
+                uint32_t ce = e < row_end   ? e : row_end;
+                if (ce > cs) {
+                    attrspan_push(spans, row,
+                                  (int)(cs - row_start),
+                                  (int)(ce - row_start), sgr, 0);
+                }
+                row++;
+            }
         }
     }
     ts_query_cursor_delete(cur);
-    return seg_count;
 }
 
-size_t ts_highlight_line(Buffer *buf, int line_index, char *dst, size_t dst_cap,
-                         int col_offset, int max_cols) {
-    if (!g_ts_enabled || !buf || !buf->ts_internal)
-        return 0;
-    TSState *st = (TSState *)buf->ts_internal;
-    if (!st->tree || !st->query)
-        return 0;
+void ts_render_pre_hook(const struct HookRenderEvent *event) {
+    if (!event || !event->buf || !event->spans) return;
+    Buffer *buf = event->buf;
+    if (!g_ts_enabled) return;
+    TSState *st = ts_state_get(buf);
+    if (!st) return;
+    /* Reparse if the buffer changed since the last frame. Replaces
+     * the per-frame reparse-all loop that used to live in
+     * src/terminal.c — the renderer fires this hook once per visible
+     * window, so tree-sitter sees the same trigger. */
+    if (st->parser && st->lang && st->parsed_dirty != buf->dirty)
+        ts_buffer_reparse(buf);
+    if (!st->tree || !st->query) return;
+    if (buf->num_rows <= 0) return;
 
-    /* Compute byte range for this line in the source. */
-    size_t start = 0;
-    for (int i = 0; i < line_index; i++)
-        start += buf->rows[i].chars.len + 1;
-    size_t end = start + buf->rows[line_index].chars.len;
-
-    enum { SEG_CAP = 256 };
-    Seg segs[SEG_CAP];
-    int sc = 0;
-
-    /* Host segments. */
-    sc = collect_segments(st->tree, st->query, (uint32_t)start, (uint32_t)end,
-                          (uint32_t)start, (uint32_t)end, segs, SEG_CAP, sc);
-
-    /* Strip host segments wholly inside an injection range — the
-     * sub-language gets to colour those bytes. */
-    if (st->num_injections > 0) {
-        int kept = 0;
-        for (int i = 0; i < sc; i++) {
-            int inside = 0;
-            for (int j = 0; j < st->num_injections; j++) {
-                TSInjectionRange *ir = &st->injections[j];
-                if (segs[i].s >= ir->start_byte &&
-                    segs[i].e <= ir->end_byte) {
-                    inside = 1;
-                    break;
-                }
-            }
-            if (!inside)
-                segs[kept++] = segs[i];
-        }
-        sc = kept;
+    /* Precompute per-row byte offsets in chars-space. */
+    int n = buf->num_rows;
+    uint32_t *line_starts = malloc((size_t)n * sizeof(uint32_t));
+    int      *line_lens   = malloc((size_t)n * sizeof(int));
+    if (!line_starts || !line_lens) {
+        free(line_starts);
+        free(line_lens);
+        return;
     }
+    uint32_t off = 0;
+    for (int r = 0; r < n; r++) {
+        line_starts[r] = off;
+        line_lens[r]   = (int)buf->rows[r].chars.len;
+        off += (uint32_t)line_lens[r] + 1; /* +1 for newline */
+    }
+    uint32_t total = off > 0 ? off - 1 : 0;
 
-    /* Sub-language segments for any injection that touches this line. */
-    for (int j = 0; j < st->num_injections && sc < SEG_CAP; j++) {
+    /* Host segments over the whole buffer. */
+    push_spans_from_tree(st->tree, st->query, 0, total, 0, total,
+                         line_starts, line_lens, n, event->spans);
+
+    /* Sub-language segments for each injection range. */
+    for (int j = 0; j < st->num_injections; j++) {
         TSInjectionRange *ir = &st->injections[j];
-        if (ir->end_byte <= start || ir->start_byte >= end)
-            continue;
         TSSubLang *sub = find_sub_lang(st, ir->lang_name);
-        if (!sub || !sub->tree || !sub->query)
-            continue;
-        uint32_t cs = (uint32_t)((ir->start_byte > start) ? ir->start_byte
-                                                          : (uint32_t)start);
-        uint32_t ce = (uint32_t)((ir->end_byte < end) ? ir->end_byte
-                                                      : (uint32_t)end);
-        sc = collect_segments(sub->tree, sub->query, cs, ce, cs, ce, segs,
-                              SEG_CAP, sc);
+        if (!sub || !sub->tree || !sub->query) continue;
+        push_spans_from_tree(sub->tree, sub->query,
+                             ir->start_byte, ir->end_byte,
+                             ir->start_byte, ir->end_byte,
+                             line_starts, line_lens, n, event->spans);
     }
 
-    /* Sort segments by start byte. */
-    for (int i = 0; i < sc; i++)
-        for (int j = i + 1; j < sc; j++)
-            if (segs[j].s < segs[i].s) {
-                Seg t = segs[i];
-                segs[i] = segs[j];
-                segs[j] = t;
-            }
-
-    /* Render the line.
-     *
-     * Tree-sitter segments use chars-space byte offsets (matching chars.data).
-     * The display uses render.data where tabs are expanded to spaces.
-     * We walk chars.data for segment comparison and render.data for output,
-     * keeping both in sync so tab expansion doesn't shift highlight boundaries.
-     */
-    const Row  *row   = &buf->rows[line_index];
-    const char *rdata = row->render.data;
-    int         rlen  = (int)row->render.len;
-    const char *cdata = row->chars.data;
-    int         clen  = (int)row->chars.len;
-
-    int roff = 0;
-    int ci = 0;
-    while (ci < clen && roff < col_offset) {
-        unsigned char c = (unsigned char)cdata[ci];
-        int w = (c == '\t') ? (TAB_STOP - roff % TAB_STOP) : 1;
-        if (roff + w > col_offset)
-            break;
-        roff += w;
-        ci++;
-    }
-    int rout = col_offset;
-
-    int    si = 0;
-    int    rem = max_cols;
-    size_t out = 0;
-    uint32_t cpos = (uint32_t)start + (uint32_t)ci;
-
-    while (rem > 0 && ci < clen && rout < rlen) {
-        while (si < sc && segs[si].e <= cpos)
-            si++;
-
-        unsigned char c = (unsigned char)cdata[ci];
-        int rw = (c == '\t') ? (TAB_STOP - rout % TAB_STOP) : 1;
-        if (rw < 1)
-            rw = 1;
-
-        int in_seg = (si < sc && segs[si].s <= cpos && cpos < segs[si].e);
-
-        if (in_seg) {
-            size_t el = strlen(segs[si].sgr);
-            if (out + el < dst_cap) {
-                memcpy(dst + out, segs[si].sgr, el);
-                out += el;
-            }
-        }
-        for (int k = 0; k < rw && rout < rlen && rem > 0; k++) {
-            if (out + 1 < dst_cap)
-                dst[out++] = rdata[rout];
-            rout++;
-            rem--;
-        }
-        if (in_seg) {
-            size_t rl = strlen(TS_SEG_RESET);
-            if (out + rl < dst_cap) {
-                memcpy(dst + out, TS_SEG_RESET, rl);
-                out += rl;
-            }
-        }
-
-        cpos++;
-        ci++;
-    }
-    return out;
+    free(line_starts);
+    free(line_lens);
 }

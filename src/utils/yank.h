@@ -3,7 +3,7 @@
 #include "buf/buffer.h"
 #include "buf/textobj.h"
 #include "lib/errors.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 
 /*
  * Yank Module - Centralized clipboard operations
@@ -25,12 +25,18 @@
 typedef struct YankData {
     SelectionType type;     /* Type of selection (char/line/block) */
     int num_rows;           /* Number of rows in the yank */
-    SizedStr *rows;         /* Array of strings, one per row */
+    StrBuf *rows;         /* Array of strings, one per row */
 } YankData;
 
 
 /* Core operations - all use TextSelection */
 EdError yank_selection(const TextSelection *sel);
+
+/* Block-wise yank of a render-column rectangle [start_rx, end_rx_excl)
+ * across rows sy..ey (inclusive). Resolves columns per row (tab/UTF-8
+ * aware) and stores blockwise into the yank/unnamed registers. */
+EdError yank_block(Buffer *buf, int sy, int ey, int start_rx,
+                   int end_rx_excl);
 
 /* Paste operations */
 EdError paste_from_register(Buffer *buf, char reg_name ,bool after);

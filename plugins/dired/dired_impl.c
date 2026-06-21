@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <sys/stat.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 /* Each rendered line is prefixed with "/XXXX/ " — 4 hex digits flanked by
  * slashes, then a space. The prefix gives every entry a stable opaque ID so
@@ -32,14 +31,10 @@ typedef struct {
 typedef DiredState *DiredStateVec;
 static DiredStateVec dired_states = NULL;
 
+/* Bounded copy with dired's (dst, size, src) argument order. Thin
+ * wrapper over the core safe_strcpy. */
 static void dired_copy(char *dst, size_t dstsz, const char *src) {
-    if (!dst || dstsz == 0)
-        return;
-    if (!src) {
-        dst[0] = '\0';
-        return;
-    }
-    snprintf(dst, dstsz, "%s", src);
+    safe_strcpy(dst, src ? src : "", dstsz);
 }
 
 static DiredState *dired_state_find(Buffer *buf, size_t *out_idx) {
@@ -122,7 +117,7 @@ static int dired_join(const char *dir, const char *name, char *out,
     char clean[PATH_MAX];
     dired_copy(clean, sizeof(clean), name);
     dired_trim_slash(clean);
-    if (!path_join_dir(out, out_sz, dir, clean)) {
+    if (!fs_path_join(out, out_sz, dir, clean)) {
         if (out_sz)
             out[0] = '\0';
         return 0;
@@ -220,42 +215,36 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     if (realpath(dir, resolved))
         target = resolved;
 
-    DIR *dp = opendir(target);
-    if (!dp) {
-        ed_set_status_message("dired: %s: %s", target, strerror(errno));
+    FsDir *dp = NULL;
+    if (fs_dir_open(&dp, target) != ED_OK) {
+        ed_set_status_message("dired: cannot open %s", target);
         return 0;
     }
 
     DiredEntry *entries = NULL;
     size_t count = 0, cap = 0;
-    struct dirent *de;
-    while ((de = readdir(dp)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
-            continue;
+    FsDirEntry de;
+    while (fs_dir_next(dp, &de)) {
         /* Hide internal temp-rename markers from prior aborted saves */
-        if (strncmp(de->d_name, DIRED_TMP_PREFIX,
+        if (strncmp(de.name, DIRED_TMP_PREFIX,
                     sizeof(DIRED_TMP_PREFIX) - 1) == 0)
             continue;
         if (count == cap) {
             cap = cap ? cap * 2 : 32;
             void *mem = realloc(entries, cap * sizeof(DiredEntry));
             if (!mem) {
-                closedir(dp);
+                fs_dir_close(dp);
                 free(entries);
                 ed_set_status_message("dired: out of memory");
                 return 0;
             }
             entries = mem;
         }
-        dired_copy(entries[count].name, sizeof(entries[count].name),
-                   de->d_name);
-        char full[PATH_MAX];
-        entries[count].is_dir =
-            dired_join(target, de->d_name, full, sizeof(full)) &&
-            path_is_dir(full);
+        dired_copy(entries[count].name, sizeof(entries[count].name), de.name);
+        entries[count].is_dir = de.is_dir;
         count++;
     }
-    closedir(dp);
+    fs_dir_close(dp);
 
     if (count > 1)
         qsort(entries, count, sizeof(DiredEntry), dired_entry_cmp);
@@ -305,7 +294,7 @@ void dired_open(const char *path) {
     char resolved[PATH_MAX];
     if (!realpath(path, resolved))
         dired_copy(resolved, sizeof(resolved), path);
-    if (!path_is_dir(resolved)) {
+    if (!fs_is_dir(resolved)) {
         ed_set_status_message("dired: not a directory: %s", resolved);
         return;
     }
@@ -390,9 +379,9 @@ int dired_handle_enter(void) {
     if (!dired_join(st->cwd, name, path, sizeof(path)))
         return 1;
 
-    if (is_dir || path_is_dir(path)) {
+    if (is_dir || fs_is_dir(path)) {
         dired_list_dir(st, path);
-    } else if (path_exists(path)) {
+    } else if (fs_exists(path)) {
         buf_open_or_switch(path, true);
     } else {
         ed_set_status_message("dired: %s does not exist (save with :w first)",
@@ -406,7 +395,7 @@ int dired_handle_parent(void) {
     if (!st)
         return 0;
     char parent[PATH_MAX];
-    path_dirname_buf(st->cwd, parent, sizeof(parent));
+    fs_path_dirname_buf(st->cwd, parent, sizeof(parent));
     if (!parent[0])
         return 1;
     dired_list_dir(st, parent);
@@ -430,15 +419,16 @@ int dired_handle_chdir(void) {
     if (!st->cwd[0])
         return 1;
 
-    if (chdir(st->cwd) == 0) {
-        if (getcwd(E.cwd, sizeof(E.cwd))) {
+    EdError err = fs_chdir(st->cwd);
+    if (err == ED_OK) {
+        if (fs_getcwd(E.cwd, sizeof(E.cwd))) {
             ed_set_status_message("cd: %s", E.cwd);
         } else {
             E.cwd[0] = '\0';
             ed_set_status_message("cd: ok");
         }
     } else {
-        ed_set_status_message("cd: %s", strerror(errno));
+        ed_set_status_message("cd: %s", ed_error_string(err));
     }
     return 1;
 }
@@ -614,9 +604,10 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
             op->tmp_name[0] = '\0';
             continue;
         }
-        if (rename(src, tmp) != 0) {
+        EdError rerr = fs_rename(src, tmp);
+        if (rerr != ED_OK) {
             ed_set_status_message("dired: rename %s: %s", op->src_name,
-                                  strerror(errno));
+                                  ed_error_string(rerr));
             *had_error = 1;
             op->tmp_name[0] = '\0';
         }
@@ -636,18 +627,19 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
             *had_error = 1;
             continue;
         }
-        if (path_exists(dst)) {
+        if (fs_exists(dst)) {
             ed_set_status_message("dired: target exists: %s", op->dst_name);
             *had_error = 1;
             /* Roll the temp back to original name to leave fs consistent */
             char src[PATH_MAX];
             if (dired_join(st->cwd, op->src_name, src, sizeof(src)))
-                rename(tmp, src);
+                fs_rename(tmp, src);
             continue;
         }
-        if (rename(tmp, dst) != 0) {
+        EdError rerr = fs_rename(tmp, dst);
+        if (rerr != ED_OK) {
             ed_set_status_message("dired: rename %s -> %s: %s", op->src_name,
-                                  op->dst_name, strerror(errno));
+                                  op->dst_name, ed_error_string(rerr));
             *had_error = 1;
             continue;
         }
@@ -668,22 +660,27 @@ static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) 
             *had_error = 1;
             continue;
         }
-        int rc;
         if (op->is_dir) {
-            rc = rmdir(path);
-            if (rc != 0 && (errno == ENOTEMPTY || errno == EEXIST)) {
-                ed_set_status_message(
-                    "dired: directory not empty: %s (delete contents first)",
-                    op->src_name);
-                *had_error = 1;
-                continue;
+            /* Refuse to delete a non-empty directory — surface a
+             * targeted message instead of a generic "delete failed". */
+            FsDir *dp = NULL;
+            if (fs_dir_open(&dp, path) == ED_OK) {
+                FsDirEntry e;
+                bool empty = !fs_dir_next(dp, &e);
+                fs_dir_close(dp);
+                if (!empty) {
+                    ed_set_status_message(
+                        "dired: directory not empty: %s "
+                        "(delete contents first)", op->src_name);
+                    *had_error = 1;
+                    continue;
+                }
             }
-        } else {
-            rc = unlink(path);
         }
-        if (rc != 0) {
+        EdError derr = op->is_dir ? fs_rmdir(path) : fs_unlink(path);
+        if (derr != ED_OK) {
             ed_set_status_message("dired: delete %s: %s", op->src_name,
-                                  strerror(errno));
+                                  ed_error_string(derr));
             *had_error = 1;
             continue;
         }
@@ -704,27 +701,22 @@ static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) 
             *had_error = 1;
             continue;
         }
-        if (path_exists(path)) {
+        if (fs_exists(path)) {
             ed_set_status_message("dired: already exists: %s", op->dst_name);
             *had_error = 1;
             continue;
         }
+        EdError cerr;
         if (op->is_dir) {
-            if (mkdir(path, 0755) != 0) {
-                ed_set_status_message("dired: mkdir %s: %s", op->dst_name,
-                                      strerror(errno));
-                *had_error = 1;
-                continue;
-            }
+            cerr = fs_mkdir(path);
         } else {
-            int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
-            if (fd < 0) {
-                ed_set_status_message("dired: create %s: %s", op->dst_name,
-                                      strerror(errno));
-                *had_error = 1;
-                continue;
-            }
-            close(fd);
+            cerr = fs_file_write(path, "", 0);
+        }
+        if (cerr != ED_OK) {
+            ed_set_status_message("dired: create %s: %s", op->dst_name,
+                                  ed_error_string(cerr));
+            *had_error = 1;
+            continue;
         }
         applied++;
     }

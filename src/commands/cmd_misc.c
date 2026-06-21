@@ -1,23 +1,19 @@
 #include "commands/cmd_misc.h"
 #include "editor.h"
-#include "commands.h"
+#include "commands/registry.h"
 #include "buf/buf_helpers.h"
+#include "input/picker.h"
 #include "utils/yank.h"
-#include "utils/term_cmd.h"
 #include "terminal.h"
 #include "lib/log.h"
 #include "ui/winmodal.h"
 #include <unistd.h>
-#include "macros.h"
-#include "registers.h"
-#include "utils/ctags.h"
+#include "input/macros.h"
+#include "input/registers.h"
 #include "utils/fold.h"
-#include "utils/fzf.h"
-#include "prompt.h"
-#include "fold_methods/fold_methods.h"
-#include "keybinds.h"
-#include "commands/cmd_util.h"
-#include <ctype.h>
+#include "utils/fold_methods.h"
+#include "input/keybinds.h"
+#include "lib/strutil.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,100 +88,16 @@ static char *unescape_string(const char *in) {
 }
 
 void cmd_list_commands(const char *args) {
-    (void)args;
-    /* Build printf list with command\tdesc lines for fzf */
-    char pipebuf[8192];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
-    for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
-        const char *nm = commands[i].name ? commands[i].name : "";
-        const char *ds = commands[i].desc ? commands[i].desc : "";
-        char en[256], ed[512];
-        shell_escape_single(nm, en, sizeof(en));
-        shell_escape_single(ds, ed, sizeof(ed));
-
-        size_t need = strlen(en) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-
-        memcpy(pipebuf + off, en, strlen(en));
-        off += strlen(en);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
-    }
-    pipebuf[off] = '\0';
-
-    const char *fzf_opts = "--delimiter '\t'";
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        ed_set_status_message("commands: canceled");
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    fzf_free(sel, cnt);
-    ed_set_status_message("commands: %td total", arrlen(commands));
+    if (picker_invoke("commands", args)) return;
+    /* No picker installed — just report how many we have. */
+    ed_set_status_message("commands: %td registered (no picker installed)",
+                          arrlen(commands));
 }
 
 void cmd_list_keybinds(const char *args) {
-    (void)args;
-    /* Build printf list with sequence\tdesc lines for fzf */
-    char pipebuf[16384];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
-    int count = keybind_get_count();
-    for (int i = 0; i < count; i++) {
-        const char *sequence = NULL;
-        const char *desc = NULL;
-        int mode = 0;
-
-        if (!keybind_get_at(i, &sequence, &desc, &mode))
-            continue;
-
-        /* Add mode prefix */
-        char display[256];
-        const char *mode_prefix = "";
-        if (mode == MODE_NORMAL) mode_prefix = "[N] ";
-        else if (mode == MODE_INSERT) mode_prefix = "[I] ";
-        else if (mode == MODE_VISUAL) mode_prefix = "[V] ";
-        else if (mode == MODE_VISUAL_BLOCK) mode_prefix = "[VB] ";
-        else if (mode == MODE_COMMAND) mode_prefix = "[C] ";
-
-        snprintf(display, sizeof(display), "%s%s", mode_prefix, sequence ? sequence : "");
-
-        char es[512], ed[512];
-        shell_escape_single(display, es, sizeof(es));
-        shell_escape_single(desc ? desc : "", ed, sizeof(ed));
-
-        size_t need = strlen(es) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-
-        memcpy(pipebuf + off, es, strlen(es));
-        off += strlen(es);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
-    }
-    pipebuf[off] = '\0';
-
-    const char *fzf_opts = "--delimiter '\t'";
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        ed_set_status_message("keybinds: canceled");
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    fzf_free(sel, cnt);
-    ed_set_status_message("keybinds: %d total", count);
+    if (picker_invoke("keybinds", args)) return;
+    ed_set_status_message("keybinds: %d registered (no picker installed)",
+                          keybind_get_count());
 }
 
 void cmd_echo(const char *args) {
@@ -232,124 +144,6 @@ void cmd_history(const char *args) {
     ed_set_status_message("%s", buf);
 }
 
-void cmd_history_fzf(const char *args) {
-    (void)args;
-    int hlen = hist_len(&E.history);
-    if (hlen == 0) {
-        ed_set_status_message("No history");
-        return;
-    }
-
-    /* Write history to a temp file to avoid escaping/length issues */
-    char tmppath[64];
-    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_hist_%d", getpid());
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        ed_set_status_message("hfzf: failed to write temp file");
-        return;
-    }
-    for (int i = 0; i < hlen; i++) {
-        const char *line = hist_get(&E.history, i);
-        if (line) fprintf(fp, "%s\n", line);
-    }
-    fclose(fp);
-
-    char fzf_cmd[128];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
-
-    char **sel = NULL;
-    int cnt    = 0;
-    fzf_run(fzf_cmd, 0, &sel, &cnt);
-    unlink(tmppath);
-
-    if (cnt == 0 || !sel || !sel[0]) {
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    /* Prefill the active : prompt with the picked history line and
-     * keep it open for further editing. */
-    Prompt *p = prompt_current();
-    if (p) {
-        prompt_set_text(p, sel[0], (int)strlen(sel[0]));
-        ed_set_status_message(":%s", p->buf);
-        prompt_keep_open();
-    }
-    fzf_free(sel, cnt);
-}
-
-void cmd_jumplist_fzf(const char *args) {
-    (void)args;
-    int jlen = (int)arrlen(E.jump_list.entries);
-    if (jlen == 0) {
-        ed_set_status_message("Jump list is empty");
-        return;
-    }
-
-    /* Write entries to temp file as "filepath:line:col" (1-indexed) */
-    char tmppath[64];
-    snprintf(tmppath, sizeof(tmppath), "/tmp/hed_jumps_%d", getpid());
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        ed_set_status_message("jfzf: failed to write temp file");
-        return;
-    }
-    /* Most recent first */
-    for (int i = jlen - 1; i >= 0; i--) {
-        JumpEntry *e = &E.jump_list.entries[i];
-        if (e->filepath)
-            fprintf(fp, "%s:%d:%d\n", e->filepath, e->cursor_y + 1, e->cursor_x + 1);
-    }
-    fclose(fp);
-
-    char fzf_cmd[128];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
-
-    const char *fzf_opts =
-        "--delimiter ':' "
-        "--preview 'command -v bat >/dev/null 2>&1 "
-            "&& bat --style=plain --color=always --highlight-line {2} "
-                "--line-range {2}:+30 {1} "
-            "|| awk \"NR>={2}-5 && NR<={2}+25\" {1}' "
-        "--preview-window 'right,60%,+{2}-5'";
-
-    char **sel = NULL;
-    int cnt    = 0;
-    fzf_run_opts(fzf_cmd, fzf_opts, 0, &sel, &cnt);
-    unlink(tmppath);
-
-    if (cnt == 0 || !sel || !sel[0]) {
-        fzf_free(sel, cnt);
-        return;
-    }
-
-    /* Parse "filepath:line:col" */
-    char *entry = sel[0];
-    /* Find last two colons to extract line and col */
-    char *last_colon = strrchr(entry, ':');
-    if (!last_colon) { fzf_free(sel, cnt); return; }
-    int col = atoi(last_colon + 1) - 1;
-    *last_colon = '\0';
-
-    char *prev_colon = strrchr(entry, ':');
-    if (!prev_colon) { fzf_free(sel, cnt); return; }
-    int line = atoi(prev_colon + 1) - 1;
-    *prev_colon = '\0';
-
-    /* entry is now just the filepath */
-    buf_open_or_switch(entry, false);
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (buf) {
-        int row = (line < buf->num_rows) ? line : buf->num_rows - 1;
-        if (row < 0) row = 0;
-        buf->cursor->y = row;
-        buf->cursor->x = col;
-        if (win) { win->cursor.y = row; win->cursor.x = col; }
-    }
-    fzf_free(sel, cnt);
-}
-
 void cmd_registers(const char *args) {
     (void)args;
     char out[256];
@@ -358,7 +152,7 @@ void cmd_registers(const char *args) {
                               '5', '6', '7', '8', '9', ':'};
 
     for (size_t i = 0; i < sizeof(regs_list); i++) {
-        const SizedStr *s = regs_get(regs_list[i]);
+        const StrBuf *s = regs_get(regs_list[i]);
         if (!s)
             continue;
         int wrote =
@@ -374,7 +168,7 @@ void cmd_registers(const char *args) {
 
     /* named registers */
     for (char c = 'a'; c <= 'z'; c++) {
-        const SizedStr *s = regs_get(c);
+        const StrBuf *s = regs_get(c);
         if (!s || s->len == 0)
             continue;
         int wrote =
@@ -400,7 +194,7 @@ void cmd_put(const char *args) {
         if (*args)
             reg = *args;
     }
-    const SizedStr *s = regs_get(reg);
+    const StrBuf *s = regs_get(reg);
     if (!s || s->len == 0) {
         ed_set_status_message("Register %c empty", reg);
         return;
@@ -431,7 +225,7 @@ void cmd_redo(const char *args) {
 void cmd_repeat(const char *args) {
     (void)args;
     /* Get the last executed keybind sequence from '.' register */
-    const SizedStr *dot_reg = regs_get('.');
+    const StrBuf *dot_reg = regs_get('.');
     if (!dot_reg || !dot_reg->data || dot_reg->len == 0) {
         ed_set_status_message("No previous command to repeat");
         return;
@@ -589,80 +383,6 @@ void cmd_new_line_above(const char *args) {
     win->cursor.y--;
     /* Cursor should now be on the new blank line above */
     ed_set_mode(MODE_INSERT);
-}
-
-void cmd_shell(const char *args) {
-    if (!args || !*args) {
-        ed_set_status_message("Usage: :shell <command>");
-        return;
-    }
-
-    char cmd_buf[4096];
-    snprintf(cmd_buf, sizeof(cmd_buf), "%s", args);
-
-    bool acknowledge = true;
-    const char *flag = "--skipwait";
-    size_t flen = strlen(flag);
-    char *p = cmd_buf;
-    while ((p = strstr(p, flag))) {
-        char before = (p == cmd_buf) ? ' ' : p[-1];
-        char after = p[flen];
-        if ((p == cmd_buf || isspace((unsigned char)before)) &&
-            (after == '\0' || isspace((unsigned char)after))) {
-            acknowledge = false;
-            if (p > cmd_buf && isspace((unsigned char)p[-1]))
-                p--;
-            char *src = p + flen;
-            while (isspace((unsigned char)*src))
-                src++;
-            memmove(p, src, strlen(src) + 1);
-            continue;
-        }
-        p += flen;
-    }
-
-    while (isspace((unsigned char)cmd_buf[0])) {
-        memmove(cmd_buf, cmd_buf + 1, strlen(cmd_buf));
-    }
-    if (cmd_buf[0] == '\0') {
-        ed_set_status_message("Usage: :shell <command>");
-        return;
-    }
-
-    /* Run command interactively, handing over the TTY */
-    int status = term_cmd_run_interactive(cmd_buf, acknowledge);
-
-    if (status == 0) {
-        ed_set_status_message("Command completed successfully");
-    } else if (status == -1) {
-        ed_set_status_message("Failed to run command");
-    } else {
-        ed_set_status_message("Command exited with status %d", status);
-    }
-
-    ed_render_frame();
-}
-
-void cmd_git(const char *args) {
-    (void)args;
-    /* Run lazygit as a full-screen TUI, like fzf: temporarily leave raw mode.
-     */
-    int status = term_cmd_run_interactive("lazygit", false);
-    if (status == 0) {
-        ed_set_status_message("lazygit exited");
-    } else if (status == -1) {
-        ed_set_status_message("failed to run lazygit");
-    } else {
-        ed_set_status_message("lazygit exited with status %d", status);
-    }
-    ed_render_frame();
-}
-
-
-void cmd_tag(const char *args) {
-    (void)args;
-    goto_tag(args && *args ? args : NULL);
-	buf_center_screen();
 }
 
 void cmd_modal_from_current(const char *args) {
@@ -833,6 +553,26 @@ void cmd_fold_toggle(const char *args) {
     }
 }
 
+/* Build a comma-separated list of registered methods for error messages.
+ * Returns a pointer into a static buffer; not thread-safe (the editor is
+ * single-threaded). */
+static const char *foldmethod_list_str(void) {
+    static char buf[256];
+    buf[0] = '\0';
+    size_t off = 0;
+    int n = fold_method_count();
+    for (int i = 0; i < n; i++) {
+        const char *name = fold_method_name_at(i);
+        if (!name) continue;
+        int written = snprintf(buf + off, sizeof(buf) - off,
+                               "%s%s", off ? ", " : "", name);
+        if (written < 0 || (size_t)written >= sizeof(buf) - off)
+            break;
+        off += (size_t)written;
+    }
+    return buf;
+}
+
 void cmd_foldmethod(const char *args) {
     Buffer *buf = buf_cur();
     if (!buf) {
@@ -841,39 +581,25 @@ void cmd_foldmethod(const char *args) {
     }
 
     if (!args || !*args) {
-        /* Show current fold method */
-        const char *method_name = "unknown";
-        switch (buf->fold_method) {
-        case FOLD_METHOD_MANUAL:
-            method_name = "manual";
-            break;
-        case FOLD_METHOD_BRACKET:
-            method_name = "bracket";
-            break;
-        case FOLD_METHOD_INDENT:
-            method_name = "indent";
-            break;
-        }
-        ed_set_status_message("foldmethod=%s", method_name);
+        ed_set_status_message("foldmethod=%s",
+                              buf->fold_method ? buf->fold_method : "(none)");
         return;
     }
 
-    /* Parse the method name */
-    FoldMethod new_method = FOLD_METHOD_MANUAL;
-    if (strcmp(args, "manual") == 0) {
-        new_method = FOLD_METHOD_MANUAL;
-    } else if (strcmp(args, "bracket") == 0) {
-        new_method = FOLD_METHOD_BRACKET;
-    } else if (strcmp(args, "indent") == 0) {
-        new_method = FOLD_METHOD_INDENT;
-    } else {
-        ed_set_status_message("foldmethod: unknown method '%s' (manual, bracket, indent)", args);
+    if (!fold_method_lookup(args)) {
+        ed_set_status_message("foldmethod: unknown method '%s' (%s)",
+                              args, foldmethod_list_str());
         return;
     }
 
-    /* Set the method and apply it */
-    buf->fold_method = new_method;
-    fold_apply_method(buf, new_method);
+    char *copy = strdup(args);
+    if (!copy) {
+        ed_set_status_message("foldmethod: out of memory");
+        return;
+    }
+    free(buf->fold_method);
+    buf->fold_method = copy;
+    fold_apply_method(buf, args);
     ed_set_status_message("foldmethod=%s", args);
 }
 
@@ -884,21 +610,7 @@ void cmd_foldupdate(const char *args) {
         ed_set_status_message("foldupdate: no buffer");
         return;
     }
-
-    /* Reapply the current fold method */
     fold_apply_method(buf, buf->fold_method);
-
-    const char *method_name = "manual";
-    switch (buf->fold_method) {
-    case FOLD_METHOD_MANUAL:
-        method_name = "manual";
-        break;
-    case FOLD_METHOD_BRACKET:
-        method_name = "bracket";
-        break;
-    case FOLD_METHOD_INDENT:
-        method_name = "indent";
-        break;
-    }
-    ed_set_status_message("Folds updated using %s method", method_name);
+    ed_set_status_message("Folds updated using %s method",
+                          buf->fold_method ? buf->fold_method : "(none)");
 }

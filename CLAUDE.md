@@ -1,4 +1,4 @@
-# hed
+# HED
 
 A small terminal editor written in C, built around a plugin system.
 Vim-style modal editing by default; Emacs and VSCode keymaps ship as
@@ -40,7 +40,7 @@ make
 - **Plugin-first architecture.** Most features — keymaps, dired, lsp,
   viewmd, tmux, formatting, clipboard, auto-pair, smart-indent — live
   in `plugins/<name>/` and are activated by a single manifest
-  (`config_init` in `src/config.c`). Adding a plugin is one directory
+  (`config_init` in `src/config.h`). Adding a plugin is one directory
   + one line of config.
 - **Three keymaps, swappable at runtime.** `:keymap vim` (default),
   `:keymap emacs` (modeless, C-key + M- prefix), `:keymap vscode`
@@ -70,16 +70,20 @@ make clean
 make run                                # build then run
 make test                               # Unity unit tests
 make tags                               # ctags -R
-make PLUGINS_DIR=$HOME/my-hed-plugins   # use an out-of-tree plugin set
+make EXTRA_PLUGIN_DIRS=$HOME/my-hed-plugins  # stock plugins + your own
+make PLUGINS_DIR=$HOME/my-hed-plugins   # replace the stock plugin set
 ```
 
-The Makefile auto-discovers `*.c` recursively under `src/` and
-`$(PLUGINS_DIR)` (defaults to `plugins/`).
+The Makefile auto-discovers `*.c` recursively under `src/`,
+`$(PLUGINS_DIR)` (defaults to `plugins/`), and each dir in
+`$(EXTRA_PLUGIN_DIRS)` (space-separated, additive). If
+`~/.config/hed/config.c` exists (or `USER_CONFIG=path` is given),
+it is compiled in as the user config — see Configuration.
 
 ### Dependencies
 
 | Required | Optional |
-|---|---|
+|----------|----------|
 | gcc / clang (C11) | ripgrep (`:rg`, `:ssearch`) |
 | libdl | fzf (`:fzf`, `:c`, `:recent`, history fzf) |
 |  | tmux (runner pane) |
@@ -95,36 +99,43 @@ installer).
 
 ## Configuration
 
-`src/config.c` is the user-facing surface. The harness calls
-`config_init()` once after subsystems are ready:
+Config is split in two layers, both compiled in:
+
+- **Base config** — `src/config.h`, shipped in-tree. Defines
+  `config_load_default_plugins()` (the stock plugin set) and
+  `config_load_defaults()` (default theme + leader keybinds).
+- **User config** — `~/.config/hed/config.c`, optional and
+  user-owned (override the path with `make USER_CONFIG=path`). If
+  present, the Makefile compiles it in; it must define
+  `config_user_init()`.
+
+The harness calls `config_init()` once after subsystems are ready;
+it loads the defaults, then calls `config_user_init()` — declared
+`weak`, so the build links fine without a user config. The user
+config is therefore purely additive: `plugin_load()` enables extra
+plugins, and rebinding a key overrides the default via
+last-write-wins. To *remove* stock plugins, edit `src/config.h`.
 
 ```c
-void config_init(void) {
-    /* Plugins. 1 = enabled now, 0 = loaded but inactive (available
-     * for runtime swap, e.g. via :keymap). */
-    plugin_load(&plugin_core,             1);
-    plugin_load(&plugin_vim_keybinds,     1);
-    plugin_load(&plugin_emacs_keybinds,   0);
-    plugin_load(&plugin_vscode_keybinds,  0);
-    plugin_load(&plugin_keymap,           1);
-    plugin_load(&plugin_clipboard,        1);
-    plugin_load(&plugin_quickfix_preview, 1);
-    plugin_load(&plugin_dired,            1);
-    plugin_load(&plugin_lsp,              1);
-    plugin_load(&plugin_viewmd,           1);
-    plugin_load(&plugin_auto_pair,        1);
-    plugin_load(&plugin_smart_indent,     1);
-    plugin_load(&plugin_fmt,              1);
-    plugin_load(&plugin_tmux,             1);
+/* ~/.config/hed/config.c */
+#include "hed.h"
 
-    /* Personal overrides — last-write-wins, beats plugin defaults. */
-    cmapn(" ff", "fzf");
-    /* ... */
+extern const Plugin plugin_myplugin;   /* from EXTRA_PLUGIN_DIRS */
+
+void config_user_init(void) {
+    /* 1 = enabled now, 0 = loaded but inactive (available for
+     * runtime swap, e.g. via :keymap). */
+    plugin_load(&plugin_myplugin, 1);
+
+    /* Overrides — last-write-wins, beats defaults. */
+    cmapn(" ff", "recent", "recent files");
 }
 ```
 
-After editing `config.c`, run `:reload` from inside hed to rebuild
-and restart.
+After editing either config, run `:reload` from inside hed to
+rebuild and restart. Note: `:reload` runs plain `make`, so
+`EXTRA_PLUGIN_DIRS` must come from the environment (it is `?=` in
+the Makefile), not the command line, to survive reloads.
 
 ---
 
@@ -134,21 +145,46 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 
 | Plugin | What it does |
 |---|---|
-| `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
-| `vim_keybinds` | Default Vim keymap and text objects. |
-| `emacs_keybinds` | Emacs keymap (`C-a`/`C-e`/`C-n`/`C-p`/`C-x` cluster/M- bindings). Modeless. |
-| `vscode_keybinds` | VSCode keymap (`Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D`, shift-arrow selection, `Ctrl+Left/Right` word motion). Modeless. |
-| `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
-| `clipboard` | OSC 52 yank → system clipboard. |
-| `quickfix_preview` | Cursor → preview sync in quickfix buffers. |
-| `dired` | Directory browser (oil.nvim-style). |
-| `lsp` | LSP client (WIP). Owns `cJSON`, `:lsp_*` commands. |
-| `viewmd` | Markdown live preview. |
-| `tmux` | Runner pane. `:tmux_toggle/send/kill/send_line`. |
-| `fmt` | `:fmt` runs an external formatter by filetype. |
+| `aishell` | AI shell integration |
 | `auto_pair` | Auto-insert `()`/`[]`/`{}`/quotes. |
-| `smart_indent` | Carry indentation onto new lines. |
+| `autosave` | Auto-save functionality |
+| `clipboard` | OSC 52 yank → system clipboard. |
+| `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
+| `copilot` | GitHub Copilot integration |
+| `ctags` | Ctags integration for symbol navigation |
+| `dired` | Directory browser (oil.nvim-style). |
+| `emacs_keybinds` | Emacs keymap (`C-a`/`C-e`/`C-n`/`C-p`/`C-x` cluster/M- bindings). Modeless. |
 | `example` | Starter template — copy and rename to make your own. |
+| `fmt` | `:fmt` runs an external formatter by filetype. |
+| `git` | Git integration |
+| `hed_themes` | Theme management |
+| `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
+| `lsp` | LSP client (WIP). Owns `cJSON`, `:lsp_*` commands. |
+| `mail` | Mail integration |
+| `mail_git_patch` | Git patch mail integration |
+| `man` | Manual pages viewer |
+| `markdown` | Markdown rendering support |
+| `mouse` | Mouse: click places cursor, drag selects, wheel scrolls. `:mouse on\|off\|toggle`. |
+| `multicursor` | Multiple cursor support |
+| `open` | File opening utilities |
+| `pickers` | Fuzzy pickers |
+| `quickfix_preview` | Cursor → preview sync in quickfix buffers. |
+| `reload` | Reload functionality |
+| `scratch` | Scratch buffer support |
+| `sed` | Stream editor integration |
+| `selectlist` | Selection list functionality |
+| `session` | Session management |
+| `shell` | Shell integration |
+| `smart_indent` | Carry indentation onto new lines. |
+| `tags` | Tags integration |
+| `tmux` | Runner pane. `:tmux_toggle/send/kill/send_line`. |
+| `translate` | Translation support |
+| `treesitter` | Tree-sitter integration |
+| `viewmd` | Markdown live preview. |
+| `vim_keybinds` | Default Vim keymap and text objects. |
+| `vscode_keybinds` | VSCode keymap (`Ctrl+S/N/O/P/W/Z/Y/X/C/V/F/G/D`, shift-arrow selection, `Ctrl+Left/Right` word motion). Modeless. |
+| `whichkey` | Which-key tooltip support |
+| `yazi` | Yazi file manager integration |
 
 ### Adding your own plugin
 
@@ -156,7 +192,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 2. Rename `example` → `myplugin` inside the files (one symbol, two
    filenames).
 3. Implement commands/keybinds/hooks inside `myplugin_init()`.
-4. In `src/config.c`:
+4. In `src/config.h`:
 
    ```c
    #include "myplugin/myplugin.h"
@@ -166,14 +202,19 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 
 5. `make` picks it up automatically.
 
-For plugins outside the tree:
+For plugins outside the tree, keep them in your own dir and load
+them from your user config (`~/.config/hed/config.c`):
 
 ```sh
-make PLUGINS_DIR=$HOME/my-hed-plugins
+export EXTRA_PLUGIN_DIRS=$HOME/my-hed-plugins   # additive to plugins/
+make
 ```
 
-The Makefile compiles `*.c` from there and adds it to the include
-path. See `plugins/example/README.md` for the full recipe.
+The Makefile compiles `*.c` from each extra dir and adds it to the
+include path. Plugin symbol names must be unique across all dirs —
+a duplicate is a link error. `PLUGINS_DIR=` still exists to swap
+out the stock set entirely. See `plugins/example/README.md` for
+the full recipe.
 
 ---
 
@@ -191,7 +232,8 @@ Macros `q<reg>`/`@<reg>`/`@@`. Search `/`/`?`, `n`. Visual `v`/`V`/
 
 ### Leader cluster (`<space>` in Vim mode)
 
-Defined in `src/config.c` (your config). Defaults:
+Defined in `src/config.h` (defaults) and extendable from
+`~/.config/hed/config.c`. Defaults:
 
 ```
 <space><space>  fzf file picker
@@ -222,12 +264,19 @@ bol/eol. See `plugins/emacs_keybinds/README.md`.
 ### VSCode
 
 `:keymap vscode`. Modeless. File: `Ctrl+S` save, `Ctrl+N` new,
-`Ctrl+O/P` fzf, `Ctrl+W` close. Edit: `Ctrl+Z/Y` undo/redo,
+`Ctrl+O/P` fzf, `Ctrl+E` recent, `Ctrl+W` close, `Ctrl+\` split,
+`Ctrl+PageUp/Down` buffer prev/next. Edit: `Ctrl+Z/Y` undo/redo,
 `Ctrl+X/C/V` cut/copy/paste (line-wise without selection, region-wise
-with). Find: `Ctrl+F` search, `Ctrl+D` next-occurrence, `Ctrl+G`
-goto. Selection: same shift-arrow / Ctrl-Shift-arrow / Shift-Home/End
-shape as Emacs. Command palette: `F1` or `Alt+P` (terminals can't
-deliver `Ctrl+Shift+P`). See `plugins/vscode_keybinds/README.md`.
+with), `Del`/`Ctrl+Backspace`/`Ctrl+Del` forward/word deletes,
+`Alt+Up/Down` move line, `Shift+Alt+Down` duplicate, `Ctrl+/` comment,
+`Shift+Alt+F` format. Find: `Ctrl+F` search, `F3` next, `Ctrl+G` goto
+line, `Alt+Left/Right` jump back/forward, `F12` ctags definition.
+Multi-cursor: `Ctrl+D` next occurrence, `Ctrl+Alt+Up/Down` add
+cursor, `Ctrl+K Ctrl+S` sync edits. Selection: shift-arrow /
+Ctrl-Shift-arrow / Shift-Home/End as in Emacs, plus `Ctrl+A` select
+all and `Ctrl+L` select line. Folds: `Ctrl+K` chords. Command
+palette: `F1` or `Alt+P` (terminals can't deliver `Ctrl+Shift+P`).
+See `plugins/vscode_keybinds/README.md`.
 
 ---
 
@@ -278,8 +327,9 @@ int plugin_disable(const Plugin *p);
 `plugin_load(p, 1)` registers and runs `init()`. `plugin_load(p, 0)`
 just registers (useful for keymap plugins enabled later). Each
 plugin's `init()` registers its commands, keybinds, and hooks. There
-is no master list / manifest file — `config.c`'s `#include`s and
-`plugin_load` calls are the manifest, and unknown symbols become
+is no master list / manifest file — the `#include`s and
+`plugin_load` calls in `src/config.h` (plus the user config's
+`extern` declarations) are the manifest, and unknown symbols become
 link errors.
 
 ### Hook system
@@ -344,46 +394,64 @@ emits `<F1>`…`<F12>` and combinations like `<C-Left>`, `<S-Right>`,
 
 ```
 src/
-├── main.c                # Entry point + select() loop
-├── editor.{c,h}          # Global state, ed_set_mode, ed_set_modeless
-├── config.{c,h}          # Plugin manifest + personal overrides
-├── plugin.{c,h}          # Plugin runtime
-├── commands.{c,h}        # Command registry / dispatch
-├── command_mode.{c,h}    # `:` UI: completion + Tab→fzf
-├── keybinds.{c,h}        # Keybind registry / dispatch
-├── keybinds_builtins.{c,h}   # kb_* callbacks
-├── hooks.{c,h}           # Hook system
-├── hook_builtins.{c,h}   # hook_change_cursor_shape
-├── terminal.{c,h}        # Raw mode, ANSI, render loop
-├── registers.{c,h}       # Yank / paste registers
-├── macros.{c,h}          # Macro recording / playback
-├── hed.h                 # Master include + map/cmap macros
-├── buf/                  # Buffer + Row + textobj + helpers
-├── ui/                   # Window, layout tree, modal windows, abuf
-├── utils/                # ts, quickfix, fzf, fold, undo, ctags,
-│                         # jump_list, history, recent_files,
-│                         # bottom_ui, term_cmd, sed, yank
-├── fold_methods/         # bracket / indent fold detection
-├── lib/                  # vector, log, errors, sizedstr, strutil,
-│                         # safe_string, file_helpers, ansi, theme
-└── commands/             # cmd_misc / cmd_search / cmd_util / etc.
+├── main.c                  # Entry point + select() loop
+├── editor.{c,h}            # Global state, ed_set_mode, ed_set_modeless
+├── terminal.{c,h}          # Raw mode, ANSI, render loop
+├── select_loop.{c,h}       # fd + timer registry for the main select() loop
+├── plugin.{c,h}            # Plugin runtime
+├── hooks.{c,h}             # Hook system
+├── hook_builtins.{c,h}     # hook_change_cursor_shape
+├── config.h                # Base config: plugin manifest + defaults
+│                           # (user config: ~/.config/hed/config.c)
+├── hed.h                   # Master include + map/cmap macros
+├── input/                  # Input + dispatch:
+│                           #   input, keybinds, keybinds_builtins,
+│                           #   macros, registers, prompt, command_mode,
+│                           #   picker
+├── commands/               # Full command system:
+│                           #   registry.{c,h} + cmd_misc / cmd_util /
+│                           #   commands_buffer / commands_ui /
+│                           #   cmd_builtins.h
+├── buf/                    # Buffer + Row + textobj + attrspan +
+│                           # virtual_text + helpers
+├── ui/                     # Window, layout tree, modal windows, abuf,
+│                           # ask, bottom_ui (status bar)
+├── fs/                     # File I/O + path helpers
+├── utils/                  # Editor-domain helpers (own state, depend
+│                           # on Buffer/Window/E):
+│                           #   undo, history, recent_files, jump_list,
+│                           #   quickfix, fzf, yank, term_cmd, fold,
+│                           #   fold_methods (registry only)
+└── lib/                    # Stateless leaves (no editor state, no
+                            # singletons; drop-in reusable):
+                            #   ansi, cursor, errors, log, path_limits,
+                            #   safe_string, sizedstr, stb_ds, strutil,
+                            #   theme, vector
 
-plugins/                  # Default, override with PLUGINS_DIR
-├── core/                 # Default :commands + minimal hooks
-├── vim_keybinds/         # Default Vim keymap
-├── emacs_keybinds/       # Emacs keymap (modeless)
-├── vscode_keybinds/      # VSCode keymap (modeless)
-├── keymap/               # :keymap swap
-├── clipboard/            # OSC 52 yank
-├── quickfix_preview/     # Cursor → preview sync
-├── dired/                # Directory browser
-├── lsp/                  # LSP client + cJSON
-├── viewmd/               # Markdown live preview
-├── tmux/                 # Runner pane integration
-├── fmt/                  # External formatters
-├── auto_pair/            # Bracket auto-pairing
-├── smart_indent/         # Indent carry-over
-└── example/              # Starter template
+plugins/                    # Stock set; add dirs with EXTRA_PLUGIN_DIRS,
+                            # replace with PLUGINS_DIR
+├── core/                   # Default :commands + minimal hooks
+├── vim_keybinds/           # Default Vim keymap
+├── emacs_keybinds/         # Emacs keymap (modeless)
+├── vscode_keybinds/        # VSCode keymap (modeless)
+├── keymap/                 # :keymap swap
+├── clipboard/              # OSC 52 yank
+├── quickfix_preview/       # Cursor → preview sync
+├── dired/                  # Directory browser
+├── lsp/                    # LSP client + cJSON
+├── viewmd/                 # Markdown live preview
+├── tmux/                   # Runner pane integration
+├── fmt/                    # External formatters
+├── auto_pair/              # Bracket auto-pairing
+├── smart_indent/           # Indent carry-over
+├── folds/                  # bracket + indent fold methods +
+│                           # filetype defaults
+├── pickers/                # fzf-backed implementations registered
+│                           # via picker_invoke (src/input/picker.{c,h})
+├── treesitter/             # Tree-sitter highlighter (self-driven via
+│                           # HOOK_BUFFER_OPEN / HOOK_RENDER_PRE)
+├── markdown/               # Markdown highlighter + fold method
+└── example/                # Starter template
 
 test/        # Unity unit tests
 ts/          # Tree-sitter language installer source
@@ -391,6 +459,25 @@ ts-langs/    # Compiled tree-sitter .so files
 queries/     # Highlight queries by language
 tasks/       # Project notes
 ```
+
+### `lib/` vs `utils/`
+
+These two are *not* interchangeable; pick the right one when adding
+a file.
+
+- **`lib/`** — stateless leaves. No editor state, no singletons, no
+  dependency on `editor.h`, no inclusion of `Buffer`/`Window`/`E`.
+  Anything you could lift into another C project unchanged. Examples:
+  `sizedstr`, `strutil`, `errors`, `log`, `vector`, `ansi`, `theme`.
+- **`utils/`** — editor-domain helpers. Own runtime state, depend on
+  `Buffer`/`Window`/`E`, or hook into the core lifecycle. Not reusable
+  outside hed, but also not part of the core runtime spine. Examples:
+  `undo`, `history`, `jump_list`, `quickfix`, `fzf`, `fold_methods`
+  (the registry — methods themselves are in `plugins/folds/`).
+
+If a file would need to grow editor state to do its job, it belongs
+in `utils/`. If you have to fight to keep it from doing so, it might
+belong in the core runtime spine (top-level `src/`) instead.
 
 ---
 
@@ -423,3 +510,4 @@ tasks/       # Project notes
 - Optional kitty keyboard protocol support — would unlock
   `Ctrl+Shift+letter` and the rest of the modifier matrix that
   xterm-style escapes can't deliver
+  

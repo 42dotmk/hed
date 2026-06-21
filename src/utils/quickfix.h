@@ -54,6 +54,15 @@ void qf_update_view(Qf *qf);
 void qf_clear(Qf *qf);
 int qf_add(Qf *qf, const char *filename, int line, int col, const char *text);
 
+/* Parse a vimgrep-style "file:line:col:text" line IN PLACE (writes NUL
+ * terminators into `line`). On success sets the out params (each
+ * optional) and returns 1: *out_file points into `line`, *out_text is
+ * "" when the text field is absent (col is parsed, 0 when empty).
+ * Returns 0 when there is no "file:line:" prefix (caller should treat
+ * the line as plain text). */
+int qf_parse_grep_line(char *line, char **out_file, int *out_line,
+                       int *out_col, const char **out_text);
+
 void qf_move(Qf *qf, int delta);
 void qf_open_selected(Qf *qf);
 void qf_preview_selected(Qf *qf);

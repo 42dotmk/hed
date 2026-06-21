@@ -4,32 +4,32 @@
 EdError session_save(const char *path) {
     if (!path || !*path) return ED_ERR_INVALID_INDEX;
 
-    FILE *f = fopen(path, "w");
-    if (!f) return ED_ERR_INVALID_INDEX;
-
+    /* Compose the whole session into one buffer, then write atomically. */
+    StrBuf txt = strbuf_new();
     for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         const Buffer *b = &E.buffers[i];
         if (!b->filename || !*b->filename) continue;
-        const char *prefix = ((int)i == E.current_buffer) ? "* " : "  ";
-        fprintf(f, "%s%s\n", prefix, b->filename);
+        strbuf_append(&txt, ((int)i == E.current_buffer) ? "* " : "  ", 2);
+        strbuf_append(&txt, b->filename, strlen(b->filename));
+        strbuf_append_char(&txt, '\n');
     }
-    fclose(f);
-    return ED_OK;
+
+    EdError err = fs_file_write_atomic(path, txt.data ? txt.data : "", txt.len);
+    strbuf_free(&txt);
+    return err == ED_OK ? ED_OK : ED_ERR_INVALID_INDEX;
 }
 
 EdError session_restore(const char *path) {
     if (!path || !*path) return ED_ERR_INVALID_INDEX;
 
-    FILE *f = fopen(path, "r");
-    if (!f) return ED_ERR_INVALID_INDEX;
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK) return ED_ERR_INVALID_INDEX;
 
     int target = -1;
-    char line[4096];
-    while (fgets(line, sizeof(line), f)) {
-        size_t n = strlen(line);
-        while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) line[--n] = '\0';
+    const char *line;
+    size_t      n;
+    while (fs_lines_next(r, &line, &n)) {
         if (n < 2) continue;
-
         int is_current = (line[0] == '*');
         const char *file = line + 2;  /* skip "* " or "  " */
         if (!*file) continue;
@@ -37,7 +37,7 @@ EdError session_restore(const char *path) {
         buf_open_or_switch(file, false);
         if (is_current) target = E.current_buffer;
     }
-    fclose(f);
+    fs_lines_close(r);
 
     /* Close any empty, unnamed placeholder buffer left from startup.
      * Closing shifts higher indices down, so adjust target. */

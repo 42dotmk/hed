@@ -2,7 +2,7 @@
 #define UNDO_H
 
 #include "lib/cursor.h"
-#include "lib/sizedstr.h"
+#include "lib/strbuf.h"
 #include <stddef.h>
 
 /*
@@ -45,7 +45,7 @@ typedef enum {
 typedef struct {
     UndoKind kind;
     int      row_idx;
-    SizedStr data;
+    StrBuf data;
 } UndoRec;
 
 typedef struct UndoGroup {

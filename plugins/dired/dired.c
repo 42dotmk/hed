@@ -14,7 +14,7 @@ static void on_chdir(void)  { dired_handle_chdir(); }
 /* Intercept "open this path" if it's a directory. */
 static void dired_open_pre(HookBufferEvent *ev) {
     if (!ev || !ev->filename) return;
-    if (path_is_dir(ev->filename)) {
+    if (fs_is_dir(ev->filename)) {
         dired_open(ev->filename);
         ev->consumed = 1;
     }
@@ -32,10 +32,10 @@ static int dired_plugin_init(void) {
     dired_hooks_init();
     hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", dired_open_pre);
     hook_register_buffer(HOOK_BUFFER_SAVE_PRE, MODE_NORMAL, "*", dired_save_pre);
-    mapn("<CR>", on_enter,  "dired open");
-    mapn("-",    on_parent, "dired parent");
-    mapn("~",    on_home,   "dired home");
-    mapn("cd",   on_chdir,  "dired chdir");
+    mapn_ft("dired", "<CR>", on_enter,  "dired open");
+    mapn_ft("dired", "-",    on_parent, "dired parent");
+    mapn_ft("dired", "~",    on_home,   "dired home");
+    mapn_ft("dired", "cd",   on_chdir,  "dired chdir");
     return 0;
 }
 

@@ -8,12 +8,12 @@
 
 #include "commands/commands_buffer.h"
 #include "editor.h"
+#include "fs/fs.h"
 #include "hooks.h"
 #include "lib/strutil.h"
+#include "input/picker.h"
 #include "terminal.h"
-#include "lib/file_helpers.h"
-#include "commands/cmd_util.h"
-#include "utils/fzf.h"
+#include "lib/strutil.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -35,87 +35,31 @@ void cmd_buffer_prev(const char *args) {
     buf_prev();
 }
 
-void cmd_buffer_list(const char *args) {
+void cmd_buffer_alt(const char *args) {
     (void)args;
+    Buffer *cur = buf_cur();
+    const char *cur_fn = cur ? cur->filename : NULL;
+    for (ptrdiff_t i = arrlen(E.jump_list.entries) - 1; i >= 0; i--) {
+        const char *fp = E.jump_list.entries[i].filepath;
+        if (!fp) continue;
+        if (cur_fn && strcmp(fp, cur_fn) == 0) continue;
+        int idx = buf_find_by_filename(fp);
+        if (idx >= 0 && idx != E.current_buffer) {
+            buf_switch(idx);
+            return;
+        }
+    }
+    ed_set_status_message("No alternate buffer");
+}
 
+void cmd_buffer_list(const char *args) {
     if (arrlen(E.buffers) == 0) {
         ed_set_status_message("No buffers");
         return;
     }
-
-    /* Build a shell command that outputs all buffer entries */
-    char cmd[8192];
-    int off = 0;
-
-    off += snprintf(cmd + off, sizeof(cmd) - off, "printf '");
-
-    for (int i = 0; i < (int)arrlen(E.buffers) && off < (int)sizeof(cmd) - 200;
-         i++) {
-        Buffer *buf = &E.buffers[i];
-        const char *name = buf->title;
-        char marker = (i == E.current_buffer) ? '*' : ' ';
-        char dirty_marker = buf->dirty ? '+' : ' ';
-
-        /* Format: [N]* filename + */
-        /* We'll prefix with the index for easy parsing */
-        char entry[512];
-        snprintf(entry, sizeof(entry), "[%d]%c %s %c", i + 1, marker, name,
-                 dirty_marker);
-
-        /* Escape single quotes in the entry */
-        const char *p = entry;
-        while (*p && off < (int)sizeof(cmd) - 100) {
-            if (*p == '\'') {
-                off += snprintf(cmd + off, sizeof(cmd) - off, "'\\''");
-            } else {
-                cmd[off++] = *p;
-            }
-            p++;
-        }
-
-        /* Add newline separator */
-        if (i < (int)arrlen(E.buffers) - 1) {
-            cmd[off++] = '\\';
-            cmd[off++] = 'n';
-        }
-    }
-
-    off += snprintf(cmd + off, sizeof(cmd) - off, "'");
-    cmd[off] = '\0';
-
-    char **sel = NULL;
-    int cnt = 0;
-
-    /* For buffers with filenames, show preview; for unnamed buffers, no preview
-     */
-    const char *fzf_opts =
-        "--preview 'f=$(echo {} | sed \"s/^\\[[0-9]\\+\\][* ] \\(.*\\) [+ "
-        "]$/\\1/\"); [ -f \"$f\" ] && (command -v bat >/dev/null 2>&1 && bat "
-        "--style=plain --color=always --line-range :200 \"$f\" || sed -n "
-        "\"1,200p\" \"$f\" 2>/dev/null) || echo \"No preview available\"' "
-        "--preview-window right,60%,wrap";
-
-    if (fzf_run_opts(cmd, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] &&
-        sel[0][0]) {
-        const char *picked = sel[0];
-
-        /* Parse the buffer index from "[N]" at the start */
-        int buffer_idx = -1;
-        if (picked[0] == '[') {
-            buffer_idx =
-                atoi(picked + 1) - 1; /* Convert 1-indexed to 0-indexed */
-        }
-
-        if (buffer_idx >= 0 && buffer_idx < (int)arrlen(E.buffers)) {
-            buf_switch(buffer_idx);
-        } else {
-            ed_set_status_message("Invalid buffer selection");
-        }
-    } else {
-        ed_set_status_message("no selection");
-    }
-
-    fzf_free(sel, cnt);
+    if (picker_invoke("buffers", args)) return;
+    ed_set_status_message("buffers: %td open (no picker installed)",
+                          arrlen(E.buffers));
 }
 
 void cmd_buffer_switch(const char *args) {
@@ -162,75 +106,40 @@ void cmd_buffer_delete(const char *args) {
     }
 }
 
+void cmd_buffer_delete_force(const char *args) {
+    int buf_idx;
+    if (!args || !*args) {
+        buf_idx = E.current_buffer;
+    } else {
+        buf_idx = atoi(args) - 1;
+    }
+
+    if (buf_idx < 0 || buf_idx >= (int)arrlen(E.buffers)) {
+        ed_set_status_message("Invalid buffer index");
+        return;
+    }
+
+    E.buffers[buf_idx].dirty = 0;
+
+    EdError err = buf_close(buf_idx);
+    if (err != ED_OK) {
+        ed_set_status_message("Error closing buffer: %s",
+                              ed_error_string(err));
+    } else {
+        ed_set_status_message("Buffer closed (forced)");
+    }
+}
+
+
+
 void cmd_buffers(const char *args) {
-    (void)args;
     if (arrlen(E.buffers) <= 0) {
         ed_set_status_message("no buffers");
         return;
     }
-    /* Build list: index<TAB>name<TAB>modified<TAB>lines */
-    char pipebuf[8192];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
-                    "printf '%%s\t%%s\t%%s\t%%s\\n' ");
-    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
-        char idxs[16];
-        snprintf(idxs, sizeof(idxs), "%d", i + 1);
-        const char *nm = E.buffers[i].title;
-        const char *mod = (E.buffers[i].dirty ? "*" : "-");
-        char lines[32];
-        snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
-        char eidx[32], enam[512], emod[8], elines[32];
-        shell_escape_single(idxs, eidx, sizeof(eidx));
-        shell_escape_single(nm, enam, sizeof(enam));
-        shell_escape_single(mod, emod, sizeof(emod));
-        shell_escape_single(lines, elines, sizeof(elines));
-        size_t need = strlen(eidx) + 1 + strlen(enam) + 1 + strlen(emod) + 1 +
-                      strlen(elines) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-        memcpy(pipebuf + off, eidx, strlen(eidx));
-        off += strlen(eidx);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, enam, strlen(enam));
-        off += strlen(enam);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, emod, strlen(emod));
-        off += strlen(emod);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, elines, strlen(elines));
-        off += strlen(elines);
-        pipebuf[off++] = ' ';
-    }
-    pipebuf[off] = '\0';
-
-    const char *fzf_opts =
-        "--delimiter '\\t' --with-nth 2 "
-        "--preview 'printf \"buf:%s modified:%s lines:%s\\n\\n\" {1} {3} {4}; "
-        "command -v bat >/dev/null 2>&1 && bat --style=plain --color=always "
-        "--line-range :200 {2} || sed -n \"1,200p\" {2} 2>/dev/null' "
-        "--preview-window right,60%,wrap";
-    char **sel = NULL;
-    int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
-        fzf_free(sel, cnt);
-        ed_set_status_message("buffers: canceled");
-        return;
-    }
-    /* Parse selection: idx<TAB>name */
-    char *picked = sel[0];
-    char *tab = strchr(picked, '\t');
-    if (tab)
-        *tab = '\0';
-    int idx = atoi(picked);
-    if (idx < 1 || idx > (int)arrlen(E.buffers)) {
-        fzf_free(sel, cnt);
-        ed_set_status_message("buffers: invalid");
-        return;
-    }
-    buf_switch(idx - 1);
-    ed_set_status_message("buffer %d", idx);
-    fzf_free(sel, cnt);
+    if (picker_invoke("buffers", args)) return;
+    ed_set_status_message("buffers: %td open (no picker installed)",
+                          arrlen(E.buffers));
 }
 
 /* ============================================
@@ -285,7 +194,7 @@ void cmd_write(const char *args) {
             buf->title = strdup(exppath);
             /* update filetype */
             free(buf->filetype);
-            buf->filetype = path_detect_filetype(exppath);
+            buf->filetype = fs_path_detect_filetype(exppath);
         }
     }
     EdError err = buf_save_in(buf);
@@ -328,7 +237,7 @@ void cmd_cd(const char *args) {
             ed_set_status_message("cwd: %s", E.cwd);
         } else {
             char cwd[PATH_MAX];
-            if (getcwd(cwd, sizeof(cwd))) {
+            if (fs_getcwd(cwd, sizeof(cwd))) {
                 ed_set_status_message("cwd: %s", cwd);
             } else {
                 ed_set_status_message("cwd: (unknown)");
@@ -340,16 +249,17 @@ void cmd_cd(const char *args) {
     char trimmed[PATH_MAX];
     char path[PATH_MAX];
     str_trim_whitespace(args, trimmed, sizeof(trimmed));
-    str_expand_tilde(trimmed, path, sizeof(path));
+    fs_path_expand_tilde(trimmed, path, sizeof(path));
 
-    if (chdir(path) == 0) {
-        if (getcwd(E.cwd, sizeof(E.cwd))) {
+    EdError err = fs_chdir(path);
+    if (err == ED_OK) {
+        if (fs_getcwd(E.cwd, sizeof(E.cwd))) {
             ed_set_status_message("cd: %s", E.cwd);
         } else {
             E.cwd[0] = '\0';
             ed_set_status_message("cd: ok");
         }
     } else {
-        ed_set_status_message("cd: %s", strerror(errno));
+        ed_set_status_message("cd: %s", ed_error_string(err));
     }
 }
