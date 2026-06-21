@@ -55,13 +55,20 @@ cd hed
 make
 ```
 
-The `Makefile` will:
+`make` only compiles. It builds two binaries into `build/`:
 
-- Compile the binary and place it in `build/hed`
-- Download portable `fzf` and `ripgrep` into `build/bin`
-- If you have `cargo` and `node`, it'll install plugins in `plugins/` that
-  need it (`copilot-language-server` for `:copilot login`, etc.)
-- Symlink `build/hed` into `~/.local/bin` (for convenience)
+- `build/hed` — the editor
+- `build/tsi` — the tree-sitter grammar installer
+
+Then symlink both into `~/.local/bin`:
+
+```zsh
+make install
+```
+
+The extras — portable `fzf`/`ripgrep`, tree-sitter grammars, and
+`copilot-language-server` (for `:copilot login`) — are fetched by the
+one-line `install.sh` above, not by the build.
 
 ---
 
@@ -82,28 +89,31 @@ The `Makefile` will:
 | [`emacs_keybinds`](plugins/emacs_keybinds/README.md) | Modeless Emacs keymap (`C-a/C-e`, `M-x`, `C-x` cluster) |
 | [`example`](plugins/example/README.md) | Starter template — copy and rename for your own |
 | [`fmt`](plugins/fmt/README.md) | `:fmt` runs an external formatter on the buffer |
+| [`folds`](plugins/folds/) | Bracket + indent fold methods and per-filetype defaults |
 | [`git`](plugins/git/README.md) | Git integration |
-| [`hed_themes`](plugins/hed_themes/README.md) | Theme management |
+| [`hed_themes`](plugins/hed_themes/) | Theme management |
 | [`keymap`](plugins/keymap/README.md) | `:keymap` and `:keymap-toggle` for runtime swap |
 | [`lsp`](plugins/lsp/README.md) | LSP client (work in progress) |
 | [`mail`](plugins/mail/README.md) | Mail integration |
 | [`mail_git_patch`](plugins/mail_git_patch/README.md) | Git patch mail integration |
-| [`man`](plugins/man/README.md) | Manual pages viewer |
-| [`markdown`](plugins/markdown/README.md) | Markdown rendering support |
+| [`man`](plugins/man/) | Manual pages viewer |
+| [`markdown`](plugins/markdown/) | Markdown rendering support |
+| [`mouse`](plugins/mouse/README.md) | Click to place cursor, drag to select, wheel to scroll (`:mouse on\|off\|toggle`) |
 | [`multicursor`](plugins/multicursor/README.md) | Extra cursors that mirror every keypress (`:mc_add_below`, `:mc_add_above`) |
-| [`open`](plugins/open/README.md) | File opening utilities |
+| [`open`](plugins/open/) | File opening utilities |
 | [`pickers`](plugins/pickers/README.md) | Fuzzy pickers |
 | [`quickfix_preview`](plugins/quickfix_preview/README.md) | Live preview of the quickfix entry under the cursor |
 | [`reload`](plugins/reload/README.md) | `:reload` rebuilds and execs the new binary |
 | [`scratch`](plugins/scratch/README.md) | `:scratch` ephemeral unnamed buffer |
+| [`search`](plugins/search/) | In-file / project search (rg / ssearch) helpers |
 | [`sed`](plugins/sed/README.md) | `:sed <expr>` pipes the buffer through external sed |
-| [`selectlist`](plugins/selectlist/README.md) | Selection list functionality |
+| [`selectlist`](plugins/selectlist/) | Selection list functionality |
 | [`session`](plugins/session/README.md) | Save / restore the open-buffer list per cwd |
 | [`shell`](plugins/shell/README.md) | `:shell` / `!` prompt; capture tokens splice stdout into the buffer or yank register |
 | [`smart_indent`](plugins/smart_indent/README.md) | Carry indent onto new lines |
-| [`tags`](plugins/tags/README.md) | Tags integration |
+| [`tasks`](plugins/tasks/README.md) | Task list / TODO management |
 | [`tmux`](plugins/tmux/README.md) | Runner pane integration |
-| [`translate`](plugins/translate/README.md) | Translation support |
+| [`translate`](plugins/translate/) | Translation support |
 | [`treesitter`](plugins/treesitter/README.md) | Syntax highlighting; grammars via `dlopen` |
 | [`viewmd`](plugins/viewmd/README.md) | Markdown live preview in the browser |
 | [`vim_keybinds`](plugins/vim_keybinds/README.md) | Default modal Vim keymap |
@@ -115,7 +125,8 @@ The `Makefile` will:
 
 1. `cp -r plugins/example plugins/myplugin`
 2. Rename `example` → `myplugin` in the source files
-3. Add `plugin_load(&plugin_myplugin, 1)` to `src/config.c`
+3. Add `plugin_load(&plugin_myplugin, 1)` to `src/config.h` (or load
+   it from your user config — see Configuration)
 4. Build with `make`
 
 See [`plugins/example/README.md`](plugins/example/README.md) for the
@@ -150,8 +161,8 @@ Try `:fzf` to explore the project.
 ## Features
 
 - **Modal editing** (Vim-style) by default, but also ships **Emacs** and
-  **VSCode** keymaps you can swap to at runtime (use `:keymap` to
-  switch)
+  **VSCode** keymaps you can swap to at runtime (`:keymap <name>` to
+  switch, `:keymap-toggle` to cycle)
 - **Tree-sitter syntax** highlighting (with grammar via `dlopen`)
 - **Fzf** integration for fuzzy file and command search
 - **Tmux** runner pane (to test snippets, open REPLs, etc.)
@@ -169,7 +180,9 @@ Try `:fzf` to explore the project.
 Hed is for you if:
 
 - You like to read documentation, not just code
-- You want a single binary with no dependencies (except Tmux)
+- You want a single self-contained binary (links only `libdl`; the
+  tree-sitter runtime is statically vendored in). Tools like `fzf`,
+  `ripgrep`, and `tmux` are optional and only used when present
 - You like to hack on your editor, not just use it
 - You are a **plugin developer** or **plugin consumer**
 - You want to **reinvent the editor** or **tune your own**
@@ -182,18 +195,22 @@ not a feature-rich text editor.
 ## Files
 
 ```
-plugins/             # all user-facing functionality (see catalogue above)
-```
+src/
+├── main.c              # Entry point + select() loop
+├── editor.c            # Core editor state, modes
+├── config.h            # Base config: plugin manifest + defaults
+├── hooks.c             # Event system
+├── terminal.c          # ANSI rendering, sync output
+├── input/              # keybinds, macros, registers, command mode
+├── commands/           # command registry + built-ins
+├── buf/                # buffer, rows, text objects
+├── ui/                 # windows, layout, status bar
+├── fs/                 # file I/O + path helpers
+├── utils/              # editor helpers (undo, history, fzf, fold, …)
+└── lib/                # stateless leaves (strings, theme, vector, …)
 
-- `main.c` — Entry point
-- `editor.c` — Core editor logic
-- `config.c` — Initializer, plugins
-- `keybinds.c` — Key mappings
-- `commands.c` — Command handling
-- `buffer.c` — Buffer operations
-- `hooks.c` — Event system
-- `terminal.c` — ANSI renderering, Tmux
-- `utils/` — Various helpers (search, fzf, etc.)
+plugins/                # all user-facing functionality (catalogue above)
+```
 
 ---
 
@@ -212,6 +229,7 @@ plugins/
 ├── emacs_keybinds/      # Emacs keymap
 ├── example/             # Plugin template
 ├── fmt/                 # External formatter
+├── folds/               # Bracket + indent fold methods
 ├── git/                 # Git integration
 ├── hed_themes/          # Theme management
 ├── keymap/              # Runtime keymap swap
@@ -220,18 +238,20 @@ plugins/
 ├── mail_git_patch/      # Git patch mail
 ├── man/                 # Manual page viewer
 ├── markdown/            # Markdown rendering
+├── mouse/               # Mouse: click / drag-select / wheel scroll
 ├── multicursor/         # Extra cursors
 ├── open/                # File opening utilities
 ├── pickers/             # Fuzzy pickers
 ├── quickfix_preview/    # Quickfix preview
 ├── reload/              # Reload binary
 ├── scratch/             # Scratch buffer
+├── search/              # In-file / project search helpers
 ├── sed/                 # External sed
 ├── selectlist/          # Selection list
 ├── session/             # Session management
 ├── shell/               # Shell integration
 ├── smart_indent/        # Carry indent onto new lines
-├── tags/                # Tags integration
+├── tasks/               # Task list / TODO management
 ├── tmux/                # Tmux runner pane
 ├── translate/           # Translation support
 ├── treesitter/          # Tree-sitter syntax highlighting
@@ -246,36 +266,41 @@ plugins/
 
 ## Configuration
 
-To customize, edit `src/config.c`:
+Config lives in two layers, both compiled in:
+
+- **Base config** — `src/config.h`, shipped in-tree. It defines the
+  stock plugin manifest (`config_load_default_plugins()`) and the
+  default theme + leader keybinds (`config_load_defaults()`). Edit
+  this to change or remove stock plugins.
+- **User config** — `~/.config/hed/config.c`, optional and
+  user-owned. If present, the Makefile compiles it in and runs it
+  *after* the defaults, so it's purely additive: enable extra
+  plugins, and override any keybind via last-write-wins.
+
+A user config just needs to define `config_user_init()`:
 
 ```c
-void config_init() {
-  plugin_load(&plugin_core,             1);
-  plugin_load(&plugin_vim_keybinds,     1);
-  plugin_load(&plugin_emacs_keybinds,   0);  // registered, swappable
-  plugin_load(&plugin_vscode_keybinds,  0);
-  plugin_load(&plugin_treesitter,       1);
-  plugin_load(&plugin_clipboard,        1);
-  plugin_load(&plugin_dired,            1);
-  plugin_load(&plugin_tmux,             1);
-  plugin_load(&plugin_aishell,          1);
-  plugin_load(&plugin_copilot,          1);
-  plugin_load(&plugin_example,          0);  // registered, swappable
+/* ~/.config/hed/config.c */
+#include "hed.h"
 
-  // Add your own plugins here.
-  // plugin_load(&plugin_myplugin, 1);
+extern const Plugin plugin_myplugin;   /* from EXTRA_PLUGIN_DIRS */
+
+void config_user_init(void) {
+  plugin_load(&plugin_myplugin, 1);    // 1 = enabled, 0 = swappable
 
   // Personal overrides — last-write-wins, beats plugin defaults.
-  // cmapn(" ff", "fzf");  // override plugin keymap
-  // cmapn(" q", "quit");  // override plugin keymap
+  cmapn(" ff", "recent", "recent files");
 }
 ```
+
+After editing either layer, run `:reload` to rebuild and restart.
 
 ## Keybindings
 
 All keybindings are user-overridable. Default is:
 
-- `:keymap` to switch between Vim, Emacs, VSCode
+- `:keymap` shows the current keymap; `:keymap <name>` switches to
+  Vim / Emacs / VSCode, and `:keymap-toggle` cycles through them
 - `:plugins` to list currently loaded plugins
 - `:reload` to rebuild and exec the new binary
 
@@ -289,28 +314,15 @@ Yes. The LSP client is in `plugins/lsp/` and is not yet enabled by default.
 
 ### How do I override a keybinding?
 
-In `src/config.c`, after plugin_load statements, use
-`cmapn(" key", "command")` to override or map keys.
+In your user config (`~/.config/hed/config.c`) or in
+`src/config.h`'s `config_load_defaults()`, use
+`cmapn(" key", "command")` to override or map keys. Later
+registrations win, so a user-config binding beats the stock default.
 
 ### How do I write my own plugin?
 
 See the [`plugins/example/README.md`](plugins/example/README.md) to get
 started.
-
----
-
-## Related Projects
-
-- [`heds`](https://github.com/42dotmk/heds) — A simple, hackable
-  terminal web browser to complement `hed`
-- [`heds`](https://github.com/42dotmk/heds) — A web browser for the
-  terminal to complement `hed`
-- [`hed-fzf`](https://github.com/42dotmk/hed-fzf) — Fzf integration
-  for `hed`
-- [`hed-shell`](https://github.com/42dotmk/hed-shell) — Shell
-  integration for `hed`
-- [`hed-tmux`](https://github.com/42dotmk/hed-tmux) — Tmux integration
-  for `hed`
 
 ---
 
