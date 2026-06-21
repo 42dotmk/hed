@@ -109,9 +109,6 @@ void mail_add_view(const char *name, const char *query) {
     snprintf(v->query, sizeof(v->query), "%s", query);
 }
 
-/* Forward-declared internal helper from buf/row.c */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
 /* ------------------------------------------------------------------ */
 /* Query helpers                                                       */
 /* ------------------------------------------------------------------ */
@@ -124,26 +121,6 @@ const char *mail_get_query(void) { return base_query; }
 
 void mail_set_filter(const char *f) {
     snprintf(filter_query, sizeof(filter_query), "%s", f ? f : "");
-}
-
-/* Wrap `in` in single quotes for /bin/sh, escaping embedded quotes.
- * Required for any notmuch query passed through popen because `*`,
- * wildcards, and parentheses are otherwise shell-expanded. */
-static void shell_quote(const char *in, char *out, size_t cap) {
-    size_t n = 0;
-    if (cap < 3) { if (cap) out[0] = '\0'; return; }
-    out[n++] = '\'';
-    for (const char *p = in; *p && n + 5 < cap; p++) {
-        if (*p == '\'') {
-            if (n + 5 >= cap) break;
-            memcpy(out + n, "'\\''", 4);
-            n += 4;
-        } else {
-            out[n++] = *p;
-        }
-    }
-    out[n++] = '\'';
-    out[n]   = '\0';
 }
 
 /* notmuch's `*` is a match-all that can't be combined with AND, so we
@@ -182,11 +159,8 @@ void mail_set_dir(const char *dir) {
 
 static const char *resolve_mail_dir(void) {
     if (mail_dir[0]) return mail_dir;
-    const char *home = getenv("HOME");
-    if (home && *home)
-        snprintf(mail_dir, sizeof(mail_dir), "%s/.mail", home);
-    else
-        snprintf(mail_dir, sizeof(mail_dir), ".mail");
+    /* "$HOME/.mail", or just ".mail" when HOME is unset. */
+    fs_path_home_join(".mail", mail_dir, sizeof(mail_dir));
     return mail_dir;
 }
 
@@ -509,7 +483,7 @@ static void mail_run_query(void) {
     build_full_query(query, sizeof(query));
 
     char qq[2200];
-    shell_quote(query, qq, sizeof(qq));
+    shell_escape_single(query, qq, sizeof(qq));
     char cmd[2400];
     snprintf(cmd, sizeof(cmd),
              "notmuch search --sort=newest-first --limit=500 --output=summary -- %s 2>/dev/null", qq);
@@ -627,7 +601,7 @@ static void mark_thread_read(int row) {
     if (!tid[0]) return;
 
     char tidq[256];
-    shell_quote(tid, tidq, sizeof(tidq));
+    shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
              "notmuch tag -unread -- %s 2>/dev/null", tidq);
@@ -933,7 +907,7 @@ void mail_apply_tags(const char *args) {
     }
 
     char qq[8200];
-    shell_quote(query, qq, sizeof(qq));
+    shell_escape_single(query, qq, sizeof(qq));
     char cmd[8800];
     snprintf(cmd, sizeof(cmd),
              "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
@@ -970,7 +944,7 @@ void mail_apply_tags_query(const char *args) {
     build_full_query(full_query, sizeof(full_query));
 
     char qq[2300];
-    shell_quote(full_query, qq, sizeof(qq));
+    shell_escape_single(full_query, qq, sizeof(qq));
     char cmd[3000];
     snprintf(cmd, sizeof(cmd),
              "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
@@ -1118,20 +1092,13 @@ static void sanitize_name(const char *in, char *out, size_t cap) {
     out[n] = '\0';
 }
 
-/* Expand a leading ~ or ~/ into $HOME. Returns a freshly malloced
- * string; the caller frees. Returns NULL on OOM. */
+/* Expand a leading ~ or ~/ into $HOME (leaving ~user and HOME-missing
+ * as-is). Returns a freshly malloced string; the caller frees. */
 static char *expand_home_dup(const char *in) {
     if (!in) return NULL;
-    if (in[0] != '~') return strdup(in);
-    const char *home = getenv("HOME");
-    if (!home || !*home) return strdup(in);
-    const char *rest = (in[1] == '/' || in[1] == '\0') ? in + 1 : in;
-    if (rest == in) return strdup(in); /* "~user" — leave alone */
-    size_t n = strlen(home) + strlen(rest) + 1;
-    char *out = malloc(n);
-    if (!out) return NULL;
-    snprintf(out, n, "%s%s", home, rest);
-    return out;
+    char buf[PATH_MAX];
+    str_expand_tilde(in, buf, sizeof(buf));
+    return strdup(buf);
 }
 
 /* Extract one attachment. If dest_dir is NULL, write into /tmp and
@@ -1151,10 +1118,10 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     char idq[300];
     snprintf(idq, sizeof(idq), "id:%s", a->msg_id);
     char qq[400];
-    shell_quote(idq, qq, sizeof(qq));
+    shell_escape_single(idq, qq, sizeof(qq));
 
     char pq[1280];
-    shell_quote(path, pq, sizeof(pq));
+    shell_escape_single(path, pq, sizeof(pq));
 
     char cmd[3072];
     snprintf(cmd, sizeof(cmd),

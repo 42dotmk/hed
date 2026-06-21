@@ -87,11 +87,7 @@ static void md_detect_folds(Buffer *buf) {
     if (!buf)
         return;
 
-    fold_clear_all(&buf->folds);
-    for (int i = 0; i < buf->num_rows; i++) {
-        buf->rows[i].fold_start = false;
-        buf->rows[i].fold_end = false;
-    }
+    fold_reset_buffer(buf);
     if (buf->num_rows == 0)
         return;
 

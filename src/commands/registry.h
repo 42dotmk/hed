@@ -50,6 +50,14 @@ void command_register(const char *name, CommandCallback callback,
  */
 int command_execute(const char *name, const char *args);
 
+/*
+ * Execute a whole colon line: skip leading whitespace and ':', split on
+ * the first whitespace into name + args, then command_execute(). Shared
+ * by the colon prompt and any plugin (e.g. mcp_server) that runs a raw
+ * command line. Returns the command_execute() result (1 found, 0 not).
+ */
+int command_execute_line(const char *line);
+
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);
 

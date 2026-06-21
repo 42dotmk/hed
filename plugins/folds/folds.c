@@ -84,11 +84,7 @@ static void detect_brackets(Buffer *buf) {
     if (!buf)
         return;
 
-    fold_clear_all(&buf->folds);
-    for (int i = 0; i < buf->num_rows; i++) {
-        buf->rows[i].fold_start = false;
-        buf->rows[i].fold_end = false;
-    }
+    fold_reset_buffer(buf);
 
     BracketStack stack;
     bstack_init(&stack);
@@ -151,11 +147,7 @@ static void detect_indent(Buffer *buf) {
     if (!buf || buf->num_rows == 0)
         return;
 
-    fold_clear_all(&buf->folds);
-    for (int i = 0; i < buf->num_rows; i++) {
-        buf->rows[i].fold_start = false;
-        buf->rows[i].fold_end = false;
-    }
+    fold_reset_buffer(buf);
 
     IndentFrame *stack = malloc(sizeof(IndentFrame) * 32);
     if (!stack)

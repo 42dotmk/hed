@@ -48,8 +48,6 @@
 
 /* Row-array mutators live in buf/buffer.c with no public header — the
  * core forward-declares them locally (see buf_helpers.c). Do the same. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-void buf_row_del_in(Buffer *buf, int at);
 
 /* --- status table ----------------------------------------------------- */
 
@@ -539,16 +537,14 @@ static int agenda_cmp(const void *pa, const void *pb) {
 
 /* Scan one file, appending open tasks (with deadline/prio) to `out`. */
 static void scan_file_tasks(const char *path, Agenda **out) {
-    FILE *f = fopen(path, "r");
-    if (!f) return;
-    char *ln = NULL;
-    size_t cap = 0;
-    ssize_t got;
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK) return;
+    const char *ln;
+    size_t      llen;
     int lineno = 0, cur = -1;
-    while ((got = getline(&ln, &cap, f)) >= 0) {
+    while (fs_lines_next(r, &ln, &llen)) {
         lineno++;
-        int len = (int)got;
-        while (len > 0 && (ln[len-1] == '\n' || ln[len-1] == '\r')) len--;
+        int len = (int)llen;
 
         Heading h;
         if (parse_heading_buf(ln, len, &h)) {
@@ -592,28 +588,25 @@ static void scan_file_tasks(const char *path, Agenda **out) {
         }
         cur = -1; /* blank/prose ends the block */
     }
-    free(ln);
-    fclose(f);
+    fs_lines_close(r);
 }
 
 static void cmd_task_agenda(const char *args) {
     (void)args;
-    FILE *fp = popen(
-        "rg -l --color=never -g '*.md' -g '*.markdown' "
-        "-e '^[[:space:]]*#{1,6} +\\[(TODO|IN-PROGRESS|BLOCKED)\\]' 2>/dev/null",
-        "r");
-    if (!fp) {
+    char **paths = NULL;
+    int    npaths = 0;
+    if (!term_cmd_capture(
+            "rg -l --color=never -g '*.md' -g '*.markdown' "
+            "-e '^[[:space:]]*#{1,6} +\\[(TODO|IN-PROGRESS|BLOCKED)\\]' 2>/dev/null",
+            &paths, &npaths)) {
         ed_set_status_message("agenda: ripgrep not available");
         return;
     }
     Agenda *items = NULL;
-    char path[4096];
-    while (fgets(path, sizeof(path), fp)) {
-        size_t pl = strlen(path);
-        while (pl && (path[pl-1] == '\n' || path[pl-1] == '\r')) path[--pl] = '\0';
-        if (pl) scan_file_tasks(path, &items);
+    for (int i = 0; i < npaths; i++) {
+        if (paths[i][0]) scan_file_tasks(paths[i], &items);
     }
-    pclose(fp);
+    term_cmd_free(paths, npaths);
 
     int count = (int)arrlen(items);
     if (count == 0) {

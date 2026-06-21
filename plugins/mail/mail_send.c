@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 /* Internal row helper exposed by buf/buffer.c. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 static char send_cmd[256] = "msmtp -t";
 static char from_addr[256] = "";
@@ -145,34 +144,21 @@ static const char *path_basename(const char *path) {
 static void sniff_mime_type(const char *path, char *out, size_t cap) {
     snprintf(out, cap, "application/octet-stream");
     char pq[1280];
-    /* Tiny inline shell-quote for the path. */
-    size_t pl = 0;
-    pq[pl++] = '\'';
-    for (const char *p = path; *p && pl + 5 < sizeof(pq); p++) {
-        if (*p == '\'') { pq[pl++] = '\''; pq[pl++] = '\\';
-                          pq[pl++] = '\''; pq[pl++] = '\''; }
-        else pq[pl++] = *p;
-    }
-    pq[pl++] = '\''; pq[pl] = '\0';
+    shell_escape_single(path, pq, sizeof(pq));
     char cmd[1400];
     snprintf(cmd, sizeof(cmd), "file --mime-type -b -- %s 2>/dev/null", pq);
-    FILE *fp = popen(cmd, "r");
-    if (!fp) return;
-    char tmp[256];
-    if (fgets(tmp, sizeof(tmp), fp)) {
-        size_t L = strlen(tmp);
-        while (L > 0 && (tmp[L-1] == '\n' || tmp[L-1] == '\r' ||
-                          tmp[L-1] == ' '  || tmp[L-1] == '\t'))
-            tmp[--L] = '\0';
-        if (L > 0 && strchr(tmp, '/')) {
-            /* Truncate if the sniffed value won't fit; the caller's
-             * `out` is sized for "type/subtype" plus a small margin. */
-            if (L >= cap) L = cap - 1;
-            memcpy(out, tmp, L);
-            out[L] = '\0';
-        }
+
+    char **lines = NULL;
+    int    n     = 0;
+    if (!term_cmd_capture(cmd, &lines, &n) || n == 0) {
+        term_cmd_free(lines, n);
+        return;
     }
-    pclose(fp);
+    char trimmed[256];
+    str_trim_whitespace(lines[0], trimmed, sizeof(trimmed));
+    if (trimmed[0] && strchr(trimmed, '/'))
+        safe_strcpy(out, trimmed, cap);
+    term_cmd_free(lines, n);
 }
 
 /* Walk the header block of buf, collecting Attach: values into a fresh

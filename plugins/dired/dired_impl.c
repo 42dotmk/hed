@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <sys/stat.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 /* Each rendered line is prefixed with "/XXXX/ " — 4 hex digits flanked by
  * slashes, then a space. The prefix gives every entry a stable opaque ID so
@@ -32,14 +31,10 @@ typedef struct {
 typedef DiredState *DiredStateVec;
 static DiredStateVec dired_states = NULL;
 
+/* Bounded copy with dired's (dst, size, src) argument order. Thin
+ * wrapper over the core safe_strcpy. */
 static void dired_copy(char *dst, size_t dstsz, const char *src) {
-    if (!dst || dstsz == 0)
-        return;
-    if (!src) {
-        dst[0] = '\0';
-        return;
-    }
-    snprintf(dst, dstsz, "%s", src);
+    safe_strcpy(dst, src ? src : "", dstsz);
 }
 
 static DiredState *dired_state_find(Buffer *buf, size_t *out_idx) {

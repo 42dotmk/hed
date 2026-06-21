@@ -23,4 +23,9 @@ void sstr_insert_char(SizedStr *s, size_t pos, int c);
 void sstr_delete_char(SizedStr *s, size_t pos);
 char *sstr_to_cstr(const SizedStr *s);
 
+/* Append `in` wrapped in POSIX single quotes, escaping embedded single
+ * quotes via the '\'' pattern. The growable analogue of
+ * shell_escape_single() for callers building unbounded commands. */
+void sstr_append_shell_quoted(SizedStr *s, const char *in);
+
 #endif

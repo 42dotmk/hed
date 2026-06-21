@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "commands/cmd_util.h"
 #include "utils/term_cmd.h"
 #include <limits.h>
 
@@ -37,25 +36,48 @@ int fzf_run(const char *input_cmd, int multi, char ***out_lines,
     return fzf_run_opts(input_cmd, NULL, multi, out_lines, out_count);
 }
 
+void fzf_input_init(FzfInput *in, int ncols) {
+    in->ncols = ncols < 1 ? 1 : ncols;
+    in->cmd   = sstr_new();
+    sstr_append(&in->cmd, "printf '", 8);
+    for (int i = 0; i < in->ncols; i++) {
+        if (i)
+            sstr_append_char(&in->cmd, '\t');
+        sstr_append(&in->cmd, "%s", 2);
+    }
+    sstr_append(&in->cmd, "\\n' ", 4);
+}
+
+void fzf_input_row(FzfInput *in, const char *const *fields) {
+    for (int i = 0; i < in->ncols; i++) {
+        sstr_append_shell_quoted(&in->cmd, fields[i] ? fields[i] : "");
+        sstr_append_char(&in->cmd, ' ');
+    }
+}
+
+const char *fzf_input_cmd(FzfInput *in) {
+    /* NUL-terminate without counting the terminator in len, so any
+     * further rows overwrite it. */
+    sstr_append_char(&in->cmd, '\0');
+    in->cmd.len--;
+    return in->cmd.data;
+}
+
+void fzf_input_free(FzfInput *in) { sstr_free(&in->cmd); }
+
 int fzf_pick_list(const char **items, int count, int multi, char ***out_lines,
                   int *out_count) {
     if (!items || count <= 0)
         return 0;
-    char pipebuf[8192];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\\n' ");
+    FzfInput in;
+    fzf_input_init(&in, 1);
     for (int i = 0; i < count; i++) {
-        char esc[256];
-        shell_escape_single(items[i], esc, sizeof(esc));
-        size_t elen = strlen(esc);
-        if (off + elen + 2 >= sizeof(pipebuf))
-            break;
-        memcpy(pipebuf + off, esc, elen);
-        off += elen;
-        pipebuf[off++] = ' ';
+        const char *row[1] = { items[i] };
+        fzf_input_row(&in, row);
     }
-    pipebuf[off] = '\0';
-    return fzf_run(pipebuf, multi, out_lines, out_count);
+    int rc = fzf_run(fzf_input_cmd(&in), multi, out_lines, out_count);
+    fzf_input_free(&in);
+    return rc;
 }
 
 void fzf_free(char **lines, int count) {

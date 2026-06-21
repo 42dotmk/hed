@@ -5,6 +5,7 @@
 #include "lib/theme.h"
 #include "ui/bottom_ui.h"
 #include "buf/buffer.h"
+#include "buf/buf_helpers.h"
 #include "buf/virtual_text.h"
 #include "editor.h"
 #include "input/prompt.h"
@@ -129,27 +130,6 @@ int get_window_size(int *rows, int *cols) {
 
 /*** File I/O ***/
 
-static char *buf_rows_to_string_in(Buffer *buf, int *out_len) {
-    if (out_len)
-        *out_len = 0;
-    if (!buf)
-        return NULL;
-    size_t totlen = 0;
-    for (int j = 0; j < buf->num_rows; j++)
-        totlen += buf->rows[j].chars.len + 1;
-
-    if (out_len)
-        *out_len = (int)totlen;
-    char *buffer = malloc(totlen);
-    char *p = buffer;
-    for (int j = 0; j < buf->num_rows; j++) {
-        memcpy(p, buf->rows[j].chars.data, buf->rows[j].chars.len);
-        p += buf->rows[j].chars.len;
-        *p++ = '\n';
-    }
-    return buffer;
-}
-
 EdError buf_save_in(Buffer *buf) {
     if (!PTR_VALID(buf))
         return ED_ERR_INVALID_ARG;
@@ -159,12 +139,12 @@ EdError buf_save_in(Buffer *buf) {
         return ED_ERR_FILE_NOT_FOUND;
     }
 
-    int len = 0;
-    char *buffer = buf_rows_to_string_in(buf, &len);
+    size_t len = 0;
+    char *buffer = buf_to_text(buf, &len);
     if (!buffer)
         return ED_ERR_NOMEM;
 
-    EdError werr = fs_file_write(buf->filename, buffer, (size_t)len);
+    EdError werr = fs_file_write(buf->filename, buffer, len);
     free(buffer);
     if (werr != ED_OK) {
         ed_set_status_message("Error writing %s: %s",
@@ -180,7 +160,7 @@ EdError buf_save_in(Buffer *buf) {
     HookBufferEvent event = {.buf = buf, .filename = buf->filename};
     hook_fire_buffer(HOOK_BUFFER_SAVE, &event);
 
-    ed_set_status_message("%d bytes written to %s", len, buf->filename);
+    ed_set_status_message("%zu bytes written to %s", len, buf->filename);
     return ED_OK;
 }
 

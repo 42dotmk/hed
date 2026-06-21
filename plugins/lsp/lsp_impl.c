@@ -15,7 +15,6 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 #define LSP_MAX_SERVERS   8
 #define LSP_READ_BUF_SIZE 65536
@@ -1242,39 +1241,6 @@ static int lsp_spawn_process(LspServer *srv, const char *const *argv) {
 /* Walk up from `start` looking for any of `markers`. Returns 0 and writes
  * the absolute path of the first directory that contains a marker into
  * `out` (size `out_sz`); returns -1 if none found. */
-static int lsp_find_root(const char *start, const char *const *markers,
-                         char *out, size_t out_sz) {
-    if (!start || !markers || !out || out_sz == 0) return -1;
-    char dir[1024];
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-truncation"
-    snprintf(dir, sizeof(dir), "%s", start);
-#pragma GCC diagnostic pop
-    /* If start is a file path, drop the trailing component. */
-    struct stat st;
-    if (stat(dir, &st) == 0 && S_ISREG(st.st_mode)) {
-        char *slash = strrchr(dir, '/');
-        if (slash && slash != dir) *slash = '\0';
-        else if (slash == dir) dir[1] = '\0';
-    }
-
-    while (1) {
-        for (int i = 0; markers[i]; i++) {
-            char probe[2048];
-            snprintf(probe, sizeof(probe), "%s/%s", dir, markers[i]);
-            if (fs_exists(probe)) {
-                snprintf(out, out_sz, "%s", dir);
-                return 0;
-            }
-        }
-        if (dir[0] == '/' && dir[1] == '\0') return -1;
-        char *slash = strrchr(dir, '/');
-        if (!slash) return -1;
-        if (slash == dir) dir[1] = '\0';
-        else *slash = '\0';
-    }
-}
-
 /* :lsp_start <lang>  — spawn from the registry. If `hint_path` is non-NULL
  * it's used as the root-detection starting point (typically a buffer
  * filename); otherwise E.cwd is used. */
@@ -1294,8 +1260,8 @@ int lsp_cmd_start(const char *lang, const char *hint_path) {
     }
 
     char root_dir[1024];
-    if (lsp_find_root(hint_path && *hint_path ? hint_path : E.cwd,
-                      def->root_markers, root_dir, sizeof(root_dir)) != 0) {
+    if (!fs_find_root_marker(hint_path && *hint_path ? hint_path : E.cwd,
+                             def->root_markers, root_dir, sizeof(root_dir))) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(root_dir, sizeof(root_dir), "%s", E.cwd);

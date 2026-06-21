@@ -1,6 +1,8 @@
 #ifndef PICKERS_FZF_H
 #define PICKERS_FZF_H
 
+#include "lib/sizedstr.h"
+
 /* Low-level fzf wrappers. Lives inside the pickers plugin because
  * pickers owns the fzf integration end-to-end.
  *
@@ -30,6 +32,30 @@ int fzf_pick_list(const char **items, int count, int multi, char ***out_lines,
 
 /* Free the results allocated by fzf_run / fzf_pick_list. */
 void fzf_free(char **lines, int count);
+
+/* Tab-separated-column fzf input builder.
+ *
+ * Builds a `printf '%s\t…%s\n' f f f …` pipeline where every row
+ * contributes `ncols` shell-escaped, tab-separated columns. Grows
+ * unbounded — replaces the fixed pipebuf + per-field overflow guards
+ * the pickers used to hand-roll. Typical use:
+ *
+ *     FzfInput in;
+ *     fzf_input_init(&in, 2);
+ *     const char *row[2] = { name, desc };
+ *     fzf_input_row(&in, row);
+ *     fzf_run_opts(fzf_input_cmd(&in), opts, 0, &sel, &cnt);
+ *     fzf_input_free(&in);
+ */
+typedef struct {
+    SizedStr cmd;
+    int      ncols;
+} FzfInput;
+
+void        fzf_input_init(FzfInput *in, int ncols);
+void        fzf_input_row(FzfInput *in, const char *const *fields);
+const char *fzf_input_cmd(FzfInput *in); /* valid until fzf_input_free */
+void        fzf_input_free(FzfInput *in);
 
 /* Shared shell snippets used by the file-picker callers (`:fzf`, `:recent`,
  * the gF keybind). Single source of truth for "how do we list project files"

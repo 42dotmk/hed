@@ -28,13 +28,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Internal row helpers from buf/buffer.c — not in the public header
- * but linkable. Used by the >%b / >>%b / >%v capture paths to splice
- * captured stdout under a single undo group. */
-extern void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-extern void buf_row_del_in(Buffer *buf, int at);
-extern void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
-
 /* ---------- growable string helpers ---------- */
 
 static int sh_append(char **out, size_t *len, size_t *cap,
@@ -67,31 +60,6 @@ static int sh_append_escaped(char **out, size_t *len, size_t *cap,
         }
     }
     return sh_append(out, len, cap, "'", 1);
-}
-
-/* Concatenate buffer rows with '\n', trailing '\n'. Returns malloc'd
- * heap string (NUL-terminated) and writes byte length to *out_len.
- * Caller frees. Returns NULL on OOM or NULL buf. */
-static char *buf_text_join(Buffer *buf, size_t *out_len) {
-    if (out_len) *out_len = 0;
-    if (!buf) return NULL;
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    char *s = malloc(total + 1);
-    if (!s) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        size_t n = buf->rows[i].chars.len;
-        if (n) {
-            memcpy(s + off, buf->rows[i].chars.data, n);
-            off += n;
-        }
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    if (out_len) *out_len = off;
-    return s;
 }
 
 /* ---------- capture token parsing ---------- */
@@ -179,7 +147,7 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
             int ok = 1;
             if (tok == 'b') {
                 size_t blen = 0;
-                char *txt = buf_text_join(buf, &blen);
+                char *txt = buf_to_text(buf, &blen);
                 if (!txt) goto oom;
                 ok = sh_append_escaped(&out, &len, &cap, txt, blen);
                 free(txt);

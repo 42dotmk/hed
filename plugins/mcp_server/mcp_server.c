@@ -36,7 +36,6 @@
 #include <unistd.h>
 
 /* Global helper from buf/buffer.c. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 #define MCP_MAX_CLIENTS 8
 #define MCP_RX_LIMIT    (4 * 1024 * 1024)  /* per-client cap on accumulator */
@@ -193,21 +192,8 @@ static cJSON *tool_read_current_buffer(void) {
     Buffer *b = buf_cur();
     if (!b) return tool_result_text("error: no current buffer", 1);
 
-    size_t total = 1;
-    for (int i = 0; i < b->num_rows; i++)
-        total += b->rows[i].chars.len + 1;
-
-    char *out = malloc(total);
+    char *out = buf_to_text(b, NULL);
     if (!out) return tool_result_text("error: out of memory", 1);
-
-    size_t off = 0;
-    for (int i = 0; i < b->num_rows; i++) {
-        size_t n = b->rows[i].chars.len;
-        if (n) memcpy(out + off, b->rows[i].chars.data, n);
-        off += n;
-        if (i < b->num_rows - 1) out[off++] = '\n';
-    }
-    out[off] = '\0';
 
     cJSON *r = tool_result_text(out, 0);
     free(out);
@@ -236,7 +222,6 @@ static cJSON *tool_apply_edit(cJSON *args) {
 
     /* Delete [start, end) — buf_row_del_in takes one index at a time and
      * shifts the tail, so repeatedly delete at `start`. */
-    extern void buf_row_del_in(Buffer *buf, int at);
     for (int i = start; i < end; i++)
         buf_row_del_in(b, start);
 
@@ -279,24 +264,12 @@ static cJSON *tool_run_command(cJSON *args) {
     while (*line == ' ' || *line == '\t' || *line == ':') line++;
     if (!*line) return tool_result_text("error: empty cmdline", 1);
 
-    /* Split on first whitespace. */
-    char name[64];
-    size_t ni = 0;
-    while (*line && *line != ' ' && *line != '\t' && ni + 1 < sizeof(name))
-        name[ni++] = *line++;
-    name[ni] = '\0';
-    while (*line == ' ' || *line == '\t') line++;
-
-    int ok = command_execute(name, *line ? line : NULL);
-    if (!ok) {
-        char buf[128];
-        snprintf(buf, sizeof(buf), "error: unknown command :%s", name);
+    char buf[256];
+    if (!command_execute_line(line)) {
+        snprintf(buf, sizeof(buf), "error: unknown command :%s", line);
         return tool_result_text(buf, 1);
     }
-
-    char buf[128];
-    snprintf(buf, sizeof(buf), "ok: ran :%s%s%s",
-             name, *line ? " " : "", *line ? line : "");
+    snprintf(buf, sizeof(buf), "ok: ran :%s", line);
     return tool_result_text(buf, 0);
 }
 

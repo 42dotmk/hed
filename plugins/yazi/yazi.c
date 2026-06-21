@@ -16,32 +16,6 @@
 #include "hed.h"
 #include "yazi.h"
 
-/* Append `s` to `dst` as a single-quoted shell literal. Returns the
- * number of bytes written (excluding NUL), or a value >= cap on
- * truncation (caller should treat as failure). */
-static size_t shell_squote(char *dst, size_t cap, const char *s) {
-    size_t off = 0;
-    if (off + 1 >= cap) return cap;
-    dst[off++] = '\'';
-    for (; *s; s++) {
-        if (*s == '\'') {
-            /* close, literal escaped quote, reopen */
-            if (off + 4 >= cap) return cap;
-            dst[off++] = '\'';
-            dst[off++] = '\\';
-            dst[off++] = '\'';
-            dst[off++] = '\'';
-        } else {
-            if (off + 1 >= cap) return cap;
-            dst[off++] = *s;
-        }
-    }
-    if (off + 1 >= cap) return cap;
-    dst[off++] = '\'';
-    dst[off] = '\0';
-    return off;
-}
-
 /* If `path` exists and contains a slash, write its parent dir into
  * out[0..cap). Returns 1 on success (out filled), 0 otherwise. */
 static int dirname_if_exists(const char *path, char *out, size_t cap) {
@@ -89,28 +63,23 @@ static void cmd_yazi(const char *args) {
     const char *start_arg = (args && *args) ? args
                             : (auto_start[0] ? auto_start : NULL);
 
-    char cmd[1024];
-    int  n;
+    SizedStr cmd = sstr_new();
+    sstr_append(&cmd, "yazi --chooser-file=", 20);
+    sstr_append(&cmd, tmppath, strlen(tmppath));
     if (start_arg) {
-        char qarg[768];
-        if (shell_squote(qarg, sizeof(qarg), start_arg) >= sizeof(qarg)) {
-            ed_set_status_message("yazi: argument too long");
-            fs_unlink(tmppath);
-            return;
-        }
-        n = snprintf(cmd, sizeof(cmd),
-                     "yazi --chooser-file=%s %s", tmppath, qarg);
-    } else {
-        n = snprintf(cmd, sizeof(cmd),
-                     "yazi --chooser-file=%s", tmppath);
+        sstr_append_char(&cmd, ' ');
+        sstr_append_shell_quoted(&cmd, start_arg);
     }
-    if (n < 0 || (size_t)n >= sizeof(cmd)) {
-        ed_set_status_message("yazi: command too long");
+    char *cmd_str = sstr_to_cstr(&cmd);
+    sstr_free(&cmd);
+    if (!cmd_str) {
+        ed_set_status_message("yazi: out of memory");
         fs_unlink(tmppath);
         return;
     }
 
-    int status = term_cmd_run_interactive(cmd, false);
+    int status = term_cmd_run_interactive(cmd_str, false);
+    free(cmd_str);
     if (status == -1) {
         ed_set_status_message("yazi: failed to launch (is it installed?)");
         fs_unlink(tmppath);

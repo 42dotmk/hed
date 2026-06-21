@@ -23,12 +23,7 @@ static int scratch_find_or_create_buf(void) {
     if (idx >= 0) return idx;
 
     int new_idx = -1;
-    if (buf_new(NULL, &new_idx) != ED_OK) return -1;
-
-    Buffer *b = &E.buffers[new_idx];
-    free(b->filename); b->filename = NULL;
-    free(b->title);    b->title    = strdup(SCRATCH_TITLE);
-    b->dirty = 0;
+    if (buf_new_scratch(SCRATCH_TITLE, &new_idx) != ED_OK) return -1;
     return new_idx;
 }
 

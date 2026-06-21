@@ -226,9 +226,7 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
         /* Collect ft bindings for the current mode that aren't already
          * listed under the prefix match section. */
         int total = keybind_get_count();
-        const char **ft_seqs  = NULL;
-        const char **ft_descs = NULL;
-        int ft_n = 0, ft_cap = 0;
+        const char **ft_seqs = NULL, **ft_descs = NULL; /* stb_ds arrays */
 
         for (int i = 0; i < total; i++) {
             const char *seq = NULL, *desc = NULL, *ft = NULL, *cmd = NULL;
@@ -249,23 +247,15 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
             }
             if (seen) continue;
 
-            if (ft_n >= ft_cap) {
-                int ncap = ft_cap ? ft_cap * 2 : 8;
-                const char **ns = realloc(ft_seqs, (size_t)ncap * sizeof(*ns));
-                const char **nd = realloc(ft_descs, (size_t)ncap * sizeof(*nd));
-                if (!ns || !nd) { free(ns); free(nd); break; }
-                ft_seqs = ns; ft_descs = nd;
-                ft_cap = ncap;
-            }
             /* Fall back to the cmap's command line if no description
              * was attached at registration time. */
             const char *display_desc = (desc && *desc) ? desc
                                        : (cmd ? cmd : "");
-            ft_seqs[ft_n]  = seq;
-            ft_descs[ft_n] = display_desc;
-            ft_n++;
+            arrput(ft_seqs, seq);
+            arrput(ft_descs, display_desc);
         }
 
+        int ft_n = (int)arrlen(ft_seqs);
         if (ft_n > 0) {
             /* Section header on its own row. */
             if (off + 64 < outsz) {
@@ -325,8 +315,8 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
             if (ft_truncated && off + 8 < outsz)
                 off += (size_t)snprintf(out + off, outsz - off, " ...\n");
         }
-        free(ft_seqs);
-        free(ft_descs);
+        arrfree(ft_seqs);
+        arrfree(ft_descs);
     }
 
     /* Drop trailing newline so the message bar doesn't reserve a

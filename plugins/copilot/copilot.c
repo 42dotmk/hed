@@ -20,10 +20,6 @@
 #include "lsp/cjson/cJSON.h"
 #include "lsp/json_helpers.h"
 
-/* Internal helper that lsp_impl.c also forward-declares.
- * Declared in buf/buffer.c but not exposed in buffer.h. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
 /* ----- module-level config ----- */
 
 static int  g_enabled   = 1;   /* default on once spawned + signed in */
@@ -45,22 +41,6 @@ static char *cp_uri_for(const char *filepath) {
         sprintf(uri, "file://%s", filepath);
     }
     return uri;
-}
-
-static char *cp_buffer_text(Buffer *buf) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    char *s = malloc(total + 1);
-    if (!s) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    return s;
 }
 
 static const char *cp_language_id(Buffer *buf) {
@@ -106,12 +86,8 @@ static int cp_pane_get_or_create_buf(void) {
     int idx = cp_pane_buf_idx();
     if (idx >= 0) return idx;
     int new_idx = -1;
-    if (buf_new(NULL, &new_idx) != ED_OK) return -1;
-    Buffer *b = &E.buffers[new_idx];
-    free(b->filename); b->filename = NULL;
-    free(b->title);    b->title    = strdup(COPILOT_PANE_TITLE);
-    b->dirty = 0;
-    b->readonly = 1;
+    if (buf_new_scratch(COPILOT_PANE_TITLE, &new_idx) != ED_OK) return -1;
+    E.buffers[new_idx].readonly = 1;
     return new_idx;
 }
 
@@ -239,7 +215,7 @@ static void cp_request_completions_for_cursor(Buffer *buf) {
     if (cp_is_pane_buf(buf)) return;        /* never request for our own pane */
 
     char *uri  = cp_uri_for(buf->filename);
-    char *text = cp_buffer_text(buf);
+    char *text = buf_to_text(buf, NULL);
     if (!uri || !text) { free(uri); free(text); return; }
 
     /* Sync the document FIRST so the server's view matches what we're
@@ -325,7 +301,7 @@ static void cp_send_did_open(Buffer *buf) {
     if (!buf || !buf->filename || !CP.spawned || !CP.initialized) return;
     if (cp_is_pane_buf(buf)) return;        /* never sync our own pane */
     char *uri  = cp_uri_for(buf->filename);
-    char *text = cp_buffer_text(buf);
+    char *text = buf_to_text(buf, NULL);
     if (!uri || !text) { free(uri); free(text); return; }
 
     cJSON *p   = cJSON_CreateObject();

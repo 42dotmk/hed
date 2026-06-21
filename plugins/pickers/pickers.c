@@ -28,30 +28,21 @@ static void cmd_history_fzf(const char *args) {
         return;
     }
 
-    char tmppath[PATH_MAX];
-    if (fs_temp_path("hed_hist", tmppath, sizeof(tmppath)) != ED_OK) {
-        ed_set_status_message("hfzf: failed to reserve temp file");
+    const char **items = malloc(sizeof(*items) * (size_t)hlen);
+    if (!items) {
+        ed_set_status_message("hfzf: out of memory");
         return;
     }
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        fs_unlink(tmppath);
-        ed_set_status_message("hfzf: failed to write temp file");
-        return;
-    }
+    int nitems = 0;
     for (int i = 0; i < hlen; i++) {
         const char *line = hist_get(&E.history, i);
-        if (line) fprintf(fp, "%s\n", line);
+        if (line) items[nitems++] = line;
     }
-    fclose(fp);
-
-    char fzf_cmd[PATH_MAX + 8];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
 
     char **sel = NULL;
     int cnt    = 0;
-    fzf_run(fzf_cmd, 0, &sel, &cnt);
-    fs_unlink(tmppath);
+    fzf_pick_list(items, nitems, 0, &sel, &cnt);
+    free(items);
 
     if (cnt == 0 || !sel || !sel[0]) {
         fzf_free(sel, cnt);
@@ -77,27 +68,18 @@ static void cmd_jumplist_fzf(const char *args) {
         return;
     }
 
-    char tmppath[PATH_MAX];
-    if (fs_temp_path("hed_jumps", tmppath, sizeof(tmppath)) != ED_OK) {
-        ed_set_status_message("jfzf: failed to reserve temp file");
-        return;
-    }
-    FILE *fp = fopen(tmppath, "w");
-    if (!fp) {
-        fs_unlink(tmppath);
-        ed_set_status_message("jfzf: failed to write temp file");
-        return;
-    }
     /* Most recent first */
+    FzfInput in;
+    fzf_input_init(&in, 1);
     for (int i = jlen - 1; i >= 0; i--) {
         JumpEntry *e = &E.jump_list.entries[i];
-        if (e->filepath)
-            fprintf(fp, "%s:%d:%d\n", e->filepath, e->cursor_y + 1, e->cursor_x + 1);
+        if (!e->filepath) continue;
+        char ln[PATH_MAX + 32];
+        snprintf(ln, sizeof(ln), "%s:%d:%d",
+                 e->filepath, e->cursor_y + 1, e->cursor_x + 1);
+        const char *row[1] = { ln };
+        fzf_input_row(&in, row);
     }
-    fclose(fp);
-
-    char fzf_cmd[PATH_MAX + 8];
-    snprintf(fzf_cmd, sizeof(fzf_cmd), "cat %s", tmppath);
 
     const char *fzf_opts =
         "--delimiter ':' "
@@ -109,8 +91,8 @@ static void cmd_jumplist_fzf(const char *args) {
 
     char **sel = NULL;
     int cnt    = 0;
-    fzf_run_opts(fzf_cmd, fzf_opts, 0, &sel, &cnt);
-    fs_unlink(tmppath);
+    fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt);
+    fzf_input_free(&in);
 
     if (cnt == 0 || !sel || !sel[0]) {
         fzf_free(sel, cnt);
@@ -148,28 +130,15 @@ static void cmd_jumplist_fzf(const char *args) {
  * cmd_prompt_completion_picker_register. */
 static void cmd_cpick(const char *args) {
     /* Build printf list with name\tdesc lines for fzf preview */
-    char pipebuf[8192];
-    size_t off = 0;
-    off +=
-        snprintf(pipebuf + off, sizeof(pipebuf) - off, "printf '%%s\t%%s\\n' ");
-
+    FzfInput in;
+    fzf_input_init(&in, 2);
     for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
-        const char *nm = commands[i].name ? commands[i].name : "";
-        const char *ds = commands[i].desc ? commands[i].desc : "";
-        char en[256], ed[512];
-        shell_escape_single(nm, en, sizeof(en));
-        shell_escape_single(ds, ed, sizeof(ed));
-        size_t need = strlen(en) + 1 + strlen(ed) + 1;
-        if (off + need + 4 >= sizeof(pipebuf))
-            break;
-        memcpy(pipebuf + off, en, strlen(en));
-        off += strlen(en);
-        pipebuf[off++] = ' ';
-        memcpy(pipebuf + off, ed, strlen(ed));
-        off += strlen(ed);
-        pipebuf[off++] = ' ';
+        const char *row[2] = {
+            commands[i].name ? commands[i].name : "",
+            commands[i].desc ? commands[i].desc : "",
+        };
+        fzf_input_row(&in, row);
     }
-    pipebuf[off] = '\0';
 
     /* If args contains a non-empty initial query, seed fzf with it via
      * --query. Used by command-mode double-Tab escalation. */
@@ -186,11 +155,13 @@ static void cmd_cpick(const char *args) {
     const char *fzf_opts = fzf_opts_buf;
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) || cnt == 0) {
         ed_set_status_message("c: canceled");
+        fzf_input_free(&in);
         fzf_free(sel, cnt);
         return;
     }
+    fzf_input_free(&in);
 
     /* Parse the picked line: name<TAB>desc */
     char *picked = sel[0];
@@ -291,28 +262,20 @@ static void pick_buffers(const char *seed) {
         ed_set_status_message("no buffers");
         return;
     }
-    char pipebuf[8192];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
-                    "printf '%%s\t%%s\t%%s\t%%s\\n' ");
+    FzfInput in;
+    fzf_input_init(&in, 4);
     for (int i = 0; i < (int)arrlen(E.buffers); i++) {
         char idxs[16], lines[32];
         snprintf(idxs,  sizeof(idxs),  "%d", i + 1);
         snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
-        const char *nm  = E.buffers[i].title;
-        const char *mod = E.buffers[i].dirty ? "*" : "-";
-        char eidx[32], enam[512], emod[8], elines[32];
-        shell_escape_single(idxs,  eidx,   sizeof(eidx));
-        shell_escape_single(nm,    enam,   sizeof(enam));
-        shell_escape_single(mod,   emod,   sizeof(emod));
-        shell_escape_single(lines, elines, sizeof(elines));
-        size_t need = strlen(eidx) + strlen(enam) + strlen(emod)
-                    + strlen(elines) + 4;
-        if (off + need + 4 >= sizeof(pipebuf)) break;
-        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s %s %s ",
-                        eidx, enam, emod, elines);
+        const char *row[4] = {
+            idxs,
+            E.buffers[i].title ? E.buffers[i].title : "",
+            E.buffers[i].dirty ? "*" : "-",
+            lines,
+        };
+        fzf_input_row(&in, row);
     }
-    pipebuf[off] = '\0';
 
     const char *fzf_opts =
         "--delimiter '\\t' --with-nth 2 "
@@ -322,11 +285,13 @@ static void pick_buffers(const char *seed) {
         "--preview-window right,60%,wrap";
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+        fzf_input_free(&in);
         fzf_free(sel, cnt);
         ed_set_status_message("buffers: canceled");
         return;
     }
+    fzf_input_free(&in);
     char *picked = sel[0];
     char *tab = strchr(picked, '\t');
     if (tab) *tab = '\0';
@@ -345,10 +310,8 @@ static void pick_buffers(const char *seed) {
  * — no canonical action to take on a bind. */
 static void pick_keybinds(const char *seed) {
     (void)seed;
-    char pipebuf[16384];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
-                    "printf '%%s\t%%s\\n' ");
+    FzfInput in;
+    fzf_input_init(&in, 2);
     int count = keybind_get_count();
     for (int i = 0; i < count; i++) {
         const char *seq = NULL, *desc = NULL, *ft = NULL, *cmdline = NULL;
@@ -364,17 +327,13 @@ static void pick_keybinds(const char *seed) {
         char display[320];
         snprintf(display, sizeof(display), "%s[%s] %s",
                  mp, ft_tag, seq ? seq : "");
-        char es[512], ed[512];
-        shell_escape_single(display, es, sizeof(es));
-        shell_escape_single(desc ? desc : "", ed, sizeof(ed));
-        size_t need = strlen(es) + strlen(ed) + 3;
-        if (off + need >= sizeof(pipebuf)) break;
-        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s ", es, ed);
+        const char *row[2] = { display, desc ? desc : "" };
+        fzf_input_row(&in, row);
     }
-    pipebuf[off] = '\0';
     char **sel = NULL;
     int cnt = 0;
-    fzf_run_opts(pipebuf, "--delimiter '\t'", 0, &sel, &cnt);
+    fzf_run_opts(fzf_input_cmd(&in), "--delimiter '\t'", 0, &sel, &cnt);
+    fzf_input_free(&in);
     fzf_free(sel, cnt);
     ed_set_status_message("keybinds: %d total", count);
 }
@@ -382,10 +341,8 @@ static void pick_keybinds(const char *seed) {
 /* "plugins": list loaded plugins with description in the preview pane. */
 static void pick_plugins(const char *seed) {
     (void)seed;
-    char pipebuf[16384];
-    size_t off = 0;
-    off += snprintf(pipebuf + off, sizeof(pipebuf) - off,
-                    "printf '%%s\\t%%s\\n' ");
+    FzfInput in;
+    fzf_input_init(&in, 2);
     int count  = plugin_get_count();
     int active = 0;
     for (int i = 0; i < count; i++) {
@@ -396,20 +353,16 @@ static void pick_plugins(const char *seed) {
         char display[256];
         snprintf(display, sizeof(display), "[%c] %s",
                  enabled ? 'x' : ' ', name);
-        char es[512], ed[512];
-        shell_escape_single(display, es, sizeof(es));
-        shell_escape_single(desc[0] ? desc : "(no description)", ed, sizeof(ed));
-        size_t need = strlen(es) + strlen(ed) + 3;
-        if (off + need >= sizeof(pipebuf)) break;
-        off += snprintf(pipebuf + off, sizeof(pipebuf) - off, "%s %s ", es, ed);
+        const char *row[2] = { display, desc[0] ? desc : "(no description)" };
+        fzf_input_row(&in, row);
     }
-    pipebuf[off] = '\0';
     const char *fzf_opts =
         "--delimiter '\t' --with-nth 1 "
         "--preview \"printf '%s' {2}\" --preview-window 'right:50%:wrap'";
     char **sel = NULL;
     int cnt = 0;
-    fzf_run_opts(pipebuf, fzf_opts, 0, &sel, &cnt);
+    fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt);
+    fzf_input_free(&in);
     fzf_free(sel, cnt);
     ed_set_status_message("plugins: %d loaded, %d enabled", count, active);
 }
@@ -451,15 +404,16 @@ static int fzf_picker_list(const char **items, int count, int multi,
 
 static void pick_logs(const char *seed) {
     (void)seed;
-    const char *home = getenv("HOME");
-    if (!home || !*home) {
+    char cache_dir[PATH_MAX];
+    if (!fs_path_home_join(".cache/hed", cache_dir, sizeof(cache_dir))) {
         ed_set_status_message("logs: HOME not set");
         return;
     }
-    char find_cmd[1024];
+    char esc_dir[PATH_MAX + 16];
+    shell_escape_single(cache_dir, esc_dir, sizeof(esc_dir));
+    char find_cmd[PATH_MAX + 64];
     snprintf(find_cmd, sizeof(find_cmd),
-             "find '%s/.cache/hed' -maxdepth 2 -type f -name log 2>/dev/null",
-             home);
+             "find %s -maxdepth 2 -type f -name log 2>/dev/null", esc_dir);
     char **lines = NULL;
     int    count = 0;
     if (!fzf_run(find_cmd, 0, &lines, &count) || count == 0) {

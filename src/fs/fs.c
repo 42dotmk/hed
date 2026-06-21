@@ -167,6 +167,42 @@ char *fs_path_detect_filetype(const char *path) {
     return strdup(ext);
 }
 
+bool fs_find_root_marker(const char *start, const char *const *markers,
+                         char *out, size_t out_sz) {
+    if (!start || !markers || !out || out_sz == 0)
+        return false;
+
+    char dir[PATH_MAX];
+    int n = snprintf(dir, sizeof(dir), "%s", start);
+    if (n <= 0 || (size_t)n >= sizeof(dir))
+        return false;
+
+    /* If start is a regular file, begin at its parent directory. */
+    if (fs_is_file(dir)) {
+        char *slash = strrchr(dir, '/');
+        if (slash && slash != dir) *slash = '\0';
+        else if (slash == dir)     dir[1]  = '\0';
+    }
+
+    for (;;) {
+        for (int i = 0; markers[i]; i++) {
+            char probe[PATH_MAX];
+            if (fs_path_join(probe, sizeof(probe), dir, markers[i]) &&
+                fs_exists(probe)) {
+                snprintf(out, out_sz, "%s", dir);
+                return true;
+            }
+        }
+        if (dir[0] == '/' && dir[1] == '\0')
+            return false; /* reached root, no marker */
+        char *slash = strrchr(dir, '/');
+        if (!slash)
+            return false;
+        if (slash == dir) dir[1] = '\0';
+        else              *slash = '\0';
+    }
+}
+
 /* =====================================================================
  * Queries
  * ===================================================================== */

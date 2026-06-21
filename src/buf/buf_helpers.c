@@ -8,11 +8,89 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Internal low-level row helpers (not part of public API) */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-void buf_row_del_in(Buffer *buf, int at);
-void buf_row_append_in(Buffer *buf, Row *row, const SizedStr *str);
+/* buf_row_insert_in/_del_in/_append_in are declared in buf_helpers.h.
+ * buf_row_insert_char_in is internal-only. */
 void buf_row_insert_char_in(Buffer *buf, Row *row, int at, int c);
+
+char *buf_to_text(const Buffer *buf, size_t *out_len) {
+    if (out_len)
+        *out_len = 0;
+    if (!buf)
+        return NULL;
+    size_t totlen = 0;
+    for (int j = 0; j < buf->num_rows; j++)
+        totlen += buf->rows[j].chars.len + 1;
+    char *out = malloc(totlen + 1);
+    if (!out)
+        return NULL;
+    char *p = out;
+    for (int j = 0; j < buf->num_rows; j++) {
+        memcpy(p, buf->rows[j].chars.data, buf->rows[j].chars.len);
+        p += buf->rows[j].chars.len;
+        *p++ = '\n';
+    }
+    *p = '\0';
+    if (out_len)
+        *out_len = totlen;
+    return out;
+}
+
+void buf_append_text_lines(Buffer *buf, const char *text, size_t len) {
+    if (!buf || !text)
+        return;
+    /* Drop trailing newline(s) so a terminating '\n' doesn't add an
+     * empty final row. */
+    while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r'))
+        len--;
+    size_t start = 0;
+    for (size_t i = 0; i <= len; i++) {
+        if (i == len || text[i] == '\n') {
+            size_t llen = i - start;
+            if (llen && text[start + llen - 1] == '\r')
+                llen--;
+            buf_row_insert_in(buf, buf->num_rows, text + start, llen);
+            start = i + 1;
+        }
+    }
+}
+
+EdError buf_new_scratch(const char *title, int *out_idx) {
+    int idx = -1;
+    EdError e = buf_new(NULL, &idx);
+    if (e != ED_OK)
+        return e;
+    Buffer *b = &E.buffers[idx];
+    free(b->filename);
+    b->filename = NULL;
+    if (title) {
+        free(b->title);
+        b->title = strdup(title);
+    }
+    b->dirty = 0;
+    if (out_idx)
+        *out_idx = idx;
+    return ED_OK;
+}
+
+EdError buf_open_readonly(const char *title, const char *filetype,
+                          const char *text, size_t len, int *out_idx) {
+    int idx = -1;
+    EdError e = buf_new_scratch(title, &idx);
+    if (e != ED_OK)
+        return e;
+    Buffer *b = &E.buffers[idx];
+    if (filetype) {
+        free(b->filetype);
+        b->filetype = strdup(filetype);
+    }
+    if (text)
+        buf_append_text_lines(b, text, len);
+    b->readonly = 1;
+    b->dirty = 0;
+    if (out_idx)
+        *out_idx = idx;
+    return ED_OK;
+}
 
 /*** Cursor movement helpers ***/
 

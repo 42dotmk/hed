@@ -13,8 +13,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-void buf_row_del_in(Buffer *buf, int at);
 
 static struct {
     int     active;
@@ -128,13 +126,11 @@ static int sl_attach(Window *modal,
                      const char *const *items, int count,
                      SelectListCallback cb, void *user) {
     int buf_idx = -1;
-    if (buf_new(NULL, &buf_idx) != ED_OK) {
+    if (buf_new_scratch("select", &buf_idx) != ED_OK) {
         winmodal_destroy(modal);
         return -1;
     }
     Buffer *buf = &E.buffers[buf_idx];
-    free(buf->filename); buf->filename = NULL;
-    free(buf->title);    buf->title    = strdup("select");
 
     modal->buffer_index = buf_idx;
 

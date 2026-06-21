@@ -32,10 +32,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* buf_row_insert_in is global but not exposed in any header — match the
- * forward-decl trick used by mail/yank/undo. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
 typedef struct TrJob {
     pid_t pid;
     int   from_fd;        /* child stdout read end (non-blocking) */
@@ -74,24 +70,6 @@ static void job_free(TrJob *j) {
 
 /* ----- helpers shared with the sync version ------------------------- */
 
-static char *buf_to_text(Buffer *buf, size_t *out_len) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    if (total == 0) total = 1;
-    char *out = malloc(total + 1);
-    if (!out) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        SizedStr *s = &buf->rows[i].chars;
-        if (s->len) { memcpy(out + off, s->data, s->len); off += s->len; }
-        if (i + 1 < buf->num_rows) out[off++] = '\n';
-    }
-    out[off] = '\0';
-    if (out_len) *out_len = off;
-    return out;
-}
-
 static char *sel_to_text(Buffer *buf, const TextSelection *sel,
                          size_t *out_len) {
     YankData yd = yank_data_new(buf, sel);
@@ -124,28 +102,6 @@ static int write_temp(const char *data, size_t len, char *path_out,
         return -1;
     }
     return 0;
-}
-
-static void insert_lines_from(Buffer *dst, const char *text, size_t len) {
-    while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r'))
-        len--;
-    size_t start = 0;
-    for (size_t i = 0; i <= len; i++) {
-        if (i == len || text[i] == '\n') {
-            size_t llen = i - start;
-            if (llen > 0 && text[start + llen - 1] == '\r') llen--;
-            buf_row_insert_in(dst, dst->num_rows, text + start, llen);
-            start = i + 1;
-        }
-    }
-    if (dst->num_rows == 0)
-        buf_row_insert_in(dst, 0, "", 0);
-}
-
-static const char *basename_of(const char *path) {
-    if (!path || !*path) return "buffer";
-    const char *slash = strrchr(path, '/');
-    return slash ? slash + 1 : path;
 }
 
 /* ----- async machinery --------------------------------------------- */
@@ -185,24 +141,22 @@ static void job_finalize(TrJob *j) {
         return;
     }
 
+    char title[256];
+    snprintf(title, sizeof(title), "[translate:%s:%s%s #%d]",
+             j->target, j->src_base, j->from_sel ? "(sel)" : "", ++seq);
+
     int idx = -1;
-    if (buf_new(NULL, &idx) != ED_OK) {
+    if (buf_new_scratch(title, &idx) != ED_OK) {
         ed_set_status_message("translate: failed to create buffer");
         job_active = NULL;
         job_free(j);
         return;
     }
     Buffer *dst = &E.buffers[idx];
-
-    char title[256];
-    snprintf(title, sizeof(title), "[translate:%s:%s%s #%d]",
-             j->target, j->src_base, j->from_sel ? "(sel)" : "", ++seq);
-    free(dst->title);    dst->title    = strdup(title);
-    free(dst->filename); dst->filename = NULL;
     free(dst->filetype); dst->filetype = j->src_filetype; /* take ownership */
     j->src_filetype = NULL;
 
-    insert_lines_from(dst, j->out, j->out_len);
+    buf_append_text_lines(dst, j->out, j->out_len);
     dst->dirty = 0;
 
     windows_split_vertical();
@@ -298,8 +252,8 @@ static void cmd_translate(const char *args) {
     const char *src_ft = (src->filetype && *src->filetype) ? src->filetype
                                                             : "txt";
     j->src_filetype = strdup(src_ft);
-    j->src_base     = strdup(basename_of(src->filename ? src->filename
-                                                       : src->title));
+    j->src_base     = strdup(fs_path_basename(src->filename ? src->filename
+                                                            : src->title));
     if (!j->src_filetype || !j->src_base) {
         free(in_text); job_free(j);
         ed_set_status_message("translate: OOM");

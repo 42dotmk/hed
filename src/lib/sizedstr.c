@@ -101,3 +101,14 @@ char *sstr_to_cstr(const SizedStr *s) {
     result[s->len] = '\0';
     return result;
 }
+
+void sstr_append_shell_quoted(SizedStr *s, const char *in) {
+    sstr_append_char(s, '\'');
+    for (const char *p = in; p && *p; p++) {
+        if (*p == '\'')
+            sstr_append(s, "'\\''", 4);
+        else
+            sstr_append_char(s, *p);
+    }
+    sstr_append_char(s, '\'');
+}

@@ -335,20 +335,8 @@ static void colon_on_submit(Prompt *p, const char *line, int len) {
     (void)p;
     if (len == 0) return; /* dispatcher will close */
 
-    /* Parse "name args" — split on first space (in a stack copy so we
-     * don't mutate p->buf, since commands may want to read the full line). */
-    char work[PROMPT_BUF_CAP];
-    if (len >= (int)sizeof(work)) len = (int)sizeof(work) - 1;
-    memcpy(work, line, (size_t)len);
-    work[len] = '\0';
-
-    char *space    = strchr(work, ' ');
-    char *cmd_name = work;
-    char *cmd_args = NULL;
-    if (space) { *space = '\0'; cmd_args = space + 1; }
-
-    log_msg(":%s%s%s", cmd_name, cmd_args ? " " : "", cmd_args ? cmd_args : "");
-    if (!command_execute(cmd_name, cmd_args)) {
+    log_msg(":%s", line);
+    if (!command_execute_line(line)) {
         ed_set_status_message("Unknown command: %s", line);
         return;
     }

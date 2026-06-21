@@ -5,27 +5,17 @@ EdError session_save(const char *path) {
     if (!path || !*path) return ED_ERR_INVALID_INDEX;
 
     /* Compose the whole session into one buffer, then write atomically. */
-    size_t cap = 0, len = 0;
-    char  *txt = NULL;
+    SizedStr txt = sstr_new();
     for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         const Buffer *b = &E.buffers[i];
         if (!b->filename || !*b->filename) continue;
-        size_t need = 2 + strlen(b->filename) + 2;
-        if (len + need > cap) {
-            cap = cap ? cap * 2 : 1024;
-            while (len + need > cap) cap *= 2;
-            char *n = realloc(txt, cap);
-            if (!n) { free(txt); return ED_ERR_NOMEM; }
-            txt = n;
-        }
-        const char *prefix = ((int)i == E.current_buffer) ? "* " : "  ";
-        int w = snprintf(txt + len, cap - len, "%s%s\n", prefix, b->filename);
-        if (w < 0) { free(txt); return ED_ERR_FILE_WRITE; }
-        len += (size_t)w;
+        sstr_append(&txt, ((int)i == E.current_buffer) ? "* " : "  ", 2);
+        sstr_append(&txt, b->filename, strlen(b->filename));
+        sstr_append_char(&txt, '\n');
     }
 
-    EdError err = fs_file_write_atomic(path, txt ? txt : "", len);
-    free(txt);
+    EdError err = fs_file_write_atomic(path, txt.data ? txt.data : "", txt.len);
+    sstr_free(&txt);
     return err == ED_OK ? ED_OK : ED_ERR_INVALID_INDEX;
 }
 

@@ -60,6 +60,14 @@ bool fs_path_cache_for_cwd(const char *name, char *out, size_t out_sz);
 /* Filetype tag from filename. Returned string is malloc'd. */
 char *fs_path_detect_filetype(const char *path);
 
+/* Walk upward from `start` looking for a directory that contains any of
+ * the NULL-terminated `markers` (e.g. {".git", "Cargo.toml", NULL}).
+ * If `start` is a regular file, begins at its parent directory. On
+ * success writes the directory to `out` and returns true; returns false
+ * if no marker is found up to the filesystem root. */
+bool fs_find_root_marker(const char *start, const char *const *markers,
+                         char *out, size_t out_sz);
+
 /* =====================================================================
  * Queries — predicates that hit the filesystem.
  * ===================================================================== */

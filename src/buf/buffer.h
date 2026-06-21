@@ -75,6 +75,17 @@ Buffer *buf_cur(void);
 
 /* Buffer creation and management - all return EdError */
 EdError buf_new(const char *filename, int *out_idx);
+
+/* Create an unnamed scratch buffer titled `title` (filename = NULL,
+ * dirty = 0); `title` may be NULL. Index returned via *out_idx. */
+EdError buf_new_scratch(const char *title, int *out_idx);
+
+/* Create a read-only buffer titled `title` (filetype optional),
+ * populated from `text` (len bytes, split into rows). dirty = 0,
+ * readonly = 1. Index returned via *out_idx. */
+EdError buf_open_readonly(const char *title, const char *filetype,
+                          const char *text, size_t len, int *out_idx);
+
 EdError buf_close(int index);
 EdError buf_switch(int index);
 EdError buf_open_file(const char *filename, Buffer **out);

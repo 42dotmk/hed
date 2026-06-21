@@ -53,9 +53,7 @@ static void cmd_fmt(const char *args) {
     char cmd_str[1536];
     snprintf(cmd_str, sizeof(cmd_str), tmpl, esc_path);
 
-    disable_raw_mode();
-    int status = system(cmd_str);
-    enable_raw_mode();
+    int status = term_cmd_run_interactive(cmd_str, false);
 
     if (status != 0) {
         ed_set_status_message("fmt: formatter exited with status %d", status);

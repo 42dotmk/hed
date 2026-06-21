@@ -31,7 +31,6 @@
 #include <sys/stat.h>
 
 /* Defined in src/buf/buffer.c, not exposed in buffer.h. */
-void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 #define AUTOSAVE_IDLE_MS    3000
 #define AUTOSAVE_MAX_BYTES  (10 * 1024 * 1024)
@@ -83,25 +82,6 @@ static int autosave_mkdir_parent(const char *path) {
     return ok ? 0 : -1;
 }
 
-/* ---------- buffer text builder ---------- */
-
-static char *autosave_build_text(const Buffer *buf, size_t *out_len) {
-    size_t total = 0;
-    for (int i = 0; i < buf->num_rows; i++)
-        total += buf->rows[i].chars.len + 1;
-    char *s = malloc(total + 1);
-    if (!s) return NULL;
-    size_t off = 0;
-    for (int i = 0; i < buf->num_rows; i++) {
-        memcpy(s + off, buf->rows[i].chars.data, buf->rows[i].chars.len);
-        off += buf->rows[i].chars.len;
-        s[off++] = '\n';
-    }
-    s[off] = '\0';
-    if (out_len) *out_len = off;
-    return s;
-}
-
 /* ---------- atomic write ---------- */
 
 static int autosave_atomic_write(const char *path, const char *data, size_t n) {
@@ -116,7 +96,7 @@ static void autosave_write_buf(Buffer *buf) {
     if (!buf->dirty) return;
 
     size_t n;
-    char *text = autosave_build_text(buf, &n);
+    char *text = buf_to_text(buf, &n);
     if (!text) return;
     if (n > AUTOSAVE_MAX_BYTES) {
         log_msg("autosave: skip %s (%zu bytes > %d cap)",

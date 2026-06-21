@@ -82,19 +82,6 @@ static int extract_target_under_cursor(SizedStr *out) {
     return out->data && out->len > 0;
 }
 
-/* Append `s` to `dst` single-quoted and safe for /bin/sh. */
-static void append_shell_quoted(SizedStr *dst, const char *s) {
-    sstr_cat(dst, "'");
-    for (const char *p = s; *p; p++) {
-        if (*p == '\'') {
-            sstr_cat(dst, "'\\''");
-        } else {
-            sstr_append_char(dst, (unsigned char)*p);
-        }
-    }
-    sstr_cat(dst, "'");
-}
-
 void open_path(const char *target) {
     if (!target || !*target) {
         ed_set_status_message("open: nothing to open");
@@ -102,7 +89,7 @@ void open_path(const char *target) {
     }
     SizedStr cmd = sstr_new();
     sstr_cat(&cmd, OPEN_CMD " ");
-    append_shell_quoted(&cmd, target);
+    sstr_append_shell_quoted(&cmd, target);
     sstr_cat(&cmd, " >/dev/null 2>&1 &");
     /* Background — fire and forget; don't block the editor on viewer
      * startup. system() is fine here, no raw-mode dance needed. */

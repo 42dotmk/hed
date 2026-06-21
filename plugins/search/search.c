@@ -31,54 +31,29 @@ static void cmd_shq(const char *args) {
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "%s 2>/dev/null", args);
 
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
+    char **lines = NULL;
+    int    n     = 0;
+    if (!term_cmd_capture(cmd, &lines, &n)) {
         ed_set_status_message("shq: failed to run");
         return;
     }
 
     qf_clear(&E.qf);
-    char line[2048];
     int added = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        /* Try parse as file:line:col:text */
+    for (int i = 0; i < n; i++) {
+        /* Try parse as file:line:col:text (lines are newline-stripped). */
         char tmp[2048];
-        snprintf(tmp, sizeof(tmp), "%s", line);
-        char *p1 = strchr(tmp, ':');
-        if (p1) {
-            *p1 = '\0';
-            char *file = tmp;
-            char *p2 = strchr(p1 + 1, ':');
-            if (p2) {
-                *p2 = '\0';
-                int lno = atoi(p1 + 1);
-                char *p3 = strchr(p2 + 1, ':');
-                int col = 1;
-                char *text = NULL;
-                if (p3) {
-                    *p3 = '\0';
-                    col = atoi(p2 + 1);
-                    text = p3 + 1;
-                } else {
-                    col = atoi(p2 + 1);
-                    text = "";
-                }
-                size_t tl = strlen(text);
-                if (tl && (text[tl - 1] == '\n' || text[tl - 1] == '\r'))
-                    text[--tl] = '\0';
-                qf_add(&E.qf, file, lno, col, text);
-                added++;
-                continue;
-            }
+        snprintf(tmp, sizeof(tmp), "%s", lines[i]);
+        char *file; int lno, col; const char *text;
+        if (qf_parse_grep_line(tmp, &file, &lno, &col, &text)) {
+            qf_add(&E.qf, file, lno, col, text);
+        } else {
+            /* Plain line -> text-only quickfix item */
+            qf_add(&E.qf, NULL, 0, 0, lines[i]);
         }
-        /* Plain line -> text-only quickfix item */
-        size_t ll = strlen(line);
-        if (ll && (line[ll - 1] == '\n' || line[ll - 1] == '\r'))
-            line[--ll] = '\0';
-        qf_add(&E.qf, NULL, 0, 0, line);
         added++;
     }
-    pclose(fp);
+    term_cmd_free(lines, n);
 
     if (added > 0) {
         qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
@@ -125,26 +100,10 @@ static void cmd_ssearch(const char *args) {
         snprintf(tmp, sizeof(tmp), "%s", sel[0]);
         fzf_free(sel, cnt);
 
-        char *p1 = strchr(tmp, ':');
-        if (!p1) {
+        int lno, col;
+        if (!qf_parse_grep_line(tmp, NULL, &lno, &col, NULL)) {
             ed_set_status_message("ssearch: invalid");
             return;
-        }
-        *p1 = '\0'; /* file (unused, current file) */
-
-        char *p2 = strchr(p1 + 1, ':');
-        if (!p2) {
-            ed_set_status_message("ssearch: invalid");
-            return;
-        }
-        *p2 = '\0';
-        int lno = atoi(p1 + 1);
-
-        char *p3 = strchr(p2 + 1, ':');
-        int col = 1;
-        if (p3) {
-            *p3 = '\0';
-            col = atoi(p2 + 1);
         }
 
         Window *win = window_cur();
@@ -168,24 +127,10 @@ static void cmd_ssearch(const char *args) {
         char tmp[1024];
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
 
-        char *p1 = strchr(tmp, ':');
-        if (!p1)
+        int lno, col; const char *text;
+        if (!qf_parse_grep_line(tmp, NULL, &lno, &col, &text))
             continue;
-        *p1 = '\0'; /* file (we know it's the current file) */
-
-        char *p2 = strchr(p1 + 1, ':');
-        if (!p2)
-            continue;
-        *p2 = '\0';
-        int lno = atoi(p1 + 1);
-
-        char *p3 = strchr(p2 + 1, ':');
-        if (!p3)
-            continue;
-        *p3 = '\0';
-        int col = atoi(p2 + 1);
-
-        const char *text = p3 + 1;
+        /* file field is always the current file here */
         qf_add(&E.qf, buf->filename, lno, col, text);
     }
     fzf_free(sel, cnt);
@@ -255,32 +200,16 @@ static void cmd_rg(const char *args) {
         snprintf(tmp, sizeof(tmp), "%s", sel[0]);
         fzf_free(sel, cnt);
 
-        char *p1 = strchr(tmp, ':');
-        if (!p1) {
+        char *file; int lno, col; const char *text;
+        if (!qf_parse_grep_line(tmp, &file, &lno, &col, &text)) {
             ed_set_status_message("rg: invalid selection");
             return;
         }
-        *p1 = '\0';
-        char *file = tmp;
-        char *p2 = strchr(p1 + 1, ':');
-        if (!p2) {
-            ed_set_status_message("rg: invalid selection");
-            return;
-        }
-        *p2 = '\0';
-        int lno = atoi(p1 + 1);
-        char *p3 = strchr(p2 + 1, ':');
-        if (!p3) {
-            ed_set_status_message("rg: invalid selection");
-            return;
-        }
-        *p3 = '\0';
-        int col = atoi(p2 + 1);
 
         qf_clear(&E.qf);
         E.qf.sel = 0;
         E.qf.scroll = 0;
-        qf_add(&E.qf, file, lno, col, p3 + 1);
+        qf_add(&E.qf, file, lno, col, text);
         qf_open_selected(&E.qf);
         ed_set_status_message("rg: opened %s:%d:%d", file, lno, col);
         return;
@@ -291,22 +220,10 @@ static void cmd_rg(const char *args) {
     for (int i = 0; i < cnt; i++) {
         char tmp[1024];
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
-        char *p1 = strchr(tmp, ':');
-        if (!p1)
+        char *file; int lno, col; const char *text;
+        if (!qf_parse_grep_line(tmp, &file, &lno, &col, &text))
             continue;
-        *p1 = '\0';
-        char *file = tmp;
-        char *p2 = strchr(p1 + 1, ':');
-        if (!p2)
-            continue;
-        *p2 = '\0';
-        int lno = atoi(p1 + 1);
-        char *p3 = strchr(p2 + 1, ':');
-        if (!p3)
-            continue;
-        *p3 = '\0';
-        int col = atoi(p2 + 1);
-        qf_add(&E.qf, file, lno, col, p3 + 1);
+        qf_add(&E.qf, file, lno, col, text);
     }
     fzf_free(sel, cnt);
 

@@ -29,16 +29,11 @@ static int find_tags_file(char *out_path, size_t size) {
     }
 
     /* Try buffer's directory if available */
-    if (buf && buf->filename) {
-        char *last_slash = strrchr(buf->filename, '/');
-        if (last_slash) {
-            size_t dir_len = last_slash - buf->filename;
-            if (dir_len + 6 < size) { /* +6 for "/tags\0" */
-                memcpy(out_path, buf->filename, dir_len);
-                strcpy(out_path + dir_len, "/tags");
-                if (fs_is_file(out_path)) return 1;
-            }
-        }
+    if (buf && buf->filename && strchr(buf->filename, '/')) {
+        char dir[1024];
+        fs_path_dirname_buf(buf->filename, dir, sizeof(dir));
+        if (fs_path_join(out_path, size, dir, "tags") && fs_is_file(out_path))
+            return 1;
     }
 
     /* Try plain "tags" in current directory */

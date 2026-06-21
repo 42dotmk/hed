@@ -1,4 +1,5 @@
 #include "utils/fold.h"
+#include "buf/buffer.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -178,4 +179,14 @@ void fold_clear_all(FoldList *list) {
     if (!list)
         return;
     list->count = 0;
+}
+
+void fold_reset_buffer(struct Buffer *buf) {
+    if (!buf)
+        return;
+    fold_clear_all(&buf->folds);
+    for (int i = 0; i < buf->num_rows; i++) {
+        buf->rows[i].fold_start = false;
+        buf->rows[i].fold_end   = false;
+    }
 }

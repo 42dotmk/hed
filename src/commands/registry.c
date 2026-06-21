@@ -44,6 +44,21 @@ int command_execute(const char *name, const char *args) {
     return 0;
 }
 
+int command_execute_line(const char *line) {
+    if (!line) return 0;
+    while (*line == ' ' || *line == '\t' || *line == ':') line++;
+    if (!*line) return 0;
+
+    char name[128];
+    size_t ni = 0;
+    while (*line && *line != ' ' && *line != '\t' && ni + 1 < sizeof(name))
+        name[ni++] = *line++;
+    name[ni] = '\0';
+    while (*line == ' ' || *line == '\t') line++;
+
+    return command_execute(name, *line ? line : NULL);
+}
+
 int command_invoke(const char *name, const char *args) {
     return command_execute(name, args);
 }

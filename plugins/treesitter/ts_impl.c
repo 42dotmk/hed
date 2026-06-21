@@ -431,11 +431,13 @@ int ts_buffer_autoload(Buffer *buf) {
         return 0;
     const char *want = NULL;
 
-    /* Detect by extension */
-    const char *ext = strrchr(buf->filename, '.');
-    if (ext && ext[1]) {
-        ext++;
-
+    /* Detect by extension. NOTE: the map targets tree-sitter grammar
+     * names (c-sharp, commonlisp, typescript, …), which intentionally
+     * differ from the filetype strings fs_path_detect_filetype yields —
+     * so it stays a local table, but the extension itself comes from the
+     * shared, basename-aware fs_path_extension. */
+    const char *ext = fs_path_extension(buf->filename);
+    if (*ext) {
         if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
             want = "c";
         else if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
@@ -480,9 +482,11 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "markdown";
     }
 
-    if (!want && (strcmp(buf->filename, "makefile") == 0 ||
-                  strcmp(buf->filename, "Makefile") == 0))
-        want = "make";
+    if (!want) {
+        const char *base = fs_path_basename(buf->filename);
+        if (strcmp(base, "makefile") == 0 || strcmp(base, "Makefile") == 0)
+            want = "make";
+    }
 
     if (!want)
         return 0;
