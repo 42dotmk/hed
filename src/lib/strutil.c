@@ -190,6 +190,23 @@ static size_t utf8_decode_char(const unsigned char *p, size_t remaining,
     return 0;
 }
 
+/* wcwidth() with a fallback for codepoints the libc tables don't know
+ * (locale without width data, or emoji newer than the libc). Unknown
+ * printable codepoints in the emoji planes are almost certainly drawn
+ * two columns wide by the terminal; everything else printable gets one.
+ * Treating them as zero (the old clamp) made the cursor drift left of
+ * every emoji the terminal drew. */
+static int wc_display_width(wchar_t wc) {
+    int w = wcwidth(wc);
+    if (w >= 0)
+        return w;
+    if (wc < 0x20 || wc == 0x7F)
+        return 0; /* control */
+    if (wc >= 0x1F300 && wc <= 0x1FAFF)
+        return 2; /* emoji blocks (misc symbols & pictographs … ext-A) */
+    return 1;
+}
+
 int utf8_char_width(const char *str, size_t byte_len, int *out_adv) {
     if (!str || byte_len == 0) {
         if (out_adv)
@@ -204,9 +221,7 @@ int utf8_char_width(const char *str, size_t byte_len, int *out_adv) {
             *out_adv = 1;
         return 1;
     }
-    int w = wcwidth(wc);
-    if (w < 0)
-        w = 0; /* combining / control: zero width */
+    int w = wc_display_width(wc);
     if (out_adv)
         *out_adv = (int)char_len;
     return w;
@@ -229,13 +244,7 @@ int utf8_display_width(const char *str, size_t byte_len) {
             total_width += 1;
             i += 1;
         } else {
-            /* Valid character: use wcwidth() */
-            int w = wcwidth(wc);
-            if (w < 0) {
-                /* Control character or non-printable: treat as 0 width */
-                w = 0;
-            }
-            total_width += w;
+            total_width += wc_display_width(wc);
             i += char_len;
         }
     }
@@ -273,8 +282,7 @@ void utf8_slice_by_columns(const char *str, size_t byte_len, int start_col,
             char_width = 1;
             char_len = 1;
         } else {
-            int w = wcwidth(wc);
-            char_width = (w < 0) ? 0 : w;
+            char_width = wc_display_width(wc);
         }
 
         /* Check if we've reached the start column */

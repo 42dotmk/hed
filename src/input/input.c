@@ -68,6 +68,12 @@ int ed_parse_key_from_fd(int fd) {
                 case 'S': key = KEY_F4; break;
                 case 'H': key = KEY_HOME; break;
                 case 'F': key = KEY_END; break;
+                /* Application cursor mode (DECCKM) arrows — sent by
+                 * tmux send-keys and some terminals over ssh. */
+                case 'A': key = KEY_ARROW_UP; break;
+                case 'B': key = KEY_ARROW_DOWN; break;
+                case 'C': key = KEY_ARROW_RIGHT; break;
+                case 'D': key = KEY_ARROW_LEFT; break;
                 default:  key = '\x1b'; break;
                 }
             }

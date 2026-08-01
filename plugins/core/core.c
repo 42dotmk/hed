@@ -71,6 +71,72 @@ static void cmd_goto(const char *args) {
     }
 }
 
+/* :pos — move the cursor to an absolute offset in the buffer (0-based,
+ * newlines count as one). By default the offset is counted in UTF-8
+ * codepoints; a `b` suffix (`:pos 120b`) counts raw bytes instead —
+ * handy for byte offsets reported by compilers and LSP servers. In
+ * byte mode the cursor snaps back to the start of the enclosing
+ * codepoint. Out-of-range offsets clamp to the end of the buffer. */
+static void cmd_pos(const char *args) {
+    if (!args || !*args) {
+        ed_set_status_message("Usage: :pos <char-offset> | <byte-offset>b");
+        return;
+    }
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || buf->num_rows == 0) return;
+
+    while (*args == ' ' || *args == '\t') args++;
+    char *end;
+    long pos = strtol(args, &end, 10);
+    int bytes = 0;
+    if (*end == 'b' || *end == 'B') { bytes = 1; end++; }
+    while (*end == ' ' || *end == '\t') end++;
+    if (end == args || *end != '\0' || pos < 0) {
+        ed_set_status_message(":pos: invalid offset '%s'", args);
+        return;
+    }
+
+    long remaining = pos;
+    for (int y = 0; y < buf->num_rows; y++) {
+        const StrBuf *chars = &buf->rows[y].chars;
+        if (bytes) {
+            if (remaining <= (long)chars->len) {
+                size_t x = (size_t)remaining;
+                /* Snap back to the start of the enclosing codepoint. */
+                while (x > 0 && (chars->data[x] & 0xC0) == 0x80) x--;
+                win->cursor.y = y;
+                win->cursor.x = (int)x;
+                return;
+            }
+            remaining -= (long)chars->len + 1; /* +1 for the newline */
+            continue;
+        }
+        size_t x = 0;
+        while (x < chars->len) {
+            if (remaining == 0) {
+                win->cursor.y = y;
+                win->cursor.x = (int)x;
+                return;
+            }
+            int adv;
+            utf8_char_width(chars->data + x, chars->len - x, &adv);
+            x += (size_t)(adv > 0 ? adv : 1);
+            remaining--;
+        }
+        if (remaining == 0) { /* end of line: the newline position */
+            win->cursor.y = y;
+            win->cursor.x = (int)chars->len;
+            return;
+        }
+        remaining--; /* consume the newline */
+    }
+
+    /* Past the end: clamp to the end of the buffer. */
+    win->cursor.y = buf->num_rows - 1;
+    win->cursor.x = (int)buf->rows[win->cursor.y].chars.len;
+}
+
 /* :vt-demo [text] — toggle a demo virtual-text suffix on the current
  * row. With no arg, the second invocation clears it. With an arg, the
  * suffix is replaced and re-shown. Useful for poking the renderer
@@ -178,6 +244,41 @@ static void cmd_modeless(const char *args) {
     ed_set_status_message("modeless: %s", target ? "on" : "off");
 }
 
+/* :ftmap <ext|basename> <filetype> — session-only extension → filetype
+ * mapping (last-write-wins over the built-in table). Open buffers whose
+ * detected filetype changes are re-announced via HOOK_BUFFER_OPEN so
+ * highlighters and fold defaults pick up the new filetype. For a
+ * persistent mapping, call fs_filetype_register() from
+ * ~/.config/hed/config.c instead. */
+static void cmd_ftmap(const char *args) {
+    char key[64], ft[64];
+    if (!args || sscanf(args, "%63s %63s", key, ft) != 2) {
+        ed_set_status_message("Usage: :ftmap <ext|basename> <filetype>");
+        return;
+    }
+    fs_filetype_register(key, ft);
+    int updated = 0;
+    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
+        Buffer *buf = &E.buffers[i];
+        if (!buf->filename)
+            continue;
+        char *detected = fs_path_detect_filetype(buf->filename);
+        if (!detected)
+            continue;
+        if (buf->filetype && strcmp(buf->filetype, detected) == 0) {
+            free(detected);
+            continue;
+        }
+        free(buf->filetype);
+        buf->filetype = detected;
+        HookBufferEvent ev = {.buf = buf, .filename = buf->filename};
+        hook_fire_buffer(HOOK_BUFFER_OPEN, &ev);
+        updated++;
+    }
+    ed_set_status_message("ftmap: %s -> %s (%d buffer%s updated)",
+                          key, ft, updated, updated == 1 ? "" : "s");
+}
+
 static void cmd_log(const char *args) {
     (void)args;
     const char *path = log_path();
@@ -259,7 +360,9 @@ static void register_commands(void) {
     cmd("foldupdate", cmd_foldupdate, "update folds");
     cmd("plugins",  cmd_plugins,  "list loaded plugins");
     cmd("goto",     cmd_goto,     "goto <line> | <motion> [count]");
+    cmd("pos",      cmd_pos,      "pos <char-offset> | <byte-offset>b — jump to absolute position (UTF-8 aware)");
     cmd("modeless", cmd_modeless, "modeless on|off|toggle");
+    cmd("ftmap",    cmd_ftmap,    "map extension/basename to filetype (session only)");
     cmd("vt-demo",       cmd_vt_demo,       "toggle demo EOL virtual text on current line");
     cmd("vt-demo-block", cmd_vt_demo_block, "toggle demo BLOCK_BELOW rows (use | as row separator)");
 }

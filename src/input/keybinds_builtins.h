@@ -108,6 +108,7 @@ int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
 /* Note: kb_change_word removed - now handled by operator + text object system */
 void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
 void kb_replace_char(void); /* Replace char under cursor with next typed char (r) */
+void kb_visual_replace_char(void); /* Replace every char of the selection (visual r) */
 
 /* Fold operations */
 void kb_fold_toggle(void);    /* za - Toggle fold at cursor */

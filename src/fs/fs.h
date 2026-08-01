@@ -67,8 +67,20 @@ const char *fs_uri_to_path(const char *uri);
  * The cwd is encoded by replacing '/' with '%'. */
 bool fs_path_cache_for_cwd(const char *name, char *out, size_t out_sz);
 
-/* Filetype tag from filename. Returned string is malloc'd. */
+/* Filetype tag from filename. Returned string is malloc'd. User
+ * registrations (fs_filetype_register) win over the built-in table. */
 char *fs_path_detect_filetype(const char *path);
+
+/* Map an extension ("zig", ".jsx") or exact basename ("CMakeLists.txt")
+ * to a filetype. Last-write-wins: re-registering a key replaces the
+ * earlier mapping. Call from config for persistent mappings, or via
+ * :ftmap for the current session. */
+void fs_filetype_register(const char *key, const char *filetype);
+
+/* The user-registered filetype for `path` (basename match wins over
+ * extension match), or NULL if none registered. Pointer stays owned by
+ * the registry — do not free. */
+const char *fs_filetype_registered(const char *path);
 
 /* Walk upward from `start` looking for a directory that contains any of
  * the NULL-terminated `markers` (e.g. {".git", "Cargo.toml", NULL}).

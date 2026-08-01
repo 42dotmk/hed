@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -275,6 +276,13 @@ static void open_pipe_buffer(void) {
 /* Entry point                                                               */
 
 int main(int argc, char *argv[]) {
+    /* Without this the process stays in the "C" locale, where wcwidth()
+     * returns -1 for every non-ASCII codepoint — emoji and accented
+     * characters would be measured as zero columns and the cursor would
+     * drift left of where the terminal actually drew it. */
+    if (!setlocale(LC_CTYPE, ""))
+        setlocale(LC_CTYPE, "C.UTF-8");
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("hed %s\n", HED_VERSION);

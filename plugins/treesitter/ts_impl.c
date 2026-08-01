@@ -408,6 +408,16 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     return 1;
 }
 
+/* Filetype string (as fs_path_detect_filetype yields) → tree-sitter
+ * grammar name. Falls back to the filetype verbatim, which is right
+ * for most grammars (zig, go, lua, ...). */
+static const char *ts_grammar_for_filetype(const char *ft) {
+    if (strcmp(ft, "csharp") == 0)   return "c-sharp";
+    if (strcmp(ft, "shell") == 0)    return "bash";
+    if (strcmp(ft, "Makefile") == 0) return "make";
+    return ft;
+}
+
 int ts_buffer_autoload(Buffer *buf) {
     if (!buf || !buf->filename)
         return 0;
@@ -416,13 +426,20 @@ int ts_buffer_autoload(Buffer *buf) {
         return 0;
     const char *want = NULL;
 
+    /* User filetype overrides (config fs_filetype_register / :ftmap)
+     * beat the built-in extension table, so remapping e.g. ".h" to
+     * "cpp" switches the grammar too. */
+    const char *user_ft = fs_filetype_registered(buf->filename);
+    if (user_ft)
+        want = ts_grammar_for_filetype(user_ft);
+
     /* Detect by extension. NOTE: the map targets tree-sitter grammar
      * names (c-sharp, commonlisp, typescript, …), which intentionally
      * differ from the filetype strings fs_path_detect_filetype yields —
      * so it stays a local table, but the extension itself comes from the
      * shared, basename-aware fs_path_extension. */
     const char *ext = fs_path_extension(buf->filename);
-    if (*ext) {
+    if (!want && *ext) {
         if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
             want = "c";
         else if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||

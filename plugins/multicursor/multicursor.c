@@ -8,16 +8,16 @@
  * ` mj`/` mk` (:mc_jump_next/:mc_jump_prev) cycle the active cursor
  * through the set without dropping any.
  *
- * Extra cursors are passive markers by default: you move and edit with
- * the active cursor only, while the others hold their positions (core
- * auto-shifts them when edits land before them). Turning sync on
- * (:mc_sync, ` ms`) enables synchronized editing: every keypress runs
- * the full per-mode dispatch once per cursor — sorted descending by
- * (y,x) so an edit at a later position doesn't shift the column of an
- * unprocessed cursor. The pre-keypress mode + key-sequence state is
- * restored between cursors so multi-key sequences (operators, leaders)
- * and mode changes (i/a/o/Esc) replicate at every cursor instead of
- * being half-consumed by the first.
+ * Synchronized editing is on by default: every keypress runs the full
+ * per-mode dispatch once per cursor — sorted descending by (y,x) so an
+ * edit at a later position doesn't shift the column of an unprocessed
+ * cursor. The pre-keypress mode + key-sequence state is restored
+ * between cursors so multi-key sequences (operators, leaders) and mode
+ * changes (i/a/o/Esc) replicate at every cursor instead of being
+ * half-consumed by the first. Turning sync off (:mc_sync, ` ms`) makes
+ * extra cursors passive markers: you move and edit with the active
+ * cursor only, while the others hold their positions (core auto-shifts
+ * them when edits land before them).
  *
  * Cursor sets are per (buffer, window) pair — core parks and restores
  * them as focus moves (see buf_cursors_bind_window). */
@@ -33,13 +33,18 @@
  * doesn't recurse on the per-cursor dispatch. */
 static int in_replay = 0;
 
-/* Synchronized-edit switch (:mc_sync / ` ms`). Off by default: extra
- * cursors are passive markers and every keypress applies to the active
- * cursor only. On: keypresses replay at every cursor. */
-static int mc_sync = 0;
+/* Synchronized-edit switch (:mc_sync / ` ms`). On by default: every
+ * keypress replays at every cursor. Off: extra cursors are passive
+ * markers and every keypress applies to the active cursor only. */
+static int mc_sync = 1;
 
 /* :mc_debug toggles a verbose log_msg trace of every dispatch. */
 static int mc_debug = 0;
+
+static int mode_is_visual(int mode) {
+    return mode == MODE_VISUAL || mode == MODE_VISUAL_LINE ||
+           mode == MODE_VISUAL_BLOCK;
+}
 
 static int cursor_pos_cmp_desc(const void *a, const void *b) {
     const Cursor *ca = *(const Cursor *const *)a;
@@ -82,6 +87,13 @@ static void on_keypress(HookKeyEvent *event) {
      * would type each char N times. Modals (dired/lsp/selectlist) also
      * route keys globally; replaying makes no sense there either. */
     if (prompt_active() || winmodal_current() != NULL) return;
+
+    /* The selection is global too (one anchor per window, not per
+     * cursor) — replaying a visual-mode key re-anchors it at every
+     * cursor, leaving the anchor wherever the last replay ran. That
+     * turned `v` + motion + <C-n> into a bogus multi-line selection.
+     * Dispatch normally at the active cursor only. */
+    if (mode_is_visual(E.mode)) return;
 
     int n = buf_cursor_count(buf);
     Cursor *original_active = buf->cursor;
@@ -163,6 +175,15 @@ static void on_keypress(HookKeyEvent *event) {
      * here instead of replaying the toggle at every cursor, which
      * would flip it right back. */
     if (!mc_sync) {
+        free(all);
+        event->consumed = 1;
+        return;
+    }
+
+    /* The dispatch entered a visual mode (v / V / C-v) — replaying it
+     * would re-anchor the global selection at every extra cursor (see
+     * the bail-out above). One anchor at the active cursor is right. */
+    if (mode_is_visual(E.mode)) {
         free(all);
         event->consumed = 1;
         return;
@@ -402,6 +423,14 @@ static void kb_mc_add_next_match(void) {
     int sy, sx, ex;
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
 
+    /* Preserve the cursor's offset inside the word / selection so the
+     * new cursor lands at the same relative position in the match —
+     * synced edits then line up at every cursor instead of the new
+     * one acting from the start of the word. */
+    int off = win->cursor.x - sx;
+    if (off < 0) off = 0;
+    if (off > (int)q.len - 1) off = (int)q.len - 1;
+
     /* Search from one past the end of the current word / selection so
      * the occurrence at the cursor isn't matched again. */
     int my, mx;
@@ -413,7 +442,7 @@ static void kb_mc_add_next_match(void) {
 
     mc_seed_search(&q);
     strbuf_free(&q);
-    mc_activate_match(buf, win, my, mx);
+    mc_activate_match(buf, win, my, mx + off);
 }
 
 /* Mirror of kb_mc_add_next_match walking backward — leaves a cursor at
@@ -430,6 +459,11 @@ static void kb_mc_add_prev_match(void) {
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
     (void)ex;
 
+    /* Same relative-position rule as kb_mc_add_next_match. */
+    int off = win->cursor.x - sx;
+    if (off < 0) off = 0;
+    if (off > (int)q.len - 1) off = (int)q.len - 1;
+
     /* Search backward from the start of the current word / selection
      * so we look for an earlier occurrence, not this one again. */
     int my, mx;
@@ -441,7 +475,7 @@ static void kb_mc_add_prev_match(void) {
 
     mc_seed_search(&q);
     strbuf_free(&q);
-    mc_activate_match(buf, win, my, mx);
+    mc_activate_match(buf, win, my, mx + off);
 }
 
 /* '*: put a cursor at every occurrence of the word under cursor
@@ -460,6 +494,13 @@ static void kb_mc_match_all(void) {
     int sy, sx, ex;
     if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
     (void)ex;
+
+    /* Same relative-position rule as kb_mc_add_next_match — every
+     * cursor sits at this offset inside its match, so the active one
+     * stays put and synced edits line up. */
+    int off = win->cursor.x - sx;
+    if (off < 0) off = 0;
+    if (off > (int)q.len - 1) off = (int)q.len - 1;
 
     McPos *matches = NULL;
     for (int y = 0; y < buf->num_rows; y++) {
@@ -509,17 +550,17 @@ static void kb_mc_match_all(void) {
     /* Rebuild the cursor set: one cursor per match, nothing else. */
     buf_cursor_clear_extras(buf);
     buf->cursor->y = matches[active].y;
-    buf->cursor->x = matches[active].x;
+    buf->cursor->x = matches[active].x + off;
     int oom = 0;
     for (int i = 0; i < n; i++) {
         if (i == active) continue;
-        if (!buf_cursor_add(buf, matches[i].y, matches[i].x)) {
+        if (!buf_cursor_add(buf, matches[i].y, matches[i].x + off)) {
             oom = 1;
             break;
         }
     }
     win->cursor.y = matches[active].y;
-    win->cursor.x = matches[active].x;
+    win->cursor.x = matches[active].x + off;
     arrfree(matches);
 
     if (E.mode == MODE_VISUAL) {

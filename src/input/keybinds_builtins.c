@@ -20,6 +20,7 @@
 #include <string.h>
 #include "lib/strutil.h"
 #include "buf/buf_helpers.h"
+#include "utils/undo.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -1063,6 +1064,108 @@ void kb_replace_char(void) {
     row->chars.data[win->cursor.x] = (char)c;
     buf_row_update(row);
     buf->dirty++;
+    ed_set_status_message("");
+}
+
+/* Replace the codepoints in byte range [xs, xe) of row y with one `rc`
+ * each. Multi-byte characters collapse to the single replacement byte;
+ * a char only partially inside the range is still replaced whole. */
+static void replace_row_span(Buffer *buf, int y, int xs, int xe, char rc) {
+    if (y < 0 || y >= buf->num_rows)
+        return;
+    Row *row = &buf->rows[y];
+    int len = (int)row->chars.len;
+    if (xs < 0)
+        xs = 0;
+    if (xe > len)
+        xe = len;
+    if (xs >= xe)
+        return;
+    undo_record_replace(buf, y);
+    StrBuf nb = strbuf_new();
+    strbuf_append(&nb, row->chars.data, (size_t)xs);
+    int i = xs;
+    while (i < xe) {
+        int adv = 1;
+        utf8_char_width(row->chars.data + i, (size_t)(len - i), &adv);
+        if (adv < 1)
+            adv = 1;
+        strbuf_append_char(&nb, rc);
+        i += adv;
+    }
+    /* i is the first codepoint boundary at or past xe — starting the
+     * suffix there keeps a partially-covered multi-byte char whole. */
+    strbuf_append(&nb, row->chars.data + i, (size_t)(len - i));
+    strbuf_free(&row->chars);
+    row->chars = nb;
+    buf_row_update(row);
+    buf->dirty++;
+}
+
+/* Visual-mode r: replace every character of the selection with the next
+ * typed char (char-wise, line-wise and block-wise). Line breaks are
+ * preserved; the cursor lands on the start of the selection. */
+void kb_visual_replace_char(void) {
+    ASSERT_EDIT(buf, win)
+    if (buf->num_rows == 0)
+        return;
+
+    ed_set_status_message("r: char?");
+    int c = ed_read_key();
+
+    if (c == '\x1b') {
+        ed_set_status_message("");
+        return;
+    }
+    if (c == '\r' || c == '\n') {
+        ed_set_status_message("Cannot replace with newline");
+        return;
+    }
+    if (c != '\t' && (c < 32 || c > 126)) {
+        ed_set_status_message("r: not a printable character");
+        return;
+    }
+
+    int cy = win->cursor.y, cx = win->cursor.x;
+    undo_begin(buf, "visual replace");
+    if (win->sel.type == SEL_VISUAL) {
+        int sy, sx, ey, ex_excl;
+        if (visual_char_range(buf, win, &sy, &sx, &ey, &ex_excl)) {
+            for (int y = sy; y <= ey; y++) {
+                int xs = (y == sy) ? sx : 0;
+                int xe = (y == ey) ? ex_excl : (int)buf->rows[y].chars.len;
+                replace_row_span(buf, y, xs, xe, (char)c);
+            }
+            cy = sy;
+            cx = sx;
+        }
+    } else if (win->sel.type == SEL_VISUAL_LINE) {
+        int sy, ey;
+        if (visual_line_range(buf, win, &sy, &ey)) {
+            for (int y = sy; y <= ey; y++)
+                replace_row_span(buf, y, 0, (int)buf->rows[y].chars.len,
+                                 (char)c);
+            cy = sy;
+            cx = 0;
+        }
+    } else if (win->sel.type == SEL_VISUAL_BLOCK) {
+        int sy, ey, srx, erx_excl;
+        if (visual_block_range(buf, win, &sy, &ey, &srx, &erx_excl)) {
+            for (int y = sy; y <= ey; y++) {
+                Row *row = &buf->rows[y];
+                replace_row_span(buf, y, buf_row_rx_to_cx(row, srx),
+                                 buf_row_rx_to_cx(row, erx_excl), (char)c);
+            }
+            cy = sy;
+            cx = buf_row_rx_to_cx(&buf->rows[sy], srx);
+        }
+    }
+    undo_end(buf);
+
+    win->cursor.y = cy;
+    win->cursor.x = cx;
+    visual_clear(win);
+    ed_set_mode(MODE_NORMAL);
     ed_set_status_message("");
 }
 

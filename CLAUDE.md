@@ -129,6 +129,12 @@ void config_user_init(void) {
 
     /* Overrides — last-write-wins, beats defaults. */
     cmapn(" ff", "recent", "recent files");
+
+    /* Extension/basename → filetype mappings (drive highlighting,
+     * filetype keybinds, fold defaults, :fmt). Session-only variant:
+     * :ftmap <ext> <filetype>. */
+    fs_filetype_register("jsx", "javascript");
+    fs_filetype_register("CMakeLists.txt", "cmake");
 }
 ```
 
@@ -295,6 +301,7 @@ See `plugins/vscode_keybinds/README.md`.
 :fmt                 run external formatter
 :tmux_toggle / :tmux_send <cmd>
 :foldnew/rm/toggle/method/update
+:ftmap <ext> <ft>    map extension/basename to filetype (session only)
 :keymap [name]       query or switch keymap
 :keymap-toggle       cycle vim → emacs → vscode
 :modeless on|off     toggle always-insert

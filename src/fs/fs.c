@@ -168,9 +168,73 @@ const char *fs_uri_to_path(const char *uri) {
     return uri;
 }
 
+/* User-registered extension/basename → filetype overrides. */
+typedef struct {
+    char *key;      /* extension without the dot, or exact basename */
+    char *filetype;
+} FtMapping;
+
+static FtMapping *ft_map     = NULL;
+static size_t     ft_map_len = 0;
+static size_t     ft_map_cap = 0;
+
+void fs_filetype_register(const char *key, const char *filetype) {
+    if (!key || !filetype || !*filetype)
+        return;
+    if (key[0] == '.')
+        key++; /* accept ".zig" and "zig" alike */
+    if (!*key)
+        return;
+    for (size_t i = 0; i < ft_map_len; i++) {
+        if (strcmp(ft_map[i].key, key) == 0) {
+            char *dup = strdup(filetype);
+            if (!dup)
+                return;
+            free(ft_map[i].filetype);
+            ft_map[i].filetype = dup;
+            return;
+        }
+    }
+    if (ft_map_len == ft_map_cap) {
+        size_t cap = ft_map_cap ? ft_map_cap * 2 : 8;
+        FtMapping *grown = realloc(ft_map, cap * sizeof(*grown));
+        if (!grown)
+            return;
+        ft_map     = grown;
+        ft_map_cap = cap;
+    }
+    ft_map[ft_map_len].key      = strdup(key);
+    ft_map[ft_map_len].filetype = strdup(filetype);
+    if (!ft_map[ft_map_len].key || !ft_map[ft_map_len].filetype) {
+        free(ft_map[ft_map_len].key);
+        free(ft_map[ft_map_len].filetype);
+        return;
+    }
+    ft_map_len++;
+}
+
+const char *fs_filetype_registered(const char *path) {
+    if (!path || ft_map_len == 0)
+        return NULL;
+    const char *base = fs_path_basename(path);
+    const char *ext  = fs_path_extension(path);
+    const char *by_ext = NULL;
+    for (size_t i = 0; i < ft_map_len; i++) {
+        if (strcmp(ft_map[i].key, base) == 0)
+            return ft_map[i].filetype;
+        if (*ext && strcmp(ft_map[i].key, ext) == 0)
+            by_ext = ft_map[i].filetype;
+    }
+    return by_ext;
+}
+
 char *fs_path_detect_filetype(const char *path) {
     if (!path)
         return strdup("txt");
+
+    const char *registered = fs_filetype_registered(path);
+    if (registered)
+        return strdup(registered);
 
     /* Special filenames first. */
     const char *base = fs_path_basename(path);

@@ -1,21 +1,22 @@
 # Multicursor
 
-Extra cursors with optional synchronized edits. Add extra cursors and
-hop between them while they hold their positions — or turn **sync**
-on, and every keystroke after that — motion, insert, operator, leader
-chord, mode change — fires once per cursor.
+Extra cursors with synchronized edits. Add extra cursors and every
+keystroke after that — motion, insert, operator, leader chord, mode
+change — fires once per cursor. Or turn **sync** off and hop between
+cursors while they hold their positions.
 
 ## Two modes
 
-**Sync off (default).** Extra cursors are passive markers. You move
-and edit with the active cursor only; the others stay where you put
-them (core auto-shifts them when edits land before them, so they stay
-glued to their text). Use `:mc_jump_next` / `:mc_jump_prev`
-(`<space>mj` / `<space>mk`) to make another cursor the active one.
+**Sync on (default).** Synchronized editing: every keypress runs the
+full per-mode dispatch once per cursor (see "How replay works"
+below).
 
-**Sync on** (`:mc_sync` / `<space>ms`). Synchronized editing: every
-keypress runs the full per-mode dispatch once per cursor (see
-"How replay works" below).
+**Sync off** (`:mc_sync` / `<space>ms`). Extra cursors are passive
+markers. You move and edit with the active cursor only; the others
+stay where you put them (core auto-shifts them when edits land before
+them, so they stay glued to their text). Use `:mc_jump_next` /
+`:mc_jump_prev` (`<space>mj` / `<space>mk`) to make another cursor
+the active one.
 
 ## Per-window cursor sets
 
@@ -77,16 +78,19 @@ toggle is the double-tap `''` instead.
 first press it picks up the word under the cursor (or a single-line
 visual selection), seeds `E.search_query` with it, and puts a new
 cursor at the next match. Each subsequent press adds one more cursor
-at the following match, wrapping past the end of the buffer.
+at the following match, wrapping past the end of the buffer. The new
+cursor lands at the same offset inside the match as the cursor's
+offset inside the original word/selection, so synced edits line up
+at every cursor.
 
 `'*` / `<M-n>` mirrors VSCode's `Ctrl-Shift-L` ("select all
 occurrences"): one press puts a cursor at **every** match of the word
 under cursor (normal) or the single-line selection (visual) across
 the whole buffer, replacing the current cursor set. The active cursor
 stays on the occurrence the query came from. Matches are
-non-overlapping, scanned left to right. Follow with `'s` to turn sync
-on and edit them all at once, and `Q` to skip any match you don't
-want.
+non-overlapping, scanned left to right. With sync on (the default)
+your next edit lands at all of them at once; use `Q` to skip any
+match you don't want.
 
 `Q` is "skip this match": drop the active cursor and advance to the
 next cursor in `(y, x)` order, cycling back to the first when there's
@@ -129,6 +133,12 @@ is off, or when a single global UI is active:
   character N times into the same prompt buffer.
 - **Modal windows** (dired confirms, LSP popups, selectlist):
   these route keys globally; per-cursor replay has no meaning there.
+- **Visual modes** (and the key that enters one, `v`/`V`/`C-v`):
+  the selection anchor is global (one per window, not per cursor), so
+  replaying would re-anchor it at every cursor and leave it wherever
+  the last replay ran. Selection keys act on the active cursor only;
+  sync resumes once the selection is gone (e.g. after `c` drops you
+  into insert, typed characters replay at every cursor again).
 
 The same bail-out triggers inside Phase 2 if a Phase 1 dispatch
 opens a prompt or modal mid-sequence (e.g. `:` from normal mode).
