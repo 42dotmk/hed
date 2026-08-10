@@ -73,7 +73,10 @@ Two tiers, both plain markdown:
 | `:task_prio <A\|B\|C>` | Set/clear `prio::` (also accepts `1`/`2`/`3`). |
 | `:task_field <key> [value]` | Upsert any field; empty value clears it. Dates/priorities are normalized. |
 | `:task_note <text>` | Append a dated log bullet to the section. |
-| `:task_agenda` | All open tasks across `*.md` → quickfix, sorted by deadline (overdue first) then priority. |
+| `:task_agenda [path]` | All open tasks across `*.md` → quickfix, sorted by deadline (overdue first) then priority. Scans the org root if set, else the cwd; a path argument overrides both. |
+| `:task_agenda_ignore [glob]` | Blacklist files/dirs from the agenda and `:org-files`. A glob adds an entry, no argument lists them, `clear` resets. Session-only; use `task_agenda_ignore()` in config for persistence. |
+| `:task_org_root [path]` | Set/show the org root; `clear` reverts to the cwd. Session-only; use `task_org_root()` in config. |
+| `:org-files` | Fuzzy-pick any file under the org root and open it. |
 | `:task_archive` | Move the task under the cursor to `<file>_archive`. |
 | `:task_archive_done` | Move every `DONE`/`CANCELLED` task to `<file>_archive`. |
 | `:task_archive_open` | Open this file's `<file>_archive`. |
@@ -107,6 +110,30 @@ file's heading + field block in C, and builds a quickfix list sorted by
 deadline (overdue first), then priority, then title. Each line is
 prefixed with `[#A]` and a deadline marker (`!OVERDUE Nd`, `due today`,
 `due +Nd`). Requires `rg` on `PATH`.
+
+### Org root & blacklist
+
+By default the agenda scans the current working directory. Point it at
+a fixed org tree — and exclude files or directories — from your user
+config (`~/.config/hed/config.c`):
+
+```c
+#include "tasks/tasks.h"
+
+void config_user_init(void) {
+    task_org_root("/home/me/org");        /* agenda + :org-files scan here */
+    task_agenda_ignore("archive");        /* skip dir named archive, anywhere */
+    task_agenda_ignore("drafts/**");      /* skip a subtree */
+    task_agenda_ignore("*.draft.md");     /* skip matching files */
+}
+```
+
+Globs use gitignore semantics (each becomes `rg -g '!<glob>'`). The
+same blacklist applies to the `:org-files` picker. At runtime,
+`:task_agenda_ignore <glob>` adds a session-only entry, no argument
+lists the current set, and `clear` resets it; `:task_org_root` likewise
+sets/shows/clears the root. `:task_agenda <path>` scans an explicit
+path, overriding the configured root.
 
 ## Archival
 

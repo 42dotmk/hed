@@ -33,8 +33,16 @@
  *   :task_prio <A|B|C>    set/clear prio::.
  *   :task_field k [v]     upsert any field k (empty v clears it).
  *   :task_note <text>     append a dated log bullet to the section.
- *   :task_agenda          open tasks across the tree -> quickfix,
+ *   :task_agenda [path]   open tasks across the tree -> quickfix,
  *                         sorted by deadline+prio, overdue flagged. <space>ma
+ *                         Scans the org root (task_org_root) or cwd; an
+ *                         explicit path argument overrides both.
+ *   :task_agenda_ignore   blacklist files/dirs from the agenda + picker
+ *                         (gitignore-style globs; no arg lists, clear
+ *                         resets). Config: task_agenda_ignore(glob).
+ *   :task_org_root [path] set/show/clear the org root dir.
+ *                         Config: task_org_root(path).
+ *   :org-files            fzf any file under the org root.
  *
  * Known limitation: heading/field detection doesn't track fenced code
  * blocks, so `# [TODO]`/`key:: v` lines inside a ``` fence are also
@@ -42,8 +50,10 @@
 
 #include "hed.h"
 #include "input/command_mode.h"  /* cmd_prompt_open */
+#include "input/picker.h"        /* picker_list (:org-files) */
 #include "lib/path_limits.h"     /* PATH_MAX */
 #include "markdown/markdown_fields.h"  /* MdFieldDef, md_parse_field, ... */
+#include "tasks.h"
 #include <time.h>
 
 /* Row-array mutators live in buf/buffer.c with no public header — the
@@ -512,6 +522,106 @@ static void cmd_task_note(const char *args) {
     ed_set_status_message("task: note added");
 }
 
+/* --- org tree configuration ------------------------------------------- */
+/* Both knobs are embedded single-quoted into an rg command line, so a
+ * value containing a quote or a control byte is rejected outright. */
+
+static char **g_ignore = NULL;    /* gitignore-style globs, rg -g '!…' */
+static char  *g_org_root = NULL;  /* scan root; NULL = cwd */
+
+static int shell_safe(const char *s, size_t n) {
+    for (size_t i = 0; i < n; i++)
+        if (s[i] == '\'' || (unsigned char)s[i] < 0x20) return 0;
+    return 1;
+}
+
+void task_agenda_ignore(const char *glob) {
+    if (!glob) return;
+    while (*glob == ' ' || *glob == '\t') glob++;
+    size_t n = strlen(glob);
+    while (n > 0 && (glob[n-1] == ' ' || glob[n-1] == '\t')) n--;
+    if (n == 0) return;
+    if (!shell_safe(glob, n)) {
+        ed_set_status_message("agenda: ignore glob may not contain quotes");
+        return;
+    }
+    for (int i = 0; i < (int)arrlen(g_ignore); i++)
+        if (strlen(g_ignore[i]) == n && strncmp(g_ignore[i], glob, n) == 0)
+            return; /* already listed */
+    arrput(g_ignore, strndup(glob, n));
+}
+
+void task_org_root(const char *path) {
+    free(g_org_root);
+    g_org_root = NULL;
+    if (!path || !*path) return;
+    if (!shell_safe(path, strlen(path))) {
+        ed_set_status_message("agenda: root path may not contain quotes");
+        return;
+    }
+    g_org_root = strdup(path);
+}
+
+/* Append ` -g '!<glob>'` for every blacklist entry; returns bytes written. */
+static size_t ignore_globs_emit(char *dst, size_t cap) {
+    size_t off = 0;
+    for (int i = 0; i < (int)arrlen(g_ignore); i++)
+        off += (size_t)snprintf(dst + off, cap > off ? cap - off : 0,
+                                " -g '!%s'", g_ignore[i]);
+    return off;
+}
+
+static size_t ignore_globs_len(void) {
+    size_t n = 0;
+    for (int i = 0; i < (int)arrlen(g_ignore); i++)
+        n += strlen(g_ignore[i]) + sizeof(" -g '!'");
+    return n;
+}
+
+static void cmd_task_agenda_ignore(const char *args) {
+    while (args && (*args == ' ' || *args == '\t')) args++;
+    if (!args || !*args) {
+        int n = (int)arrlen(g_ignore);
+        if (n == 0) {
+            ed_set_status_message("agenda: no ignore globs (add: :task_agenda_ignore <glob>)");
+            return;
+        }
+        char list[256];
+        size_t off = 0;
+        for (int i = 0; i < n && off < sizeof(list) - 1; i++)
+            off += (size_t)snprintf(list + off, sizeof(list) - off, "%s%s",
+                                    i ? " " : "", g_ignore[i]);
+        ed_set_status_message("agenda ignoring: %s", list);
+        return;
+    }
+    if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "none") == 0) {
+        for (int i = 0; i < (int)arrlen(g_ignore); i++) free(g_ignore[i]);
+        arrfree(g_ignore);
+        g_ignore = NULL;
+        ed_set_status_message("agenda: ignore list cleared");
+        return;
+    }
+    int before = (int)arrlen(g_ignore);
+    task_agenda_ignore(args);
+    if ((int)arrlen(g_ignore) > before)
+        ed_set_status_message("agenda: ignoring %s", args);
+}
+
+static void cmd_task_org_root(const char *args) {
+    while (args && (*args == ' ' || *args == '\t')) args++;
+    if (!args || !*args) {
+        ed_set_status_message("org root: %s", g_org_root ? g_org_root : "(cwd)");
+        return;
+    }
+    if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "none") == 0) {
+        task_org_root(NULL);
+        ed_set_status_message("org root: (cwd)");
+        return;
+    }
+    task_org_root(args);
+    if (g_org_root) ed_set_status_message("org root: %s", g_org_root);
+}
+
 /* --- agenda ----------------------------------------------------------- */
 
 typedef struct {
@@ -592,13 +702,31 @@ static void scan_file_tasks(const char *path, Agenda **out) {
 }
 
 static void cmd_task_agenda(const char *args) {
-    (void)args;
+    while (args && (*args == ' ' || *args == '\t')) args++;
+    const char *root = (args && *args) ? args : g_org_root; /* NULL = cwd */
+    if (root && !shell_safe(root, strlen(root))) {
+        ed_set_status_message("agenda: bad path");
+        return;
+    }
+    static const char *base = "rg -l --color=never -g '*.md' -g '*.markdown'";
+    static const char *expr =
+        " -e '^[[:space:]]*#{1,6} +\\[(TODO|IN-PROGRESS|BLOCKED)\\]'";
+    size_t cap = strlen(base) + ignore_globs_len() + strlen(expr) +
+                 (root ? strlen(root) + 4 : 0) + sizeof(" 2>/dev/null");
+    char *cmdline = malloc(cap);
+    if (!cmdline) return;
+    size_t off = (size_t)snprintf(cmdline, cap, "%s", base);
+    off += ignore_globs_emit(cmdline + off, cap - off);
+    off += (size_t)snprintf(cmdline + off, cap - off, "%s", expr);
+    if (root)
+        off += (size_t)snprintf(cmdline + off, cap - off, " '%s'", root);
+    snprintf(cmdline + off, cap - off, " 2>/dev/null");
+
     char **paths = NULL;
     int    npaths = 0;
-    if (!term_cmd_capture(
-            "rg -l --color=never -g '*.md' -g '*.markdown' "
-            "-e '^[[:space:]]*#{1,6} +\\[(TODO|IN-PROGRESS|BLOCKED)\\]' 2>/dev/null",
-            &paths, &npaths)) {
+    int    ok = term_cmd_capture(cmdline, &paths, &npaths);
+    free(cmdline);
+    if (!ok) {
         ed_set_status_message("agenda: ripgrep not available");
         return;
     }
@@ -645,6 +773,42 @@ static void cmd_task_agenda(const char *args) {
         free(items[i].title);
     }
     arrfree(items);
+}
+
+/* --- org file picker --------------------------------------------------- */
+/* fzf over every file under the org root (or cwd), honouring the same
+ * ignore globs as the agenda. */
+
+static void cmd_org_files(const char *args) {
+    (void)args;
+    const char *root = g_org_root; /* NULL = cwd */
+    static const char *base = "rg --files --color=never";
+    size_t cap = strlen(base) + ignore_globs_len() +
+                 (root ? strlen(root) + 4 : 0) + sizeof(" 2>/dev/null");
+    char *cmdline = malloc(cap);
+    if (!cmdline) return;
+    size_t off = (size_t)snprintf(cmdline, cap, "%s", base);
+    off += ignore_globs_emit(cmdline + off, cap - off);
+    if (root)
+        off += (size_t)snprintf(cmdline + off, cap - off, " '%s'", root);
+    snprintf(cmdline + off, cap - off, " 2>/dev/null");
+
+    char **lines = NULL;
+    int    lcnt = 0;
+    int    ok = term_cmd_capture(cmdline, &lines, &lcnt);
+    free(cmdline);
+    if (!ok || lcnt <= 0) {
+        term_cmd_free(lines, lcnt);
+        ed_set_status_message("org: no files");
+        return;
+    }
+    char **sel = NULL;
+    int cnt = 0;
+    int picked = picker_list((const char **)lines, lcnt, 0, &sel, &cnt);
+    term_cmd_free(lines, lcnt);
+    if (picked && cnt > 0 && sel[0] && sel[0][0])
+        buf_open_or_switch(sel[0], true);
+    picker_list_free(sel, cnt);
 }
 
 /* --- archival --------------------------------------------------------- */
@@ -850,6 +1014,11 @@ static int tasks_init(void) {
     cmd("task_field",    cmd_task_field,    "upsert any field: :task_field <key> [value]");
     cmd("task_note",     cmd_task_note,     "append a dated log bullet to the task section");
     cmd("task_agenda",   cmd_task_agenda,   "open tasks across the tree -> quickfix, sorted by deadline+prio");
+    cmd("task_agenda_ignore", cmd_task_agenda_ignore,
+        "blacklist files/dirs from the agenda: <glob> adds, no arg lists, clear resets");
+    cmd("task_org_root", cmd_task_org_root,
+        "set/show/clear the org root dir scanned by :task_agenda and :org-files");
+    cmd("org-files",     cmd_org_files,     "fzf files under the org root");
     cmd("task_archive",      cmd_task_archive,      "move the task under the cursor to <file>_archive");
     cmd("task_archive_done", cmd_task_archive_done, "move all DONE/CANCELLED tasks to <file>_archive");
     cmd("task_archive_open", cmd_task_archive_open, "open this file's <file>_archive");
