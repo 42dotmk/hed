@@ -162,11 +162,6 @@ static void config_load_defaults(void) {
     cmapv(" lt", "translate",          "translate selection");
 }
 
-/* Optional user config: ~/.config/hed/config.c (or USER_CONFIG=path).
- * The Makefile compiles it in when present; it runs after the stock
- * defaults, so plugin_load and keybinds there are additive and
- * override defaults via last-write-wins. Declared weak so the build
- * links cleanly when no user config exists. */
 void config_user_init(void) __attribute__((weak));
 
 void config_init(void) {
