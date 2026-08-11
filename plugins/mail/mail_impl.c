@@ -486,7 +486,8 @@ static void mail_run_query(void) {
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[2400];
     snprintf(cmd, sizeof(cmd),
-             "notmuch search --sort=newest-first --limit=500 --output=summary -- %s 2>/dev/null", qq);
+             "notmuch search --sort=newest-first --limit=%d --output=summary -- %s 2>/dev/null",
+             MAIL_MAX, qq);
 
     char **lines = NULL;
     int    count = 0;
@@ -655,9 +656,11 @@ static void open_thread_row(int row) {
     /* Highlighting via mail_msg_render_hook (registered in
      * mail_plugin_init, filtered on filetype). */
 
-    char cmd[512];
+    char tidq[512];
+    shell_escape_single(tid, tidq, sizeof(tidq));
+    char cmd[600];
     snprintf(cmd, sizeof(cmd),
-             "notmuch show --format=text --include-html -- %s 2>/dev/null", tid);
+             "notmuch show --format=text --include-html -- %s 2>/dev/null", tidq);
 
     char **lines = NULL;
     int    count = 0;

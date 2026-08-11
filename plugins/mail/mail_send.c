@@ -10,6 +10,7 @@
 #include "mail.h"
 #include "hed.h"
 #include "buf/row.h"
+#include "pickers/fzf.h"
 #include "utils/term_cmd.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,7 +80,79 @@ void mail_compose(void) {
 
     ed_set_mode(MODE_INSERT);
     ed_set_status_message(
-        "mail: compose — edit headers + body, then :mail-send");
+        "mail: compose — edit headers + body, C-c C-c or :mail-send to send");
+}
+
+/* ------------------------------------------------------------------ */
+/* Attaching files to a compose buffer                                 */
+/* ------------------------------------------------------------------ */
+
+/* Insert "Attach: <path>" as the last line of the header block (just
+ * before the blank separator; appended at EOF if there is none).
+ * Returns 0 on success. */
+static int insert_attach_header(Buffer *buf, const char *path) {
+    char line[PATH_MAX + 16];
+    snprintf(line, sizeof(line), "Attach: %s", path);
+    int at = buf->num_rows;
+    for (int i = 0; i < buf->num_rows; i++) {
+        if (buf->rows[i].chars.len == 0) { at = i; break; }
+    }
+    int before = buf->num_rows;
+    buf_row_insert_in(buf, at, line, strlen(line));
+    return buf->num_rows == before;
+}
+
+void mail_attach_add(const char *path) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype ||
+        strcmp(buf->filetype, "mail-compose") != 0) {
+        ed_set_status_message("mail-attach-add: open a compose buffer first");
+        return;
+    }
+
+    /* Explicit path: expand ~, validate, insert. */
+    if (path && *path) {
+        char full[PATH_MAX];
+        str_expand_tilde(path, full, sizeof(full));
+        if (access(full, R_OK) != 0) {
+            ed_set_status_message("mail-attach-add: cannot read %s", full);
+            return;
+        }
+        if (insert_attach_header(buf, full)) {
+            ed_set_status_message("mail-attach-add: out of memory");
+            return;
+        }
+        ed_set_status_message("mail-attach-add: attached %s", full);
+        return;
+    }
+
+    /* No path: fzf multi-pick over project files (Tab to select). */
+    char **sel = NULL;
+    int    cnt = 0;
+    if (!fzf_run_opts(FZF_PROJECT_FILES_CMD,
+                      "--preview '" FZF_FILE_PREVIEW_BODY
+                      "' --preview-window right,60%,wrap",
+                      1, &sel, &cnt) || cnt <= 0) {
+        fzf_free(sel, cnt);
+        ed_set_status_message("mail-attach-add: canceled");
+        return;
+    }
+
+    int ok = 0, fail = 0;
+    for (int i = 0; i < cnt; i++) {
+        if (!sel[i] || !sel[i][0]) continue;
+        if (access(sel[i], R_OK) != 0 || insert_attach_header(buf, sel[i]))
+            fail++;
+        else
+            ok++;
+    }
+    fzf_free(sel, cnt);
+
+    if (fail > 0)
+        ed_set_status_message("mail-attach-add: attached %d, %d failed",
+                              ok, fail);
+    else
+        ed_set_status_message("mail-attach-add: attached %d file(s)", ok);
 }
 
 /* Locate the header named `name` (case-insensitive, no colon) and
@@ -657,7 +730,7 @@ void mail_reply(int reply_all) {
     compose_from_lines(reply_all ? "Reply-All" : "Reply", lines, count);
     term_cmd_free(lines, count);
     ed_set_status_message(
-        "mail-reply: %s — edit body, :mail-send to send",
+        "mail-reply: %s — edit body, C-c C-c or :mail-send to send",
         reply_all ? "reply-all" : "sender");
 }
 
@@ -788,9 +861,9 @@ void mail_forward(void) {
     if (att_count > 0)
         ed_set_status_message(
             "mail-forward: edit To: and body — %d attachment(s) cached, "
-            ":mail-send to send",
+            "C-c C-c or :mail-send to send",
             att_count);
     else
         ed_set_status_message(
-            "mail-forward: edit To: and body, :mail-send to send");
+            "mail-forward: edit To: and body, C-c C-c or :mail-send to send");
 }

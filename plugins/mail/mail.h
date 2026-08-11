@@ -96,6 +96,13 @@ void mail_compose(void);
  * a blank line, then the body. */
 void mail_send_current(void);
 
+/* Add an `Attach:` pseudo-header to the current compose buffer.
+ * `path` non-empty → attach that file (~ expanded, must be readable).
+ * `path` NULL/empty → fzf multi-pick over project files; each pick
+ * becomes one Attach: line. The headers are consumed by
+ * mail_send_current, which emits a multipart/mixed message. */
+void mail_attach_add(const char *path);
+
 /* Open a compose buffer pre-filled from a flat array of header+body
  * lines (one row per line, the first empty line marks the start of
  * the body). Used by /reply/forward and by external producers like

@@ -147,9 +147,17 @@ static void cmd_mail_attach(const char *args) {
     mail_attach_action(id, saving ? dest : NULL);
 }
 
-static void kb_reply(void)     { mail_reply(0); }
-static void kb_reply_all(void) { mail_reply(1); }
-static void kb_forward(void)   { mail_forward(); }
+static void cmd_mail_attach_add(const char *args) {
+    const char *p = args ? args : "";
+    while (*p == ' ') p++;
+    mail_attach_add(*p ? p : NULL);
+}
+
+static void kb_reply(void)      { mail_reply(0); }
+static void kb_reply_all(void)  { mail_reply(1); }
+static void kb_forward(void)    { mail_forward(); }
+static void kb_send(void)       { mail_send_current(); }
+static void kb_attach_add(void) { mail_attach_add(NULL); }
 static void kb_attach(void)    { mail_attach_action(-1, NULL); }
 static void kb_attach_save(void){ mail_attach_action(-1, "~/Downloads"); }
 static void kb_next_msg(void)  { mail_next_message(); }
@@ -190,6 +198,8 @@ static int mail_plugin_init(void) {
     cmd("mail-reply-all", cmd_mail_reply_all, "reply-all to the message being viewed");
     cmd("mail-forward",   cmd_mail_forward,   "forward the message being viewed");
     cmd("mail-attach",    cmd_mail_attach,    "open/save attachment(s) (no args: open, fzf multi-pick if >1; [id]; 'save [id] [dir]')");
+    cmd("mail-attach-add", cmd_mail_attach_add,
+        "attach file(s) to the compose buffer ([path]; no arg: fzf multi-pick)");
 
     mapn_ft("mail", "<CR>",  kb_enter,         "open selected thread");
     mapn_ft("mail", "/",     kb_filter,        "open filter prompt");
@@ -218,6 +228,14 @@ static int mail_plugin_init(void) {
     mapn_ft("mail-message", "A", kb_attach_save, "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
     mapn_ft("mail-message", "<C-p>", kb_prev_msg, "open previous message in list");
+
+    /* Compose buffer: C-c C-c sends (mutt / Emacs message-mode
+     * convention), C-c C-a attaches. Registered for both normal and
+     * insert mode since compose lands the user in insert. */
+    mapn_ft("mail-compose", "<C-c><C-c>", kb_send,       "send this message");
+    mapi_ft("mail-compose", "<C-c><C-c>", kb_send,       "send this message");
+    mapn_ft("mail-compose", "<C-c><C-a>", kb_attach_add, "attach file(s) via fzf");
+    mapi_ft("mail-compose", "<C-c><C-a>", kb_attach_add, "attach file(s) via fzf");
 
     hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", mail_open_pre);
 

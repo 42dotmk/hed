@@ -41,6 +41,7 @@ compatible binary that reads RFC 822 on stdin).
 | `:mail-forward` | Forward the message being viewed |
 | `:mail-attach [id]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all) |
 | `:mail-attach save [id] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
+| `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
 
 Tag tokens without a leading `+`/`-` get `+` prefixed, so
 `:mail-tag work important` is equivalent to `:mail-tag +work +important`.
@@ -77,6 +78,14 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 |---|---|
 | `<CR>` | Select the highlighted view / folder |
 | `q` | Close the sidebar |
+
+### In the compose buffer (`mail-compose` filetype)
+
+| Key | Action |
+|---|---|
+| `<C-c><C-c>` | Send (same as `:mail-send`) — works in normal and insert mode |
+| `<C-c><C-a>` | Attach file(s) via fzf (same as `:mail-attach-add`) |
+| `q` | Close the compose buffer (normal mode) |
 
 ## Message rendering
 
@@ -175,8 +184,14 @@ base64-encoded attachment parts, with mime type sniffed via the
 
 You can delete `Attach:` lines from the compose to drop individual
 attachments, or add new `Attach: /path/to/file` lines anywhere in the
-header block to attach extra files. Without any `Attach:` headers,
-`:mail-send` produces a plain-text RFC 822 message exactly as before.
+header block to attach extra files. `:mail-attach-add [path]` (or
+`<C-c><C-a>`) does that for you: with a path it validates and inserts
+the line; without one it opens an fzf multi-pick over project files.
+Without any `Attach:` headers, `:mail-send` produces a plain-text
+RFC 822 message exactly as before.
+
+`<C-c><C-c>` in the compose buffer sends directly (the mutt / Emacs
+message-mode convention), equivalent to `:mail-send`.
 
 ## Attachments
 
