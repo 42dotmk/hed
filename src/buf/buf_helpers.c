@@ -818,6 +818,12 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
             sx = 0;
         if (ex < sx)
             ex = sx;
+        if (ex <= sx) {
+            /* Nothing left to delete after clamping (e.g. empty row,
+             * whose chars.data may be NULL). */
+            win->cursor.x = sx;
+            return;
+        }
         undo_record_replace(buf, sy);
         size_t tail = row->chars.len - ex;
         memmove(row->chars.data + sx, row->chars.data + ex, tail);
@@ -832,12 +838,18 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
             sx = (int)first->chars.len;
         undo_record_replace(buf, sy);
         first->chars.len = sx;
-        first->chars.data[sx] = '\0';
+        if (first->chars.data) /* NULL when the row is empty */
+            first->chars.data[sx] = '\0';
         buf_row_update(first);
         /* Delete middle lines */
         for (int y = ey - 1; y > sy; y--)
             buf_row_del_in(buf, y);
         /* Delete prefix of last line and merge */
+        if (sy + 1 >= buf->num_rows) {
+            win->cursor.y = sy;
+            win->cursor.x = sx;
+            return;
+        }
         Row *last = &buf->rows[sy + 1];
         int lrx = ex;
         if (lrx < 0)
