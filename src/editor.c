@@ -262,10 +262,10 @@ static void ed_handle_paste(void) {
 
 
 static void handle_edit_mode_keypress(int c) {
-    if (keybind_process(c, E.mode))
-        return;
     switch (E.mode) {
     case MODE_INSERT:
+        if (keybind_process(c, MODE_INSERT))
+            return;
         if (!iscntrl(c)) {
             BUFWIN(buf, win);
             buf_insert_char_in(buf, c);
@@ -274,17 +274,24 @@ static void handle_edit_mode_keypress(int c) {
         }
         return;
     case MODE_VISUAL_LINE:
-    case MODE_VISUAL_BLOCK:
-        if (keybind_process(c, MODE_VISUAL))
-            return;
-        /* fallthrough */
-    case MODE_VISUAL:
+    case MODE_VISUAL_BLOCK: {
+        /* One combined scan (not a pass per mode): a multi-key
+         * normal-mode binding like gg must keep its prefix across
+         * keys, which per-mode passes would clear on every miss. */
+        const int modes[] = {E.mode, MODE_VISUAL, MODE_NORMAL};
+        keybind_process_modes(c, modes, 3);
+        return;
+    }
+    case MODE_VISUAL: {
+        const int modes[] = {MODE_VISUAL, MODE_NORMAL};
+        keybind_process_modes(c, modes, 2);
+        return;
+    }
     case MODE_NORMAL:
         keybind_process(c, MODE_NORMAL);
-
         return;
-
     case MODE_COMMAND:
+        keybind_process(c, MODE_COMMAND);
         return;
     }
 }

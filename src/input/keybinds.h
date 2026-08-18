@@ -66,6 +66,13 @@ void keybind_register_command_ft(int mode, const char *sequence,
  */
 bool keybind_process(int key, int mode);
 
+/* Same, but scans several modes in one combined pass, in priority
+ * order (earlier mode wins on an exact match). Used by the visual
+ * modes so multi-key normal-mode bindings (gg, …) still complete:
+ * separate per-mode passes would clear the shared sequence buffer on
+ * every miss. */
+bool keybind_process_modes(int key, const int *modes, int nmodes);
+
 /* ------------------------------------------------------------------ */
 /* Two-phase API: feed a key, then optionally invoke the exact match. */
 /* keybind_process() is a thin wrapper around feed + invoke that      */
@@ -129,6 +136,10 @@ typedef struct KeybindFeedResult {
  * buffer and numeric prefix and returns a snapshot of the resulting
  * state. Does NOT run any callback. */
 KeybindFeedResult keybind_feed(int key, int mode);
+
+/* Multi-mode variant of keybind_feed: one combined scan over all the
+ * given modes, priority order, shared sequence buffer. */
+KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes);
 
 /* Free the matches array attached to a feed result. */
 void keybind_feed_result_free(KeybindFeedResult *r);

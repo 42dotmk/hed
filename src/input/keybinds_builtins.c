@@ -580,6 +580,28 @@ void kb_operator_move(int key) {
     }
 }
 
+/* Apply a matched textobj to the visual selection anchored at the
+ * origin: a motion (sel.cursor != origin) extends the selection to its
+ * target — backward ones (gg, b, {) put the target in sel.cursor while
+ * sel.end stays at the origin side, so sel.end must not be used here.
+ * An object (iw, ip, i( — sel.cursor == origin) covers start..end. */
+static void visual_apply_textobj(Buffer *buf, Window *win,
+                                 const TextSelection *sel, int oy, int ox) {
+    if (sel->cursor.line != oy || sel->cursor.col != ox) {
+        win->cursor.y = sel->cursor.line;
+        win->cursor.x = sel->cursor.col;
+        return;
+    }
+    win->sel.anchor_y = sel->start.line;
+    win->sel.anchor_x = sel->start.col;
+    win->sel.anchor_rx =
+        buf_row_cx_to_rx(&buf->rows[sel->start.line], sel->start.col);
+    win->cursor.y = sel->end.line;
+    /* sel->end is exclusive; the visual cursor is inclusive, so land
+     * on the object's last character. */
+    win->cursor.x = sel->end.col > 0 ? sel->end.col - 1 : 0;
+}
+
 /* Select operator - creates visual selection via text object (v + motion) */
 void kb_operator_select(void) {
     BUFWIN(buf, win)
@@ -594,6 +616,7 @@ void kb_operator_select(void) {
     ed_set_status_message("-- VISUAL --");
     ed_render_frame();
 
+    int oy = win->cursor.y, ox = win->cursor.x;
     int key = ed_read_key();
 
     if (key == CTRL_KEY('[') || key == '\x1b') {
@@ -609,10 +632,8 @@ void kb_operator_select(void) {
     TextSelection sel;
 
     build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        /* Move cursor to end of selection and stay in visual mode */
-        win->cursor.y = sel.end.line;
-        win->cursor.x = sel.end.col;
+    if (textobj_lookup(textobj_key, buf, oy, ox, &sel)) {
+        visual_apply_textobj(buf, win, &sel, oy, ox);
         ed_set_status_message("-- VISUAL --");
         return;
     }
@@ -620,10 +641,8 @@ void kb_operator_select(void) {
     /* Try two-key text object */
     int key2 = ed_read_key();
     build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        /* Move cursor to end of selection and stay in visual mode */
-        win->cursor.y = sel.end.line;
-        win->cursor.x = sel.end.col;
+    if (textobj_lookup(textobj_key, buf, oy, ox, &sel)) {
+        visual_apply_textobj(buf, win, &sel, oy, ox);
         ed_set_status_message("-- VISUAL --");
         return;
     }

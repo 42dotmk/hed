@@ -338,12 +338,22 @@ static KeybindMatchView make_view(const Keybind *kb) {
 }
 
 /* Feed one key into the dispatcher. Mutates the sequence buffer and
- * count state, but never runs a callback. */
-KeybindFeedResult keybind_feed(int key, int mode) {
+ * count state, but never runs a callback. Modes are scanned together
+ * in the given priority order — one shared sequence buffer, so a
+ * multi-key binding in a fallback mode (e.g. normal-mode gg while in
+ * visual) can still accumulate its prefix. An exact match in an
+ * earlier mode beats one in a later mode. */
+KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
     KeybindFeedResult r = {0};
 
-    /* Numeric prefix only applies in normal mode */
-    if (mode != MODE_NORMAL) {
+    bool has_normal = false;
+    for (int m = 0; m < nmodes; m++)
+        if (modes[m] == MODE_NORMAL)
+            has_normal = true;
+
+    /* Numeric prefix only applies when normal-mode bindings are in
+     * scope (normal itself, and the visual modes via their fallback). */
+    if (!has_normal) {
         pending_count = 0;
         have_count = 0;
     }
@@ -356,7 +366,7 @@ KeybindFeedResult keybind_feed(int key, int mode) {
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
 
     /* Numeric prefix: consumed before any sequence char is appended. */
-    if (mode == MODE_NORMAL && key_buffer_len == 0 &&
+    if (has_normal && key_buffer_len == 0 &&
         key >= '0' && key <= '9' && (have_count || key != '0')) {
         int digit = key - '0';
         pending_count = pending_count * 10 + digit;
@@ -400,45 +410,53 @@ KeybindFeedResult keybind_feed(int key, int mode) {
         key_buffer_len = strlen(key_buffer);
     }
 
-    /* Scan registry. Filetype-specific matches take priority over global
-     * for the same sequence. Collect every (still-reachable) match —
-     * exact or partial — for the caller to display. */
-    int exact_global = -1;
-    int exact_ft     = -1;
-
+    /* Scan registry, one pass per mode in priority order. Within a
+     * mode, filetype-specific matches take priority over global for
+     * the same sequence; across modes, the earliest mode with an
+     * exact match wins. Collect every (still-reachable) match —
+     * exact or partial, from any scanned mode — for the caller to
+     * display and so a prefix pending in a fallback mode keeps the
+     * sequence alive. */
     const char *cur_ft = NULL;
     {
         Buffer *cb = buf_cur();
         if (cb) cur_ft = cb->filetype;
     }
 
-    for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
-        if (keybinds[i].mode != mode) continue;
+    int exact_idx = -1;
+    for (int m = 0; m < nmodes; m++) {
+        int exact_global = -1;
+        int exact_ft     = -1;
 
-        bool ft_applicable =
-            keybinds[i].filetype == NULL ||
-            (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0);
-        if (!ft_applicable) continue;
+        for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
+            if (keybinds[i].mode != modes[m]) continue;
 
-        bool is_exact = strcmp(keybinds[i].sequence, key_buffer) == 0;
-        bool is_prefix =
-            !is_exact &&
-            strncmp(keybinds[i].sequence, key_buffer, key_buffer_len) == 0;
+            bool ft_applicable =
+                keybinds[i].filetype == NULL ||
+                (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0);
+            if (!ft_applicable) continue;
 
-        if (is_exact) {
-            if (keybinds[i].filetype) {
-                exact_ft = (int)i;
-            } else if (exact_global < 0) {
-                exact_global = (int)i; /* keep first global */
+            bool is_exact = strcmp(keybinds[i].sequence, key_buffer) == 0;
+            bool is_prefix =
+                !is_exact &&
+                strncmp(keybinds[i].sequence, key_buffer, key_buffer_len) == 0;
+
+            if (is_exact) {
+                if (keybinds[i].filetype) {
+                    exact_ft = (int)i;
+                } else if (exact_global < 0) {
+                    exact_global = (int)i; /* keep first global */
+                }
+            }
+
+            if (is_exact || is_prefix) {
+                arrput(r.matches, make_view(&keybinds[i]));
             }
         }
 
-        if (is_exact || is_prefix) {
-            arrput(r.matches, make_view(&keybinds[i]));
-        }
+        if (exact_idx < 0)
+            exact_idx = exact_ft >= 0 ? exact_ft : exact_global;
     }
-
-    int exact_idx = exact_ft >= 0 ? exact_ft : exact_global;
 
     r.active_sequence = key_buffer;
     r.active_len      = key_buffer_len;
@@ -453,8 +471,10 @@ KeybindFeedResult keybind_feed(int key, int mode) {
      * waiting for more keys. */
     r.partial = arrlen(r.matches) > (r.exact ? 1 : 0);
 
-    /* Single unmapped key in NORMAL: caller may want operator_move. */
-    if (!r.exact && !r.partial && mode == MODE_NORMAL && key_buffer_len == 1) {
+    /* Single unmapped key with NORMAL in scope: caller may want
+     * operator_move (this is how j/k/w/b… move in normal mode and
+     * extend the selection in the visual modes). */
+    if (!r.exact && !r.partial && has_normal && key_buffer_len == 1) {
         r.fallback_textobj = true;
     }
 
@@ -472,6 +492,10 @@ KeybindFeedResult keybind_feed(int key, int mode) {
     hook_fire_keybind_feed(HOOK_KEYBIND_FEED, &ev);
 
     return r;
+}
+
+KeybindFeedResult keybind_feed(int key, int mode) {
+    return keybind_feed_modes(key, &mode, 1);
 }
 
 void keybind_feed_result_free(KeybindFeedResult *r) {
@@ -515,9 +539,11 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
 }
 
 /* Legacy single-call dispatch: feed + invoke on exact match, with
- * the NORMAL-mode single-key textobj fallback. */
-bool keybind_process(int key, int mode) {
-    KeybindFeedResult r = keybind_feed(key, mode);
+ * the NORMAL-mode single-key textobj fallback. Scans all given modes
+ * in one combined pass so a multi-key prefix pending in any of them
+ * survives across keys. */
+bool keybind_process_modes(int key, const int *modes, int nmodes) {
+    KeybindFeedResult r = keybind_feed_modes(key, modes, nmodes);
     bool handled = false;
 
     if (r.exact) {
@@ -543,6 +569,10 @@ bool keybind_process(int key, int mode) {
 
     keybind_feed_result_free(&r);
     return handled;
+}
+
+bool keybind_process(int key, int mode) {
+    return keybind_process_modes(key, &mode, 1);
 }
 
 /* ========================================================================
