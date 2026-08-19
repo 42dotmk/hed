@@ -48,6 +48,12 @@ void mail_open_list(void);
 /* Called by <CR> keybind while in a mail list buffer. */
 void mail_handle_enter(void);
 
+/* Open a thread by id — "thread:…" or a full "mail://thread:…" URL (the
+ * form used as thread buffer filenames and in captured markdown links).
+ * Works whether or not the thread is in the current listing; when it
+ * is, it's also marked read. */
+void mail_open_thread(const char *tid);
+
 /* Open the next/previous thread in the current listing while viewing a
  * mail-message buffer. No-op (with status message) if not viewing one
  * or if already at the end/beginning. */

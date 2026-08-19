@@ -21,6 +21,12 @@ compatible binary that reads RFC 822 on stdin).
 | Mailbox sidebar | `mail-mailboxes` | `mail://mailboxes` |
 | Compose | `mail-compose` | `mail://compose-<n>` |
 
+`mail://thread:…` names are also openable from outside the plugin: the
+open-intercept hook routes `:e mail://thread:…` and `gf` on such a
+target (e.g. in a markdown link captured with the tasks plugin's
+`:task_capture`) to the thread view, whether or not the thread is in
+the current listing. `mailto:` URIs route to compose the same way.
+
 ## Commands
 
 | Command | Action |

@@ -728,7 +728,10 @@ int buf_get_path_under_cursor(StrBuf *out, int *out_line, int *out_col) {
         return 0;
     }
 
-    strip_path_position(out, out_line, out_col);
+    /* URI-shaped tokens (mail://thread:…, http://…) stay verbatim —
+     * their trailing :digits belong to the target, not a position. */
+    if (!strstr(out->data, "://"))
+        strip_path_position(out, out_line, out_col);
     if (!out->data || out->len == 0) {
         strbuf_free(out);
         return 0;

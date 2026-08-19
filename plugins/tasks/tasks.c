@@ -42,6 +42,13 @@
  *                         resets). Config: task_agenda_ignore(glob).
  *   :task_org_root [path] set/show/clear the org root dir.
  *                         Config: task_org_root(path).
+ *   :task_capture [title] append a [TODO] linking the current file:line
+ *                         (or mail://thread:… for mail buffers) to the
+ *                         todo file (markdown link, gf follows it).
+ *                                                           <space>X
+ *   :task_todo_file [p]   set/show/clear the capture target file
+ *                         (default <org root>/todo.md).
+ *                         Config: task_todo_file(path).
  *   :org-files            fzf any file under the org root.
  *
  * Known limitation: heading/field detection doesn't track fenced code
@@ -622,6 +629,130 @@ static void cmd_task_org_root(const char *args) {
     if (g_org_root) ed_set_status_message("org root: %s", g_org_root);
 }
 
+/* --- capture ---------------------------------------------------------- */
+
+static char *g_todo_file = NULL; /* capture target; NULL = <root>/todo.md */
+
+void task_todo_file(const char *path) {
+    free(g_todo_file);
+    g_todo_file = NULL;
+    if (!path || !*path) return;
+    g_todo_file = strdup(path);
+}
+
+static void todo_path(char *out, size_t cap) {
+    if (g_todo_file) {
+        str_expand_tilde(g_todo_file, out, cap);
+        return;
+    }
+    if (g_org_root)
+        snprintf(out, cap, "%s/todo.md", g_org_root);
+    else
+        snprintf(out, cap, "todo.md"); /* cwd */
+}
+
+/* :task_capture [title] — append a [TODO] task to the todo file linking
+ * back to what's being viewed, as a plain markdown link the highlighter
+ * renders and gf follows. Regular files become
+ * "[<base>:<line>](<abspath>:<line>)"; URI-named buffers (mail thread
+ * views, filename "mail://thread:…") become "[<title>](<uri>)" — the
+ * mail plugin's OPEN_PRE hook reopens the thread even after its buffer
+ * (or hed) is gone. */
+static void cmd_task_capture(const char *args) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win) return;
+    if (!buf->filename || !*buf->filename) {
+        ed_set_status_message("task: buffer has no file to capture");
+        return;
+    }
+
+    char target[PATH_MAX], label[PATH_MAX + 16];
+    int is_uri = strstr(buf->filename, "://") != NULL;
+    if (is_uri) {
+        safe_strcpy(target, buf->filename, sizeof(target));
+        const char *t = (buf->title && *buf->title) ? buf->title
+                                                    : buf->filename;
+        safe_strcpy(label, t, sizeof(label));
+        /* Keep the markdown link well-formed. */
+        for (char *c = label; *c; c++)
+            if (*c == '[' || *c == ']') *c = ' ';
+    } else {
+        if (!realpath(buf->filename, target))
+            safe_strcpy(target, buf->filename, sizeof(target));
+        const char *base = strrchr(target, '/');
+        base = base ? base + 1 : target;
+        snprintf(label, sizeof(label), "%s:%d", base, win->cursor.y + 1);
+    }
+
+    char todo[PATH_MAX];
+    todo_path(todo, sizeof(todo));
+
+    while (args && (*args == ' ' || *args == '\t')) args++;
+
+    char day[16];
+    {
+        time_t t = time(NULL);
+        struct tm tm;
+        localtime_r(&t, &tm);
+        strftime(day, sizeof(day), "%Y-%m-%d", &tm);
+    }
+
+    char head[2 * PATH_MAX], created[32], link[3 * PATH_MAX];
+    snprintf(head, sizeof(head), "## [TODO] %s",
+             (args && *args) ? args : label);
+    snprintf(created, sizeof(created), "created:: %s", day);
+    if (is_uri)
+        snprintf(link, sizeof(link), "[%s](%s)", label, target);
+    else
+        snprintf(link, sizeof(link), "[%s](%s:%d)", label, target,
+                 win->cursor.y + 1);
+
+    /* Append into the open buffer when the todo file is loaded (keeps
+     * the user's unsaved edits; they save as usual), else straight to
+     * the file on disk. */
+    int bi = buf_find_by_filename(todo);
+    if (bi >= 0) {
+        Buffer *tb = &E.buffers[bi];
+        undo_begin(tb, "capture");
+        int at = tb->num_rows;
+        if (at > 0 && tb->rows[at - 1].chars.len > 0)
+            buf_row_insert_in(tb, at++, "", 0);
+        buf_row_insert_in(tb, at++, head, strlen(head));
+        buf_row_insert_in(tb, at++, created, strlen(created));
+        buf_row_insert_in(tb, at++, "", 0);
+        buf_row_insert_in(tb, at++, link, strlen(link));
+        undo_end(tb);
+    } else {
+        FILE *f = fopen(todo, "a");
+        if (!f) {
+            ed_set_status_message("task: cannot open %s", todo);
+            return;
+        }
+        fprintf(f, "\n%s\n%s\n\n%s\n", head, created, link);
+        fclose(f);
+    }
+    ed_set_status_message("task: captured %s -> %s", label, todo);
+}
+
+static void cmd_task_todo_file(const char *args) {
+    while (args && (*args == ' ' || *args == '\t')) args++;
+    if (!args || !*args) {
+        char todo[PATH_MAX];
+        todo_path(todo, sizeof(todo));
+        ed_set_status_message("todo file: %s", todo);
+        return;
+    }
+    if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "none") == 0) {
+        task_todo_file(NULL);
+    } else {
+        task_todo_file(args);
+    }
+    char todo[PATH_MAX];
+    todo_path(todo, sizeof(todo));
+    ed_set_status_message("todo file: %s", todo);
+}
+
 /* --- agenda ----------------------------------------------------------- */
 
 typedef struct {
@@ -961,6 +1092,7 @@ static void prompt_prefilled(const char *cmdline) {
 }
 
 static void kb_task_note(void)     { prompt_prefilled("task_note "); }
+static void kb_task_capture(void)  { prompt_prefilled("task_capture "); }
 static void kb_task_deadline(void) { prompt_prefilled("task_deadline "); }
 static void kb_task_schedule(void) { prompt_prefilled("task_schedule "); }
 static void kb_task_prio(void)     { prompt_prefilled("task_prio "); }
@@ -1018,6 +1150,10 @@ static int tasks_init(void) {
         "blacklist files/dirs from the agenda: <glob> adds, no arg lists, clear resets");
     cmd("task_org_root", cmd_task_org_root,
         "set/show/clear the org root dir scanned by :task_agenda and :org-files");
+    cmd("task_capture",  cmd_task_capture,
+        "capture current file:line into the todo file as a linked [TODO]");
+    cmd("task_todo_file", cmd_task_todo_file,
+        "set/show/clear the capture target (default <org root>/todo.md)");
     cmd("org-files",     cmd_org_files,     "fzf files under the org root");
     cmd("task_archive",      cmd_task_archive,      "move the task under the cursor to <file>_archive");
     cmd("task_archive_done", cmd_task_archive_done, "move all DONE/CANCELLED tasks to <file>_archive");
@@ -1034,6 +1170,10 @@ static int tasks_init(void) {
     mapn_ft("markdown", " mp", kb_task_prio,         "task: set priority");
     mapn_ft("markdown", " mx", kb_task_archive,      "task: archive task under cursor");
     mapn_ft("markdown", " mX", kb_task_archive_done, "task: archive all done tasks");
+
+    /* Global on purpose: capture happens from whatever buffer you're
+     * in — source file, mail thread, anything with a filename. */
+    mapn(" X", kb_task_capture, "task: capture into todo");
 
     hook_register_render(HOOK_RENDER_PRE, -1, "markdown", on_render_pre);
     return 0;

@@ -15,4 +15,9 @@ void task_agenda_ignore(const char *glob);
  * (instead of the cwd) and :org-files picks files under it. NULL or ""
  * clears it back to cwd. Session-only variant: :task_org_root <path>. */
 void task_org_root(const char *path);
+
+/* Target file for :task_capture. NULL or "" reverts to the default,
+ * <org root>/todo.md (or ./todo.md with no root set). Session-only
+ * variant: :task_todo_file <path>. */
+void task_todo_file(const char *path);
 #endif

@@ -867,6 +867,16 @@ void kb_open_file_under_cursor(void) {
         return;
     }
 
+    /* URI-shaped target (mail://thread:…): hand it to the open pipeline
+     * verbatim — a plugin's BUFFER_OPEN_PRE hook claims its scheme. */
+    if (strstr(path.data, "://")) {
+        char uri[PATH_MAX];
+        safe_strcpy(uri, path.data, sizeof(uri));
+        strbuf_free(&path);
+        buf_open_or_switch(uri, true);
+        return;
+    }
+
     char expanded[PATH_MAX];
     str_expand_tilde(path.data, expanded, sizeof(expanded));
 

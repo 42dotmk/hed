@@ -62,7 +62,7 @@ TSI    = $(BUILD_DIR)/tsi
 # where the package installs the pages, build and install like:
 #   make PREFIX=/usr MAN_DIR=/usr/share/man
 #   make install PREFIX=/usr MAN_DIR=/usr/share/man DESTDIR=/path/to/pkgroot
-PREFIX  ?= /usr/local
+PREFIX  ?= $(HOME)/.local
 DESTDIR ?=
 BINDIR  ?= $(PREFIX)/bin
 MANDIR  ?= $(PREFIX)/share/man

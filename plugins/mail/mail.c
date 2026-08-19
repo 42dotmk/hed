@@ -169,14 +169,17 @@ static void kb_close(void) {
         ed_set_status_message("buffer has unsaved changes (use :bd! to force)");
 }
 
-/* Intercept "open this path" when it's a mailto: URI — route to compose
- * instead of letting core try to open a file literally named `mailto:…`.
- * Makes `hed mailto:foo@bar?subject=Hi` work for desktop mail-handler
- * registration. */
+/* Intercept "open this path" for the mail URI schemes: mailto: routes
+ * to compose (makes `hed mailto:foo@bar?subject=Hi` work for desktop
+ * mail-handler registration), mail://thread:… opens that thread view —
+ * which is how captured mail links in markdown are followed with gf. */
 static void mail_open_pre(HookBufferEvent *ev) {
     if (!ev || !ev->filename) return;
     if (strncmp(ev->filename, "mailto:", 7) == 0) {
         mail_compose_uri(ev->filename);
+        ev->consumed = 1;
+    } else if (strncmp(ev->filename, "mail://", 7) == 0) {
+        mail_open_thread(ev->filename);
         ev->consumed = 1;
     }
 }
@@ -237,7 +240,9 @@ static int mail_plugin_init(void) {
     mapn_ft("mail-compose", "<C-c><C-a>", kb_attach_add, "attach file(s) via fzf");
     mapi_ft("mail-compose", "<C-c><C-a>", kb_attach_add, "attach file(s) via fzf");
 
-    hook_register_buffer(HOOK_BUFFER_OPEN_PRE, MODE_NORMAL, "*", mail_open_pre);
+    /* Mode wildcard (-1): :e runs while still in command mode, and the
+     * interception must work from gf (normal) and :e alike. */
+    hook_register_buffer(HOOK_BUFFER_OPEN_PRE, -1, "*", mail_open_pre);
 
     mail_register_render_hooks();
 

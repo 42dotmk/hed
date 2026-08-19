@@ -294,11 +294,11 @@ void mail_set_mbsync_profile(const char *profile) {
 
 void mail_sync(void) {
     char cmd[256];
-    snprintf(cmd, sizeof(cmd), "mbsync %s", mbsync_profile);
-    ed_set_status_message("mail: running mbsync %s ...", mbsync_profile);
+    snprintf(cmd, sizeof(cmd), "hml recv %s", mbsync_profile);
+    ed_set_status_message("mail: running hml %s ...", mbsync_profile);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
-        ed_set_status_message("mail: mbsync exited with status %d", rc);
+        ed_set_status_message("mail: hml exited with status %d", rc);
         return;
     }
     term_cmd_system("notmuch new 2>/dev/null");
@@ -624,13 +624,12 @@ static void mark_thread_read(int row) {
 /* Open (or focus) the thread for mail_entries[row], marking it as read.
  * The caller is responsible for jump-list bookkeeping and for syncing
  * the mail-list buffer's cursor if needed. */
-static void open_thread_row(int row) {
-    if (row < 0 || row >= mail_entry_count) return;
-
-    const char *tid = mail_entries[row].thread_id;
-    if (!tid[0]) return;
-
-    mark_thread_read(row);
+/* Open (or focus) the thread buffer for `tid` ("thread:…"). `title` is
+ * the mail-list display line, or NULL when the thread isn't in the
+ * current listing (e.g. followed from a mail:// link) — then the
+ * rendered Subject: header stands in. */
+static void open_thread_tid(const char *tid, const char *title) {
+    if (!tid || !*tid) return;
 
     /* Reuse an already-open thread buffer if present. */
     char bufname[256];
@@ -639,7 +638,7 @@ static void open_thread_row(int row) {
     int existing = buf_find_by_filename(bufname);
     if (existing >= 0) {
         buf_switch(existing);
-        ed_set_status_message("%s", mail_entries[row].display);
+        if (title) ed_set_status_message("%s", title);
         return;
     }
 
@@ -650,7 +649,6 @@ static void open_thread_row(int row) {
     }
 
     Buffer *tbuf = &E.buffers[idx];
-    free(tbuf->title);    tbuf->title    = strdup(mail_entries[row].display);
     free(tbuf->filetype); tbuf->filetype = strdup("mail-message");
     tbuf->readonly   = 1;
     /* Highlighting via mail_msg_render_hook (registered in
@@ -677,6 +675,18 @@ static void open_thread_row(int row) {
         buf_row_insert_in(tbuf, tbuf->num_rows, l, strlen(l));
     }
 
+    if (!title) {
+        for (int i = 0; i < mr.line_count && i < 20; i++) {
+            const char *l = mr.lines[i];
+            if (l && strncmp(l, "Subject: ", 9) == 0 && l[9]) {
+                title = l + 9;
+                break;
+            }
+        }
+    }
+    free(tbuf->title);
+    tbuf->title = strdup(title ? title : tid);
+
     /* Cache attachments for :mail-attach without rescanning the buffer. */
     attach_count = 0;
     for (int i = 0; i < mr.attach_count && attach_count < MAIL_ATTACH_MAX; i++) {
@@ -697,7 +707,32 @@ static void open_thread_row(int row) {
     }
     E.current_buffer = idx;
 
-    ed_set_status_message("%s", mail_entries[row].display);
+    ed_set_status_message("%s", tbuf->title);
+}
+
+static void open_thread_row(int row) {
+    if (row < 0 || row >= mail_entry_count) return;
+
+    const char *tid = mail_entries[row].thread_id;
+    if (!tid[0]) return;
+
+    mark_thread_read(row);
+    open_thread_tid(tid, mail_entries[row].display);
+}
+
+void mail_open_thread(const char *tid) {
+    if (!tid) return;
+    if (strncmp(tid, "mail://", 7) == 0) tid += 7;
+    if (!*tid) return;
+    /* Prefer the listing row when present so the thread is marked read
+     * and the list cursor bookkeeping applies. */
+    for (int i = 0; i < mail_entry_count; i++) {
+        if (strcmp(mail_entries[i].thread_id, tid) == 0) {
+            open_thread_row(i);
+            return;
+        }
+    }
+    open_thread_tid(tid, NULL);
 }
 
 void mail_handle_enter(void) {

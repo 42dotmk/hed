@@ -76,6 +76,8 @@ Two tiers, both plain markdown:
 | `:task_agenda [path]` | All open tasks across `*.md` → quickfix, sorted by deadline (overdue first) then priority. Scans the org root if set, else the cwd; a path argument overrides both. |
 | `:task_agenda_ignore [glob]` | Blacklist files/dirs from the agenda and `:org-files`. A glob adds an entry, no argument lists them, `clear` resets. Session-only; use `task_agenda_ignore()` in config for persistence. |
 | `:task_org_root [path]` | Set/show the org root; `clear` reverts to the cwd. Session-only; use `task_org_root()` in config. |
+| `:task_capture [title]` | Append a `[TODO]` task to the todo file linking back to the current file + line as a markdown link (see Capture below). |
+| `:task_todo_file [path]` | Set/show the capture target; `clear` reverts to the default `<org root>/todo.md`. Session-only; use `task_todo_file()` in config. |
 | `:org-files` | Fuzzy-pick any file under the org root and open it. |
 | `:task_archive` | Move the task under the cursor to `<file>_archive`. |
 | `:task_archive_done` | Move every `DONE`/`CANCELLED` task to `<file>_archive`. |
@@ -96,12 +98,37 @@ removes the field.
 <space>mp   :task_prio ▏
 <space>mx   :task_archive         (acts immediately)
 <space>mX   :task_archive_done    (acts immediately)
+<space>X    :task_capture ▏       (global, not markdown-only)
 ```
 
 The argument-taking commands open the `:` prompt pre-filled with the
 command + a trailing space, so you land ready to type the value (or
 press Enter for the command's empty-arg default — e.g. `:task_deadline`
 with no arg = today). Override or add binds in `src/config.h`.
+
+## Capture
+
+`<space>X` (or `:task_capture [title]`) appends a new task to the todo
+file — `<org root>/todo.md` by default, overridable with
+`task_todo_file()` in config or `:task_todo_file` at runtime:
+
+```markdown
+## [TODO] fix delta parsing
+created:: 2026-08-19
+
+[parse.c:214](/home/me/src/parse.c:214)
+```
+
+With no title the file:line stands in as the heading. The reference is
+a plain markdown link: the highlighter renders it, and `gf` on the
+target follows it to the exact line. If the todo file is open in a
+buffer the capture is appended there (unsaved, one undo step);
+otherwise it's appended to the file on disk.
+
+Capturing works from any buffer with a name, not just files: in a mail
+thread view (mail plugin) the link becomes
+`[<subject>](mail://thread:…)`, and `gf` on it reopens that thread —
+mail buffers are temporary, but the thread id is stable.
 
 ## Agenda
 
