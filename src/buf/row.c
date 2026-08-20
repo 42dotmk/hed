@@ -1,5 +1,5 @@
-#include "editor.h"
 #include "buf/row.h"
+#include "editor.h"
 #include "lib/errors.h"
 #include "lib/log.h"
 #include "lib/strutil.h"

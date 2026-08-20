@@ -40,35 +40,61 @@ int macro_queue_has_keys(void) {
 /* Map a base keycode to its canonical name used in <...> tokens. */
 static const char *macro_named_key(int base) {
     switch (base) {
-    case '\x1b':         return "Esc";
-    case '\r':           return "CR";
-    case '\n':           return "NL";
-    case '\t':           return "Tab";
-    case 127:            return "BS";
-    case KEY_ARROW_UP:   return "Up";
-    case KEY_ARROW_DOWN: return "Down";
-    case KEY_ARROW_LEFT: return "Left";
-    case KEY_ARROW_RIGHT:return "Right";
-    case KEY_HOME:       return "Home";
-    case KEY_END:        return "End";
-    case KEY_PAGE_UP:    return "PageUp";
-    case KEY_PAGE_DOWN:  return "PageDown";
-    case KEY_DELETE:     return "Del";
-    default:             return NULL;
+    case '\x1b':
+        return "Esc";
+    case '\r':
+        return "CR";
+    case '\n':
+        return "NL";
+    case '\t':
+        return "Tab";
+    case 127:
+        return "BS";
+    case KEY_ARROW_UP:
+        return "Up";
+    case KEY_ARROW_DOWN:
+        return "Down";
+    case KEY_ARROW_LEFT:
+        return "Left";
+    case KEY_ARROW_RIGHT:
+        return "Right";
+    case KEY_HOME:
+        return "Home";
+    case KEY_END:
+        return "End";
+    case KEY_PAGE_UP:
+        return "PageUp";
+    case KEY_PAGE_DOWN:
+        return "PageDown";
+    case KEY_DELETE:
+        return "Del";
+    default:
+        return NULL;
     }
 }
 
 /* Reverse: token name -> base keycode. Returns -1 if unknown. */
 static int macro_named_code(const char *name, int len) {
-    static const struct { const char *name; int code; } names[] = {
-        {"Esc", '\x1b'}, {"CR", '\r'}, {"NL", '\n'}, {"Tab", '\t'},
+    static const struct {
+        const char *name;
+        int code;
+    } names[] = {
+        {"Esc", '\x1b'},
+        {"CR", '\r'},
+        {"NL", '\n'},
+        {"Tab", '\t'},
         {"BS", 127},
-        {"Up", KEY_ARROW_UP}, {"Down", KEY_ARROW_DOWN},
-        {"Left", KEY_ARROW_LEFT}, {"Right", KEY_ARROW_RIGHT},
-        {"Home", KEY_HOME}, {"End", KEY_END},
-        {"PageUp", KEY_PAGE_UP}, {"PageDown", KEY_PAGE_DOWN},
+        {"Up", KEY_ARROW_UP},
+        {"Down", KEY_ARROW_DOWN},
+        {"Left", KEY_ARROW_LEFT},
+        {"Right", KEY_ARROW_RIGHT},
+        {"Home", KEY_HOME},
+        {"End", KEY_END},
+        {"PageUp", KEY_PAGE_UP},
+        {"PageDown", KEY_PAGE_DOWN},
         {"Del", KEY_DELETE},
-        {"lt", '<'}, {"gt", '>'},
+        {"lt", '<'},
+        {"gt", '>'},
     };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         int nlen = (int)strlen(names[i].name);
@@ -87,66 +113,82 @@ static int macro_try_decode_token(int *out_key) {
 
     /* Bound the search so a stray '<' doesn't scan the whole buffer. */
     int limit = pos + 40;
-    if (limit > len) limit = len;
+    if (limit > len)
+        limit = len;
     int end = pos + 1;
-    while (end < limit && buf[end] != '>') end++;
-    if (end >= limit || buf[end] != '>') return 0;
+    while (end < limit && buf[end] != '>')
+        end++;
+    if (end >= limit || buf[end] != '>')
+        return 0;
 
-    int p = pos + 1;            /* inner start */
-    int inner_end = end;        /* exclusive */
-    if (inner_end <= p) return 0;
+    int p = pos + 1;     /* inner start */
+    int inner_end = end; /* exclusive */
+    if (inner_end <= p)
+        return 0;
 
     /* Strip modifier prefixes in any order: M-, C-, S- */
     int flags = 0;
     while (p + 1 < inner_end && buf[p + 1] == '-') {
         char c = buf[p];
-        if      (c == 'M') flags |= KEY_META;
-        else if (c == 'C') flags |= KEY_CTRL;
-        else if (c == 'S') flags |= KEY_SHIFT;
-        else break;
+        if (c == 'M')
+            flags |= KEY_META;
+        else if (c == 'C')
+            flags |= KEY_CTRL;
+        else if (c == 'S')
+            flags |= KEY_SHIFT;
+        else
+            break;
         p += 2;
     }
 
     int name_len = inner_end - p;
-    if (name_len <= 0) return 0;
+    if (name_len <= 0)
+        return 0;
 
     int base = -1;
 
     if (buf[p] == '#') {
         /* Numeric escape: <#NNNN> */
-        if (name_len < 2) return 0;
+        if (name_len < 2)
+            return 0;
         int n = 0;
         for (int i = p + 1; i < inner_end; i++) {
-            if (buf[i] < '0' || buf[i] > '9') return 0;
+            if (buf[i] < '0' || buf[i] > '9')
+                return 0;
             n = n * 10 + (buf[i] - '0');
-            if (n > 0xFFFF) return 0;
+            if (n > 0xFFFF)
+                return 0;
         }
         base = n;
-    } else if (buf[p] == 'F' && name_len >= 2 &&
-               buf[p + 1] >= '0' && buf[p + 1] <= '9') {
+    } else if (buf[p] == 'F' && name_len >= 2 && buf[p + 1] >= '0' &&
+               buf[p + 1] <= '9') {
         /* Function key: F1..F12 */
         int n = 0;
         for (int i = p + 1; i < inner_end; i++) {
-            if (buf[i] < '0' || buf[i] > '9') return 0;
+            if (buf[i] < '0' || buf[i] > '9')
+                return 0;
             n = n * 10 + (buf[i] - '0');
         }
-        if (n < 1 || n > 12) return 0;
+        if (n < 1 || n > 12)
+            return 0;
         base = KEY_F1 + n - 1;
     } else if (name_len == 1) {
         unsigned char c = (unsigned char)buf[p];
-        if (c < 32 || c >= 127) return 0;
+        if (c < 32 || c >= 127)
+            return 0;
         base = c;
     } else {
         base = macro_named_code(buf + p, name_len);
-        if (base < 0) return 0;
+        if (base < 0)
+            return 0;
     }
 
     /* <C-a>..<C-z> with no other flags collapses to raw byte 1..26,
      * matching what the input parser produces for typed Ctrl-letter. */
-    if (flags == KEY_CTRL && ((base >= 'a' && base <= 'z') ||
-                              (base >= 'A' && base <= 'Z'))) {
-        int letter = (base >= 'A' && base <= 'Z') ? base - 'A' + 1
-                                                  : base - 'a' + 1;
+    if (flags == KEY_CTRL &&
+        ((base >= 'a' && base <= 'z') || (base >= 'A' && base <= 'Z'))) {
+        int letter =
+            (base >= 'A' && base <= 'Z') ? base - 'A' + 1 : base - 'a' + 1;
         *out_key = letter;
     } else {
         *out_key = flags | base;
@@ -255,9 +297,18 @@ static void key_to_string_buf(int key, char *buf, size_t bufsize) {
     char prefix[8];
     int p = 0;
     prefix[p++] = '<';
-    if (KEY_IS_META(key))  { prefix[p++] = 'M'; prefix[p++] = '-'; }
-    if (KEY_IS_CTRL(key))  { prefix[p++] = 'C'; prefix[p++] = '-'; }
-    if (KEY_IS_SHIFT(key)) { prefix[p++] = 'S'; prefix[p++] = '-'; }
+    if (KEY_IS_META(key)) {
+        prefix[p++] = 'M';
+        prefix[p++] = '-';
+    }
+    if (KEY_IS_CTRL(key)) {
+        prefix[p++] = 'C';
+        prefix[p++] = '-';
+    }
+    if (KEY_IS_SHIFT(key)) {
+        prefix[p++] = 'S';
+        prefix[p++] = '-';
+    }
     prefix[p] = '\0';
 
     const char *named = macro_named_key(base);

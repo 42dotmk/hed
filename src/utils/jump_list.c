@@ -7,13 +7,15 @@
 #endif
 
 void jump_list_init(JumpList *jl) {
-    if (!jl) return;
+    if (!jl)
+        return;
     jl->entries = NULL;
     jl->current = -1;
 }
 
 void jump_list_free(JumpList *jl) {
-    if (!jl) return;
+    if (!jl)
+        return;
     for (ptrdiff_t i = 0; i < arrlen(jl->entries); i++)
         free(jl->entries[i].filepath);
     arrfree(jl->entries);
@@ -46,11 +48,9 @@ void jump_list_add(JumpList *jl, char *filepath, int cursor_x, int cursor_y) {
         arrdel(jl->entries, 0);
     }
 
-    JumpEntry new_entry = {
-        .filepath = strdup(filepath),
-        .cursor_x = cursor_x,
-        .cursor_y = cursor_y
-    };
+    JumpEntry new_entry = {.filepath = strdup(filepath),
+                           .cursor_x = cursor_x,
+                           .cursor_y = cursor_y};
     arrput(jl->entries, new_entry);
 
     jl->current = -1;

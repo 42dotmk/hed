@@ -1,29 +1,27 @@
 #include "input/keybinds_builtins.h"
+#include "buf/buf_helpers.h"
 #include "commands/cmd_misc.h"
-#include "input/command_mode.h"
-#include "lib/strutil.h"
 #include "commands/commands_ui.h"
-#include "fs/fs.h"
-#include "utils/fold.h"
 #include "editor.h"
+#include "fs/fs.h"
 #include "hooks.h"
+#include "input/command_mode.h"
 #include "input/keybinds.h"
-#include "lib/safe_string.h"
-#include "lib/errors.h"
 #include "input/picker.h"
+#include "lib/errors.h"
+#include "lib/safe_string.h"
+#include "lib/strutil.h"
 #include "terminal.h"
 #include "ui/wlayout.h"
-#include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <string.h>
-#include "lib/strutil.h"
-#include "buf/buf_helpers.h"
+#include "utils/fold.h"
 #include "utils/undo.h"
 #include <assert.h>
+#include <ctype.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 /* Internal buffer row helpers (non-public, defined in buffer.c) */
 void buf_row_del_in(Buffer *buf, int at);
@@ -31,8 +29,8 @@ void buf_row_del_in(Buffer *buf, int at);
 /* Visual selection helpers (local to keybinding implementations) */
 static void visual_clear(Window *win) {
     if (!win)
-        return; 
-    win->sel.type = SEL_NONE;       
+        return;
+    win->sel.type = SEL_NONE;
 }
 
 Selection kb_make_selection(Window *win, Buffer *buf,
@@ -153,8 +151,10 @@ static int visual_line_range(Buffer *buf, Window *win, int *sy, int *ey) {
     int ay = win->sel.anchor_y, cy = win->cursor.y;
     int top = ay < cy ? ay : cy;
     int bot = ay > cy ? ay : cy;
-    if (sy) *sy = top;
-    if (ey) *ey = bot;
+    if (sy)
+        *sy = top;
+    if (ey)
+        *ey = bot;
     return 1;
 }
 
@@ -331,9 +331,7 @@ void kb_append_mode(void) {
     }
 }
 
-void kb_enter_command_mode(void) {
-    cmd_prompt_open();
-}
+void kb_enter_command_mode(void) { cmd_prompt_open(); }
 
 void kb_visual_toggle(void) {
     BUFWIN(buf, win)
@@ -346,7 +344,7 @@ void kb_visual_toggle(void) {
 }
 
 void kb_visual_block_toggle(void) {
-	BUFWIN(buf, win)
+    BUFWIN(buf, win)
     if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_VISUAL_BLOCK) {
         visual_clear(win);
         ed_set_mode(MODE_NORMAL);
@@ -395,18 +393,18 @@ void kb_delete_to_line_end(void) {
 }
 
 void kb_yank_line(void) {
-	BUFWIN(buf, win)
+    BUFWIN(buf, win)
     buf_yank_line_in(buf);
     ed_set_status_message("Yanked");
 }
 
 void kb_paste(void) {
-	BUFWIN(buf, win)
+    BUFWIN(buf, win)
     paste_from_register(buf, '"', true);
 }
 
 void kb_paste_before(void) {
-	BUFWIN(buf, win)
+    BUFWIN(buf, win)
     paste_from_register(buf, '"', false);
 }
 
@@ -552,12 +550,14 @@ void kb_operator_yank(void) {
     ed_set_status_message("Unknown text object");
 }
 
-/* Move operator - moves cursor to text object position (fallback for unmapped keys) */
+/* Move operator - moves cursor to text object position (fallback for unmapped
+ * keys) */
 /* Save current position to the jump list (for within-file jumps). */
 static void jump_save_current(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !buf->filename) return;
+    if (!buf || !buf->filename)
+        return;
     int cx = win ? win->cursor.x : buf->cursor->x;
     int cy = win ? win->cursor.y : buf->cursor->y;
     jump_list_add(&E.jump_list, buf->filename, cx, cy);
@@ -610,7 +610,8 @@ void kb_operator_select(void) {
     win->sel.type = SEL_VISUAL;
     win->sel.anchor_y = win->cursor.y;
     win->sel.anchor_x = win->cursor.x;
-    win->sel.anchor_rx = buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    win->sel.anchor_rx =
+        buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
     ed_set_mode(MODE_VISUAL);
 
     ed_set_status_message("-- VISUAL --");
@@ -714,9 +715,11 @@ typedef int (*TextObjMotion)(Buffer *, int, int, TextSelection *);
 static void kb_apply_motion(TextObjMotion fn) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win || !fn) return;
+    if (!buf || !win || !fn)
+        return;
     TextSelection sel;
-    if (!fn(buf, win->cursor.y, win->cursor.x, &sel)) return;
+    if (!fn(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
     win->cursor.y = sel.cursor.line;
     win->cursor.x = sel.cursor.col;
 }
@@ -725,17 +728,18 @@ static void kb_apply_motion(TextObjMotion fn) {
 static void goto_line_or(int fallback_y);
 
 void kb_goto_line_start(void) { kb_apply_motion(textobj_to_line_start); }
-void kb_goto_line_end(void)   { kb_apply_motion(textobj_to_line_end); }
+void kb_goto_line_end(void) { kb_apply_motion(textobj_to_line_end); }
 /* kb_goto_file_end: with no count → end of file, with count → that line. */
 void kb_goto_file_end(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     goto_line_or(buf->num_rows - 1);
 }
 void kb_goto_word_start(void) { kb_apply_motion(textobj_to_word_start); }
-void kb_goto_word_end(void)   { kb_apply_motion(textobj_to_word_end); }
+void kb_goto_word_end(void) { kb_apply_motion(textobj_to_word_end); }
 void kb_goto_para_start(void) { kb_apply_motion(textobj_to_paragraph_start); }
-void kb_goto_para_end(void)   { kb_apply_motion(textobj_to_paragraph_end); }
+void kb_goto_para_end(void) { kb_apply_motion(textobj_to_paragraph_end); }
 
 /* Selection-aware motion helpers (VSCode / modern Emacs semantics):
  *   kb_drop_*   — drop any active selection, then move.
@@ -744,46 +748,48 @@ void kb_goto_para_end(void)   { kb_apply_motion(textobj_to_paragraph_end); }
  * Shift+arrow to extend and plain arrow to drop. */
 
 static int in_visual_mode(void) {
-    return E.mode == MODE_VISUAL ||
-           E.mode == MODE_VISUAL_LINE ||
+    return E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_LINE ||
            E.mode == MODE_VISUAL_BLOCK;
 }
 
-#define DROP_THEN(name, body)                              \
-    void kb_drop_##name(void) {                            \
-        if (in_visual_mode()) kb_visual_escape();          \
-        body;                                              \
+#define DROP_THEN(name, body)                                                  \
+    void kb_drop_##name(void) {                                                \
+        if (in_visual_mode())                                                  \
+            kb_visual_escape();                                                \
+        body;                                                                  \
     }
-#define EXTEND_THEN(name, body)                            \
-    void kb_extend_##name(void) {                          \
-        if (!in_visual_mode()) kb_visual_begin(0);         \
-        body;                                              \
+#define EXTEND_THEN(name, body)                                                \
+    void kb_extend_##name(void) {                                              \
+        if (!in_visual_mode())                                                 \
+            kb_visual_begin(0);                                                \
+        body;                                                                  \
     }
 
-DROP_THEN(left,   kb_move_left())
-DROP_THEN(right,  kb_move_right())
-DROP_THEN(up,     kb_move_up())
-DROP_THEN(down,   kb_move_down())
+DROP_THEN(left, kb_move_left())
+DROP_THEN(right, kb_move_right())
+DROP_THEN(up, kb_move_up())
+DROP_THEN(down, kb_move_down())
 DROP_THEN(word_l, kb_goto_word_start())
 DROP_THEN(word_r, kb_goto_word_end())
-DROP_THEN(bol,    kb_goto_line_start())
-DROP_THEN(eol,    kb_goto_line_end())
+DROP_THEN(bol, kb_goto_line_start())
+DROP_THEN(eol, kb_goto_line_end())
 
-EXTEND_THEN(left,   kb_move_left())
-EXTEND_THEN(right,  kb_move_right())
-EXTEND_THEN(up,     kb_move_up())
-EXTEND_THEN(down,   kb_move_down())
+EXTEND_THEN(left, kb_move_left())
+EXTEND_THEN(right, kb_move_right())
+EXTEND_THEN(up, kb_move_up())
+EXTEND_THEN(down, kb_move_down())
 EXTEND_THEN(word_l, kb_goto_word_start())
 EXTEND_THEN(word_r, kb_goto_word_end())
-EXTEND_THEN(bol,    kb_goto_line_start())
-EXTEND_THEN(eol,    kb_goto_line_end())
+EXTEND_THEN(bol, kb_goto_line_start())
+EXTEND_THEN(eol, kb_goto_line_end())
 /* kb_goto_file_start is defined further below (jump-list aware version
  * used by vim's gg). Both keymap plugins reach it through this header. */
 
 /* Normal mode - search */
 void kb_search_next(void) {
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     jump_save_current();
     buf_find_in(buf);
 }
@@ -804,16 +810,19 @@ void kb_find_under_cursor(void) {
  * motion doesn't extend the selection. */
 void kb_find_selection(void) {
     BUFWIN(buf, win)
-    if (buf->num_rows == 0) return;
+    if (buf->num_rows == 0)
+        return;
 
     int sy, sx, ey, ex;
-    if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex)) return;
+    if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex))
+        return;
     if (sy != ey) {
         ed_set_status_message("*: multi-line selection not supported");
         return;
     }
     Row *row = &buf->rows[sy];
-    if (ex > (int)row->chars.len) ex = (int)row->chars.len;
+    if (ex > (int)row->chars.len)
+        ex = (int)row->chars.len;
     if (ex <= sx) {
         ed_set_status_message("*: empty selection");
         return;
@@ -824,9 +833,9 @@ void kb_find_selection(void) {
     E.search_is_regex = 0;
 
     kb_visual_escape();
-    ed_set_status_message("* %.*s",
-                          (int)(E.search_query.len > 40 ? 40 : E.search_query.len),
-                          E.search_query.data);
+    ed_set_status_message(
+        "* %.*s", (int)(E.search_query.len > 40 ? 40 : E.search_query.len),
+        E.search_query.data);
     jump_save_current();
     buf_find_in(buf);
 }
@@ -914,10 +923,11 @@ void kb_open_file_under_cursor(void) {
         char tmp_cwd[PATH_MAX];
         if (!cwd && fs_getcwd(tmp_cwd, sizeof(tmp_cwd)))
             cwd = tmp_cwd;
-        if (cwd && fs_path_join(cwd_resolved, sizeof(cwd_resolved), cwd, expanded) &&
+        if (cwd &&
+            fs_path_join(cwd_resolved, sizeof(cwd_resolved), cwd, expanded) &&
             fs_is_file(cwd_resolved)) {
             target = cwd_resolved;
-            found  = true;
+            found = true;
         }
         if (!found) {
             ed_set_status_message("gf: file does not exist: %s", expanded);
@@ -949,13 +959,9 @@ void kb_open_file_under_cursor(void) {
 }
 void kb_line_number_toggle(void) { cmd_ln(NULL); }
 /* Undo/Redo */
-void kb_undo(void) {
-    ed_set_status_message("Undo disabled");
-}
+void kb_undo(void) { ed_set_status_message("Undo disabled"); }
 
-void kb_redo(void) {
-    ed_set_status_message("Redo disabled");
-}
+void kb_redo(void) { ed_set_status_message("Redo disabled"); }
 
 /* Helper: perform jump in specified direction */
 static void kb_jump(int direction) {
@@ -964,14 +970,16 @@ static void kb_jump(int direction) {
     int success;
 
     if (direction < 0)
-        success = jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+        success =
+            jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
     else
-        success = jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
+        success =
+            jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
 
     if (!success || !filename || !filename[0]) {
         free(filename);
         ed_set_status_message(direction < 0 ? "Already at oldest jump"
-                                             : "Already at newest jump");
+                                            : "Already at newest jump");
         return;
     }
 
@@ -983,7 +991,8 @@ static void kb_jump(int direction) {
     Window *win = window_cur();
     if (buf) {
         int row = (cursor_y < buf->num_rows) ? cursor_y : buf->num_rows - 1;
-        if (row < 0) row = 0;
+        if (row < 0)
+            row = 0;
         buf->cursor->y = row;
         buf->cursor->x = cursor_x;
         if (win) {
@@ -1016,15 +1025,18 @@ void kb_para_prev(void) { kb_para_jump("{"); }
  * repeat-on-count breaks after one call. */
 static void goto_line_or(int fallback_y) {
     BUFWIN(buf, win)
+    int had_count = keybind_has_pending_count();
     int count = keybind_get_and_clear_pending_count();
     int target;
-    if (count > 1) {
+    if (had_count) {
         target = count - 1;
     } else {
         target = fallback_y;
     }
-    if (target < 0) target = 0;
-    if (target >= buf->num_rows) target = buf->num_rows - 1;
+    if (target < 0)
+        target = 0;
+    if (target >= buf->num_rows)
+        target = buf->num_rows - 1;
     if (abs(target - win->cursor.y) >= 5)
         jump_save_current();
     win->cursor.y = target;
@@ -1068,7 +1080,7 @@ void kb_toggle_case(void) {
 
 /* Replace character under cursor with next typed char (stay in normal mode) */
 void kb_replace_char(void) {
-	ASSERT_EDIT(buf, win)
+    ASSERT_EDIT(buf, win)
     if (buf->num_rows == 0)
         return;
     Row *row = &buf->rows[win->cursor.y];
@@ -1202,7 +1214,7 @@ void kb_visual_replace_char(void) {
 
 /* za - Toggle fold at cursor */
 void kb_fold_toggle(void) {
-	BUFWIN(buf, win)
+    BUFWIN(buf, win)
     int line = win->cursor.y;
     if (fold_toggle_at_line(&buf->folds, line)) {
         int idx = fold_find_at_line(&buf->folds, line);
@@ -1216,7 +1228,7 @@ void kb_fold_toggle(void) {
 }
 
 void kb_fold_open(void) {
-	BUFWIN(buf, win);
+    BUFWIN(buf, win);
 
     int line = win->cursor.y;
     if (fold_expand_at_line(&buf->folds, line)) {
@@ -1227,7 +1239,7 @@ void kb_fold_open(void) {
 }
 
 void kb_fold_close(void) {
-	BUFWIN(buf, win);
+    BUFWIN(buf, win);
     int line = win->cursor.y;
     if (fold_collapse_at_line(&buf->folds, line)) {
         ed_set_status_message("Fold closed");
@@ -1272,12 +1284,18 @@ void kb_fold_close_all(void) {
  * collapses all to summaries. */
 static int fold_level_next(int cur) {
     switch (cur) {
-    case 1:   return 2;
-    case 2:   return 3;
-    case 3:   return 100;
-    case 100: return 0;
-    case 0:   return 1;
-    default:  return 1; /* first press, or any out-of-cycle value */
+    case 1:
+        return 2;
+    case 2:
+        return 3;
+    case 3:
+        return 100;
+    case 100:
+        return 0;
+    case 0:
+        return 1;
+    default:
+        return 1; /* first press, or any out-of-cycle value */
     }
 }
 
@@ -1354,8 +1372,15 @@ void win_resize_cells(WSplitDir dir, int delta) {
     wlayout_resize_dir(E.wlayout_root, E.current_window, dir, delta);
 }
 
-void kb_win_grow_width(void)    { win_resize_cells(WL_VERTICAL,   +WIN_RESIZE_STEP); }
-void kb_win_shrink_width(void)  { win_resize_cells(WL_VERTICAL,   -WIN_RESIZE_STEP); }
-void kb_win_grow_height(void)   { win_resize_cells(WL_HORIZONTAL, +WIN_RESIZE_STEP); }
-void kb_win_shrink_height(void) { win_resize_cells(WL_HORIZONTAL, -WIN_RESIZE_STEP); }
-
+void kb_win_grow_width(void) {
+    win_resize_cells(WL_VERTICAL, +WIN_RESIZE_STEP);
+}
+void kb_win_shrink_width(void) {
+    win_resize_cells(WL_VERTICAL, -WIN_RESIZE_STEP);
+}
+void kb_win_grow_height(void) {
+    win_resize_cells(WL_HORIZONTAL, +WIN_RESIZE_STEP);
+}
+void kb_win_shrink_height(void) {
+    win_resize_cells(WL_HORIZONTAL, -WIN_RESIZE_STEP);
+}

@@ -1,11 +1,9 @@
 #ifndef THEME_H
 #define THEME_H
 
-
 #define RGBC(r, g, b) "\x1b[38;2;" #r ";" #g ";" #b "m"
 
 #define COLOR_RESET "\x1b[0m"
-
 
 /* Palette loosely based on Tokyo Night */
 
@@ -36,7 +34,11 @@
 #define COLOR_DIAG_NOTE RGBC(122, 162, 247)  /* #7aa2f7 */
 
 /* Markup / prose */
-#define COLOR_TITLE "\x1b[1;38;2;192;202;245m"  /* bold + fg white — headings */
-#define COLOR_URI   "\x1b[4;38;2;122;162;247m"  /* underline + blue — links/URIs */
+#define COLOR_TITLE                                                            \
+    "\x1b[1;38;2;192;202;245m" /* bold + fg white — headings                 \
+                                */
+#define COLOR_URI                                                              \
+    "\x1b[4;38;2;122;162;247m" /* underline + blue — links/URIs              \
+                                */
 
 #endif /* THEME_H */

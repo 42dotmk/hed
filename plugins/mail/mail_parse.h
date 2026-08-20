@@ -4,20 +4,20 @@
 #include <stddef.h>
 
 typedef struct {
-    int  part_id;
+    int part_id;
     char filename[256];
     char content_type[128];
     char msg_id[256];
 } MailAttachInfo;
 
 typedef struct {
-    char **lines;        /* rendered display lines (each is malloc'd) */
-    int    line_count;
-    int    line_cap;
+    char **lines; /* rendered display lines (each is malloc'd) */
+    int line_count;
+    int line_cap;
 
     MailAttachInfo *attaches;
-    int             attach_count;
-    int             attach_cap;
+    int attach_count;
+    int attach_cap;
 } MailRender;
 
 void mail_render_init(MailRender *r);

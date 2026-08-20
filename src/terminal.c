@@ -1,20 +1,20 @@
-#include "ui/abuf.h"
-#include "fs/fs.h"
-#include "stb_ds.h"
-#include "lib/ansi.h"
-#include "lib/theme.h"
-#include "ui/bottom_ui.h"
-#include "buf/buffer.h"
 #include "buf/buf_helpers.h"
+#include "buf/buffer.h"
 #include "buf/virtual_text.h"
 #include "editor.h"
-#include "input/prompt.h"
-#include "utils/fold.h"
+#include "fs/fs.h"
 #include "hooks.h"
+#include "input/prompt.h"
+#include "lib/ansi.h"
+#include "lib/log.h"
 #include "lib/safe_string.h"
 #include "lib/strutil.h"
-#include "lib/log.h"
+#include "lib/theme.h"
+#include "stb_ds.h"
+#include "ui/abuf.h"
+#include "ui/bottom_ui.h"
 #include "ui/wlayout.h"
+#include "utils/fold.h"
 #include <assert.h>
 
 #include <stdarg.h>
@@ -53,9 +53,7 @@ void term_mouse_set(int on) {
     term_mouse_write(g_mouse_on);
 }
 
-int term_mouse_get(void) {
-    return g_mouse_on;
-}
+int term_mouse_get(void) { return g_mouse_on; }
 
 void disable_raw_mode(void) {
     /* Turn bracketed paste and mouse reporting off before restoring
@@ -147,8 +145,8 @@ EdError buf_save_in(Buffer *buf) {
     EdError werr = fs_file_write(buf->filename, buffer, len);
     free(buffer);
     if (werr != ED_OK) {
-        ed_set_status_message("Error writing %s: %s",
-                              buf->filename, ed_error_string(werr));
+        ed_set_status_message("Error writing %s: %s", buf->filename,
+                              ed_error_string(werr));
         return werr;
     }
     buf->dirty = 0;
@@ -177,10 +175,12 @@ static int render_cols_ss(const StrBuf *r);
  * is bounded by the screen and the next frame paints over it. */
 static void emit_eol_vtext(Abuf *ab, const Buffer *buf, int filerow,
                            int avail) {
-    if (avail <= 0) return;
+    if (avail <= 0)
+        return;
     const VtMark *marks[8];
     int n = vtext_collect_eol(buf, filerow, marks, 8);
-    if (n == 0) return;
+    if (n == 0)
+        return;
 
     int budget = avail;
     for (int i = 0; i < n && budget > 0; i++) {
@@ -188,8 +188,10 @@ static void emit_eol_vtext(Abuf *ab, const Buffer *buf, int filerow,
         ansi_sgr_reset(ab);
         ab_append_str(ab, m->sgr ? m->sgr : COLOR_COMMENT);
         int take = (int)m->text.len;
-        if (take > budget) take = budget;
-        if (take > 0) ab_append(ab, m->text.data, take);
+        if (take > budget)
+            take = budget;
+        if (take > 0)
+            ab_append(ab, m->text.data, take);
         budget -= take;
         if (budget > 0 && i + 1 < n) {
             ab_append_ch(ab, ' ');
@@ -280,8 +282,8 @@ void window_scroll(Window *win) {
      * plus its block_below count. */
     int total_visual = 0;
     for (int y = 0; y < buf->num_rows; y++) {
-        total_visual += row_visual_height(&buf->rows[y], content_cols, 1)
-                      + vtext_block_below_count(buf, y);
+        total_visual += row_visual_height(&buf->rows[y], content_cols, 1) +
+                        vtext_block_below_count(buf, y);
     }
 
     int max_off = total_visual - win->height;
@@ -336,8 +338,8 @@ static int window_gutter_width(const Window *win, int view_rows) {
     return w;
 }
 
-int window_screen_to_buffer(const Window *win, int srow, int scol,
-                            int *out_y, int *out_x) {
+int window_screen_to_buffer(const Window *win, int srow, int scol, int *out_y,
+                            int *out_x) {
     if (!win || !out_y || !out_x)
         return 0;
     Buffer *buf = NULL;
@@ -369,8 +371,7 @@ int window_screen_to_buffer(const Window *win, int srow, int scol,
             y++;
             continue;
         }
-        int h_real = row_visual_height(&buf->rows[y], content_cols,
-                                       win->wrap);
+        int h_real = row_visual_height(&buf->rows[y], content_cols, win->wrap);
         int h_total = h_real + vtext_block_below_count(buf, y);
         if (target < h_total) {
             sub = target;
@@ -397,8 +398,7 @@ int window_screen_to_buffer(const Window *win, int srow, int scol,
         cell = 0;
     if (cell >= content_cols)
         cell = content_cols - 1;
-    int rx = win->wrap ? sub * content_cols + cell
-                       : win->col_offset + cell;
+    int rx = win->wrap ? sub * content_cols + cell : win->col_offset + cell;
 
     *out_y = y;
     *out_x = buf_row_rx_to_cx(&buf->rows[y], rx);
@@ -421,8 +421,9 @@ static void render_slice_ss(const StrBuf *r, int start_col, int want_cols,
  * in chars-space byte coordinates; tab expansion (chars '\t' → multiple
  * render spaces) is handled by walking chars and render side-by-side. */
 static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
-                                          int col_offset, int max_cols) {
-    if (!buf || row < 0 || row >= buf->num_rows) return;
+                                         int col_offset, int max_cols) {
+    if (!buf || row < 0 || row >= buf->num_rows)
+        return;
     const Row *r = &buf->rows[row];
     const char *cdata = r->chars.data;
     int clen = (int)r->chars.len;
@@ -432,7 +433,7 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
      * the plain ab_append() path used when there are no spans. We emit the raw
      * codepoint bytes from chars and expand tabs to spaces ourselves. */
     int col = 0; /* display column at the start of the current codepoint */
-    int ci  = 0; /* byte index into chars */
+    int ci = 0;  /* byte index into chars */
 
     /* Skip codepoints entirely left of the viewport. A char straddling
      * col_offset is dropped (it has already advanced past col_offset), which
@@ -443,10 +444,11 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
             w = TAB_STOP - (col % TAB_STOP);
         else {
             w = utf8_char_width(cdata + ci, (size_t)(clen - ci), &adv);
-            if (adv < 1) adv = 1;
+            if (adv < 1)
+                adv = 1;
         }
         col += w;
-        ci  += adv;
+        ci += adv;
     }
 
     int end_col = col_offset + max_cols;
@@ -458,7 +460,8 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
             w = TAB_STOP - (col % TAB_STOP);
         else {
             w = utf8_char_width(cdata + ci, (size_t)(clen - ci), &adv);
-            if (adv < 1) adv = 1;
+            if (adv < 1)
+                adv = 1;
         }
 
         const AttrSpan *sp = attrspan_at(&buf->render_spans, row, ci);
@@ -467,8 +470,10 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
             /* Soft reset preserves any reverse-video the caller has
              * wrapping this slice (visual selection), so closing a
              * syntax span mid-selection doesn't drop the inverse. */
-            if (cur_sgr) ansi_sgr_soft_reset(ab);
-            if (want_sgr) ab_append_str(ab, want_sgr);
+            if (cur_sgr)
+                ansi_sgr_soft_reset(ab);
+            if (want_sgr)
+                ab_append_str(ab, want_sgr);
             cur_sgr = want_sgr;
         }
         if (is_tab) {
@@ -479,9 +484,10 @@ static void render_emit_slice_with_spans(Abuf *ab, const Buffer *buf, int row,
                 ab_append_ch(ab, cdata[ci + b]);
         }
         col += w;
-        ci  += adv;
+        ci += adv;
     }
-    if (cur_sgr) ansi_sgr_soft_reset(ab);
+    if (cur_sgr)
+        ansi_sgr_soft_reset(ab);
 }
 
 /* Compute selection span (render columns, exclusive end) for a row. Returns 1
@@ -490,7 +496,8 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
                            int row, int *start_rx, int *end_rx) {
     if (!buf || !win || win->sel.type == SEL_NONE)
         return 0;
-    if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK || E.mode == MODE_VISUAL_LINE))
+    if (!(E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_BLOCK ||
+          E.mode == MODE_VISUAL_LINE))
         return 0;
     if (!BOUNDS_CHECK(row, buf->num_rows))
         return 0;
@@ -583,7 +590,7 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
 
 static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     Buffer *buf = NULL;
-    assert(win!=NULL);
+    assert(win != NULL);
     if (arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
         win->buffer_index < (int)arrlen(E.buffers))
         buf = &E.buffers[win->buffer_index];
@@ -596,14 +603,16 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
     if (buf) {
         attrspan_clear(&buf->render_spans);
         int row_start = win->row_offset;
-        if (row_start < 0) row_start = 0;
+        if (row_start < 0)
+            row_start = 0;
         int row_end = row_start + win->height;
-        if (row_end > buf->num_rows) row_end = buf->num_rows;
+        if (row_end > buf->num_rows)
+            row_end = buf->num_rows;
         HookRenderEvent rev = {
-            .buf       = buf,
+            .buf = buf,
             .row_start = row_start,
-            .row_end   = row_end,
-            .spans     = &buf->render_spans,
+            .row_end = row_end,
+            .spans = &buf->render_spans,
         };
         hook_fire_render(HOOK_RENDER_PRE, &rev);
         attrspan_sort(&buf->render_spans);
@@ -630,8 +639,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 y++;
                 continue;
             }
-            int h_real = row_visual_height(&buf->rows[y], content_cols,
-                                           win->wrap);
+            int h_real =
+                row_visual_height(&buf->rows[y], content_cols, win->wrap);
             int h_total = h_real + vtext_block_below_count(buf, y);
             if (target < h_total) {
                 row = y;
@@ -659,24 +668,28 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
          * marker, selection, attribute spans, EOL vtext and
          * cursor mapping — just paint the virtual text. */
         if (buf && filerow < buf->num_rows) {
-            int h_real_now = win->wrap
-                ? row_visual_height(&buf->rows[filerow], content_cols, 1)
-                : 1;
+            int h_real_now = win->wrap ? row_visual_height(&buf->rows[filerow],
+                                                           content_cols, 1)
+                                       : 1;
             if (sub >= h_real_now) {
                 int virt_idx = sub - h_real_now;
                 if (E.show_line_numbers) {
-                    for (int i = 0; i < margin; i++) ab_append_ch(ab, ' ');
+                    for (int i = 0; i < margin; i++)
+                        ab_append_ch(ab, ' ');
                 }
                 const char *vtxt = NULL;
-                size_t      vlen = 0;
+                size_t vlen = 0;
                 const char *vsgr = NULL;
-                if (vtext_block_below_at(buf, filerow, virt_idx,
-                                         &vtxt, &vlen, &vsgr) && vtxt) {
+                if (vtext_block_below_at(buf, filerow, virt_idx, &vtxt, &vlen,
+                                         &vsgr) &&
+                    vtxt) {
                     ansi_sgr_reset(ab);
                     ab_append_str(ab, vsgr ? vsgr : COLOR_COMMENT);
                     int take = (int)vlen;
-                    if (take > content_cols) take = content_cols;
-                    if (take > 0) ab_append(ab, vtxt, take);
+                    if (take > content_cols)
+                        take = content_cols;
+                    if (take > 0)
+                        ab_append(ab, vtxt, take);
                     ansi_sgr_reset(ab);
                 }
                 ansi_clear_eol(ab);
@@ -684,14 +697,14 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 /* Advance: same logic as the end-of-loop block, but
                  * unified so block_below increments sub the same way
                  * a wrap subline does. */
-                int h_total_now = h_real_now
-                    + vtext_block_below_count(buf, filerow);
+                int h_total_now =
+                    h_real_now + vtext_block_below_count(buf, filerow);
                 sub++;
                 if (sub >= h_total_now) {
                     sub = 0;
                     row++;
-                    while (row < buf->num_rows
-                           && fold_is_line_hidden(&buf->folds, row))
+                    while (row < buf->num_rows &&
+                           fold_is_line_hidden(&buf->folds, row))
                         row++;
                 }
                 continue;
@@ -758,7 +771,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
 
                 /* Show fold count prefix */
                 char fold_prefix[32];
-                snprintf(fold_prefix, sizeof(fold_prefix), "+%d ln: ", fold_lines);
+                snprintf(fold_prefix, sizeof(fold_prefix),
+                         "+%d ln: ", fold_lines);
                 ab_append_str(ab, fold_prefix);
 
                 /* Show first line content (trimmed to fit) */
@@ -787,27 +801,27 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                 int len;
 
                 if (win->wrap) {
-                start_rx = sub * content_cols;
-                if (start_rx < 0)
-                    start_rx = 0;
-                if (start_rx > line_rcols)
-                    start_rx = line_rcols;
-                len = line_rcols - start_rx;
-                if (len > content_cols)
-                    len = content_cols;
-            } else {
-                start_rx = win->col_offset;
-                len = line_rcols - win->col_offset;
-                if (len < 0)
-                    len = 0;
-                if (len > content_cols)
-                    len = content_cols;
-            }
+                    start_rx = sub * content_cols;
+                    if (start_rx < 0)
+                        start_rx = 0;
+                    if (start_rx > line_rcols)
+                        start_rx = line_rcols;
+                    len = line_rcols - start_rx;
+                    if (len > content_cols)
+                        len = content_cols;
+                } else {
+                    start_rx = win->col_offset;
+                    len = line_rcols - win->col_offset;
+                    if (len < 0)
+                        len = 0;
+                    if (len > content_cols)
+                        len = content_cols;
+                }
 
-            if (len > 0) {
-                int sel_start_rx = 0, sel_end_rx = 0;
-                int has_sel = visual_row_span(buf, win, cursor_rx, filerow,
-                                              &sel_start_rx, &sel_end_rx);
+                if (len > 0) {
+                    int sel_start_rx = 0, sel_end_rx = 0;
+                    int has_sel = visual_row_span(buf, win, cursor_rx, filerow,
+                                                  &sel_start_rx, &sel_end_rx);
 
 #define APPEND_SLICE(start_rx_, slice_cols_)                                   \
     do {                                                                       \
@@ -820,46 +834,47 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
              * without any spans pass through as plain text. */                \
             if (buf->render_spans.items &&                                     \
                 arrlen(buf->render_spans.items) > 0) {                         \
-                render_emit_slice_with_spans(ab, buf, filerow,                 \
-                                             (start_rx_), (slice_cols_));      \
+                render_emit_slice_with_spans(ab, buf, filerow, (start_rx_),    \
+                                             (slice_cols_));                   \
             } else {                                                           \
                 ab_append(ab, &buf->rows[filerow].render.data[__sb], __blen);  \
             }                                                                  \
         }                                                                      \
     } while (0)
 
-                if (!has_sel) {
-                    APPEND_SLICE(start_rx, len);
-                } else {
-                    int vis_start = win->wrap ? start_rx : win->col_offset;
-                    int vis_end = vis_start + content_cols;
+                    if (!has_sel) {
+                        APPEND_SLICE(start_rx, len);
+                    } else {
+                        int vis_start = win->wrap ? start_rx : win->col_offset;
+                        int vis_end = vis_start + content_cols;
 
-                    int pre_start = vis_start;
-                    int pre_end = sel_start_rx < vis_end
-                                      ? (sel_start_rx > vis_start ? sel_start_rx
-                                                                  : vis_start)
-                                      : vis_end;
-                    int pre_len = pre_end - pre_start;
-                    APPEND_SLICE(pre_start, pre_len);
+                        int pre_start = vis_start;
+                        int pre_end =
+                            sel_start_rx < vis_end
+                                ? (sel_start_rx > vis_start ? sel_start_rx
+                                                            : vis_start)
+                                : vis_end;
+                        int pre_len = pre_end - pre_start;
+                        APPEND_SLICE(pre_start, pre_len);
 
-                    int sel_vis_start =
-                        sel_start_rx < vis_start ? vis_start : sel_start_rx;
-                    int sel_vis_end =
-                        sel_end_rx > vis_end ? vis_end : sel_end_rx;
-                    int sel_len = sel_vis_end - sel_vis_start;
-                    if (sel_len > 0) {
-                        ansi_invert_on(ab); /* inverse */
-                        APPEND_SLICE(sel_vis_start, sel_len);
-                        ansi_sgr_reset(ab); /* reset */
+                        int sel_vis_start =
+                            sel_start_rx < vis_start ? vis_start : sel_start_rx;
+                        int sel_vis_end =
+                            sel_end_rx > vis_end ? vis_end : sel_end_rx;
+                        int sel_len = sel_vis_end - sel_vis_start;
+                        if (sel_len > 0) {
+                            ansi_invert_on(ab); /* inverse */
+                            APPEND_SLICE(sel_vis_start, sel_len);
+                            ansi_sgr_reset(ab); /* reset */
+                        }
+
+                        int post_start =
+                            sel_end_rx > vis_start
+                                ? (sel_end_rx < vis_end ? sel_end_rx : vis_end)
+                                : vis_start;
+                        int post_len = vis_end - post_start;
+                        APPEND_SLICE(post_start, post_len);
                     }
-
-                    int post_start =
-                        sel_end_rx > vis_start
-                            ? (sel_end_rx < vis_end ? sel_end_rx : vis_end)
-                            : vis_start;
-                    int post_len = vis_end - post_start;
-                    APPEND_SLICE(post_start, post_len);
-                }
 #undef APPEND_SLICE
                 }
 
@@ -867,8 +882,8 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
                  * of the row, after the buffer slice and any selection
                  * inversion, so reverse-video does not bleed in. */
                 if (vtext_buffer_has_marks(buf) && start_rx <= line_rcols) {
-                    int h = row_visual_height(&buf->rows[filerow],
-                                              content_cols, win->wrap);
+                    int h = row_visual_height(&buf->rows[filerow], content_cols,
+                                              win->wrap);
                     int is_last = win->wrap ? (sub == h - 1) : 1;
                     if (is_last) {
                         int painted = len > 0 ? len : 0;
@@ -886,11 +901,9 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
          * through real sublines first (only > 1 when wrap is on) and
          * then through virtual block_below rows. */
         if (buf && row < buf->num_rows) {
-            Row *r       = &buf->rows[row];
-            int  h_real  = win->wrap
-                ? row_visual_height(r, content_cols, 1)
-                : 1;
-            int  h_total = h_real + vtext_block_below_count(buf, row);
+            Row *r = &buf->rows[row];
+            int h_real = win->wrap ? row_visual_height(r, content_cols, 1) : 1;
+            int h_total = h_real + vtext_block_below_count(buf, row);
             sub++;
             if (sub >= h_total) {
                 sub = 0;
@@ -911,24 +924,32 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
  * drawn whole. Wrap mode is handled with the no-wrap mapping;
  * positions may be slightly off in wrap mode but won't crash. */
 static void draw_extra_cursors_win(Abuf *ab, const Window *win) {
-    if (!win) return;
-    if (arrlen(E.buffers) == 0) return;
-    if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers)) return;
+    if (!win)
+        return;
+    if (arrlen(E.buffers) == 0)
+        return;
+    if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers))
+        return;
     Buffer *buf = &E.buffers[win->buffer_index];
-    if (!buf) return;
+    if (!buf)
+        return;
     Cursor *skip = NULL;
     CursorVec cursors = buf_cursors_for_window(buf, win, &skip);
-    if (!cursors || arrlen(cursors) <= (skip ? 1 : 0)) return;
+    if (!cursors || arrlen(cursors) <= (skip ? 1 : 0))
+        return;
 
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0;
     int content_cols = win->width - margin;
-    if (content_cols <= 0) return;
+    if (content_cols <= 0)
+        return;
 
     for (ptrdiff_t i = 0; i < arrlen(cursors); i++) {
         Cursor *c = cursors[i];
-        if (!c || c == skip) continue;
-        if (c->y < 0 || c->y >= buf->num_rows) continue;
+        if (!c || c == skip)
+            continue;
+        if (c->y < 0 || c->y >= buf->num_rows)
+            continue;
         if (c->y < win->row_offset || c->y >= win->row_offset + win->height)
             continue;
         Row *row = &buf->rows[c->y];
@@ -1058,8 +1079,11 @@ void ed_render_frame(void) {
         int extra_lines = 0;
         int last_line_bytes = 0;
         for (int i = 0; i < pr->len; i++) {
-            if (pr->buf[i] == '\n') { extra_lines++; last_line_bytes = 0; }
-            else last_line_bytes++;
+            if (pr->buf[i] == '\n') {
+                extra_lines++;
+                last_line_bytes = 0;
+            } else
+                last_line_bytes++;
         }
         /* When draw_message_bar renders the prompt's hint above the
          * input (completion feedback etc.), the input itself is shifted
@@ -1069,7 +1093,8 @@ void ed_render_frame(void) {
             int total = ui_message_lines_needed();
             int prompt_lines = extra_lines + 1;
             hint_offset = total - prompt_lines;
-            if (hint_offset < 0) hint_offset = 0;
+            if (hint_offset < 0)
+                hint_offset = 0;
         }
         cur_row = lo.cmd_row + hint_offset + extra_lines;
         const char *label = pr->vt->label ? pr->vt->label(pr) : "";

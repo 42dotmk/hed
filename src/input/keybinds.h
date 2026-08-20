@@ -1,7 +1,7 @@
 #ifndef KEYBINDS_H
 #define KEYBINDS_H
-#include "editor.h"
 #include "commands/registry.h"
+#include "editor.h"
 #include <stdbool.h>
 
 /* Keybinding callback signature */
@@ -54,8 +54,8 @@ void keybind_register_command(int mode, const char *sequence,
 
 /* Filetype-specific command keybinding variant. */
 void keybind_register_command_ft(int mode, const char *sequence,
-                                  const char *filetype, const char *cmdline,
-                                  const char *desc);
+                                 const char *filetype, const char *cmdline,
+                                 const char *desc);
 
 /**
  * Process a key press through the keybinding system
@@ -84,25 +84,25 @@ bool keybind_process_modes(int key, const int *modes, int nmodes);
  * via re-registration; do not free them. The callback/command_callback
  * fields are the invoke handle — pass a view to keybind_invoke(). */
 typedef struct KeybindMatchView {
-    const char     *sequence;
-    const char     *desc;
-    int             mode;
-    bool            is_command;        /* runs a :command instead of a callback */
-    bool            filetype_specific; /* registered with a non-NULL filetype */
+    const char *sequence;
+    const char *desc;
+    int mode;
+    bool is_command;        /* runs a :command instead of a callback */
+    bool filetype_specific; /* registered with a non-NULL filetype */
     /* Invoke handle. Treat as opaque from the UI side. */
     KeybindCallback callback;
     CommandCallback command_callback;
-    const char     *cmdline;           /* for command bindings (== desc); NULL otherwise */
+    const char *cmdline; /* for command bindings (== desc); NULL otherwise */
 } KeybindMatchView;
 
 typedef struct KeybindFeedResult {
     /* Sequence accumulated so far (NUL-terminated, possibly empty). */
     const char *active_sequence;
-    int         active_len;
+    int active_len;
 
     /* Numeric prefix typed so far (Vim-style count). Meaningful only
      * when has_count is true. */
-    int  count;
+    int count;
     bool has_count;
 
     /* True when active_sequence is itself a registered keybinding —
@@ -165,9 +165,9 @@ void keybind_clear_buffer(void);
  * cursor with the same starting state. */
 typedef struct KeybindState {
     char key_buffer[16]; /* matches KEY_BUFFER_SIZE in keybinds.c */
-    int  key_buffer_len;
-    int  pending_count;
-    int  have_count;
+    int key_buffer_len;
+    int pending_count;
+    int have_count;
 } KeybindState;
 
 void keybind_state_save(KeybindState *out);
@@ -182,13 +182,14 @@ int keybind_get_count(void);
  * Get keybinding info at the given index
  * Returns 1 if successful, 0 if index out of bounds
  */
-int keybind_get_at(int index, const char **sequence, const char **desc, int *mode);
+int keybind_get_at(int index, const char **sequence, const char **desc,
+                   int *mode);
 
 /* Like keybind_get_at, but also exposes the binding's filetype scope
  * (NULL for global bindings) and, for command-style bindings, the
  * underlying command line (NULL for callback bindings). */
 int keybind_get_at_ext(int index, const char **sequence, const char **desc,
-                      int *mode, const char **filetype, const char **cmdline);
+                       int *mode, const char **filetype, const char **cmdline);
 
 /**
  * Get and consume the pending numeric count
@@ -197,6 +198,10 @@ int keybind_get_at_ext(int index, const char **sequence, const char **desc,
  * Returns the count (defaults to 1 if no count was entered)
  */
 int keybind_get_and_clear_pending_count(void);
+
+/* True while a numeric prefix is pending — lets a callback tell an
+ * explicit count of 1 (1G = line 1) apart from no count (G = EOF). */
+int keybind_has_pending_count(void);
 
 /* Text Object System */
 
@@ -238,19 +243,22 @@ int textobj_lookup(const char *keys, struct Buffer *buf, int line, int col,
 /* Built-in keybinding callbacks live in keybinds_builtins.h */
 
 /* Convenience macros — used by plugins and config.c */
-#define mapn(x, y, d)    keybind_register(MODE_NORMAL, x, y, d)
-#define mapv(x, y, d)    keybind_register(MODE_VISUAL, x, y, d)
-#define mapi(x, y, d)    keybind_register(MODE_INSERT, x, y, d)
-#define mapvb(x, y, d)   keybind_register(MODE_VISUAL_BLOCK, x, y, d)
-#define mapvl(x, y, d)   keybind_register(MODE_VISUAL_LINE, x, y, d)
-#define cmapn(x, y, d)   keybind_register_command(MODE_NORMAL, x, y, d)
-#define cmapv(x, y, d)   keybind_register_command(MODE_VISUAL, x, y, d)
-#define cmapi(x, y, d)   keybind_register_command(MODE_INSERT, x, y, d)
-#define mapn_ft(ft, x, y, d)  keybind_register_ft(MODE_NORMAL, x, ft, y, d)
-#define mapi_ft(ft, x, y, d)  keybind_register_ft(MODE_INSERT, x, ft, y, d)
-#define mapv_ft(ft, x, y, d)  keybind_register_ft(MODE_VISUAL, x, ft, y, d)
-#define cmapn_ft(ft, x, y, d)  keybind_register_command_ft(MODE_NORMAL, x, ft, y, d)
-#define cmapi_ft(ft, x, y, d)  keybind_register_command_ft(MODE_INSERT, x, ft, y, d)
-#define cmapv_ft(ft, x, y, d)  keybind_register_command_ft(MODE_VISUAL, x, ft, y, d)
+#define mapn(x, y, d) keybind_register(MODE_NORMAL, x, y, d)
+#define mapv(x, y, d) keybind_register(MODE_VISUAL, x, y, d)
+#define mapi(x, y, d) keybind_register(MODE_INSERT, x, y, d)
+#define mapvb(x, y, d) keybind_register(MODE_VISUAL_BLOCK, x, y, d)
+#define mapvl(x, y, d) keybind_register(MODE_VISUAL_LINE, x, y, d)
+#define cmapn(x, y, d) keybind_register_command(MODE_NORMAL, x, y, d)
+#define cmapv(x, y, d) keybind_register_command(MODE_VISUAL, x, y, d)
+#define cmapi(x, y, d) keybind_register_command(MODE_INSERT, x, y, d)
+#define mapn_ft(ft, x, y, d) keybind_register_ft(MODE_NORMAL, x, ft, y, d)
+#define mapi_ft(ft, x, y, d) keybind_register_ft(MODE_INSERT, x, ft, y, d)
+#define mapv_ft(ft, x, y, d) keybind_register_ft(MODE_VISUAL, x, ft, y, d)
+#define cmapn_ft(ft, x, y, d)                                                  \
+    keybind_register_command_ft(MODE_NORMAL, x, ft, y, d)
+#define cmapi_ft(ft, x, y, d)                                                  \
+    keybind_register_command_ft(MODE_INSERT, x, ft, y, d)
+#define cmapv_ft(ft, x, y, d)                                                  \
+    keybind_register_command_ft(MODE_VISUAL, x, ft, y, d)
 
 #endif // KEYBINDS_H

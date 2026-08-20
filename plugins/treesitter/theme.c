@@ -2,23 +2,23 @@
 #include "stb_ds.h"
 
 typedef struct {
-    char       *key;
+    char *key;
     const char *value;
 } PaletteEntry;
 
 typedef struct {
-    char          *key;
+    char *key;
     theme_apply_fn value;
 } ThemeEntry;
 
 static PaletteEntry *g_palette = NULL;
-static ThemeEntry   *g_themes  = NULL;
-static int           g_palette_inited = 0;
-static int           g_themes_inited = 0;
-static const char   *g_active = NULL;
+static ThemeEntry *g_themes = NULL;
+static int g_palette_inited = 0;
+static int g_themes_inited = 0;
+static const char *g_active = NULL;
 
 /* NULL-terminated theme name list, rebuilt lazily on theme_list(). */
-static const char  **g_names_cache = NULL;
+static const char **g_names_cache = NULL;
 
 static void ensure_palette(void) {
     if (g_palette_inited)

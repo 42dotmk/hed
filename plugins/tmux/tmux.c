@@ -4,13 +4,13 @@
  * history hook that splices runner history into Up/Down arrow
  * navigation when the user is editing a `tmux_send ...` command. */
 
-#include "hed.h"
 #include "tmux.h"
+#include "hed.h"
+#include "input/command_mode.h"
+#include "input/keybinds_builtins.h"
+#include "input/prompt.h"
 #include "utils/term_cmd.h"
 #include "utils/yank.h"
-#include "input/keybinds_builtins.h"
-#include "input/command_mode.h"
-#include "input/prompt.h"
 #include <string.h>
 
 static void cmd_tmux_toggle(const char *args) {
@@ -194,26 +194,33 @@ static int tmux_send_history_hook(Prompt *p, int dir, void *ud) {
     (void)ud;
     static const char prefix[] = "tmux_send";
     const size_t plen = sizeof(prefix) - 1;
-    if ((size_t)p->len < plen) return 0;
-    if (memcmp(p->buf, prefix, plen) != 0) return 0;
-    if ((size_t)p->len > plen && p->buf[plen] != ' ') return 0;
+    if ((size_t)p->len < plen)
+        return 0;
+    if (memcmp(p->buf, prefix, plen) != 0)
+        return 0;
+    if ((size_t)p->len > plen && p->buf[plen] != ' ')
+        return 0;
 
     const char *args = p->buf + plen;
-    if (*args == ' ') args++;
+    if (*args == ' ')
+        args++;
     int args_len = p->len - (int)(args - p->buf);
 
     char candidate[512];
-    int ok =
-        (dir < 0)
-            ? tmux_history_browse_up(args, args_len, candidate, (int)sizeof(candidate))
-            : tmux_history_browse_down(candidate, (int)sizeof(candidate), NULL);
-    if (!ok) return 0;
+    int ok = (dir < 0) ? tmux_history_browse_up(args, args_len, candidate,
+                                                (int)sizeof(candidate))
+                       : tmux_history_browse_down(candidate,
+                                                  (int)sizeof(candidate), NULL);
+    if (!ok)
+        return 0;
 
     char line[PROMPT_BUF_CAP];
     int n = snprintf(line, sizeof(line), "tmux_send%s%s",
                      candidate[0] ? " " : "", candidate);
-    if (n < 0) n = 0;
-    if (n >= (int)sizeof(line)) n = (int)sizeof(line) - 1;
+    if (n < 0)
+        n = 0;
+    if (n >= (int)sizeof(line))
+        n = (int)sizeof(line) - 1;
     prompt_set_text(p, line, n);
     return 1;
 }
@@ -224,24 +231,27 @@ static int tmux_plugin_init(void) {
      * tmux_pane_register(). */
     tmux_pane_register("runner", NULL, TMUX_SPLIT_BELOW);
 
-    cmd("tmux_toggle",    cmd_tmux_toggle,    "tmux toggle runner pane");
-    cmd("tmux_send",      cmd_tmux_send,      "tmux send command");
-    cmd("tmux_kill",      cmd_tmux_kill,      "tmux kill runner pane");
-    cmd("tmux_send_line",      cmd_tmux_send_line,      "tmux send paragraph to last focused pane");
-    cmd("tmux_send_selection", cmd_tmux_send_selection, "tmux send visual selection to last focused pane");
-    cmd("tmux_focus",          cmd_tmux_focus,          "tmux focus pane by name");
-    cmd("tmux_panes",          cmd_tmux_panes,          "tmux fzf-pick a registered pane");
-    cmd("tmux_attach",         cmd_tmux_attach,         "tmux bind a live pane to a name");
-    mapn(" ts", kb_tmux_send_line,      "send paragraph to last focused tmux pane");
-    mapv(" t",  kb_tmux_send_selection, "send selection to last focused tmux pane");
+    cmd("tmux_toggle", cmd_tmux_toggle, "tmux toggle runner pane");
+    cmd("tmux_send", cmd_tmux_send, "tmux send command");
+    cmd("tmux_kill", cmd_tmux_kill, "tmux kill runner pane");
+    cmd("tmux_send_line", cmd_tmux_send_line,
+        "tmux send paragraph to last focused pane");
+    cmd("tmux_send_selection", cmd_tmux_send_selection,
+        "tmux send visual selection to last focused pane");
+    cmd("tmux_focus", cmd_tmux_focus, "tmux focus pane by name");
+    cmd("tmux_panes", cmd_tmux_panes, "tmux fzf-pick a registered pane");
+    cmd("tmux_attach", cmd_tmux_attach, "tmux bind a live pane to a name");
+    mapn(" ts", kb_tmux_send_line, "send paragraph to last focused tmux pane");
+    mapv(" t", kb_tmux_send_selection,
+         "send selection to last focused tmux pane");
 
     cmd_prompt_history_register(tmux_send_history_hook, NULL);
     return 0;
 }
 
 const Plugin plugin_tmux = {
-    .name   = "tmux",
-    .desc   = "tmux runner pane integration",
-    .init   = tmux_plugin_init,
+    .name = "tmux",
+    .desc = "tmux runner pane integration",
+    .init = tmux_plugin_init,
     .deinit = NULL,
 };

@@ -18,13 +18,19 @@
 
 static EdError errno_to_ed(int err, EdError default_err) {
     switch (err) {
-    case 0:       return ED_OK;
-    case ENOENT:  return ED_ERR_FILE_NOT_FOUND;
+    case 0:
+        return ED_OK;
+    case ENOENT:
+        return ED_ERR_FILE_NOT_FOUND;
     case EACCES:
-    case EPERM:   return ED_ERR_FILE_PERM;
-    case ENOMEM:  return ED_ERR_NOMEM;
-    case EINVAL:  return ED_ERR_INVALID_ARG;
-    default:      return default_err;
+    case EPERM:
+        return ED_ERR_FILE_PERM;
+    case ENOMEM:
+        return ED_ERR_NOMEM;
+    case EINVAL:
+        return ED_ERR_INVALID_ARG;
+    default:
+        return default_err;
     }
 }
 
@@ -49,7 +55,7 @@ bool fs_path_is_absolute(const char *path) {
 static const char *fs__find_last_sep(const char *path) {
     if (!path)
         return NULL;
-    const char *slash  = strrchr(path, '/');
+    const char *slash = strrchr(path, '/');
     const char *bslash = strrchr(path, '\\');
     if (bslash && (!slash || bslash > slash))
         return bslash;
@@ -95,7 +101,7 @@ const char *fs_path_extension(const char *path) {
     if (!path)
         return "";
     const char *base = fs_path_basename(path);
-    const char *dot  = strrchr(base, '.');
+    const char *dot = strrchr(base, '.');
     if (!dot || dot == base)
         return "";
     return dot + 1;
@@ -170,13 +176,13 @@ const char *fs_uri_to_path(const char *uri) {
 
 /* User-registered extension/basename → filetype overrides. */
 typedef struct {
-    char *key;      /* extension without the dot, or exact basename */
+    char *key; /* extension without the dot, or exact basename */
     char *filetype;
 } FtMapping;
 
-static FtMapping *ft_map     = NULL;
-static size_t     ft_map_len = 0;
-static size_t     ft_map_cap = 0;
+static FtMapping *ft_map = NULL;
+static size_t ft_map_len = 0;
+static size_t ft_map_cap = 0;
 
 void fs_filetype_register(const char *key, const char *filetype) {
     if (!key || !filetype || !*filetype)
@@ -200,10 +206,10 @@ void fs_filetype_register(const char *key, const char *filetype) {
         FtMapping *grown = realloc(ft_map, cap * sizeof(*grown));
         if (!grown)
             return;
-        ft_map     = grown;
+        ft_map = grown;
         ft_map_cap = cap;
     }
-    ft_map[ft_map_len].key      = strdup(key);
+    ft_map[ft_map_len].key = strdup(key);
     ft_map[ft_map_len].filetype = strdup(filetype);
     if (!ft_map[ft_map_len].key || !ft_map[ft_map_len].filetype) {
         free(ft_map[ft_map_len].key);
@@ -217,7 +223,7 @@ const char *fs_filetype_registered(const char *path) {
     if (!path || ft_map_len == 0)
         return NULL;
     const char *base = fs_path_basename(path);
-    const char *ext  = fs_path_extension(path);
+    const char *ext = fs_path_extension(path);
     const char *by_ext = NULL;
     for (size_t i = 0; i < ft_map_len; i++) {
         if (strcmp(ft_map[i].key, base) == 0)
@@ -245,20 +251,32 @@ char *fs_path_detect_filetype(const char *path) {
     if (!*ext)
         return strdup("txt");
 
-    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)         return strdup("c");
+    if (strcmp(ext, "c") == 0 || strcmp(ext, "h") == 0)
+        return strdup("c");
     if (strcmp(ext, "cpp") == 0 || strcmp(ext, "cc") == 0 ||
-        strcmp(ext, "cxx") == 0)                                 return strdup("cpp");
+        strcmp(ext, "cxx") == 0)
+        return strdup("cpp");
     if (strcmp(ext, "hpp") == 0 || strcmp(ext, "hh") == 0 ||
-        strcmp(ext, "hxx") == 0)                                 return strdup("cpp");
-    if (strcmp(ext, "py") == 0)                                  return strdup("python");
-    if (strcmp(ext, "js") == 0)                                  return strdup("javascript");
-    if (strcmp(ext, "ts") == 0)                                  return strdup("typescript");
-    if (strcmp(ext, "tsx") == 0)                                 return strdup("typescript");
-    if (strcmp(ext, "rs") == 0)                                  return strdup("rust");
-    if (strcmp(ext, "sh") == 0)                                  return strdup("shell");
-    if (strcmp(ext, "md") == 0)                                  return strdup("markdown");
-    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)     return strdup("html");
-    if (strcmp(ext, "cs") == 0 )     							 return strdup("csharp");
+        strcmp(ext, "hxx") == 0)
+        return strdup("cpp");
+    if (strcmp(ext, "py") == 0)
+        return strdup("python");
+    if (strcmp(ext, "js") == 0)
+        return strdup("javascript");
+    if (strcmp(ext, "ts") == 0)
+        return strdup("typescript");
+    if (strcmp(ext, "tsx") == 0)
+        return strdup("typescript");
+    if (strcmp(ext, "rs") == 0)
+        return strdup("rust");
+    if (strcmp(ext, "sh") == 0)
+        return strdup("shell");
+    if (strcmp(ext, "md") == 0)
+        return strdup("markdown");
+    if (strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0)
+        return strdup("html");
+    if (strcmp(ext, "cs") == 0)
+        return strdup("csharp");
 
     return strdup(ext);
 }
@@ -276,8 +294,10 @@ bool fs_find_root_marker(const char *start, const char *const *markers,
     /* If start is a regular file, begin at its parent directory. */
     if (fs_is_file(dir)) {
         char *slash = strrchr(dir, '/');
-        if (slash && slash != dir) *slash = '\0';
-        else if (slash == dir)     dir[1]  = '\0';
+        if (slash && slash != dir)
+            *slash = '\0';
+        else if (slash == dir)
+            dir[1] = '\0';
     }
 
     for (;;) {
@@ -294,8 +314,10 @@ bool fs_find_root_marker(const char *start, const char *const *markers,
         char *slash = strrchr(dir, '/');
         if (!slash)
             return false;
-        if (slash == dir) dir[1] = '\0';
-        else              *slash = '\0';
+        if (slash == dir)
+            dir[1] = '\0';
+        else
+            *slash = '\0';
     }
 }
 
@@ -433,8 +455,8 @@ EdError fs_file_write_atomic(const char *path, const void *data, size_t len) {
  * ===================================================================== */
 
 struct FsLines {
-    FILE  *fp;
-    char  *line;
+    FILE *fp;
+    char *line;
     size_t cap;
 };
 
@@ -453,7 +475,7 @@ EdError fs_lines_open(FsLines **out, const char *path) {
         return ED_ERR_NOMEM;
     }
     r->fp = fp;
-    *out  = r;
+    *out = r;
     return ED_OK;
 }
 
@@ -487,10 +509,10 @@ void fs_lines_close(FsLines *r) {
  * ===================================================================== */
 
 struct FsDir {
-    DIR   *dp;
-    char  *base;        /* owned: full directory path for is_dir fallback */
-    char   namebuf[PATH_MAX];
-    char   pathbuf[PATH_MAX];
+    DIR *dp;
+    char *base; /* owned: full directory path for is_dir fallback */
+    char namebuf[PATH_MAX];
+    char pathbuf[PATH_MAX];
 };
 
 EdError fs_dir_open(FsDir **out, const char *path) {
@@ -507,9 +529,9 @@ EdError fs_dir_open(FsDir **out, const char *path) {
         closedir(dp);
         return ED_ERR_NOMEM;
     }
-    d->dp   = dp;
+    d->dp = dp;
     d->base = strdup(path);
-    *out    = d;
+    *out = d;
     return ED_OK;
 }
 
@@ -519,8 +541,8 @@ bool fs_dir_next(FsDir *d, FsDirEntry *out) {
     struct dirent *de;
     while ((de = readdir(d->dp)) != NULL) {
         const char *name = de->d_name;
-        if (name[0] == '.' && (name[1] == '\0' ||
-                               (name[1] == '.' && name[2] == '\0')))
+        if (name[0] == '.' &&
+            (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
             continue;
 
         size_t nl = strlen(name);
@@ -537,8 +559,8 @@ bool fs_dir_next(FsDir *d, FsDirEntry *out) {
         else if (de->d_type == DT_UNKNOWN || de->d_type == DT_LNK)
 #endif
         {
-            if (fs_path_join(d->pathbuf, sizeof(d->pathbuf),
-                             d->base, d->namebuf)) {
+            if (fs_path_join(d->pathbuf, sizeof(d->pathbuf), d->base,
+                             d->namebuf)) {
                 is_dir = fs_is_dir(d->pathbuf);
             }
         }

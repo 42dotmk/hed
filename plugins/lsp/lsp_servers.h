@@ -12,9 +12,10 @@
  * plugins/fmt/fmt.c. Add an entry here, recompile, done. */
 
 typedef struct {
-    const char        *lang;          /* matches Buffer.filetype */
-    const char *const *argv;          /* NULL-terminated execvp argv */
-    const char *const *root_markers;  /* NULL-terminated, e.g. {".git", "Cargo.toml", NULL} */
+    const char *lang;        /* matches Buffer.filetype */
+    const char *const *argv; /* NULL-terminated execvp argv */
+    const char *const
+        *root_markers; /* NULL-terminated, e.g. {".git", "Cargo.toml", NULL} */
 } LspServerDef;
 
 /* Look up a server definition by filetype. NULL if no entry. */

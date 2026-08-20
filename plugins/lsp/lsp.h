@@ -33,15 +33,15 @@ void lsp_request_completion(Buffer *buf, int line, int col);
  *   lsp_cmd_connect("c", "tcp", "127.0.0.1:9090", NULL)
  *   :lsp_connect c tcp 127.0.0.1:9090
  */
-int  lsp_cmd_connect(const char *lang, const char *to_addr,
-                     const char *from_addr, const char *root_uri);
+int lsp_cmd_connect(const char *lang, const char *to_addr,
+                    const char *from_addr, const char *root_uri);
 
 /* Spawn a server from the registry in plugins/lsp/lsp_servers.c.
  *   :lsp_start c
  * `hint_path` (NULL or "" → E.cwd) seeds root detection. */
-int  lsp_cmd_start(const char *lang, const char *hint_path);
+int lsp_cmd_start(const char *lang, const char *hint_path);
 
-int  lsp_cmd_disconnect(const char *lang);
+int lsp_cmd_disconnect(const char *lang);
 void lsp_cmd_status(void);
 
 /* Dump all stored diagnostics into E.qf and open the quickfix pane. */

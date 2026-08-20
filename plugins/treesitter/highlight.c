@@ -1,15 +1,15 @@
 #include "highlight.h"
-#include "theme.h"
 #include "stb_ds.h"
+#include "theme.h"
 #include <string.h>
 
 typedef struct {
-    char       *key;
+    char *key;
     const char *value;
 } HEntry;
 
 static HEntry *g_table = NULL;
-static int     g_inited = 0;
+static int g_inited = 0;
 
 static void ensure_inited(void) {
     if (g_inited)

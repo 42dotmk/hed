@@ -5,10 +5,10 @@
 
 /* Unified selection description for yanks/deletes */
 typedef enum {
-    SEL_NONE = 0,        /* No selection */
-    SEL_VISUAL,          /* Character-wise (visual mode) */
-    SEL_VISUAL_LINE,     /* Line-wise (yy, dd, etc.) */
-    SEL_VISUAL_BLOCK     /* Block/column-wise (visual block mode) */
+    SEL_NONE = 0,    /* No selection */
+    SEL_VISUAL,      /* Character-wise (visual mode) */
+    SEL_VISUAL_LINE, /* Line-wise (yy, dd, etc.) */
+    SEL_VISUAL_BLOCK /* Block/column-wise (visual block mode) */
 } SelectionType;
 
 typedef struct {
@@ -32,15 +32,15 @@ typedef struct Window {
     int width;        /* number of columns */
     int buffer_index; /* index into E.buffers */
 
-    int focus;        /* 1 if focused */
-    int is_quickfix;  /* 1 if this window is a quickfix pane */
-    int is_modal;     /* 1 if this is a modal window */
-    int visible;      /* 1 if visible (for showing/hiding modals) */
-    int wrap;         /* 1 if soft-wrap is enabled */
+    int focus;       /* 1 if focused */
+    int is_quickfix; /* 1 if this window is a quickfix pane */
+    int is_modal;    /* 1 if this is a modal window */
+    int visible;     /* 1 if visible (for showing/hiding modals) */
+    int wrap;        /* 1 if soft-wrap is enabled */
 
-    int row_offset;   /* first visible visual row (wrap-aware) */
-    int col_offset;   /* first visible buffer column (render x) */
-    Cursor cursor;    /* window-local cursor (x=col, y=row index) */
+    int row_offset; /* first visible visual row (wrap-aware) */
+    int col_offset; /* first visible buffer column (render x) */
+    Cursor cursor;  /* window-local cursor (x=col, y=row index) */
     /* Gutter configuration: 0=off, 1=auto line numbers, 2=fixed width */
     int gutter_mode;
     int gutter_fixed_width;

@@ -42,10 +42,11 @@
  *                         resets). Config: task_agenda_ignore(glob).
  *   :task_org_root [path] set/show/clear the org root dir.
  *                         Config: task_org_root(path).
- *   :task_capture [title] append a [TODO] linking the current file:line
- *                         (or mail://thread:… for mail buffers) to the
- *                         todo file (markdown link, gf follows it).
- *                                                           <space>X
+ *   :task_capture [title] prepend a [TODO] linking the current
+ *                         file:line (or mail://thread:… for mail
+ *                         buffers) at the top of the todo file
+ *                         (markdown link, gf follows it), then jump
+ *                         to the todo file.                 <space>X
  *   :task_todo_file [p]   set/show/clear the capture target file
  *                         (default <org root>/todo.md).
  *                         Config: task_todo_file(path).
@@ -55,12 +56,12 @@
  * blocks, so `# [TODO]`/`key:: v` lines inside a ``` fence are also
  * recognized. The conventions make that rare. */
 
-#include "hed.h"
-#include "input/command_mode.h"  /* cmd_prompt_open */
-#include "input/picker.h"        /* picker_list (:org-files) */
-#include "lib/path_limits.h"     /* PATH_MAX */
-#include "markdown/markdown_fields.h"  /* MdFieldDef, md_parse_field, ... */
 #include "tasks.h"
+#include "hed.h"
+#include "input/command_mode.h"       /* cmd_prompt_open */
+#include "input/picker.h"             /* picker_list (:org-files) */
+#include "lib/path_limits.h"          /* PATH_MAX */
+#include "markdown/markdown_fields.h" /* MdFieldDef, md_parse_field, ... */
 #include <time.h>
 
 /* Row-array mutators live in buf/buffer.c with no public header — the
@@ -70,16 +71,16 @@
 
 typedef struct {
     const char *name;
-    const char *sgr;  /* render colour for the [KEYWORD] token */
-    int         closed;
+    const char *sgr; /* render colour for the [KEYWORD] token */
+    int closed;
 } Status;
 
 static const Status STATUS[] = {
-    {"TODO",        "\x1b[1;38;2;224;175;104m", 0}, /* amber  */
+    {"TODO", "\x1b[1;38;2;224;175;104m", 0},        /* amber  */
     {"IN-PROGRESS", "\x1b[1;38;2;122;162;247m", 0}, /* blue   */
-    {"BLOCKED",     "\x1b[1;38;2;247;118;142m", 0}, /* red    */
-    {"DONE",        "\x1b[1;38;2;158;206;106m", 1}, /* green  */
-    {"CANCELLED",   "\x1b[9;38;2;86;95;137m",   1}, /* strike */
+    {"BLOCKED", "\x1b[1;38;2;247;118;142m", 0},     /* red    */
+    {"DONE", "\x1b[1;38;2;158;206;106m", 1},        /* green  */
+    {"CANCELLED", "\x1b[9;38;2;86;95;137m", 1},     /* strike */
 };
 #define N_STATUS ((int)(sizeof(STATUS) / sizeof(STATUS[0])))
 
@@ -98,7 +99,8 @@ static int status_lookup(const char *s, int len) {
 
 /* -1 = none/clear, -2 = unrecognised. */
 static int status_parse(const char *s) {
-    while (*s == ' ' || *s == '\t') s++;
+    while (*s == ' ' || *s == '\t')
+        s++;
     if (!*s || strcasecmp(s, "none") == 0 || strcasecmp(s, "clear") == 0)
         return -1;
     for (int i = 0; i < N_STATUS; i++)
@@ -121,9 +123,9 @@ static int cycle_pos(int status) {
  * levels, agenda) on top of MdFieldDef / md_field_lookup. */
 
 /* Highlight palette for fields. */
-#define SGR_FIELD_KEY "\x1b[38;2;125;207;255m"   /* cyan   */
-#define SGR_DATE_OK   "\x1b[38;2;158;206;106m"   /* green  */
-#define SGR_DATE_BAD  "\x1b[38;2;247;118;142m"   /* red    */
+#define SGR_FIELD_KEY "\x1b[38;2;125;207;255m" /* cyan   */
+#define SGR_DATE_OK "\x1b[38;2;158;206;106m"   /* green  */
+#define SGR_DATE_BAD "\x1b[38;2;247;118;142m"  /* red    */
 static const char *PRIO_SGR[3] = {
     "\x1b[1;38;2;247;118;142m", /* A red    */
     "\x1b[1;38;2;224;175;104m", /* B amber  */
@@ -132,18 +134,27 @@ static const char *PRIO_SGR[3] = {
 
 /* Priority level from a value: 0=A,1=B,2=C (accepts A/B/C or 1/2/3), -1 bad. */
 static int prio_level(const char *s, int len) {
-    while (len > 0 && (*s == ' ' || *s == '\t')) { s++; len--; }
-    if (len < 1) return -1;
+    while (len > 0 && (*s == ' ' || *s == '\t')) {
+        s++;
+        len--;
+    }
+    if (len < 1)
+        return -1;
     char c = (char)toupper((unsigned char)s[0]);
-    if (c >= 'A' && c <= 'C') return c - 'A';
-    if (s[0] >= '1' && s[0] <= '3') return s[0] - '1';
+    if (c >= 'A' && c <= 'C')
+        return c - 'A';
+    if (s[0] >= '1' && s[0] <= '3')
+        return s[0] - '1';
     return -1;
 }
 
 /* --- date math (proleptic Gregorian, days from 1970-01-01) ------------ */
 
 static long ymd_to_days(int y, int m, int d) {
-    if (m <= 2) { y -= 1; m += 12; }
+    if (m <= 2) {
+        y -= 1;
+        m += 12;
+    }
     long era = (y >= 0 ? y : y - 399) / 400;
     long yoe = y - era * 400;
     long doy = (153 * (m - 3) + 2) / 5 + d - 1;
@@ -181,13 +192,17 @@ static void days_to_str(long z, char *out, size_t cap) {
 
 /* Strict YYYY-MM-DD with a real calendar date (round-trip check). */
 static int valid_date(const char *s, int len) {
-    if (len != 10 || s[4] != '-' || s[7] != '-') return 0;
+    if (len != 10 || s[4] != '-' || s[7] != '-')
+        return 0;
     for (int i = 0; i < 10; i++)
-        if (i != 4 && i != 7 && !isdigit((unsigned char)s[i])) return 0;
-    int y = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');
-    int m = (s[5]-'0')*10 + (s[6]-'0');
-    int d = (s[8]-'0')*10 + (s[9]-'0');
-    if (m < 1 || m > 12 || d < 1 || d > 31) return 0;
+        if (i != 4 && i != 7 && !isdigit((unsigned char)s[i]))
+            return 0;
+    int y = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 +
+            (s[3] - '0');
+    int m = (s[5] - '0') * 10 + (s[6] - '0');
+    int d = (s[8] - '0') * 10 + (s[9] - '0');
+    if (m < 1 || m > 12 || d < 1 || d > 31)
+        return 0;
     int yy, mm, dd;
     days_to_ymd(ymd_to_days(y, m, d), &yy, &mm, &dd);
     return yy == y && mm == m && dd == d;
@@ -200,9 +215,11 @@ static int parse_date_arg(const char *in, char *out, size_t cap) {
     char buf[64];
     snprintf(buf, sizeof(buf), "%s", in ? in : "");
     char *s = buf;
-    while (*s == ' ' || *s == '\t') s++;
+    while (*s == ' ' || *s == '\t')
+        s++;
     size_t n = strlen(s);
-    while (n > 0 && (s[n-1] == ' ' || s[n-1] == '\t')) s[--n] = '\0';
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t'))
+        s[--n] = '\0';
 
     long days;
     if (!*s || strcasecmp(s, "today") == 0) {
@@ -215,8 +232,10 @@ static int parse_date_arg(const char *in, char *out, size_t cap) {
         char *end;
         long k = strtol(s, &end, 10);
         long unit = 1;
-        if (*end == 'w' || *end == 'W') unit = 7;
-        else if (*end && *end != 'd' && *end != 'D') return 0;
+        if (*end == 'w' || *end == 'W')
+            unit = 7;
+        else if (*end && *end != 'd' && *end != 'D')
+            return 0;
         days = today_days() + k * unit;
     } else if (valid_date(s, (int)n)) {
         snprintf(out, cap, "%.10s", s); /* validated: exactly 10 bytes */
@@ -252,22 +271,33 @@ static int parse_heading_buf(const char *s, int len, Heading *h) {
     h->status = -1;
     h->kw_start = h->kw_end = -1;
 
-    while (i < len && s[i] == ' ') { i++; ws++; }
-    if (ws > 3) return 0;
+    while (i < len && s[i] == ' ') {
+        i++;
+        ws++;
+    }
+    if (ws > 3)
+        return 0;
 
     int level = 0;
-    while (i < len && s[i] == '#' && level < 7) { i++; level++; }
-    if (level < 1 || level > 6) return 0;
-    if (i < len && s[i] != ' ' && s[i] != '\t') return 0;
+    while (i < len && s[i] == '#' && level < 7) {
+        i++;
+        level++;
+    }
+    if (level < 1 || level > 6)
+        return 0;
+    if (i < len && s[i] != ' ' && s[i] != '\t')
+        return 0;
 
     h->level = level;
     h->head_end = i;
-    while (i < len && (s[i] == ' ' || s[i] == '\t')) i++;
+    while (i < len && (s[i] == ' ' || s[i] == '\t'))
+        i++;
     int after_hashes = i;
 
     if (i < len && s[i] == '[') {
         int j = i + 1;
-        while (j < len && s[j] != ']') j++;
+        while (j < len && s[j] != ']')
+            j++;
         if (j < len) {
             int idx = status_lookup(s + i + 1, j - (i + 1));
             if (idx >= 0) {
@@ -275,7 +305,8 @@ static int parse_heading_buf(const char *s, int len, Heading *h) {
                 h->kw_start = i;
                 h->kw_end = j + 1;
                 i = j + 1;
-                while (i < len && (s[i] == ' ' || s[i] == '\t')) i++;
+                while (i < len && (s[i] == ' ' || s[i] == '\t'))
+                    i++;
                 h->title_start = i;
                 return 1;
             }
@@ -304,7 +335,8 @@ static int heading_at_or_above(Buffer *buf, int y) {
 /* End of the contiguous field block under heading `hy` (exclusive). */
 static int field_block_end(Buffer *buf, int hy) {
     int e = hy + 1;
-    while (e < buf->num_rows && md_is_field_line(&buf->rows[e])) e++;
+    while (e < buf->num_rows && md_is_field_line(&buf->rows[e]))
+        e++;
     return e;
 }
 
@@ -315,11 +347,15 @@ static void task_field_set(Buffer *buf, int hy, const char *key,
     int e = field_block_end(buf, hy);
     int at = -1;
     for (int r = hy + 1; r < e; r++)
-        if (md_field_is_key(&buf->rows[r], key)) { at = r; break; }
+        if (md_field_is_key(&buf->rows[r], key)) {
+            at = r;
+            break;
+        }
 
     int clear = !value || !*value;
     if (clear) {
-        if (at >= 0) buf_row_del_in(buf, at);
+        if (at >= 0)
+            buf_row_del_in(buf, at);
         return;
     }
     char line[512];
@@ -337,27 +373,33 @@ static void task_field_set(Buffer *buf, int hy, const char *key,
 static void task_set(Buffer *buf, int hy, int next) {
     Heading h;
     Row *row = &buf->rows[hy];
-    if (!parse_heading(row, &h)) return;
+    if (!parse_heading(row, &h))
+        return;
     int old = h.status;
 
     char out[2048];
     size_t n = 0;
     const char *s = row->chars.data;
-    if ((size_t)h.head_end >= sizeof(out)) goto toolong;
+    if ((size_t)h.head_end >= sizeof(out))
+        goto toolong;
     memcpy(out, s, (size_t)h.head_end);
     n = (size_t)h.head_end;
     out[n++] = ' ';
     if (next >= 0) {
         size_t kl = strlen(STATUS[next].name);
-        if (n + kl + 3 >= sizeof(out)) goto toolong;
+        if (n + kl + 3 >= sizeof(out))
+            goto toolong;
         out[n++] = '[';
-        memcpy(out + n, STATUS[next].name, kl); n += kl;
+        memcpy(out + n, STATUS[next].name, kl);
+        n += kl;
         out[n++] = ']';
         out[n++] = ' ';
     }
     size_t tlen = row->chars.len - (size_t)h.title_start;
-    if (n + tlen >= sizeof(out)) goto toolong;
-    memcpy(out + n, s + h.title_start, tlen); n += tlen;
+    if (n + tlen >= sizeof(out))
+        goto toolong;
+    memcpy(out + n, s + h.title_start, tlen);
+    n += tlen;
 
     buf_row_del_in(buf, hy);
     buf_row_insert_in(buf, hy, out, n);
@@ -382,9 +424,13 @@ toolong:
 /* Resolve the heading the cursor is on/under; -1 (with status msg) if none. */
 static int cursor_heading(Buffer **out_buf) {
     Buffer *buf = buf_cur();
-    if (!buf || !buf->cursor) return -1;
+    if (!buf || !buf->cursor)
+        return -1;
     int hy = heading_at_or_above(buf, buf->cursor->y);
-    if (hy < 0) { ed_set_status_message("task: no heading here"); return -1; }
+    if (hy < 0) {
+        ed_set_status_message("task: no heading here");
+        return -1;
+    }
     *out_buf = buf;
     return hy;
 }
@@ -395,11 +441,13 @@ static void cmd_task_cycle(const char *args) {
     (void)args;
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
+    if (hy < 0)
+        return;
     Heading h;
     parse_heading(&buf->rows[hy], &h);
     int next;
-    if (h.status < 0) next = IDX_TODO;
+    if (h.status < 0)
+        next = IDX_TODO;
     else {
         int pos = cycle_pos(h.status);
         next = (pos >= 0 && pos + 1 < N_CYCLE) ? CYCLE[pos + 1] : -1;
@@ -410,13 +458,14 @@ static void cmd_task_cycle(const char *args) {
 static void cmd_task_status(const char *args) {
     int next = status_parse(args ? args : "");
     if (next == -2) {
-        ed_set_status_message(
-            "usage: :task_status <todo|in-progress|blocked|done|cancelled|none>");
+        ed_set_status_message("usage: :task_status "
+                              "<todo|in-progress|blocked|done|cancelled|none>");
         return;
     }
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
+    if (hy < 0)
+        return;
     task_set(buf, hy, next);
 }
 
@@ -424,30 +473,38 @@ static void cmd_task_status(const char *args) {
 static void set_date_field(const char *key, const char *args) {
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
-    if (args && (strcasecmp(args, "none") == 0 || strcasecmp(args, "clear") == 0)) {
+    if (hy < 0)
+        return;
+    if (args &&
+        (strcasecmp(args, "none") == 0 || strcasecmp(args, "clear") == 0)) {
         task_field_set(buf, hy, key, "");
         ed_set_status_message("task: %s cleared", key);
         return;
     }
     char date[16];
     if (!parse_date_arg(args ? args : "", date, sizeof(date))) {
-        ed_set_status_message("task: bad date (use YYYY-MM-DD, today, +3d, +2w)");
+        ed_set_status_message(
+            "task: bad date (use YYYY-MM-DD, today, +3d, +2w)");
         return;
     }
     task_field_set(buf, hy, key, date);
     ed_set_status_message("task: %s %s", key, date);
 }
 
-static void cmd_task_deadline(const char *args) { set_date_field("deadline", args); }
-static void cmd_task_schedule(const char *args) { set_date_field("schedule", args); }
+static void cmd_task_deadline(const char *args) {
+    set_date_field("deadline", args);
+}
+static void cmd_task_schedule(const char *args) {
+    set_date_field("schedule", args);
+}
 
 static void cmd_task_prio(const char *args) {
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
-    if (!args || !*args ||
-        strcasecmp(args, "none") == 0 || strcasecmp(args, "clear") == 0) {
+    if (hy < 0)
+        return;
+    if (!args || !*args || strcasecmp(args, "none") == 0 ||
+        strcasecmp(args, "clear") == 0) {
         task_field_set(buf, hy, "prio", "");
         ed_set_status_message("task: prio cleared");
         return;
@@ -469,15 +526,19 @@ static void cmd_task_field(const char *args) {
     }
     char key[64];
     const char *p = args;
-    while (*p == ' ') p++;
+    while (*p == ' ')
+        p++;
     int ki = 0;
-    while (*p && *p != ' ' && ki < (int)sizeof(key) - 1) key[ki++] = *p++;
+    while (*p && *p != ' ' && ki < (int)sizeof(key) - 1)
+        key[ki++] = *p++;
     key[ki] = '\0';
-    while (*p == ' ') p++; /* p now at value (possibly empty) */
+    while (*p == ' ')
+        p++; /* p now at value (possibly empty) */
 
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
+    if (hy < 0)
+        return;
 
     /* Normalize the value when the field is a recognized date/priority. */
     const MdFieldDef *fd = md_field_lookup(key, ki);
@@ -490,7 +551,10 @@ static void cmd_task_field(const char *args) {
         task_field_set(buf, hy, key, date);
     } else if (fd && fd->kind == MD_FK_PRIO && *p) {
         int lvl = prio_level(p, (int)strlen(p));
-        if (lvl < 0) { ed_set_status_message("task: bad prio"); return; }
+        if (lvl < 0) {
+            ed_set_status_message("task: bad prio");
+            return;
+        }
         char v[2] = {(char)('A' + lvl), 0};
         task_field_set(buf, hy, key, v);
     } else {
@@ -507,8 +571,10 @@ static int section_log_pos(Buffer *buf, int hy) {
     int last = hy;
     for (int r = hy + 1; r < buf->num_rows; r++) {
         Heading hh;
-        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level) break;
-        if (buf->rows[r].chars.len > 0) last = r;
+        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level)
+            break;
+        if (buf->rows[r].chars.len > 0)
+            last = r;
     }
     return last + 1;
 }
@@ -520,11 +586,13 @@ static void cmd_task_note(const char *args) {
     }
     Buffer *buf;
     int hy = cursor_heading(&buf);
-    if (hy < 0) return;
+    if (hy < 0)
+        return;
     char dt[24], line[1024];
     now_str(dt, sizeof(dt));
     int n = snprintf(line, sizeof(line), "- %s %s", dt, args);
-    if (n >= (int)sizeof(line)) n = (int)sizeof(line) - 1;
+    if (n >= (int)sizeof(line))
+        n = (int)sizeof(line) - 1;
     buf_row_insert_in(buf, section_log_pos(buf, hy), line, (size_t)n);
     ed_set_status_message("task: note added");
 }
@@ -533,21 +601,26 @@ static void cmd_task_note(const char *args) {
 /* Both knobs are embedded single-quoted into an rg command line, so a
  * value containing a quote or a control byte is rejected outright. */
 
-static char **g_ignore = NULL;    /* gitignore-style globs, rg -g '!…' */
-static char  *g_org_root = NULL;  /* scan root; NULL = cwd */
+static char **g_ignore = NULL;  /* gitignore-style globs, rg -g '!…' */
+static char *g_org_root = NULL; /* scan root; NULL = cwd */
 
 static int shell_safe(const char *s, size_t n) {
     for (size_t i = 0; i < n; i++)
-        if (s[i] == '\'' || (unsigned char)s[i] < 0x20) return 0;
+        if (s[i] == '\'' || (unsigned char)s[i] < 0x20)
+            return 0;
     return 1;
 }
 
 void task_agenda_ignore(const char *glob) {
-    if (!glob) return;
-    while (*glob == ' ' || *glob == '\t') glob++;
+    if (!glob)
+        return;
+    while (*glob == ' ' || *glob == '\t')
+        glob++;
     size_t n = strlen(glob);
-    while (n > 0 && (glob[n-1] == ' ' || glob[n-1] == '\t')) n--;
-    if (n == 0) return;
+    while (n > 0 && (glob[n - 1] == ' ' || glob[n - 1] == '\t'))
+        n--;
+    if (n == 0)
+        return;
     if (!shell_safe(glob, n)) {
         ed_set_status_message("agenda: ignore glob may not contain quotes");
         return;
@@ -561,7 +634,8 @@ void task_agenda_ignore(const char *glob) {
 void task_org_root(const char *path) {
     free(g_org_root);
     g_org_root = NULL;
-    if (!path || !*path) return;
+    if (!path || !*path)
+        return;
     if (!shell_safe(path, strlen(path))) {
         ed_set_status_message("agenda: root path may not contain quotes");
         return;
@@ -586,11 +660,13 @@ static size_t ignore_globs_len(void) {
 }
 
 static void cmd_task_agenda_ignore(const char *args) {
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
     if (!args || !*args) {
         int n = (int)arrlen(g_ignore);
         if (n == 0) {
-            ed_set_status_message("agenda: no ignore globs (add: :task_agenda_ignore <glob>)");
+            ed_set_status_message(
+                "agenda: no ignore globs (add: :task_agenda_ignore <glob>)");
             return;
         }
         char list[256];
@@ -602,7 +678,8 @@ static void cmd_task_agenda_ignore(const char *args) {
         return;
     }
     if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "none") == 0) {
-        for (int i = 0; i < (int)arrlen(g_ignore); i++) free(g_ignore[i]);
+        for (int i = 0; i < (int)arrlen(g_ignore); i++)
+            free(g_ignore[i]);
         arrfree(g_ignore);
         g_ignore = NULL;
         ed_set_status_message("agenda: ignore list cleared");
@@ -615,9 +692,11 @@ static void cmd_task_agenda_ignore(const char *args) {
 }
 
 static void cmd_task_org_root(const char *args) {
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
     if (!args || !*args) {
-        ed_set_status_message("org root: %s", g_org_root ? g_org_root : "(cwd)");
+        ed_set_status_message("org root: %s",
+                              g_org_root ? g_org_root : "(cwd)");
         return;
     }
     if (strcasecmp(args, "clear") == 0 || strcasecmp(args, "none") == 0) {
@@ -626,7 +705,8 @@ static void cmd_task_org_root(const char *args) {
         return;
     }
     task_org_root(args);
-    if (g_org_root) ed_set_status_message("org root: %s", g_org_root);
+    if (g_org_root)
+        ed_set_status_message("org root: %s", g_org_root);
 }
 
 /* --- capture ---------------------------------------------------------- */
@@ -636,7 +716,8 @@ static char *g_todo_file = NULL; /* capture target; NULL = <root>/todo.md */
 void task_todo_file(const char *path) {
     free(g_todo_file);
     g_todo_file = NULL;
-    if (!path || !*path) return;
+    if (!path || !*path)
+        return;
     g_todo_file = strdup(path);
 }
 
@@ -651,17 +732,29 @@ static void todo_path(char *out, size_t cap) {
         snprintf(out, cap, "todo.md"); /* cwd */
 }
 
-/* :task_capture [title] — append a [TODO] task to the todo file linking
- * back to what's being viewed, as a plain markdown link the highlighter
- * renders and gf follows. Regular files become
- * "[<base>:<line>](<abspath>:<line>)"; URI-named buffers (mail thread
- * views, filename "mail://thread:…") become "[<title>](<uri>)" — the
- * mail plugin's OPEN_PRE hook reopens the thread even after its buffer
- * (or hed) is gone. */
+/* Level of the first "#… " heading in `s` (one line), 0 if none. */
+static int heading_level_line(const char *s, size_t n) {
+    size_t k = 0;
+    while (k < n && s[k] == '#')
+        k++;
+    if (k > 0 && k <= 6 && k < n && s[k] == ' ')
+        return (int)k;
+    return 0;
+}
+
+/* :task_capture [title] — prepend a [TODO] task at the top of the todo
+ * file (newest first) linking back to what's being viewed, as a plain
+ * markdown link the highlighter renders and gf follows. Regular files
+ * become "[<base>:<line>](<abspath>:<line>)"; URI-named buffers (mail
+ * thread views, filename "mail://thread:…") become "[<title>](<uri>)"
+ * — the mail plugin's OPEN_PRE hook reopens the thread even after its
+ * buffer (or hed) is gone. The heading level matches the first heading
+ * already in the todo file (h1 for a fresh one). */
 static void cmd_task_capture(const char *args) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
     if (!buf->filename || !*buf->filename) {
         ed_set_status_message("task: buffer has no file to capture");
         return;
@@ -671,12 +764,13 @@ static void cmd_task_capture(const char *args) {
     int is_uri = strstr(buf->filename, "://") != NULL;
     if (is_uri) {
         safe_strcpy(target, buf->filename, sizeof(target));
-        const char *t = (buf->title && *buf->title) ? buf->title
-                                                    : buf->filename;
+        const char *t =
+            (buf->title && *buf->title) ? buf->title : buf->filename;
         safe_strcpy(label, t, sizeof(label));
         /* Keep the markdown link well-formed. */
         for (char *c = label; *c; c++)
-            if (*c == '[' || *c == ']') *c = ' ';
+            if (*c == '[' || *c == ']')
+                *c = ' ';
     } else {
         if (!realpath(buf->filename, target))
             safe_strcpy(target, buf->filename, sizeof(target));
@@ -688,7 +782,8 @@ static void cmd_task_capture(const char *args) {
     char todo[PATH_MAX];
     todo_path(todo, sizeof(todo));
 
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
 
     char day[16];
     {
@@ -698,8 +793,55 @@ static void cmd_task_capture(const char *args) {
         strftime(day, sizeof(day), "%Y-%m-%d", &tm);
     }
 
+    /* Into the open buffer when the todo file is loaded (keeps the
+     * user's unsaved edits; they save as usual), else onto disk. Either
+     * way the new task goes to the TOP, and its heading level follows
+     * the file's first heading. */
+    int bi = buf_find_by_filename(todo);
+
+    char *disk = NULL;
+    size_t disk_len = 0;
+    if (bi < 0) {
+        FILE *f = fopen(todo, "r");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (sz > 0) {
+                disk = malloc((size_t)sz);
+                if (disk)
+                    disk_len = fread(disk, 1, (size_t)sz, f);
+            }
+            fclose(f);
+        }
+    }
+
+    int lvl = 0;
+    if (bi >= 0) {
+        Buffer *tb = &E.buffers[bi];
+        for (int r = 0; r < tb->num_rows && !lvl; r++)
+            lvl = heading_level_line(tb->rows[r].chars.data
+                                         ? tb->rows[r].chars.data
+                                         : "",
+                                     tb->rows[r].chars.len);
+    } else {
+        size_t i = 0;
+        while (i < disk_len && !lvl) {
+            size_t eol = i;
+            while (eol < disk_len && disk[eol] != '\n')
+                eol++;
+            lvl = heading_level_line(disk + i, eol - i);
+            i = eol + 1;
+        }
+    }
+    if (!lvl)
+        lvl = 1;
+    char hashes[8];
+    memset(hashes, '#', (size_t)lvl);
+    hashes[lvl] = '\0';
+
     char head[2 * PATH_MAX], created[32], link[3 * PATH_MAX];
-    snprintf(head, sizeof(head), "## [TODO] %s",
+    snprintf(head, sizeof(head), "%s [TODO] %s", hashes,
              (args && *args) ? args : label);
     snprintf(created, sizeof(created), "created:: %s", day);
     if (is_uri)
@@ -708,35 +850,59 @@ static void cmd_task_capture(const char *args) {
         snprintf(link, sizeof(link), "[%s](%s:%d)", label, target,
                  win->cursor.y + 1);
 
-    /* Append into the open buffer when the todo file is loaded (keeps
-     * the user's unsaved edits; they save as usual), else straight to
-     * the file on disk. */
-    int bi = buf_find_by_filename(todo);
     if (bi >= 0) {
         Buffer *tb = &E.buffers[bi];
         undo_begin(tb, "capture");
-        int at = tb->num_rows;
-        if (at > 0 && tb->rows[at - 1].chars.len > 0)
-            buf_row_insert_in(tb, at++, "", 0);
+        int had_rows = tb->num_rows;
+        int at = 0;
         buf_row_insert_in(tb, at++, head, strlen(head));
         buf_row_insert_in(tb, at++, created, strlen(created));
         buf_row_insert_in(tb, at++, "", 0);
         buf_row_insert_in(tb, at++, link, strlen(link));
+        if (had_rows > 0)
+            buf_row_insert_in(tb, at++, "", 0);
         undo_end(tb);
     } else {
-        FILE *f = fopen(todo, "a");
+        /* Rewrite via a temp file + rename so a failed write can't
+         * truncate the todo file. */
+        char tmp[PATH_MAX + 8];
+        snprintf(tmp, sizeof(tmp), "%s.tmp", todo);
+        FILE *f = fopen(tmp, "w");
         if (!f) {
-            ed_set_status_message("task: cannot open %s", todo);
+            ed_set_status_message("task: cannot open %s", tmp);
+            free(disk);
             return;
         }
-        fprintf(f, "\n%s\n%s\n\n%s\n", head, created, link);
-        fclose(f);
+        fprintf(f, "%s\n%s\n\n%s\n", head, created, link);
+        if (disk_len > 0) {
+            fputc('\n', f);
+            fwrite(disk, 1, disk_len, f);
+        }
+        int werr = ferror(f);
+        werr |= fclose(f) != 0;
+        if (werr || rename(tmp, todo) != 0) {
+            remove(tmp);
+            ed_set_status_message("task: write failed for %s", todo);
+            free(disk);
+            return;
+        }
+    }
+    free(disk);
+
+    /* Jump to the todo file, cursor on the fresh capture at the top. */
+    buf_open_or_switch(todo, true);
+    Buffer *tb = buf_cur();
+    Window *w = window_cur();
+    if (w && tb && tb->filename && strcmp(tb->filename, todo) == 0) {
+        w->cursor.x = 0;
+        w->cursor.y = 0;
     }
     ed_set_status_message("task: captured %s -> %s", label, todo);
 }
 
 static void cmd_task_todo_file(const char *args) {
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
     if (!args || !*args) {
         char todo[PATH_MAX];
         todo_path(todo, sizeof(todo));
@@ -757,11 +923,11 @@ static void cmd_task_todo_file(const char *args) {
 
 typedef struct {
     char *file;
-    int   line;
-    int   prio;      /* 0..2, or 99 if none */
-    int   has_ddl;
-    long  ddl;       /* days, valid when has_ddl */
-    char *title;     /* full heading text */
+    int line;
+    int prio; /* 0..2, or 99 if none */
+    int has_ddl;
+    long ddl;    /* days, valid when has_ddl */
+    char *title; /* full heading text */
 } Agenda;
 
 static long g_today; /* set before qsort */
@@ -769,19 +935,22 @@ static long g_today; /* set before qsort */
 static int agenda_cmp(const void *pa, const void *pb) {
     const Agenda *a = pa, *b = pb;
     int ga = a->has_ddl ? 0 : 1, gb = b->has_ddl ? 0 : 1;
-    if (ga != gb) return ga - gb;           /* dated tasks first */
+    if (ga != gb)
+        return ga - gb; /* dated tasks first */
     if (a->has_ddl && a->ddl != b->ddl)
-        return a->ddl < b->ddl ? -1 : 1;    /* soonest (overdue) first */
-    if (a->prio != b->prio) return a->prio - b->prio;
+        return a->ddl < b->ddl ? -1 : 1; /* soonest (overdue) first */
+    if (a->prio != b->prio)
+        return a->prio - b->prio;
     return strcmp(a->title ? a->title : "", b->title ? b->title : "");
 }
 
 /* Scan one file, appending open tasks (with deadline/prio) to `out`. */
 static void scan_file_tasks(const char *path, Agenda **out) {
     FsLines *r = NULL;
-    if (fs_lines_open(&r, path) != ED_OK) return;
+    if (fs_lines_open(&r, path) != ED_OK)
+        return;
     const char *ln;
-    size_t      llen;
+    size_t llen;
     int lineno = 0, cur = -1;
     while (fs_lines_next(r, &ln, &llen)) {
         lineno++;
@@ -802,7 +971,8 @@ static void scan_file_tasks(const char *path, Agenda **out) {
             }
             continue;
         }
-        if (cur < 0) continue;
+        if (cur < 0)
+            continue;
         int k0, k1, v0, v1;
         if (md_parse_field(ln, len, &k0, &k1, &v0, &v1)) {
             const MdFieldDef *fd = md_field_lookup(ln + k0, k1 - k0);
@@ -813,16 +983,17 @@ static void scan_file_tasks(const char *path, Agenda **out) {
                     ((klen == 8 && strncmp(k, "deadline", 8) == 0) ||
                      (klen == 3 && strncmp(k, "due", 3) == 0)) &&
                     valid_date(ln + v0, v1 - v0)) {
-                    int y = (ln[v0]-'0')*1000 + (ln[v0+1]-'0')*100 +
-                            (ln[v0+2]-'0')*10 + (ln[v0+3]-'0');
-                    int m = (ln[v0+5]-'0')*10 + (ln[v0+6]-'0');
-                    int d = (ln[v0+8]-'0')*10 + (ln[v0+9]-'0');
+                    int y = (ln[v0] - '0') * 1000 + (ln[v0 + 1] - '0') * 100 +
+                            (ln[v0 + 2] - '0') * 10 + (ln[v0 + 3] - '0');
+                    int m = (ln[v0 + 5] - '0') * 10 + (ln[v0 + 6] - '0');
+                    int d = (ln[v0 + 8] - '0') * 10 + (ln[v0 + 9] - '0');
                     Agenda *e = &(*out)[cur];
                     e->has_ddl = 1;
                     e->ddl = ymd_to_days(y, m, d);
                 } else if (fd->kind == MD_FK_PRIO) {
                     int lvl = prio_level(ln + v0, v1 - v0);
-                    if (lvl >= 0) (*out)[cur].prio = lvl;
+                    if (lvl >= 0)
+                        (*out)[cur].prio = lvl;
                 }
             }
             continue; /* stay in the field block */
@@ -833,7 +1004,8 @@ static void scan_file_tasks(const char *path, Agenda **out) {
 }
 
 static void cmd_task_agenda(const char *args) {
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
     const char *root = (args && *args) ? args : g_org_root; /* NULL = cwd */
     if (root && !shell_safe(root, strlen(root))) {
         ed_set_status_message("agenda: bad path");
@@ -845,7 +1017,8 @@ static void cmd_task_agenda(const char *args) {
     size_t cap = strlen(base) + ignore_globs_len() + strlen(expr) +
                  (root ? strlen(root) + 4 : 0) + sizeof(" 2>/dev/null");
     char *cmdline = malloc(cap);
-    if (!cmdline) return;
+    if (!cmdline)
+        return;
     size_t off = (size_t)snprintf(cmdline, cap, "%s", base);
     off += ignore_globs_emit(cmdline + off, cap - off);
     off += (size_t)snprintf(cmdline + off, cap - off, "%s", expr);
@@ -854,8 +1027,8 @@ static void cmd_task_agenda(const char *args) {
     snprintf(cmdline + off, cap - off, " 2>/dev/null");
 
     char **paths = NULL;
-    int    npaths = 0;
-    int    ok = term_cmd_capture(cmdline, &paths, &npaths);
+    int npaths = 0;
+    int ok = term_cmd_capture(cmdline, &paths, &npaths);
     free(cmdline);
     if (!ok) {
         ed_set_status_message("agenda: ripgrep not available");
@@ -863,7 +1036,8 @@ static void cmd_task_agenda(const char *args) {
     }
     Agenda *items = NULL;
     for (int i = 0; i < npaths; i++) {
-        if (paths[i][0]) scan_file_tasks(paths[i], &items);
+        if (paths[i][0])
+            scan_file_tasks(paths[i], &items);
     }
     term_cmd_free(paths, npaths);
 
@@ -881,12 +1055,13 @@ static void cmd_task_agenda(const char *args) {
         char prefix[64] = "";
         size_t pn = 0;
         if (e->prio < 99)
-            pn += (size_t)snprintf(prefix + pn, sizeof(prefix) - pn,
-                                   "[#%c] ", (char)('A' + e->prio));
+            pn += (size_t)snprintf(prefix + pn, sizeof(prefix) - pn, "[#%c] ",
+                                   (char)('A' + e->prio));
         if (e->has_ddl) {
             long diff = e->ddl - g_today;
             if (diff < 0)
-                snprintf(prefix + pn, sizeof(prefix) - pn, "!OVERDUE %ldd ", -diff);
+                snprintf(prefix + pn, sizeof(prefix) - pn, "!OVERDUE %ldd ",
+                         -diff);
             else if (diff == 0)
                 snprintf(prefix + pn, sizeof(prefix) - pn, "due today ");
             else
@@ -917,7 +1092,8 @@ static void cmd_org_files(const char *args) {
     size_t cap = strlen(base) + ignore_globs_len() +
                  (root ? strlen(root) + 4 : 0) + sizeof(" 2>/dev/null");
     char *cmdline = malloc(cap);
-    if (!cmdline) return;
+    if (!cmdline)
+        return;
     size_t off = (size_t)snprintf(cmdline, cap, "%s", base);
     off += ignore_globs_emit(cmdline + off, cap - off);
     if (root)
@@ -925,8 +1101,8 @@ static void cmd_org_files(const char *args) {
     snprintf(cmdline + off, cap - off, " 2>/dev/null");
 
     char **lines = NULL;
-    int    lcnt = 0;
-    int    ok = term_cmd_capture(cmdline, &lines, &lcnt);
+    int lcnt = 0;
+    int ok = term_cmd_capture(cmdline, &lines, &lcnt);
     free(cmdline);
     if (!ok || lcnt <= 0) {
         term_cmd_free(lines, lcnt);
@@ -956,7 +1132,8 @@ static int section_extent(Buffer *buf, int hy) {
     int r = hy + 1;
     for (; r < buf->num_rows; r++) {
         Heading hh;
-        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level) break;
+        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level)
+            break;
     }
     return r;
 }
@@ -965,7 +1142,8 @@ static int section_extent(Buffer *buf, int hy) {
  * be archived (no file, the quickfix buffer, or an archive file itself). */
 static int archive_precheck(Buffer **out, char *ap, size_t apcap) {
     Buffer *buf = buf_cur();
-    if (!buf) return 0;
+    if (!buf)
+        return 0;
     if (!buf->filename || !*buf->filename) {
         ed_set_status_message("archive: save the file first");
         return 0;
@@ -986,10 +1164,12 @@ static int archive_precheck(Buffer **out, char *ap, size_t apcap) {
 
 static int append_section(const char *path, Buffer *buf, int hy, int end) {
     FILE *f = fopen(path, "a");
-    if (!f) return 0;
+    if (!f)
+        return 0;
     for (int r = hy; r < end; r++) {
         Row *row = &buf->rows[r];
-        if (row->chars.len) fwrite(row->chars.data, 1, row->chars.len, f);
+        if (row->chars.len)
+            fwrite(row->chars.data, 1, row->chars.len, f);
         fputc('\n', f);
     }
     fputc('\n', f); /* blank line separates archived sections */
@@ -1005,9 +1185,11 @@ static int archive_section(Buffer *buf, int hy, const char *ap) {
     task_field_set(buf, hy, "archived", date);
 
     int end = section_extent(buf, hy);
-    if (!append_section(ap, buf, hy, end)) return 0;
+    if (!append_section(ap, buf, hy, end))
+        return 0;
 
-    for (int r = end - 1; r >= hy; r--) buf_row_del_in(buf, r);
+    for (int r = end - 1; r >= hy; r--)
+        buf_row_del_in(buf, r);
     /* swallow one leftover blank line so sections don't pile up gaps */
     if (hy < buf->num_rows && buf->rows[hy].chars.len == 0)
         buf_row_del_in(buf, hy);
@@ -1015,10 +1197,12 @@ static int archive_section(Buffer *buf, int hy, const char *ap) {
 }
 
 static void clamp_cursor(Buffer *buf) {
-    if (!buf->cursor) return;
+    if (!buf->cursor)
+        return;
     if (buf->cursor->y >= buf->num_rows)
         buf->cursor->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
-    if (buf->cursor->y < 0) buf->cursor->y = 0;
+    if (buf->cursor->y < 0)
+        buf->cursor->y = 0;
     buf->cursor->x = 0;
 }
 
@@ -1026,9 +1210,13 @@ static void cmd_task_archive(const char *args) {
     (void)args;
     Buffer *buf;
     char ap[PATH_MAX];
-    if (!archive_precheck(&buf, ap, sizeof(ap))) return;
+    if (!archive_precheck(&buf, ap, sizeof(ap)))
+        return;
     int hy = heading_at_or_above(buf, buf->cursor->y);
-    if (hy < 0) { ed_set_status_message("task: no heading here"); return; }
+    if (hy < 0) {
+        ed_set_status_message("task: no heading here");
+        return;
+    }
     if (!archive_section(buf, hy, ap)) {
         ed_set_status_message("archive: could not write %s", ap);
         return;
@@ -1042,16 +1230,21 @@ static void cmd_task_archive_done(const char *args) {
     (void)args;
     Buffer *buf;
     char ap[PATH_MAX];
-    if (!archive_precheck(&buf, ap, sizeof(ap))) return;
+    if (!archive_precheck(&buf, ap, sizeof(ap)))
+        return;
     int n = 0;
     for (;;) {
         int hy = -1;
         for (int r = 0; r < buf->num_rows; r++) {
             Heading h;
             if (parse_heading(&buf->rows[r], &h) && h.status >= 0 &&
-                STATUS[h.status].closed) { hy = r; break; }
+                STATUS[h.status].closed) {
+                hy = r;
+                break;
+            }
         }
-        if (hy < 0) break;
+        if (hy < 0)
+            break;
         if (!archive_section(buf, hy, ap)) {
             ed_set_status_message("archive: could not write %s", ap);
             break;
@@ -1071,13 +1264,14 @@ static void cmd_task_archive_open(const char *args) {
     (void)args;
     Buffer *buf;
     char ap[PATH_MAX];
-    if (!archive_precheck(&buf, ap, sizeof(ap))) return;
+    if (!archive_precheck(&buf, ap, sizeof(ap)))
+        return;
     buf_open_or_switch(ap, true);
 }
 
 /* --- keybinds --------------------------------------------------------- */
 
-static void kb_task_cycle(void)  { cmd_task_cycle(NULL); }
+static void kb_task_cycle(void) { cmd_task_cycle(NULL); }
 static void kb_task_agenda(void) { cmd_task_agenda(NULL); }
 
 /* Open the ":" prompt pre-filled with `cmdline` (with a trailing space)
@@ -1086,23 +1280,25 @@ static void kb_task_agenda(void) { cmd_task_agenda(NULL); }
 static void prompt_prefilled(const char *cmdline) {
     cmd_prompt_open();
     Prompt *p = prompt_current();
-    if (!p) return;
+    if (!p)
+        return;
     prompt_set_text(p, cmdline, (int)strlen(cmdline));
     ed_set_status_message(":%s", p->buf);
 }
 
-static void kb_task_note(void)     { prompt_prefilled("task_note "); }
-static void kb_task_capture(void)  { prompt_prefilled("task_capture "); }
+static void kb_task_note(void) { prompt_prefilled("task_note "); }
+static void kb_task_capture(void) { prompt_prefilled("task_capture "); }
 static void kb_task_deadline(void) { prompt_prefilled("task_deadline "); }
 static void kb_task_schedule(void) { prompt_prefilled("task_schedule "); }
-static void kb_task_prio(void)     { prompt_prefilled("task_prio "); }
-static void kb_task_archive(void)      { cmd_task_archive(NULL); }
+static void kb_task_prio(void) { prompt_prefilled("task_prio "); }
+static void kb_task_archive(void) { cmd_task_archive(NULL); }
 static void kb_task_archive_done(void) { cmd_task_archive_done(NULL); }
 
 /* --- highlight (HOOK_RENDER_PRE) -------------------------------------- */
 
 static void on_render_pre(const HookRenderEvent *e) {
-    if (!e || !e->buf || !e->spans) return;
+    if (!e || !e->buf || !e->spans)
+        return;
     Buffer *buf = e->buf;
     int hi = e->row_end < buf->num_rows ? e->row_end : buf->num_rows;
     for (int y = e->row_start; y < hi; y++) {
@@ -1118,15 +1314,18 @@ static void on_render_pre(const HookRenderEvent *e) {
         }
 
         int k0, k1, v0, v1;
-        if (!md_parse_field(s, len, &k0, &k1, &v0, &v1)) continue;
+        if (!md_parse_field(s, len, &k0, &k1, &v0, &v1))
+            continue;
         const MdFieldDef *fd = md_field_lookup(s + k0, k1 - k0);
-        if (!fd) continue;
+        if (!fd)
+            continue;
         attrspan_push(e->spans, y, k0, k1, SGR_FIELD_KEY, 90);
-        if (v1 <= v0) continue;
+        if (v1 <= v0)
+            continue;
         if (fd->kind == MD_FK_DATE)
-            attrspan_push(e->spans, y, v0, v1,
-                          valid_date(s + v0, v1 - v0) ? SGR_DATE_OK : SGR_DATE_BAD,
-                          90);
+            attrspan_push(
+                e->spans, y, v0, v1,
+                valid_date(s + v0, v1 - v0) ? SGR_DATE_OK : SGR_DATE_BAD, 90);
         else if (fd->kind == MD_FK_PRIO) {
             int lvl = prio_level(s + v0, v1 - v0);
             if (lvl >= 0)
@@ -1138,38 +1337,52 @@ static void on_render_pre(const HookRenderEvent *e) {
 /* --- lifecycle -------------------------------------------------------- */
 
 static int tasks_init(void) {
-    cmd("task_cycle",    cmd_task_cycle,    "rotate task status on the heading at the cursor");
-    cmd("task_status",   cmd_task_status,   "set task status: todo|in-progress|blocked|done|cancelled|none");
-    cmd("task_deadline", cmd_task_deadline, "set/clear deadline:: (date, today, +3d, +2w, none)");
-    cmd("task_schedule", cmd_task_schedule, "set/clear schedule:: (date, today, +3d, +2w, none)");
-    cmd("task_prio",     cmd_task_prio,     "set/clear prio:: (A|B|C|none)");
-    cmd("task_field",    cmd_task_field,    "upsert any field: :task_field <key> [value]");
-    cmd("task_note",     cmd_task_note,     "append a dated log bullet to the task section");
-    cmd("task_agenda",   cmd_task_agenda,   "open tasks across the tree -> quickfix, sorted by deadline+prio");
+    cmd("task_cycle", cmd_task_cycle,
+        "rotate task status on the heading at the cursor");
+    cmd("task_status", cmd_task_status,
+        "set task status: todo|in-progress|blocked|done|cancelled|none");
+    cmd("task_deadline", cmd_task_deadline,
+        "set/clear deadline:: (date, today, +3d, +2w, none)");
+    cmd("task_schedule", cmd_task_schedule,
+        "set/clear schedule:: (date, today, +3d, +2w, none)");
+    cmd("task_prio", cmd_task_prio, "set/clear prio:: (A|B|C|none)");
+    cmd("task_field", cmd_task_field,
+        "upsert any field: :task_field <key> [value]");
+    cmd("task_note", cmd_task_note,
+        "append a dated log bullet to the task section");
+    cmd("task_agenda", cmd_task_agenda,
+        "open tasks across the tree -> quickfix, sorted by deadline+prio");
     cmd("task_agenda_ignore", cmd_task_agenda_ignore,
-        "blacklist files/dirs from the agenda: <glob> adds, no arg lists, clear resets");
+        "blacklist files/dirs from the agenda: <glob> adds, no arg lists, "
+        "clear resets");
     cmd("task_org_root", cmd_task_org_root,
-        "set/show/clear the org root dir scanned by :task_agenda and :org-files");
-    cmd("task_capture",  cmd_task_capture,
+        "set/show/clear the org root dir scanned by :task_agenda and "
+        ":org-files");
+    cmd("task_capture", cmd_task_capture,
         "capture current file:line into the todo file as a linked [TODO]");
     cmd("task_todo_file", cmd_task_todo_file,
         "set/show/clear the capture target (default <org root>/todo.md)");
-    cmd("org-files",     cmd_org_files,     "fzf files under the org root");
-    cmd("task_archive",      cmd_task_archive,      "move the task under the cursor to <file>_archive");
-    cmd("task_archive_done", cmd_task_archive_done, "move all DONE/CANCELLED tasks to <file>_archive");
-    cmd("task_archive_open", cmd_task_archive_open, "open this file's <file>_archive");
+    cmd("org-files", cmd_org_files, "fzf files under the org root");
+    cmd("task_archive", cmd_task_archive,
+        "move the task under the cursor to <file>_archive");
+    cmd("task_archive_done", cmd_task_archive_done,
+        "move all DONE/CANCELLED tasks to <file>_archive");
+    cmd("task_archive_open", cmd_task_archive_open,
+        "open this file's <file>_archive");
 
     /* Markdown-only: filetype-scoped exact matches beat the global
      * <space>m multicursor cluster inside markdown buffers, and stay
      * invisible everywhere else. */
-    mapn_ft("markdown", " mc", kb_task_cycle,        "task: cycle status");
-    mapn_ft("markdown", " ma", kb_task_agenda,       "task: agenda");
-    mapn_ft("markdown", " mn", kb_task_note,         "task: add dated note");
-    mapn_ft("markdown", " md", kb_task_deadline,     "task: set deadline");
-    mapn_ft("markdown", " ms", kb_task_schedule,     "task: set schedule");
-    mapn_ft("markdown", " mp", kb_task_prio,         "task: set priority");
-    mapn_ft("markdown", " mx", kb_task_archive,      "task: archive task under cursor");
-    mapn_ft("markdown", " mX", kb_task_archive_done, "task: archive all done tasks");
+    mapn_ft("markdown", " mc", kb_task_cycle, "task: cycle status");
+    mapn_ft("markdown", " ma", kb_task_agenda, "task: agenda");
+    mapn_ft("markdown", " mn", kb_task_note, "task: add dated note");
+    mapn_ft("markdown", " md", kb_task_deadline, "task: set deadline");
+    mapn_ft("markdown", " ms", kb_task_schedule, "task: set schedule");
+    mapn_ft("markdown", " mp", kb_task_prio, "task: set priority");
+    mapn_ft("markdown", " mx", kb_task_archive,
+            "task: archive task under cursor");
+    mapn_ft("markdown", " mX", kb_task_archive_done,
+            "task: archive all done tasks");
 
     /* Global on purpose: capture happens from whatever buffer you're
      * in — source file, mail thread, anything with a filename. */
@@ -1180,8 +1393,9 @@ static int tasks_init(void) {
 }
 
 const Plugin plugin_tasks = {
-    .name   = "tasks",
-    .desc   = "markdown literate task tracker — [STATUS] headings, fields, agenda",
-    .init   = tasks_init,
+    .name = "tasks",
+    .desc =
+        "markdown literate task tracker — [STATUS] headings, fields, agenda",
+    .init = tasks_init,
     .deinit = NULL,
 };

@@ -30,7 +30,8 @@ const char *theme_palette_get(const char *name) __attribute__((weak));
 
 /* Theme registry: name → apply_fn. apply_fn is called from theme_activate
  * and is expected to issue theme_palette_set calls for every entry it owns. */
-int theme_register(const char *name, theme_apply_fn apply) __attribute__((weak));
+int theme_register(const char *name, theme_apply_fn apply)
+    __attribute__((weak));
 int theme_activate(const char *name) __attribute__((weak));
 const char *theme_active_name(void) __attribute__((weak));
 

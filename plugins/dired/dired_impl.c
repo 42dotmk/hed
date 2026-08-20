@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <sys/stat.h>
 
-
 /* Each rendered line is prefixed with "/XXXX/ " — 4 hex digits flanked by
  * slashes, then a space. The prefix gives every entry a stable opaque ID so
  * a save can distinguish renames from delete+create. */
@@ -42,11 +41,13 @@ static DiredState *dired_state_find(Buffer *buf, size_t *out_idx) {
         return NULL;
     for (ptrdiff_t i = 0; i < arrlen(dired_states); i++) {
         if (dired_states[i].buf == buf) {
-            if (out_idx) *out_idx = (size_t)i;
+            if (out_idx)
+                *out_idx = (size_t)i;
             return &dired_states[i];
         }
     }
-    if (out_idx) *out_idx = (size_t)-1;
+    if (out_idx)
+        *out_idx = (size_t)-1;
     return NULL;
 }
 
@@ -149,9 +150,8 @@ static int dired_parse_line(const char *src, size_t srclen, int *has_id,
     name[0] = '\0';
 
     /* Strip trailing whitespace */
-    while (srclen > 0 &&
-           (src[srclen - 1] == ' ' || src[srclen - 1] == '\t' ||
-            src[srclen - 1] == '\r'))
+    while (srclen > 0 && (src[srclen - 1] == ' ' || src[srclen - 1] == '\t' ||
+                          src[srclen - 1] == '\r'))
         srclen--;
 
     /* Strip leading whitespace */
@@ -226,8 +226,8 @@ static int dired_list_dir(DiredState *st, const char *dir) {
     FsDirEntry de;
     while (fs_dir_next(dp, &de)) {
         /* Hide internal temp-rename markers from prior aborted saves */
-        if (strncmp(de.name, DIRED_TMP_PREFIX,
-                    sizeof(DIRED_TMP_PREFIX) - 1) == 0)
+        if (strncmp(de.name, DIRED_TMP_PREFIX, sizeof(DIRED_TMP_PREFIX) - 1) ==
+            0)
             continue;
         if (count == cap) {
             cap = cap ? cap * 2 : 32;
@@ -445,10 +445,10 @@ typedef enum {
 
 typedef struct {
     DiredOpKind kind;
-    char src_name[PATH_MAX];  /* delete/rename source */
-    char dst_name[PATH_MAX];  /* create/rename target */
+    char src_name[PATH_MAX]; /* delete/rename source */
+    char dst_name[PATH_MAX]; /* create/rename target */
     int is_dir;
-    char tmp_name[PATH_MAX];  /* used by two-pass rename */
+    char tmp_name[PATH_MAX]; /* used by two-pass rename */
 } DiredOp;
 
 typedef DiredOp *DiredOpVec;
@@ -475,7 +475,8 @@ static int dired_find_snapshot_by_id(DiredState *st, uint32_t id,
     return 0;
 }
 
-/* Returns 0 on success, -1 on validation failure (status set, no ops applied) */
+/* Returns 0 on success, -1 on validation failure (status set, no ops applied)
+ */
 static int dired_collect_current(DiredState *st, DiredCurrentVec *out) {
     Buffer *buf = st->buf;
     for (int row = 0; row < buf->num_rows; row++) {
@@ -505,8 +506,7 @@ static int dired_collect_current(DiredState *st, DiredCurrentVec *out) {
                 ed_set_status_message(
                     "dired: duplicate id /%04x/ on lines %d and %d — "
                     "remove the prefix from one of them",
-                    (*out)[i].id, (*out)[i].row + 1,
-                    (*out)[j].row + 1);
+                    (*out)[i].id, (*out)[i].row + 1, (*out)[j].row + 1);
                 return -1;
             }
         }
@@ -518,8 +518,7 @@ static int dired_collect_current(DiredState *st, DiredCurrentVec *out) {
             if (strcmp((*out)[i].name, (*out)[j].name) == 0) {
                 ed_set_status_message(
                     "dired: duplicate name '%s' on lines %d and %d",
-                    (*out)[i].name, (*out)[i].row + 1,
-                    (*out)[j].row + 1);
+                    (*out)[i].name, (*out)[i].row + 1, (*out)[j].row + 1);
                 return -1;
             }
         }
@@ -575,8 +574,7 @@ static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
             continue;
         DiredOp op = {.kind = DIRED_OP_DELETE,
                       .is_dir = st->snapshot[i].is_dir};
-        dired_copy(op.src_name, sizeof(op.src_name),
-                   st->snapshot[i].name);
+        dired_copy(op.src_name, sizeof(op.src_name), st->snapshot[i].name);
         arrput(*ops, op);
     }
 
@@ -586,7 +584,8 @@ static int dired_build_plan(DiredState *st, DiredCurrentVec *current,
 
 /* Apply renames using a two-pass temp rename to handle cycles like A→B B→A.
  * Returns count of renames applied; sets *had_error on first failure. */
-static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) {
+static int dired_apply_renames(DiredState *st, DiredOpVec *ops,
+                               int *had_error) {
     int applied = 0;
 
     /* Pass 1: source → temp */
@@ -594,8 +593,8 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
         DiredOp *op = &(*ops)[i];
         if (op->kind != DIRED_OP_RENAME)
             continue;
-        snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%td",
-                 DIRED_TMP_PREFIX, i);
+        snprintf(op->tmp_name, sizeof(op->tmp_name), "%s%td", DIRED_TMP_PREFIX,
+                 i);
         char src[PATH_MAX], tmp[PATH_MAX];
         if (!dired_join(st->cwd, op->src_name, src, sizeof(src)) ||
             !dired_join(st->cwd, op->tmp_name, tmp, sizeof(tmp))) {
@@ -648,7 +647,8 @@ static int dired_apply_renames(DiredState *st, DiredOpVec *ops, int *had_error) 
     return applied;
 }
 
-static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) {
+static int dired_apply_deletes(DiredState *st, DiredOpVec *ops,
+                               int *had_error) {
     int applied = 0;
     for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
@@ -669,9 +669,9 @@ static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) 
                 bool empty = !fs_dir_next(dp, &e);
                 fs_dir_close(dp);
                 if (!empty) {
-                    ed_set_status_message(
-                        "dired: directory not empty: %s "
-                        "(delete contents first)", op->src_name);
+                    ed_set_status_message("dired: directory not empty: %s "
+                                          "(delete contents first)",
+                                          op->src_name);
                     *had_error = 1;
                     continue;
                 }
@@ -689,7 +689,8 @@ static int dired_apply_deletes(DiredState *st, DiredOpVec *ops, int *had_error) 
     return applied;
 }
 
-static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) {
+static int dired_apply_creates(DiredState *st, DiredOpVec *ops,
+                               int *had_error) {
     int applied = 0;
     for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         DiredOp *op = &(*ops)[i];
@@ -728,8 +729,8 @@ static int dired_apply_creates(DiredState *st, DiredOpVec *ops, int *had_error) 
  * guard against it anyway. */
 static struct {
     int active;
-    int dired_buf_idx;    /* dired buffer that owns the pending plan */
-    int confirm_buf_idx;  /* scratch buffer rendered into the modal */
+    int dired_buf_idx;   /* dired buffer that owns the pending plan */
+    int confirm_buf_idx; /* scratch buffer rendered into the modal */
     Window *modal;
     DiredOpVec ops;
 } dired_pending;
@@ -739,9 +740,15 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     int n_create = 0, n_rename = 0, n_delete = 0;
     for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         switch ((*ops)[i].kind) {
-        case DIRED_OP_CREATE: n_create++; break;
-        case DIRED_OP_RENAME: n_rename++; break;
-        case DIRED_OP_DELETE: n_delete++; break;
+        case DIRED_OP_CREATE:
+            n_create++;
+            break;
+        case DIRED_OP_RENAME:
+            n_rename++;
+            break;
+        case DIRED_OP_DELETE:
+            n_delete++;
+            break;
         }
     }
 
@@ -751,9 +758,12 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
 #define APPEND(...)                                                            \
     do {                                                                       \
         int __n = snprintf(line, sizeof(line), __VA_ARGS__);                   \
-        if (__n < 0) __n = 0;                                                  \
-        if (__n > max_w) max_w = __n;                                          \
-        buf_row_insert_in(buf, buf->num_rows, line, (size_t)strnlen(line, sizeof(line))); \
+        if (__n < 0)                                                           \
+            __n = 0;                                                           \
+        if (__n > max_w)                                                       \
+            max_w = __n;                                                       \
+        buf_row_insert_in(buf, buf->num_rows, line,                            \
+                          (size_t)strnlen(line, sizeof(line)));                \
     } while (0)
 
     APPEND("dired: confirm changes");
@@ -764,7 +774,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
         APPEND("CREATE (%d):", n_create);
         for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
-            if (op->kind != DIRED_OP_CREATE) continue;
+            if (op->kind != DIRED_OP_CREATE)
+                continue;
             APPEND("  + %s%s", op->dst_name, op->is_dir ? "/" : "");
         }
         APPEND("%s", "");
@@ -773,7 +784,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
         APPEND("RENAME (%d):", n_rename);
         for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
-            if (op->kind != DIRED_OP_RENAME) continue;
+            if (op->kind != DIRED_OP_RENAME)
+                continue;
             APPEND("  ~ %s -> %s", op->src_name, op->dst_name);
         }
         APPEND("%s", "");
@@ -782,7 +794,8 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
         APPEND("DELETE (%d):", n_delete);
         for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
             const DiredOp *op = &(*ops)[i];
-            if (op->kind != DIRED_OP_DELETE) continue;
+            if (op->kind != DIRED_OP_DELETE)
+                continue;
             APPEND("  - %s%s", op->src_name, op->is_dir ? "/" : "");
         }
         APPEND("%s", "");
@@ -806,9 +819,12 @@ static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
         return 0;
     }
     Buffer *cb = &E.buffers[buf_idx];
-    free(cb->filename); cb->filename = NULL;
-    free(cb->title); cb->title = strdup("dired confirm");
-    free(cb->filetype); cb->filetype = strdup("dired_confirm");
+    free(cb->filename);
+    cb->filename = NULL;
+    free(cb->title);
+    cb->title = strdup("dired confirm");
+    free(cb->filetype);
+    cb->filetype = strdup("dired_confirm");
 
     int max_w = 0;
     dired_render_plan(cb, st->cwd, &ops, &max_w);
@@ -816,11 +832,15 @@ static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
     cb->readonly = 1;
 
     int width = max_w + 2;
-    if (width < 32) width = 32;
-    if (width > E.screen_cols - 6) width = E.screen_cols - 6;
+    if (width < 32)
+        width = 32;
+    if (width > E.screen_cols - 6)
+        width = E.screen_cols - 6;
     int height = cb->num_rows;
-    if (height < 5) height = 5;
-    if (height > E.screen_rows - 6) height = E.screen_rows - 6;
+    if (height < 5)
+        height = 5;
+    if (height > E.screen_rows - 6)
+        height = E.screen_rows - 6;
 
     Window *modal = winmodal_create(-1, -1, width, height);
     if (!modal) {
@@ -886,7 +906,8 @@ static void dired_dismiss_pending(int do_apply) {
         dired_list_dir(st, st->cwd);
         if (had_error) {
             log_msg("dired: applied with errors — created=%d renamed=%d "
-                    "deleted=%d", n_created, n_renamed, n_deleted);
+                    "deleted=%d",
+                    n_created, n_renamed, n_deleted);
         } else {
             ed_set_status_message("dired: created %d, renamed %d, deleted %d",
                                   n_created, n_renamed, n_deleted);
@@ -903,8 +924,7 @@ int dired_handle_save(Buffer *buf) {
         return 0;
 
     if (dired_pending.active) {
-        ed_set_status_message(
-            "dired: confirm or cancel pending changes first");
+        ed_set_status_message("dired: confirm or cancel pending changes first");
         return 1;
     }
 
@@ -969,14 +989,17 @@ static void dired_keypress_hook(HookKeyEvent *event) {
         if (idx >= 0 && idx < (int)arrlen(E.buffers)) {
             Buffer *cb = &E.buffers[idx];
             int max_off = cb->num_rows - modal->height;
-            if (max_off < 0) max_off = 0;
-            if (modal->row_offset < max_off) modal->row_offset++;
+            if (max_off < 0)
+                max_off = 0;
+            if (modal->row_offset < max_off)
+                modal->row_offset++;
         }
         break;
     }
     case 'k':
     case KEY_ARROW_UP:
-        if (modal->row_offset > 0) modal->row_offset--;
+        if (modal->row_offset > 0)
+            modal->row_offset--;
         break;
     default:
         break;

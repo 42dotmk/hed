@@ -1,5 +1,5 @@
-#include "viewmd.h"
 #include "hed.h"
+#include "viewmd.h"
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -58,8 +58,8 @@ static void viewmd_push(Buffer *buf) {
 
     /* Send cursor line so viewmd can scroll to the right position. */
     char cursor_hdr[32];
-    int hdr_len = snprintf(cursor_hdr, sizeof(cursor_hdr), "CURSOR:%d\n",
-                           buf->cursor->y);
+    int hdr_len =
+        snprintf(cursor_hdr, sizeof(cursor_hdr), "CURSOR:%d\n", buf->cursor->y);
     write(sock, cursor_hdr, (size_t)hdr_len);
 
     for (int i = 0; i < buf->num_rows; i++) {
@@ -190,7 +190,8 @@ void cmd_viewmd_preview(const char *args) {
         viewmd_stop();
 
     if (!viewmd_launch()) {
-        ed_set_status_message("viewmd: failed to launch (is viewmd installed?)");
+        ed_set_status_message(
+            "viewmd: failed to launch (is viewmd installed?)");
         return;
     }
 

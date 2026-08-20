@@ -60,9 +60,9 @@ static void hist_prepend_to_file(const char *line) {
     if (!hist_path(path, sizeof(path)))
         return;
 
-    char  *old   = NULL;
+    char *old = NULL;
     size_t oldsz = 0;
-    (void)fs_file_read(path, &old, &oldsz);   /* ok if file doesn't exist */
+    (void)fs_file_read(path, &old, &oldsz); /* ok if file doesn't exist */
 
     size_t llen = strlen(line);
     size_t keep_bytes = 0;
@@ -117,7 +117,7 @@ void hist_init(CmdHistory *h) {
     if (fs_lines_open(&r, path) != ED_OK)
         return;
     const char *line;
-    size_t      len;
+    size_t len;
     while (fs_lines_next(r, &line, &len)) {
         hist_append(h, line);
         if ((int)arrlen(h->items) >= CMD_HISTORY_MAX)
@@ -132,8 +132,7 @@ void hist_add(CmdHistory *h, const char *line) {
     if (!h || !line || !*line)
         return;
     /* Skip if identical to the most recent entry */
-    if (arrlen(h->items) > 0 && h->items[0] &&
-        strcmp(h->items[0], line) == 0)
+    if (arrlen(h->items) > 0 && h->items[0] && strcmp(h->items[0], line) == 0)
         return;
     hist_insert_front(h, line);
     hist_prepend_to_file(line);

@@ -22,18 +22,18 @@
  *
  * Config. `:autosave on|off|toggle|status|restore`. Default on. */
 
-#include "hed.h"
-#include "select_loop.h"
-#include "input/prompt.h"
 #include "autosave.h"
+#include "hed.h"
+#include "input/prompt.h"
+#include "select_loop.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
 
 /* Defined in src/buf/buffer.c, not exposed in buffer.h. */
 
-#define AUTOSAVE_IDLE_MS    3000
-#define AUTOSAVE_MAX_BYTES  (10 * 1024 * 1024)
+#define AUTOSAVE_IDLE_MS 3000
+#define AUTOSAVE_MAX_BYTES (10 * 1024 * 1024)
 
 /* ---------- module state ---------- */
 
@@ -42,10 +42,13 @@ static int g_enabled = 1;
 /* ---------- skip rules ---------- */
 
 static int autosave_skip_buf(const Buffer *buf) {
-    if (!buf || !buf->filename || !*buf->filename) return 1;
-    if (buf->readonly) return 1;
+    if (!buf || !buf->filename || !*buf->filename)
+        return 1;
+    if (buf->readonly)
+        return 1;
     /* Plugin scratch buffers ([copilot], [scratch], [aishell], ...). */
-    if (buf->title && buf->title[0] == '[') return 1;
+    if (buf->title && buf->title[0] == '[')
+        return 1;
     return 0;
 }
 
@@ -54,16 +57,20 @@ static int autosave_skip_buf(const Buffer *buf) {
 /* Build `~/.cache/hed/<encoded-cwd>/autosave/<rel>`. Caller frees. */
 static char *autosave_path_for(const char *filename) {
     char base[PATH_MAX];
-    if (!fs_path_cache_for_cwd("autosave", base, sizeof(base))) return NULL;
+    if (!fs_path_cache_for_cwd("autosave", base, sizeof(base)))
+        return NULL;
 
     /* Strip any leading slashes so absolute paths nest cleanly under
      * the autosave dir without producing `<base>//abs/path`. */
-    while (*filename == '/') filename++;
-    if (!*filename) return NULL;
+    while (*filename == '/')
+        filename++;
+    if (!*filename)
+        return NULL;
 
-    size_t n   = strlen(base) + 1 + strlen(filename) + 1;
-    char  *out = malloc(n);
-    if (!out) return NULL;
+    size_t n = strlen(base) + 1 + strlen(filename) + 1;
+    char *out = malloc(n);
+    if (!out)
+        return NULL;
     snprintf(out, n, "%s/%s", base, filename);
     return out;
 }
@@ -71,10 +78,12 @@ static char *autosave_path_for(const char *filename) {
 /* mkdir -p on the parent directory of `path`. Returns 0 on success. */
 static int autosave_mkdir_parent(const char *path) {
     const char *slash = strrchr(path, '/');
-    if (!slash) return 0;
-    size_t n   = (size_t)(slash - path);
-    char  *dir = malloc(n + 1);
-    if (!dir) return -1;
+    if (!slash)
+        return 0;
+    size_t n = (size_t)(slash - path);
+    char *dir = malloc(n + 1);
+    if (!dir)
+        return -1;
     memcpy(dir, path, n);
     dir[n] = '\0';
     int ok = fs_mkdir_p(dir) == ED_OK;
@@ -91,26 +100,34 @@ static int autosave_atomic_write(const char *path, const char *data, size_t n) {
 /* ---------- write the autosave for one buffer ---------- */
 
 static void autosave_write_buf(Buffer *buf) {
-    if (!g_enabled) return;
-    if (autosave_skip_buf(buf)) return;
-    if (!buf->dirty) return;
+    if (!g_enabled)
+        return;
+    if (autosave_skip_buf(buf))
+        return;
+    if (!buf->dirty)
+        return;
 
     size_t n;
     char *text = buf_to_text(buf, &n);
-    if (!text) return;
+    if (!text)
+        return;
     if (n > AUTOSAVE_MAX_BYTES) {
-        log_msg("autosave: skip %s (%zu bytes > %d cap)",
-                buf->filename, n, AUTOSAVE_MAX_BYTES);
+        log_msg("autosave: skip %s (%zu bytes > %d cap)", buf->filename, n,
+                AUTOSAVE_MAX_BYTES);
         free(text);
         return;
     }
 
     char *path = autosave_path_for(buf->filename);
-    if (!path) { free(text); return; }
+    if (!path) {
+        free(text);
+        return;
+    }
 
     if (autosave_mkdir_parent(path) != 0) {
         log_msg("autosave: mkdir failed for %s", path);
-        free(text); free(path);
+        free(text);
+        free(path);
         return;
     }
     if (autosave_atomic_write(path, text, n) != 0) {
@@ -118,32 +135,41 @@ static void autosave_write_buf(Buffer *buf) {
     } else {
         log_msg("autosave: wrote %zu bytes to %s", n, path);
     }
-    free(text); free(path);
+    free(text);
+    free(path);
 }
 
 /* ---------- timer fire: write every dirty buffer ---------- */
 
 static void autosave_fire(void *ud) {
     (void)ud;
-    if (!g_enabled) return;
+    if (!g_enabled)
+        return;
     for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         autosave_write_buf(&E.buffers[i]);
     }
 }
 
 static void autosave_schedule(void) {
-    if (!g_enabled) return;
-    ed_loop_timer_after("autosave:idle", AUTOSAVE_IDLE_MS,
-                        autosave_fire, NULL);
+    if (!g_enabled)
+        return;
+    ed_loop_timer_after("autosave:idle", AUTOSAVE_IDLE_MS, autosave_fire, NULL);
 }
 
 /* ---------- hooks ---------- */
 
-static void on_char_insert(const HookCharEvent *e) { (void)e; autosave_schedule(); }
-static void on_char_delete(const HookCharEvent *e) { (void)e; autosave_schedule(); }
+static void on_char_insert(const HookCharEvent *e) {
+    (void)e;
+    autosave_schedule();
+}
+static void on_char_delete(const HookCharEvent *e) {
+    (void)e;
+    autosave_schedule();
+}
 
 static void on_mode_change(const HookModeEvent *e) {
-    if (!g_enabled || !e) return;
+    if (!g_enabled || !e)
+        return;
     if (e->old_mode == MODE_INSERT) {
         ed_loop_timer_cancel("autosave:idle");
         autosave_fire(NULL);
@@ -151,34 +177,43 @@ static void on_mode_change(const HookModeEvent *e) {
 }
 
 static void on_buffer_save(HookBufferEvent *e) {
-    if (!e || !e->buf || !e->buf->filename) return;
-    if (autosave_skip_buf(e->buf)) return;
+    if (!e || !e->buf || !e->buf->filename)
+        return;
+    if (autosave_skip_buf(e->buf))
+        return;
     char *path = autosave_path_for(e->buf->filename);
-    if (!path) return;
-    if (fs_unlink(path) == ED_OK) log_msg("autosave: removed %s after save", path);
+    if (!path)
+        return;
+    if (fs_unlink(path) == ED_OK)
+        log_msg("autosave: removed %s after save", path);
     free(path);
 }
 
 /* ---------- recovery on open ---------- */
 
 typedef struct {
-    int   buf_idx;
+    int buf_idx;
     char *autosave_path;
-    char *display_name;     /* heap copy of buf->filename for status msgs */
+    char *display_name; /* heap copy of buf->filename for status msgs */
 } RestorePending;
 
 /* Replace `buf`'s rows with the contents of `path`, mark dirty.
  * Mirrors the read loop in buf_reload(). */
 static int autosave_load_into(Buffer *buf, const char *path) {
     FsLines *r = NULL;
-    if (fs_lines_open(&r, path) != ED_OK) return -1;
+    if (fs_lines_open(&r, path) != ED_OK)
+        return -1;
 
     /* Drop existing rows. */
-    for (int i = 0; i < buf->num_rows; i++) row_free(&buf->rows[i]);
+    for (int i = 0; i < buf->num_rows; i++)
+        row_free(&buf->rows[i]);
     free(buf->rows);
-    buf->rows     = NULL;
+    buf->rows = NULL;
     buf->num_rows = 0;
-    if (buf->cursor) { buf->cursor->x = 0; buf->cursor->y = 0; }
+    if (buf->cursor) {
+        buf->cursor->x = 0;
+        buf->cursor->y = 0;
+    }
 
     /* Drop undo so the user can't accidentally undo back into the
      * pre-restore state — that would be confusing. */
@@ -189,7 +224,7 @@ static int autosave_load_into(Buffer *buf, const char *path) {
     vtext_clear_all(buf);
 
     const char *line;
-    size_t      len;
+    size_t len;
     while (fs_lines_next(r, &line, &len))
         buf_row_insert_in(buf, buf->num_rows, line, len);
     fs_lines_close(r);
@@ -200,11 +235,13 @@ static int autosave_load_into(Buffer *buf, const char *path) {
 
 static void on_restore_choice(const char *answer, void *ud) {
     RestorePending *rp = ud;
-    if (!rp) return;
+    if (!rp)
+        return;
     int yes = answer && (answer[0] == 'y' || answer[0] == 'Y');
 
     Buffer *buf = (rp->buf_idx >= 0 && rp->buf_idx < (int)arrlen(E.buffers))
-                  ? &E.buffers[rp->buf_idx] : NULL;
+                      ? &E.buffers[rp->buf_idx]
+                      : NULL;
 
     if (yes && buf) {
         if (autosave_load_into(buf, rp->autosave_path) == 0) {
@@ -212,9 +249,8 @@ static void on_restore_choice(const char *answer, void *ud) {
                 "autosave: restored %s (buffer modified, :w to commit)",
                 rp->display_name);
         } else {
-            ed_set_status_message(
-                "autosave: restore failed for %s",
-                rp->display_name);
+            ed_set_status_message("autosave: restore failed for %s",
+                                  rp->display_name);
         }
     } else {
         if (fs_unlink(rp->autosave_path) == ED_OK)
@@ -230,10 +266,14 @@ static void on_restore_choice(const char *answer, void *ud) {
  * on-disk file). 0 otherwise. */
 static int autosave_exists_and_fresh(const Buffer *buf, char **out_path) {
     char *path = autosave_path_for(buf->filename);
-    if (!path) return 0;
+    if (!path)
+        return 0;
 
     long am = fs_mtime(path);
-    if (am == 0) { free(path); return 0; }
+    if (am == 0) {
+        free(path);
+        return 0;
+    }
 
     long om = fs_mtime(buf->filename);
     if (om != 0 && am <= om) {
@@ -244,7 +284,10 @@ static int autosave_exists_and_fresh(const Buffer *buf, char **out_path) {
         return 0;
     }
 
-    if (out_path) *out_path = path; else free(path);
+    if (out_path)
+        *out_path = path;
+    else
+        free(path);
     return 1;
 }
 
@@ -252,24 +295,29 @@ static int autosave_exists_and_fresh(const Buffer *buf, char **out_path) {
  * autosave exists and is fresh. */
 static void autosave_prompt_restore(Buffer *buf, char *autosave_path) {
     RestorePending *rp = calloc(1, sizeof(*rp));
-    if (!rp) { free(autosave_path); return; }
-    rp->buf_idx       = (int)(buf - E.buffers);
+    if (!rp) {
+        free(autosave_path);
+        return;
+    }
+    rp->buf_idx = (int)(buf - E.buffers);
     rp->autosave_path = autosave_path;
-    rp->display_name  = strdup(buf->filename);
+    rp->display_name = strdup(buf->filename);
 
     char q[512];
-    snprintf(q, sizeof(q),
-             "autosave found for %s — restore? (y/n)",
+    snprintf(q, sizeof(q), "autosave found for %s — restore? (y/n)",
              buf->filename);
     ask(q, "y", on_restore_choice, rp);
 }
 
 static void on_buffer_open(HookBufferEvent *e) {
-    if (!g_enabled || !e || !e->buf) return;
-    if (autosave_skip_buf(e->buf)) return;
+    if (!g_enabled || !e || !e->buf)
+        return;
+    if (autosave_skip_buf(e->buf))
+        return;
 
     char *path = NULL;
-    if (!autosave_exists_and_fresh(e->buf, &path)) return;
+    if (!autosave_exists_and_fresh(e->buf, &path))
+        return;
 
     /* If a prompt is already up (e.g. multiple files opened from the
      * cli), ask() will refuse — fall back to a status message and let
@@ -287,25 +335,38 @@ static void on_buffer_open(HookBufferEvent *e) {
 /* ---------- :autosave subcommands ---------- */
 
 static void cmd_autosave(const char *args) {
-    while (args && *args == ' ') args++;
+    while (args && *args == ' ')
+        args++;
     if (!args || !*args || strcmp(args, "status") == 0) {
         ed_set_status_message("autosave: %s, idle=%dms, cap=%dMB",
-                              g_enabled ? "on" : "off",
-                              AUTOSAVE_IDLE_MS,
+                              g_enabled ? "on" : "off", AUTOSAVE_IDLE_MS,
                               AUTOSAVE_MAX_BYTES / (1024 * 1024));
         return;
     }
-    if (strcmp(args, "on") == 0)     { g_enabled = 1; ed_set_status_message("autosave: on");     return; }
-    if (strcmp(args, "off") == 0)    { g_enabled = 0; ed_loop_timer_cancel("autosave:idle");
-                                       ed_set_status_message("autosave: off");                    return; }
-    if (strcmp(args, "toggle") == 0) { g_enabled = !g_enabled;
-                                       if (!g_enabled) ed_loop_timer_cancel("autosave:idle");
-                                       ed_set_status_message("autosave: %s",
-                                                             g_enabled ? "on" : "off");
-                                       return; }
+    if (strcmp(args, "on") == 0) {
+        g_enabled = 1;
+        ed_set_status_message("autosave: on");
+        return;
+    }
+    if (strcmp(args, "off") == 0) {
+        g_enabled = 0;
+        ed_loop_timer_cancel("autosave:idle");
+        ed_set_status_message("autosave: off");
+        return;
+    }
+    if (strcmp(args, "toggle") == 0) {
+        g_enabled = !g_enabled;
+        if (!g_enabled)
+            ed_loop_timer_cancel("autosave:idle");
+        ed_set_status_message("autosave: %s", g_enabled ? "on" : "off");
+        return;
+    }
     if (strcmp(args, "restore") == 0) {
         Buffer *buf = buf_cur();
-        if (!buf) { ed_set_status_message("autosave: no buffer"); return; }
+        if (!buf) {
+            ed_set_status_message("autosave: no buffer");
+            return;
+        }
         if (autosave_skip_buf(buf)) {
             ed_set_status_message("autosave: nothing to restore (no filename)");
             return;
@@ -330,25 +391,22 @@ static void cmd_autosave(const char *args) {
 /* ---------- plugin lifecycle ---------- */
 
 static int autosave_init(void) {
-    cmd("autosave", cmd_autosave,
-        "autosave on|off|toggle|status|restore|now");
+    cmd("autosave", cmd_autosave, "autosave on|off|toggle|status|restore|now");
 
-    hook_register_char  (HOOK_CHAR_INSERT,  MODE_INSERT, "*", on_char_insert);
-    hook_register_char  (HOOK_CHAR_DELETE,  MODE_INSERT, "*", on_char_delete);
-    hook_register_mode  (HOOK_MODE_CHANGE,  on_mode_change);
-    hook_register_buffer(HOOK_BUFFER_OPEN,  -1, "*", on_buffer_open);
-    hook_register_buffer(HOOK_BUFFER_SAVE,  -1, "*", on_buffer_save);
+    hook_register_char(HOOK_CHAR_INSERT, MODE_INSERT, "*", on_char_insert);
+    hook_register_char(HOOK_CHAR_DELETE, MODE_INSERT, "*", on_char_delete);
+    hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
+    hook_register_buffer(HOOK_BUFFER_OPEN, -1, "*", on_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_SAVE, -1, "*", on_buffer_save);
 
     return 0;
 }
 
-static void autosave_deinit(void) {
-    ed_loop_timer_cancel("autosave:idle");
-}
+static void autosave_deinit(void) { ed_loop_timer_cancel("autosave:idle"); }
 
 const Plugin plugin_autosave = {
-    .name   = "autosave",
-    .desc   = "idle/timer autosave to per-cwd cache dir, with recovery prompt",
-    .init   = autosave_init,
+    .name = "autosave",
+    .desc = "idle/timer autosave to per-cwd cache dir, with recovery prompt",
+    .init = autosave_init,
     .deinit = autosave_deinit,
 };

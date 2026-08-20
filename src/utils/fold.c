@@ -125,10 +125,9 @@ static int fold_region_level(const FoldList *list, int idx) {
         if (j == idx)
             continue;
         const FoldRegion *a = &list->regions[j];
-        bool contains = a->start_line <= b->start_line &&
-                        a->end_line >= b->end_line &&
-                        (a->start_line != b->start_line ||
-                         a->end_line != b->end_line);
+        bool contains =
+            a->start_line <= b->start_line && a->end_line >= b->end_line &&
+            (a->start_line != b->start_line || a->end_line != b->end_line);
         if (contains)
             level++;
     }
@@ -187,6 +186,6 @@ void fold_reset_buffer(struct Buffer *buf) {
     fold_clear_all(&buf->folds);
     for (int i = 0; i < buf->num_rows; i++) {
         buf->rows[i].fold_start = false;
-        buf->rows[i].fold_end   = false;
+        buf->rows[i].fold_end = false;
     }
 }

@@ -23,12 +23,12 @@
  * are last-write-wins, so users can override either from config.c.
  */
 
-#include "markdown_internal.h"
-#include "markdown_fields.h"
 #include "buf/buffer.h"
 #include "buf/row.h"
-#include "utils/fold_methods.h"
+#include "markdown_fields.h"
+#include "markdown_internal.h"
 #include "utils/fold.h"
+#include "utils/fold_methods.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -93,8 +93,8 @@ static void md_detect_folds(Buffer *buf) {
 
     /* Stack of open headings: parallel arrays of start-line and level. */
     int *start_lines = malloc(sizeof(int) * 8);
-    int *levels      = malloc(sizeof(int) * 8);
-    int  cap = 8, depth = 0;
+    int *levels = malloc(sizeof(int) * 8);
+    int cap = 8, depth = 0;
     if (!start_lines || !levels) {
         free(start_lines);
         free(levels);
@@ -121,10 +121,10 @@ static void md_detect_folds(Buffer *buf) {
          * the line before this one. */
         while (depth > 0 && levels[depth - 1] >= level) {
             int start = start_lines[depth - 1];
-            int end   = line - 1;
+            int end = line - 1;
             if (end > start) {
                 buf->rows[start].fold_start = true;
-                buf->rows[end].fold_end     = true;
+                buf->rows[end].fold_end = true;
                 fold_add_region(&buf->folds, start, end);
             }
             depth--;
@@ -140,10 +140,10 @@ static void md_detect_folds(Buffer *buf) {
                 return;
             }
             start_lines = ns;
-            levels      = nl;
+            levels = nl;
         }
         start_lines[depth] = line;
-        levels[depth]      = level;
+        levels[depth] = level;
         depth++;
 
         /* Innermost fold: the contiguous `key:: value` field block ("tags")
@@ -155,8 +155,8 @@ static void md_detect_folds(Buffer *buf) {
         while (fe < buf->num_rows && md_is_field_line(&buf->rows[fe]))
             fe++;
         if (fe - 1 > fs) {
-            buf->rows[fs].fold_start    = true;
-            buf->rows[fe - 1].fold_end  = true;
+            buf->rows[fs].fold_start = true;
+            buf->rows[fe - 1].fold_end = true;
             fold_add_region(&buf->folds, fs, fe - 1);
         }
     }
@@ -164,10 +164,10 @@ static void md_detect_folds(Buffer *buf) {
     /* Flush whatever's still open — those sections run to EOF. */
     while (depth > 0) {
         int start = start_lines[depth - 1];
-        int end   = buf->num_rows - 1;
+        int end = buf->num_rows - 1;
         if (end > start) {
             buf->rows[start].fold_start = true;
-            buf->rows[end].fold_end     = true;
+            buf->rows[end].fold_end = true;
             fold_add_region(&buf->folds, start, end);
         }
         depth--;

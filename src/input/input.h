@@ -28,7 +28,7 @@ int ed_parse_key_from_fd(int fd);
 
 typedef enum {
     MOUSE_PRESS,
-    MOUSE_DRAG,    /* motion with a button held (mode 1002) */
+    MOUSE_DRAG, /* motion with a button held (mode 1002) */
     MOUSE_RELEASE,
     MOUSE_WHEEL_UP,
     MOUSE_WHEEL_DOWN

@@ -61,8 +61,8 @@ typedef int (*PickerListFn)(const char **items, int count, int multi,
                             char ***out_lines, int *out_count);
 
 void picker_list_register(PickerListFn fn);
-int  picker_list(const char **items, int count, int multi,
-                 char ***out_lines, int *out_count);
+int picker_list(const char **items, int count, int multi, char ***out_lines,
+                int *out_count);
 void picker_list_free(char **lines, int count);
 
 #endif /* HED_PICKER_H */

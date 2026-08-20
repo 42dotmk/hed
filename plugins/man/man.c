@@ -7,8 +7,8 @@
  * The buffer is titled "[man <topic>(<sect>)]"; re-running :man on the
  * same topic switches to the existing buffer instead of re-rendering. */
 
-#include "hed.h"
 #include "man.h"
+#include "hed.h"
 #include "utils/term_cmd.h"
 
 #include <ctype.h>
@@ -31,7 +31,8 @@
 static int find_man_buffer(const char *title) {
     for (int i = 0; i < (int)arrlen(E.buffers); i++) {
         Buffer *b = &E.buffers[i];
-        if (!b || !b->title || !b->filetype) continue;
+        if (!b || !b->title || !b->filetype)
+            continue;
         if (strcmp(b->filetype, MAN_FILETYPE) == 0 &&
             strcmp(b->title, title) == 0)
             return i;
@@ -59,7 +60,8 @@ static void open_man_page(const char *topic, const char *section) {
     }
 
     int cols = E.screen_cols > 40 ? E.screen_cols : 100;
-    if (cols > 200) cols = 200;
+    if (cols > 200)
+        cols = 200;
 
     char qtopic[256], qsect[32];
     shell_escape_single(topic, qtopic, sizeof(qtopic));
@@ -111,19 +113,20 @@ static void open_man_page(const char *topic, const char *section) {
 }
 
 /* Parse "name (section) - desc" from apropos. Section may be missing. */
-static void parse_apropos_line(const char *line,
-                               char *topic, size_t tsize,
+static void parse_apropos_line(const char *line, char *topic, size_t tsize,
                                char *section, size_t ssize) {
     topic[0] = section[0] = '\0';
-    while (*line == ' ' || *line == '\t') line++;
+    while (*line == ' ' || *line == '\t')
+        line++;
 
     size_t ti = 0;
-    while (*line && *line != ' ' && *line != '\t' &&
-           *line != '(' && ti + 1 < tsize)
+    while (*line && *line != ' ' && *line != '\t' && *line != '(' &&
+           ti + 1 < tsize)
         topic[ti++] = *line++;
     topic[ti] = '\0';
 
-    while (*line == ' ' || *line == '\t') line++;
+    while (*line == ' ' || *line == '\t')
+        line++;
     if (*line == '(') {
         line++;
         size_t si = 0;
@@ -138,10 +141,11 @@ static void cmd_man_fzf(void) {
      * plugin free of any direct fzf coupling. */
     char **lines = NULL;
     int lcnt = 0;
-    if (!term_cmd_capture("apropos . 2>/dev/null | sort -u",
-                          &lines, &lcnt) || lcnt == 0) {
+    if (!term_cmd_capture("apropos . 2>/dev/null | sort -u", &lines, &lcnt) ||
+        lcnt == 0) {
         term_cmd_free(lines, lcnt);
-        ed_set_status_message("man: no apropos output (is `apropos` available?)");
+        ed_set_status_message(
+            "man: no apropos output (is `apropos` available?)");
         return;
     }
 
@@ -156,8 +160,7 @@ static void cmd_man_fzf(void) {
     }
 
     char topic[128], section[16];
-    parse_apropos_line(sel[0], topic, sizeof(topic),
-                       section, sizeof(section));
+    parse_apropos_line(sel[0], topic, sizeof(topic), section, sizeof(section));
     picker_list_free(sel, cnt);
 
     if (!topic[0]) {
@@ -173,7 +176,8 @@ static void cmd_man(const char *args) {
         return;
     }
 
-    while (*args == ' ') args++;
+    while (*args == ' ')
+        args++;
 
     /* Pull the first whitespace-separated word. */
     char first[64];
@@ -181,7 +185,8 @@ static void cmd_man(const char *args) {
     while (*args && *args != ' ' && *args != '\t' && fi + 1 < sizeof(first))
         first[fi++] = *args++;
     first[fi] = '\0';
-    while (*args == ' ' || *args == '\t') args++;
+    while (*args == ' ' || *args == '\t')
+        args++;
 
     if (*args && first[0] && isdigit((unsigned char)first[0])) {
         /* ":man <section> <topic>" */
@@ -212,8 +217,8 @@ static int man_init(void) {
 }
 
 const Plugin plugin_man = {
-    .name   = "man",
-    .desc   = "view and search man pages",
-    .init   = man_init,
+    .name = "man",
+    .desc = "view and search man pages",
+    .init = man_init,
     .deinit = NULL,
 };

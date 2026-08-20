@@ -22,8 +22,8 @@ static int git_init(void) {
 }
 
 const Plugin plugin_git = {
-    .name   = "git",
-    .desc   = "lazygit launcher",
-    .init   = git_init,
+    .name = "git",
+    .desc = "lazygit launcher",
+    .init = git_init,
     .deinit = NULL,
 };

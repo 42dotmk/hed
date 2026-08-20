@@ -13,11 +13,11 @@ typedef struct {
 #include "stb_ds.h"
 
 typedef struct {
-    int open;   /* 0/1 */
-    int focus;  /* 0/1: when focused, keypresses navigate quickfix */
-    int height; /* number of lines used for the pane */
-    int sel;    /* selected index (0-based) */
-    int scroll; /* first visible index */
+    int open;      /* 0/1 */
+    int focus;     /* 0/1: when focused, keypresses navigate quickfix */
+    int height;    /* number of lines used for the pane */
+    int sel;       /* selected index (0-based) */
+    int scroll;    /* first visible index */
     QfItem *items; /* stb_ds dynamic array */
 } Qf;
 
@@ -60,8 +60,8 @@ int qf_add(Qf *qf, const char *filename, int line, int col, const char *text);
  * "" when the text field is absent (col is parsed, 0 when empty).
  * Returns 0 when there is no "file:line:" prefix (caller should treat
  * the line as plain text). */
-int qf_parse_grep_line(char *line, char **out_file, int *out_line,
-                       int *out_col, const char **out_text);
+int qf_parse_grep_line(char *line, char **out_file, int *out_line, int *out_col,
+                       const char **out_text);
 
 void qf_move(Qf *qf, int delta);
 void qf_open_selected(Qf *qf);

@@ -63,19 +63,20 @@ void log_clear(void) {
         setvbuf(g_log_fp, NULL, _IOLBF, 0);
 }
 
-const char *log_path(void) {
-    return g_log_path;
-}
+const char *log_path(void) { return g_log_path; }
 
 int log_fileno(void) {
-    if (!g_log_fp) return -1;
+    if (!g_log_fp)
+        return -1;
     return fileno(g_log_fp);
 }
 
 int log_stderr_to_logfile(void) {
     int fd = log_fileno();
-    if (fd < 0) return -1;
-    if (dup2(fd, STDERR_FILENO) < 0) return -1;
+    if (fd < 0)
+        return -1;
+    if (dup2(fd, STDERR_FILENO) < 0)
+        return -1;
     return 0;
 }
 

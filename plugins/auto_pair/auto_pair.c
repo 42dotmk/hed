@@ -8,14 +8,29 @@ static void hook_auto_pair(const HookCharEvent *event) {
     BUFWIN(buf, win);
     char inserted = 0;
     switch (event->c) {
-    case '(':  inserted = ')'; break;
-    case '[':  inserted = ']'; break;
-    case '<':  inserted = '>'; break;
-    case '{':  inserted = '}'; break;
-    case '"':  inserted = '"'; break;
-    case '\'': inserted = '\''; break;
-    case '`':  inserted = '`'; break;
-    default:   break;
+    case '(':
+        inserted = ')';
+        break;
+    case '[':
+        inserted = ']';
+        break;
+    case '<':
+        inserted = '>';
+        break;
+    case '{':
+        inserted = '}';
+        break;
+    case '"':
+        inserted = '"';
+        break;
+    case '\'':
+        inserted = '\'';
+        break;
+    case '`':
+        inserted = '`';
+        break;
+    default:
+        break;
     }
     if (inserted) {
         buf_insert_char_in(buf, inserted);
@@ -29,8 +44,8 @@ static int auto_pair_init(void) {
 }
 
 const Plugin plugin_auto_pair = {
-    .name   = "auto_pair",
-    .desc   = "auto-insert matching brackets and quotes",
-    .init   = auto_pair_init,
+    .name = "auto_pair",
+    .desc = "auto-insert matching brackets and quotes",
+    .init = auto_pair_init,
     .deinit = NULL,
 };

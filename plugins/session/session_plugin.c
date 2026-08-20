@@ -46,11 +46,13 @@ static void cmd_session_restore(const char *args) {
 }
 
 static void on_startup_done(void) {
-    if (!getenv("HED_RELOAD")) return;
+    if (!getenv("HED_RELOAD"))
+        return;
     unsetenv("HED_RELOAD");
 
     char path[4096];
-    if (!session_default_path(path, sizeof(path))) return;
+    if (!session_default_path(path, sizeof(path)))
+        return;
 
     if (session_restore(path) == ED_OK) {
         fs_unlink(path);
@@ -58,15 +60,16 @@ static void on_startup_done(void) {
 }
 
 static int session_init(void) {
-    cmd("session-save",    cmd_session_save,    "save open buffers to cache");
-    cmd("session-restore", cmd_session_restore, "restore open buffers from cache");
+    cmd("session-save", cmd_session_save, "save open buffers to cache");
+    cmd("session-restore", cmd_session_restore,
+        "restore open buffers from cache");
     hook_register_simple(HOOK_STARTUP_DONE, on_startup_done);
     return 0;
 }
 
 const Plugin plugin_session = {
-    .name   = "session",
-    .desc   = "save/restore the open-buffer list; auto-restores after :reload",
-    .init   = session_init,
+    .name = "session",
+    .desc = "save/restore the open-buffer list; auto-restores after :reload",
+    .init = session_init,
     .deinit = NULL,
 };

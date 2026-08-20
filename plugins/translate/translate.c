@@ -17,11 +17,11 @@
  *   whole buffer.
  */
 
-#include "hed.h"
 #include "translate.h"
+#include "hed.h"
 #include "select_loop.h"
-#include "utils/yank.h"
 #include "ui/window.h"
+#include "utils/yank.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -33,23 +33,23 @@
 
 typedef struct TrJob {
     pid_t pid;
-    int   from_fd;        /* child stdout read end (non-blocking) */
-    char  in_path[PATH_MAX]; /* temp input file, unlink on finish */
+    int from_fd;            /* child stdout read end (non-blocking) */
+    char in_path[PATH_MAX]; /* temp input file, unlink on finish */
 
-    StrBuf out;           /* stdout accumulator */
+    StrBuf out; /* stdout accumulator */
 
     /* Context captured at invocation time so the result is correct even
      * if the user has since switched buffers. */
-    char *src_filetype;   /* strdup'd, transferred to dst->filetype */
-    char *src_base;       /* strdup'd basename for the title */
-    int   from_sel;
-    char  target[16];
-    char  source[16];
+    char *src_filetype; /* strdup'd, transferred to dst->filetype */
+    char *src_base;     /* strdup'd basename for the title */
+    int from_sel;
+    char target[16];
+    char source[16];
 } TrJob;
 
-static char    default_target[16] = "en";
-static int     seq                = 0;
-static TrJob  *job_active         = NULL;
+static char default_target[16] = "en";
+static int seq = 0;
+static TrJob *job_active = NULL;
 
 void translate_set_default_target(const char *lang) {
     if (lang && *lang)
@@ -57,7 +57,8 @@ void translate_set_default_target(const char *lang) {
 }
 
 static void job_free(TrJob *j) {
-    if (!j) return;
+    if (!j)
+        return;
     strbuf_free(&j->out);
     free(j->src_filetype);
     free(j->src_base);
@@ -69,22 +70,30 @@ static void job_free(TrJob *j) {
 static char *sel_to_text(Buffer *buf, const TextSelection *sel,
                          size_t *out_len) {
     YankData yd = yank_data_new(buf, sel);
-    if (!yd.rows) return NULL;
+    if (!yd.rows)
+        return NULL;
     size_t total = 0;
-    for (int i = 0; i < yd.num_rows; i++) total += yd.rows[i].len + 1;
-    if (total == 0) total = 1;
+    for (int i = 0; i < yd.num_rows; i++)
+        total += yd.rows[i].len + 1;
+    if (total == 0)
+        total = 1;
     char *out = malloc(total + 1);
-    if (!out) { yank_data_free(&yd); return NULL; }
+    if (!out) {
+        yank_data_free(&yd);
+        return NULL;
+    }
     size_t off = 0;
     for (int i = 0; i < yd.num_rows; i++) {
         if (yd.rows[i].len) {
             memcpy(out + off, yd.rows[i].data, yd.rows[i].len);
             off += yd.rows[i].len;
         }
-        if (i + 1 < yd.num_rows) out[off++] = '\n';
+        if (i + 1 < yd.num_rows)
+            out[off++] = '\n';
     }
     out[off] = '\0';
-    if (out_len) *out_len = off;
+    if (out_len)
+        *out_len = off;
     yank_data_free(&yd);
     return out;
 }
@@ -109,7 +118,8 @@ static void job_finalize(TrJob *j) {
     j->from_fd = -1;
 
     int status = 0;
-    if (j->pid > 0) waitpid(j->pid, &status, 0);
+    if (j->pid > 0)
+        waitpid(j->pid, &status, 0);
     fs_unlink(j->in_path);
 
     int exit_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
@@ -123,8 +133,8 @@ static void job_finalize(TrJob *j) {
     }
 
     char title[256];
-    snprintf(title, sizeof(title), "[translate:%s:%s%s #%d]",
-             j->target, j->src_base, j->from_sel ? "(sel)" : "", ++seq);
+    snprintf(title, sizeof(title), "[translate:%s:%s%s #%d]", j->target,
+             j->src_base, j->from_sel ? "(sel)" : "", ++seq);
 
     int idx = -1;
     if (buf_new_scratch(title, &idx) != ED_OK) {
@@ -134,7 +144,8 @@ static void job_finalize(TrJob *j) {
         return;
     }
     Buffer *dst = &E.buffers[idx];
-    free(dst->filetype); dst->filetype = j->src_filetype; /* take ownership */
+    free(dst->filetype);
+    dst->filetype = j->src_filetype; /* take ownership */
     j->src_filetype = NULL;
 
     buf_append_text_lines(dst, j->out.data, j->out.len);
@@ -142,19 +153,21 @@ static void job_finalize(TrJob *j) {
 
     windows_split_vertical();
     Window *w = window_cur();
-    if (w) win_attach_buf(w, dst);
+    if (w)
+        win_attach_buf(w, dst);
     E.current_buffer = idx;
     dst->dirty = 0;
 
-    ed_set_status_message("translate: %s → %s (%d lines)",
-                          j->source, j->target, dst->num_rows);
+    ed_set_status_message("translate: %s → %s (%d lines)", j->source, j->target,
+                          dst->num_rows);
     job_active = NULL;
     job_free(j);
 }
 
 static void on_readable(int fd, void *ud) {
     TrJob *j = (TrJob *)ud;
-    if (!j || fd != j->from_fd) return;
+    if (!j || fd != j->from_fd)
+        return;
 
     for (;;) {
         char chunk[4096];
@@ -163,12 +176,14 @@ static void on_readable(int fd, void *ud) {
             strbuf_append(&j->out, chunk, (size_t)n);
             continue;
         }
-        if (n == 0) {                  /* EOF — trans is done */
+        if (n == 0) { /* EOF — trans is done */
             job_finalize(j);
             return;
         }
-        if (errno == EINTR) continue;
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        if (errno == EINTR)
+            continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
         /* Real error. */
         job_finalize(j);
         return;
@@ -184,7 +199,10 @@ static void cmd_translate(const char *args) {
     }
 
     Buffer *src = buf_cur();
-    if (!src) { ed_set_status_message("translate: no buffer"); return; }
+    if (!src) {
+        ed_set_status_message("translate: no buffer");
+        return;
+    }
     Window *win = window_cur();
 
     char target[16];
@@ -193,21 +211,24 @@ static void cmd_translate(const char *args) {
     if (args && *args) {
         char tt[16] = {0}, ss[16] = {0};
         int n = sscanf(args, "%15s %15s", tt, ss);
-        if (n >= 1 && tt[0]) snprintf(target, sizeof(target), "%s", tt);
-        if (n >= 2 && ss[0]) snprintf(source, sizeof(source), "%s", ss);
+        if (n >= 1 && tt[0])
+            snprintf(target, sizeof(target), "%s", tt);
+        if (n >= 2 && ss[0])
+            snprintf(source, sizeof(source), "%s", ss);
     }
 
     size_t in_len = 0;
-    char  *in_text = NULL;
-    int    from_sel = 0;
+    char *in_text = NULL;
+    int from_sel = 0;
     if (win && win->sel.type != SEL_NONE) {
         TextSelection sel;
         if (kb_visual_to_textsel(src, win, 0, &sel)) {
-            in_text  = sel_to_text(src, &sel, &in_len);
+            in_text = sel_to_text(src, &sel, &in_len);
             from_sel = 1;
         }
     }
-    if (!in_text) in_text = buf_to_text(src, &in_len);
+    if (!in_text)
+        in_text = buf_to_text(src, &in_len);
     if (!in_text || in_len == 0) {
         free(in_text);
         ed_set_status_message("translate: nothing to translate");
@@ -225,19 +246,21 @@ static void cmd_translate(const char *args) {
     snprintf(j->source, sizeof(j->source), "%s", source);
     j->from_sel = from_sel;
 
-    const char *src_ft = (src->filetype && *src->filetype) ? src->filetype
-                                                            : "txt";
+    const char *src_ft =
+        (src->filetype && *src->filetype) ? src->filetype : "txt";
     j->src_filetype = strdup(src_ft);
-    j->src_base     = strdup(fs_path_basename(src->filename ? src->filename
-                                                            : src->title));
+    j->src_base =
+        strdup(fs_path_basename(src->filename ? src->filename : src->title));
     if (!j->src_filetype || !j->src_base) {
-        free(in_text); job_free(j);
+        free(in_text);
+        job_free(j);
         ed_set_status_message("translate: OOM");
         return;
     }
 
     if (write_temp(in_text, in_len, j->in_path, sizeof(j->in_path)) != 0) {
-        free(in_text); job_free(j);
+        free(in_text);
+        job_free(j);
         ed_set_status_message("translate: failed to write temp input");
         return;
     }
@@ -245,15 +268,18 @@ static void cmd_translate(const char *args) {
 
     int pipefd[2];
     if (pipe(pipefd) != 0) {
-        fs_unlink(j->in_path); job_free(j);
+        fs_unlink(j->in_path);
+        job_free(j);
         ed_set_status_message("translate: pipe() failed");
         return;
     }
 
     pid_t pid = fork();
     if (pid < 0) {
-        close(pipefd[0]); close(pipefd[1]);
-        fs_unlink(j->in_path); job_free(j);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        fs_unlink(j->in_path);
+        job_free(j);
         ed_set_status_message("translate: fork() failed");
         return;
     }
@@ -261,23 +287,28 @@ static void cmd_translate(const char *args) {
     if (pid == 0) {
         /* Child: stdin from /dev/null, stdout to pipe, stderr to log. */
         int devnull = open("/dev/null", O_RDONLY);
-        if (devnull >= 0) { dup2(devnull, STDIN_FILENO); close(devnull); }
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
+        }
         dup2(pipefd[1], STDOUT_FILENO);
         int log_fd = log_fileno();
-        if (log_fd >= 0) dup2(log_fd, STDERR_FILENO);
-        close(pipefd[0]); close(pipefd[1]);
-        execlp("trans", "trans", "-b", "-no-warn",
-               "-s", j->source, "-t", j->target, "-i", j->in_path,
-               (char *)NULL);
+        if (log_fd >= 0)
+            dup2(log_fd, STDERR_FILENO);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        execlp("trans", "trans", "-b", "-no-warn", "-s", j->source, "-t",
+               j->target, "-i", j->in_path, (char *)NULL);
         _exit(127);
     }
 
     /* Parent. */
     close(pipefd[1]);
     int flags = fcntl(pipefd[0], F_GETFL, 0);
-    if (flags >= 0) fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    if (flags >= 0)
+        fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
 
-    j->pid     = pid;
+    j->pid = pid;
     j->from_fd = pipefd[0];
     ed_loop_register("translate", j->from_fd, on_readable, j);
 
@@ -292,8 +323,8 @@ static int translate_init(void) {
 }
 
 const Plugin plugin_translate = {
-    .name   = "translate",
-    .desc   = "translate buffer/selection with translate-shell (trans)",
-    .init   = translate_init,
+    .name = "translate",
+    .desc = "translate buffer/selection with translate-shell (trans)",
+    .init = translate_init,
     .deinit = NULL,
 };

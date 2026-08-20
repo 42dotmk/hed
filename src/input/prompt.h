@@ -23,9 +23,9 @@
 typedef struct Prompt Prompt;
 
 typedef enum {
-    PROMPT_CONTINUE = 0,  /* keep prompt open, more keys coming */
-    PROMPT_SUBMIT,        /* user pressed Enter — fire on_submit  */
-    PROMPT_CANCEL,        /* user pressed Esc  — fire on_cancel  */
+    PROMPT_CONTINUE = 0, /* keep prompt open, more keys coming */
+    PROMPT_SUBMIT,       /* user pressed Enter — fire on_submit  */
+    PROMPT_CANCEL,       /* user pressed Esc  — fire on_cancel  */
 } PromptResult;
 
 typedef struct PromptVTable {
@@ -57,20 +57,20 @@ typedef struct PromptVTable {
 
 struct Prompt {
     const PromptVTable *vt;
-    void               *state;        /* prompt-specific payload */
-    EditorMode          return_mode;  /* mode active at prompt_open time */
-    char                buf[PROMPT_BUF_CAP];
-    int                 len;
-    int                 cursor;       /* future: in-line editing */
-    bool                stay_open;    /* set by submit handler / commands */
-    char                hint[256];    /* shown above prompt; survives async
-                                       * E.status_msg overwrites */
+    void *state;            /* prompt-specific payload */
+    EditorMode return_mode; /* mode active at prompt_open time */
+    char buf[PROMPT_BUF_CAP];
+    int len;
+    int cursor;     /* future: in-line editing */
+    bool stay_open; /* set by submit handler / commands */
+    char hint[256]; /* shown above prompt; survives async
+                     * E.status_msg overwrites */
 };
 
 /* Lifecycle. Switches MODE_COMMAND on/off automatically. */
-void    prompt_open(const PromptVTable *vt, void *state);
-void    prompt_close(bool submitted);
-bool    prompt_active(void);
+void prompt_open(const PromptVTable *vt, void *state);
+void prompt_close(bool submitted);
+bool prompt_active(void);
 Prompt *prompt_current(void);
 
 /* Run one keystroke through the active prompt. No-op if none. */
@@ -92,7 +92,7 @@ PromptResult prompt_default_on_key(Prompt *p, int key);
 
 /* Helpers usable from on_submit handlers and the commands those
  * handlers run. */
-void prompt_keep_open(void);                       /* don't auto-close */
+void prompt_keep_open(void); /* don't auto-close */
 void prompt_set_text(Prompt *p, const char *s, int len);
 
 /* Set/clear a hint line rendered just above the prompt input. Lives in

@@ -111,7 +111,7 @@ void recent_files_init(RecentFiles *rf) {
         return;
 
     const char *line;
-    size_t      len;
+    size_t len;
     while (fs_lines_next(r, &line, &len)) {
         if (len > 0)
             recent_files_append(rf, line);

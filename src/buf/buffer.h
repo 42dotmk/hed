@@ -6,11 +6,11 @@
 #define CURSOR_STYLE_UNDERLINE "\x1b[3 q"
 #define CURSOR_STYLE_BEAM "\x1b[5 q"
 
-#include "lib/cursor.h"
-#include "lib/errors.h"
 #include "buf/attrspan.h"
 #include "buf/row.h"
 #include "buf/virtual_text.h"
+#include "lib/cursor.h"
+#include "lib/errors.h"
 #include "utils/fold.h"
 #include "utils/undo.h"
 
@@ -21,9 +21,9 @@ struct Window; /* ui/window.h — cursor sets are keyed by window id */
  * sets belonging to other windows showing the same buffer are parked
  * here until their window becomes the focused pair again. */
 typedef struct CursorSet {
-    int win_id;       /* owning Window.id */
+    int win_id; /* owning Window.id */
     CursorVec cursors;
-    Cursor *active;   /* points into cursors */
+    Cursor *active; /* points into cursors */
 } CursorSet;
 
 /* Buffer structure - represents a single file/document */
@@ -95,7 +95,9 @@ int buf_find_by_filename(
         *filename); /* Find buffer index by filename, returns -1 if not found */
 void buf_next(void);
 void buf_prev(void);
-void buf_open_or_switch(const char *filename, bool add_to_jumplist); /* Open file or switch to it if already open */
+void buf_open_or_switch(
+    const char *filename,
+    bool add_to_jumplist); /* Open file or switch to it if already open */
 void buf_insert_char_in(Buffer *buf, int c);
 void buf_insert_newline_in(Buffer *buf);
 void buf_del_char_in(Buffer *buf);
@@ -108,16 +110,16 @@ void buf_reload(Buffer *buf);
 /* Multi-cursor API. all_cursors always has >= 1 entry; buf->cursor
  * always points to one of them. Adding/removing extras leaves
  * buf->cursor itself untouched unless the caller passes it in. */
-Cursor *buf_cursor_add(Buffer *buf, int y, int x);  /* heap entry, stable ptr */
-int     buf_cursor_remove(Buffer *buf, Cursor *c);  /* fails if c is active */
-void    buf_cursor_clear_extras(Buffer *buf);       /* keep only active */
-int     buf_cursor_set_active(Buffer *buf, Cursor *c);
-int     buf_cursor_count(const Buffer *buf);
+Cursor *buf_cursor_add(Buffer *buf, int y, int x); /* heap entry, stable ptr */
+int buf_cursor_remove(Buffer *buf, Cursor *c);     /* fails if c is active */
+void buf_cursor_clear_extras(Buffer *buf);         /* keep only active */
+int buf_cursor_set_active(Buffer *buf, Cursor *c);
+int buf_cursor_count(const Buffer *buf);
 
 /* Sync the active cursor's stored position from the focused window's
  * cursor. Edit primitives call this after mutating win->cursor so
  * buf->cursor stays in step. */
-void    buf_cursor_sync_from_window(Buffer *buf);
+void buf_cursor_sync_from_window(Buffer *buf);
 
 /* Make `win` the owner of buf's live cursor set. Parks the previous
  * owner's set (when that window still shows the buffer), restores the
@@ -125,7 +127,7 @@ void    buf_cursor_sync_from_window(Buffer *buf);
  * gone — lets `win` adopt the live set as-is ("the buffer keeps the
  * cursors of its last window"). Idempotent and cheap when `win`
  * already owns the live set. Does not touch win->cursor. */
-void    buf_cursors_bind_window(Buffer *buf, struct Window *win);
+void buf_cursors_bind_window(Buffer *buf, struct Window *win);
 
 /* The cursor set to draw for (buf, win): the live set when win owns it
  * (*skip_active = buf->cursor — the hardware cursor covers it), else

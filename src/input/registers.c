@@ -1,5 +1,5 @@
-#include "editor.h"
 #include "input/registers.h"
+#include "editor.h"
 #include "lib/strbuf.h"
 #include <stdlib.h>
 #include <string.h>

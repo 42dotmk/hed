@@ -32,7 +32,7 @@ static void cmd_shq(const char *args) {
     snprintf(cmd, sizeof(cmd), "%s 2>/dev/null", args);
 
     char **lines = NULL;
-    int    n     = 0;
+    int n = 0;
     if (!term_cmd_capture(cmd, &lines, &n)) {
         ed_set_status_message("shq: failed to run");
         return;
@@ -44,7 +44,9 @@ static void cmd_shq(const char *args) {
         /* Try parse as file:line:col:text (lines are newline-stripped). */
         char tmp[2048];
         snprintf(tmp, sizeof(tmp), "%s", lines[i]);
-        char *file; int lno, col; const char *text;
+        char *file;
+        int lno, col;
+        const char *text;
         if (qf_parse_grep_line(tmp, &file, &lno, &col, &text)) {
             qf_add(&E.qf, file, lno, col, text);
         } else {
@@ -127,7 +129,8 @@ static void cmd_ssearch(const char *args) {
         char tmp[1024];
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
 
-        int lno, col; const char *text;
+        int lno, col;
+        const char *text;
         if (!qf_parse_grep_line(tmp, NULL, &lno, &col, &text))
             continue;
         /* file field is always the current file here */
@@ -200,7 +203,9 @@ static void cmd_rg(const char *args) {
         snprintf(tmp, sizeof(tmp), "%s", sel[0]);
         fzf_free(sel, cnt);
 
-        char *file; int lno, col; const char *text;
+        char *file;
+        int lno, col;
+        const char *text;
         if (!qf_parse_grep_line(tmp, &file, &lno, &col, &text)) {
             ed_set_status_message("rg: invalid selection");
             return;
@@ -220,7 +225,9 @@ static void cmd_rg(const char *args) {
     for (int i = 0; i < cnt; i++) {
         char tmp[1024];
         snprintf(tmp, sizeof(tmp), "%s", sel[i]);
-        char *file; int lno, col; const char *text;
+        char *file;
+        int lno, col;
+        const char *text;
         if (!qf_parse_grep_line(tmp, &file, &lno, &col, &text))
             continue;
         qf_add(&E.qf, file, lno, col, text);
@@ -263,16 +270,16 @@ static void cmd_rg_word(const char *args) {
 }
 
 static int search_init(void) {
-    cmd("rg",      cmd_rg,      "ripgrep");
-    cmd("rgword",  cmd_rg_word, "ripgrep word under cursor");
+    cmd("rg", cmd_rg, "ripgrep");
+    cmd("rgword", cmd_rg_word, "ripgrep word under cursor");
     cmd("ssearch", cmd_ssearch, "search current file");
-    cmd("shq",     cmd_shq,     "shell cmd");
+    cmd("shq", cmd_shq, "shell cmd");
     return 0;
 }
 
 const Plugin plugin_search = {
-    .name   = "search",
-    .desc   = "ripgrep-driven search (:rg, :rgword, :ssearch, :shq)",
-    .init   = search_init,
+    .name = "search",
+    .desc = "ripgrep-driven search (:rg, :rgword, :ssearch, :shq)",
+    .init = search_init,
     .deinit = NULL,
 };

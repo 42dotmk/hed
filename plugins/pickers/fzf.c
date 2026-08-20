@@ -1,9 +1,9 @@
 #include "pickers/fzf.h"
+#include "utils/term_cmd.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "utils/term_cmd.h"
-#include <limits.h>
 
 int fzf_run_opts(const char *input_cmd, const char *fzf_opts, int multi,
                  char ***out_lines, int *out_count) {
@@ -22,9 +22,10 @@ int fzf_run_opts(const char *input_cmd, const char *fzf_opts, int multi,
     const char *opts = fzf_opts ? fzf_opts : "";
     size_t need = strlen(input_cmd) + strlen(opts) + 32;
     char *pipebuf = malloc(need);
-    if (!pipebuf) return 0;
-    snprintf(pipebuf, need, "%s | fzf%s %s", input_cmd,
-             multi ? " -m" : "", opts);
+    if (!pipebuf)
+        return 0;
+    snprintf(pipebuf, need, "%s | fzf%s %s", input_cmd, multi ? " -m" : "",
+             opts);
 
     int rc = term_cmd_run(pipebuf, out_lines, out_count);
     free(pipebuf);
@@ -38,7 +39,7 @@ int fzf_run(const char *input_cmd, int multi, char ***out_lines,
 
 void fzf_input_init(FzfInput *in, int ncols) {
     in->ncols = ncols < 1 ? 1 : ncols;
-    in->cmd   = strbuf_new();
+    in->cmd = strbuf_new();
     strbuf_append(&in->cmd, "printf '", 8);
     for (int i = 0; i < in->ncols; i++) {
         if (i)
@@ -72,7 +73,7 @@ int fzf_pick_list(const char **items, int count, int multi, char ***out_lines,
     FzfInput in;
     fzf_input_init(&in, 1);
     for (int i = 0; i < count; i++) {
-        const char *row[1] = { items[i] };
+        const char *row[1] = {items[i]};
         fzf_input_row(&in, row);
     }
     int rc = fzf_run(fzf_input_cmd(&in), multi, out_lines, out_count);

@@ -16,7 +16,7 @@ typedef struct {
 } FoldDefault;
 
 static FoldMethodEntry *g_methods = NULL;
-static FoldDefault    *g_defaults = NULL;
+static FoldDefault *g_defaults = NULL;
 
 static int find_method_idx(const char *name) {
     if (!name)
@@ -90,7 +90,7 @@ void fold_method_set_default(const char *filetype, const char *method_name) {
     if (!method_name)
         return;
     FoldDefault d = {.filetype = strdup(filetype),
-                     .method   = strdup(method_name)};
+                     .method = strdup(method_name)};
     if (!d.filetype || !d.method) {
         free(d.filetype);
         free(d.method);
@@ -133,6 +133,6 @@ static void on_buffer_open(HookBufferEvent *event) {
 }
 
 void fold_method_init(void) {
-    fold_method_register("manual",  manual_noop);
+    fold_method_register("manual", manual_noop);
     hook_register_buffer(HOOK_BUFFER_OPEN, -1, "*", on_buffer_open);
 }

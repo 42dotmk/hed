@@ -1,18 +1,18 @@
-#include "editor.h"
+#include "input/command_mode.h"
 #include "commands/registry.h"
+#include "editor.h"
 #include "fs/fs.h"
 #include "input/picker.h"
-#include "input/registers.h"
-#include "lib/safe_string.h"
-#include "lib/log.h"
-#include "lib/strutil.h"
-#include "terminal.h"
-#include "input/command_mode.h"
 #include "input/prompt.h"
+#include "input/registers.h"
+#include "lib/log.h"
+#include "lib/safe_string.h"
+#include "lib/strutil.h"
 #include "stb_ds.h"
+#include "terminal.h"
 
-#include <ctype.h>
 #include "lib/path_limits.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,18 +30,19 @@
  * the colon prompt — file-path completion candidates and a "command-name
  * pending fzf escalation" flag — lives in CmdPromptState attached via
  * p->state.
- * =========================================================================== */
+ * ===========================================================================
+ */
 
 typedef struct {
     char **items;
-    int    count;
-    int    index;
-    char   base[256];
-    char   prefix[128];
-    int    active;
+    int count;
+    int index;
+    char base[256];
+    char prefix[128];
+    int active;
     /* 0 = none/path mode; 1 = command-name with multiple candidates and
      * a pending fzf escalation on the next Tab. */
-    int    cmdname_pending;
+    int cmdname_pending;
 } CmdComp;
 
 typedef struct {
@@ -51,11 +52,14 @@ typedef struct {
 static CmdPromptState g_cmd_state;
 
 /* History hook registry — plugins (e.g. tmux) plug in here. */
-typedef struct { CmdPromptHistoryHook fn; void *ud; } HistoryHook;
+typedef struct {
+    CmdPromptHistoryHook fn;
+    void *ud;
+} HistoryHook;
 static HistoryHook *g_history_hooks = NULL;
 
 void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud) {
-    HistoryHook h = { fn, ud };
+    HistoryHook h = {fn, ud};
     arrput(g_history_hooks, h);
 }
 
@@ -63,40 +67,47 @@ void cmd_prompt_history_register(CmdPromptHistoryHook fn, void *ud) {
 
 static void cmdcomp_clear(CmdComp *c) {
     if (c->items) {
-        for (int i = 0; i < c->count; i++) free(c->items[i]);
+        for (int i = 0; i < c->count; i++)
+            free(c->items[i]);
         free(c->items);
     }
-    c->items           = NULL;
-    c->count           = 0;
-    c->index           = 0;
-    c->base[0]         = '\0';
-    c->prefix[0]       = '\0';
-    c->active          = 0;
+    c->items = NULL;
+    c->count = 0;
+    c->index = 0;
+    c->base[0] = '\0';
+    c->prefix[0] = '\0';
+    c->active = 0;
     c->cmdname_pending = 0;
 }
 
 static int cmdcomp_is_cmdname_position(Prompt *p) {
     for (int i = 0; i < p->len; i++)
-        if (p->buf[i] == ' ') return 0;
+        if (p->buf[i] == ' ')
+            return 0;
     return 1;
 }
 
 /* Replace the leading token in p->buf with `replacement`. Optionally append
  * a trailing space. Refuses to truncate if the result would overflow. */
 static void cmdcomp_replace_first_token(Prompt *p, const char *replacement,
-                                         int add_space) {
+                                        int add_space) {
     int tok_end = p->len;
     for (int i = 0; i < p->len; i++) {
-        if (p->buf[i] == ' ') { tok_end = i; break; }
+        if (p->buf[i] == ' ') {
+            tok_end = i;
+            break;
+        }
     }
-    int rlen    = (int)strlen(replacement);
-    int extra   = add_space ? 1 : 0;
-    int tail    = p->len - tok_end;
+    int rlen = (int)strlen(replacement);
+    int extra = add_space ? 1 : 0;
+    int tail = p->len - tok_end;
     int new_len = rlen + extra + tail;
-    if (new_len >= (int)sizeof(p->buf)) return;
+    if (new_len >= (int)sizeof(p->buf))
+        return;
     memmove(p->buf + rlen + extra, p->buf + tok_end, (size_t)tail);
     memcpy(p->buf, replacement, (size_t)rlen);
-    if (add_space) p->buf[rlen] = ' ';
+    if (add_space)
+        p->buf[rlen] = ' ';
     p->len = new_len;
     p->buf[p->len] = '\0';
     p->cursor = p->len;
@@ -105,14 +116,16 @@ static void cmdcomp_replace_first_token(Prompt *p, const char *replacement,
 static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
     char prefix[128];
     int plen = p->len;
-    if (plen >= (int)sizeof(prefix)) plen = (int)sizeof(prefix) - 1;
+    if (plen >= (int)sizeof(prefix))
+        plen = (int)sizeof(prefix) - 1;
     memcpy(prefix, p->buf, (size_t)plen);
     prefix[plen] = '\0';
 
     int matches[256];
     int n = 0;
-    for (ptrdiff_t i = 0; i < arrlen(commands)
-                       && n < (ptrdiff_t)(sizeof(matches)/sizeof(matches[0])); i++) {
+    for (ptrdiff_t i = 0; i < arrlen(commands) &&
+                          n < (ptrdiff_t)(sizeof(matches) / sizeof(matches[0]));
+         i++) {
         if (commands[i].name &&
             strncmp(commands[i].name, prefix, (size_t)plen) == 0)
             matches[n++] = (int)i;
@@ -134,13 +147,15 @@ static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
     for (int i = 1; i < n; i++) {
         const char *nm = commands[matches[i]].name;
         int j = 0;
-        while (j < lcp_len && nm[j] && first[j] == nm[j]) j++;
+        while (j < lcp_len && nm[j] && first[j] == nm[j])
+            j++;
         lcp_len = j;
     }
     int changed = 0;
     if (lcp_len > plen) {
         char lcp[128];
-        if (lcp_len >= (int)sizeof(lcp)) lcp_len = (int)sizeof(lcp) - 1;
+        if (lcp_len >= (int)sizeof(lcp))
+            lcp_len = (int)sizeof(lcp) - 1;
         memcpy(lcp, first, (size_t)lcp_len);
         lcp[lcp_len] = '\0';
         cmdcomp_replace_first_token(p, lcp, 0);
@@ -155,15 +170,18 @@ static void cmdcomp_apply_token(Prompt *p, const char *replacement) {
     int len = p->len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (p->buf[i] == ' ') { start = i + 1; break; }
+        if (p->buf[i] == ' ') {
+            start = i + 1;
+            break;
+        }
     }
     int rlen = (int)strlen(replacement);
     if (start + rlen >= (int)sizeof(p->buf))
         rlen = (int)sizeof(p->buf) - 1 - start;
     memcpy(p->buf + start, replacement, (size_t)rlen);
-    p->len         = start + rlen;
+    p->len = start + rlen;
     p->buf[p->len] = '\0';
-    p->cursor      = p->len;
+    p->cursor = p->len;
 }
 
 /* snprintf truncation here is intentional: paths longer than PATH_MAX or
@@ -174,18 +192,24 @@ static void cmdcomp_apply_token(Prompt *p, const char *replacement) {
 static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
     cmdcomp_clear(c);
     const char *home = getenv("HOME");
-    int len   = p->len;
+    int len = p->len;
     int start = 0;
     for (int i = len - 1; i >= 0; i--) {
-        if (p->buf[i] == ' ') { start = i + 1; break; }
+        if (p->buf[i] == ' ') {
+            start = i + 1;
+            break;
+        }
     }
     char token[PATH_MAX];
-    int  tlen = len - start;
-    if (tlen < 0) tlen = 0;
-    if (tlen > (int)sizeof(token) - 1) tlen = (int)sizeof(token) - 1;
+    int tlen = len - start;
+    if (tlen < 0)
+        tlen = 0;
+    if (tlen > (int)sizeof(token) - 1)
+        tlen = (int)sizeof(token) - 1;
     memcpy(token, p->buf + start, (size_t)tlen);
     token[tlen] = '\0';
-    if (tlen == 0) return;
+    if (tlen == 0)
+        return;
     char first = token[0];
     if (!(first == '.' || first == '~' || first == '/'))
         return;
@@ -205,48 +229,62 @@ static void cmdcomp_build_filepath(Prompt *p, CmdComp *c) {
     char pref[PATH_MAX];
     if (slash) {
         size_t blen = (size_t)(slash - full + 1);
-        if (blen >= sizeof(base)) blen = sizeof(base) - 1;
-        memcpy(base, full, blen); base[blen] = '\0';
+        if (blen >= sizeof(base))
+            blen = sizeof(base) - 1;
+        memcpy(base, full, blen);
+        base[blen] = '\0';
         snprintf(pref, sizeof(pref), "%s", slash + 1);
     } else {
         base[0] = '\0';
         snprintf(pref, sizeof(pref), "%s", full);
     }
     FsDir *d = NULL;
-    if (fs_dir_open(&d, base[0] ? base : ".") != ED_OK) return;
+    if (fs_dir_open(&d, base[0] ? base : ".") != ED_OK)
+        return;
     FsDirEntry de;
-    int     cap   = 0;
-    int     count = 0;
-    char  **items = NULL;
+    int cap = 0;
+    int count = 0;
+    char **items = NULL;
     while (fs_dir_next(d, &de)) {
         const char *name = de.name;
-        if (name[0] == '.' && pref[0] != '.') continue;
-        if (strncmp(name, pref, strlen(pref)) != 0) continue;
+        if (name[0] == '.' && pref[0] != '.')
+            continue;
+        if (strncmp(name, pref, strlen(pref)) != 0)
+            continue;
         char cand[PATH_MAX];
-        snprintf(cand, sizeof(cand), "%s%s%s",
-                 base[0] ? base : "", name, de.is_dir ? "/" : "");
+        snprintf(cand, sizeof(cand), "%s%s%s", base[0] ? base : "", name,
+                 de.is_dir ? "/" : "");
         if (count + 1 > cap) {
             cap = cap ? cap * 2 : 16;
             char **new_items = realloc(items, (size_t)cap * sizeof(char *));
             if (!new_items) {
-                for (int i = 0; i < count; i++) free(items[i]);
-                free(items); fs_dir_close(d); return;
+                for (int i = 0; i < count; i++)
+                    free(items[i]);
+                free(items);
+                fs_dir_close(d);
+                return;
             }
             items = new_items;
         }
         char *cand_copy = strdup(cand);
         if (!cand_copy) {
-            for (int i = 0; i < count; i++) free(items[i]);
-            free(items); fs_dir_close(d); return;
+            for (int i = 0; i < count; i++)
+                free(items[i]);
+            free(items);
+            fs_dir_close(d);
+            return;
         }
         items[count++] = cand_copy;
     }
     fs_dir_close(d);
-    if (count == 0) { free(items); return; }
-    c->items  = items;
-    c->count  = count;
-    c->index  = 0;
-    snprintf(c->base,   sizeof(c->base),   "%s", base);
+    if (count == 0) {
+        free(items);
+        return;
+    }
+    c->items = items;
+    c->count = count;
+    c->index = 0;
+    snprintf(c->base, sizeof(c->base), "%s", base);
     snprintf(c->prefix, sizeof(c->prefix), "%s", pref);
     c->active = 1;
     cmdcomp_apply_token(p, items[0]);
@@ -265,7 +303,10 @@ static void cmdcomp_next(Prompt *p, CmdComp *c) {
 
 /* ----- vtable hooks ----------------------------------------------------- */
 
-static const char *colon_label(Prompt *p) { (void)p; return ":"; }
+static const char *colon_label(Prompt *p) {
+    (void)p;
+    return ":";
+}
 
 static void colon_complete(Prompt *p) {
     CmdPromptState *s = p->state;
@@ -278,7 +319,8 @@ static void colon_complete(Prompt *p) {
              * picker is installed. */
             char query[128];
             int n = p->len;
-            if (n >= (int)sizeof(query)) n = (int)sizeof(query) - 1;
+            if (n >= (int)sizeof(query))
+                n = (int)sizeof(query) - 1;
             memcpy(query, p->buf, (size_t)n);
             query[n] = '\0';
             cmdcomp_clear(&s->comp);
@@ -333,7 +375,8 @@ static PromptResult colon_on_key(Prompt *p, int key) {
 
 static void colon_on_submit(Prompt *p, const char *line, int len) {
     (void)p;
-    if (len == 0) return; /* dispatcher will close */
+    if (len == 0)
+        return; /* dispatcher will close */
 
     log_msg(":%s", line);
     if (!command_execute_line(line)) {
@@ -354,12 +397,12 @@ static void colon_on_cancel(Prompt *p) {
 }
 
 static const PromptVTable colon_vt = {
-    .label     = colon_label,
-    .on_key    = colon_on_key,
+    .label = colon_label,
+    .on_key = colon_on_key,
     .on_submit = colon_on_submit,
     .on_cancel = colon_on_cancel,
-    .complete  = colon_complete,
-    .history   = colon_history,
+    .complete = colon_complete,
+    .history = colon_history,
 };
 
 void cmd_prompt_open(void) {
@@ -373,9 +416,12 @@ void cmd_prompt_open(void) {
  *
  * Far simpler: no completion, no history, just line editing plus a
  * Ctrl-R toggle for regex/literal search mode. Submit fires the search.
- * =========================================================================== */
+ * ===========================================================================
+ */
 
-typedef struct { int use_regex; } SearchState;
+typedef struct {
+    int use_regex;
+} SearchState;
 static SearchState g_search_state;
 
 static const char *search_label(Prompt *p) {
@@ -395,24 +441,26 @@ static PromptResult search_on_key(Prompt *p, int key) {
 static void search_on_submit(Prompt *p, const char *line, int len) {
     SearchState *s = p->state;
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     strbuf_free(&E.search_query);
-    E.search_query    = strbuf_from(line, (size_t)len);
+    E.search_query = strbuf_from(line, (size_t)len);
     E.search_is_regex = s->use_regex;
     buf_find_in(buf);
 }
 
 static const PromptVTable search_vt = {
-    .label     = search_label,
-    .on_key    = search_on_key,
+    .label = search_label,
+    .on_key = search_on_key,
     .on_submit = search_on_submit,
     .on_cancel = NULL,
-    .complete  = NULL,
-    .history   = NULL,
+    .complete = NULL,
+    .history = NULL,
 };
 
 void ed_search_prompt(void) {
-    if (!buf_cur()) return;
+    if (!buf_cur())
+        return;
     g_search_state.use_regex = 1;
     prompt_open(&search_vt, &g_search_state);
 }

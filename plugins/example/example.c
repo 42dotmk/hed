@@ -23,14 +23,13 @@ static void cmd_example(const char *args) {
 
 /* --- a keybind callback --- */
 
-static void kb_example(void) {
-    ed_set_status_message("example keybind fired");
-}
+static void kb_example(void) { ed_set_status_message("example keybind fired"); }
 
 /* --- a hook (logs every mode change to .hedlog) --- */
 
 static void on_mode_change(const HookModeEvent *e) {
-    if (!e) return;
+    if (!e)
+        return;
     log_msg("example: mode %d -> %d", e->old_mode, e->new_mode);
 }
 
@@ -38,14 +37,14 @@ static void on_mode_change(const HookModeEvent *e) {
 
 static int example_init(void) {
     cmd("hello", cmd_example, "say hello (example plugin)");
-    mapn(" eh", kb_example, "example: hello");        /* leader: <space>eh */
+    mapn(" eh", kb_example, "example: hello"); /* leader: <space>eh */
     hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
     return 0;
 }
 
 const Plugin plugin_example = {
-    .name   = "example",
-    .desc   = "starter template — copy this directory to make your own",
-    .init   = example_init,
+    .name = "example",
+    .desc = "starter template — copy this directory to make your own",
+    .init = example_init,
     .deinit = NULL,
 };

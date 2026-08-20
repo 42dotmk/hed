@@ -55,19 +55,19 @@ static int vim_keybinds_init(void) {
     mapi("<Right>", kb_move_right, "move right");
     mapn("/", kb_search_prompt, "search");
 
-    cmapn("O",  "new_line_above", "new line above");
-    cmapn("o",  "new_line",       "new line below");
-    cmapn("U",  "redo",            "redo");
-    cmapn("u",  "undo",            "undo");
-    cmapn(".",  "repeat",          "repeat last edit");
-    cmapn("q",  "record",          "record macro");
-    cmapn("@",  "play",            "play macro");
-    cmapn("ZQ", "q!",              "quit (force)");
-    cmapn("ZZ", "wq",              "save and quit");
+    cmapn("O", "new_line_above", "new line above");
+    cmapn("o", "new_line", "new line below");
+    cmapn("U", "redo", "redo");
+    cmapn("u", "undo", "undo");
+    cmapn(".", "repeat", "repeat last edit");
+    cmapn("q", "record", "record macro");
+    cmapn("@", "play", "play macro");
+    cmapn("ZQ", "q!", "quit (force)");
+    cmapn("ZZ", "wq", "save and quit");
     mapn("%", buf_find_matching_bracket, "match bracket");
     mapv("%", buf_find_matching_bracket, "match bracket");
     mapn("*", kb_find_under_cursor, "find word");
-    mapv("*", kb_find_selection,    "find selection (exits visual)");
+    mapv("*", kb_find_selection, "find selection (exits visual)");
     mapn("<C-*>", kb_find_under_cursor, "find word");
 
     /* --- Visual mode --- */
@@ -81,12 +81,12 @@ static int vim_keybinds_init(void) {
     mapv("<Right>", kb_move_right, "right");
     mapv("y", kb_visual_yank_selection, "yank");
     mapv("d", kb_visual_delete_selection, "delete");
-    mapv("x",  kb_visual_delete_selection, "delete selection");
+    mapv("x", kb_visual_delete_selection, "delete selection");
     mapvl("x", kb_visual_delete_selection, "delete selection");
     mapvb("x", kb_visual_delete_selection, "delete selection");
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
      * mapv covers all three visual modes. */
-    mapv("r",  kb_visual_replace_char, "replace selection chars");
+    mapv("r", kb_visual_replace_char, "replace selection chars");
     mapv("v", kb_visual_escape, "exit visual");
     mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
     mapv("<Esc>", kb_visual_escape, "exit visual");
@@ -108,10 +108,10 @@ static int vim_keybinds_init(void) {
     mapn("<C-o>", kb_jump_backward, "jump back");
     mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
     mapn(">>", buf_indent_line, "indent");
-    mapn("<Right>", kb_win_grow_width,    "grow window width");
-    mapn("<Left>",  kb_win_shrink_width,  "shrink window width");
-    mapn("<Down>",  kb_win_grow_height,   "grow window height");
-    mapn("<Up>",    kb_win_shrink_height, "shrink window height");
+    mapn("<Right>", kb_win_grow_width, "grow window width");
+    mapn("<Left>", kb_win_shrink_width, "shrink window width");
+    mapn("<Down>", kb_win_grow_height, "grow window height");
+    mapn("<Up>", kb_win_shrink_height, "shrink window height");
     mapn("A", kb_end_append, "append eol");
     mapn("I", kb_start_insert, "insert bol");
     mapn("J", buf_join_lines, "join lines");
@@ -125,7 +125,7 @@ static int vim_keybinds_init(void) {
     mapn("v", kb_operator_select, "visual select with motion");
     mapn("dd", kb_delete_line, "del line");
     mapn("gg", kb_goto_file_start, "start of file (or line N with count)");
-    mapn("G",  kb_goto_file_end,   "end of file (or line N with count)");
+    mapn("G", kb_goto_file_end, "end of file (or line N with count)");
     mapn("gc", buf_toggle_comment, "toggle comment");
     mapn("gf", kb_open_file_under_cursor, "open file");
     mapn("gF", kb_search_file_under_cursor, "search file");
@@ -151,8 +151,8 @@ static int vim_keybinds_init(void) {
 }
 
 const Plugin plugin_vim_keybinds = {
-    .name   = "vim_keybinds",
-    .desc   = "default Vim-style modal keymap",
-    .init   = vim_keybinds_init,
+    .name = "vim_keybinds",
+    .desc = "default Vim-style modal keymap",
+    .init = vim_keybinds_init,
     .deinit = NULL,
 };

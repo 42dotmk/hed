@@ -1,7 +1,7 @@
-#include "ts.h"
+#include "hed.h"
 #include "highlight.h"
 #include "theme.h"
-#include "hed.h"
+#include "ts.h"
 #include <dlfcn.h>
 #include <limits.h>
 #include <tree_sitter/api.h>
@@ -20,38 +20,38 @@
 static int g_ts_enabled = 1;
 
 typedef struct {
-    char     lang_name[32];
+    char lang_name[32];
     uint32_t start_byte;
     uint32_t end_byte;
 } TSInjectionRange;
 
 typedef struct {
-    char        lang_name[32];
+    char lang_name[32];
     TSLanguage *lang;
-    TSParser   *parser;
-    TSTree     *tree;
-    TSQuery    *query;
-    void       *dl_handle;
-    int         load_failed; /* 1 once we know this lang can't be loaded */
+    TSParser *parser;
+    TSTree *tree;
+    TSQuery *query;
+    void *dl_handle;
+    int load_failed; /* 1 once we know this lang can't be loaded */
 } TSSubLang;
 
 typedef struct {
-    TSParser   *parser;
-    TSTree     *tree;
+    TSParser *parser;
+    TSTree *tree;
     TSLanguage *lang;
-    TSQuery    *query;
-    TSQuery    *inject_query;
-    void       *dl_handle;
-    char        lang_name[32];
-    int         parsed_dirty; /* last buf->dirty value parsed; -1 = needs parse */
+    TSQuery *query;
+    TSQuery *inject_query;
+    void *dl_handle;
+    char lang_name[32];
+    int parsed_dirty; /* last buf->dirty value parsed; -1 = needs parse */
 
     TSInjectionRange *injections;
-    int               num_injections;
-    int               cap_injections;
+    int num_injections;
+    int cap_injections;
 
-    TSSubLang        *sub_langs;
-    int               num_sub_langs;
-    int               cap_sub_langs;
+    TSSubLang *sub_langs;
+    int num_sub_langs;
+    int cap_sub_langs;
 } TSState;
 
 void ts_set_enabled(int on) { g_ts_enabled = on ? 1 : 0; }
@@ -66,18 +66,23 @@ int ts_is_enabled(void) { return g_ts_enabled; }
  * hash map (hmput / hmgeti / hmdel) would need typeof, which our
  * `-std=c11 -pedantic` build rejects.
  * =================================================================== */
-typedef struct { Buffer *key; TSState *value; } TSStateEntry;
+typedef struct {
+    Buffer *key;
+    TSState *value;
+} TSStateEntry;
 static TSStateEntry *g_states = NULL;
 
 static int ts_state_index(Buffer *buf) {
     int n = (int)arrlen(g_states);
     for (int i = 0; i < n; i++)
-        if (g_states[i].key == buf) return i;
+        if (g_states[i].key == buf)
+            return i;
     return -1;
 }
 
 static TSState *ts_state_get(Buffer *buf) {
-    if (!buf) return NULL;
+    if (!buf)
+        return NULL;
     int i = ts_state_index(buf);
     return i < 0 ? NULL : g_states[i].value;
 }
@@ -85,13 +90,16 @@ static TSState *ts_state_get(Buffer *buf) {
 /* Lazily allocate a TSState for `buf`. Idempotent: returns the
  * existing state when one is already attached. */
 static TSState *ts_state_create(Buffer *buf) {
-    if (!buf) return NULL;
+    if (!buf)
+        return NULL;
     TSState *st = ts_state_get(buf);
-    if (st) return st;
+    if (st)
+        return st;
     st = calloc(1, sizeof(TSState));
-    if (!st) return NULL;
+    if (!st)
+        return NULL;
     st->parsed_dirty = -1;
-    TSStateEntry e = { .key = buf, .value = st };
+    TSStateEntry e = {.key = buf, .value = st};
     arrput(g_states, e);
     return st;
 }
@@ -111,17 +119,25 @@ static void free_sub_lang(TSSubLang *s) {
 }
 
 static void ts_state_destroy(Buffer *buf) {
-    if (!buf) return;
+    if (!buf)
+        return;
     int i = ts_state_index(buf);
-    if (i < 0) return;
+    if (i < 0)
+        return;
     TSState *st = g_states[i].value;
     if (st) {
-        if (st->tree)         ts_tree_delete(st->tree);
-        if (st->parser)       ts_parser_delete(st->parser);
-        if (st->query)        ts_query_delete(st->query);
-        if (st->inject_query) ts_query_delete(st->inject_query);
-        if (st->dl_handle)    dlclose(st->dl_handle);
-        if (st->injections)   free(st->injections);
+        if (st->tree)
+            ts_tree_delete(st->tree);
+        if (st->parser)
+            ts_parser_delete(st->parser);
+        if (st->query)
+            ts_query_delete(st->query);
+        if (st->inject_query)
+            ts_query_delete(st->inject_query);
+        if (st->dl_handle)
+            dlclose(st->dl_handle);
+        if (st->injections)
+            free(st->injections);
         if (st->sub_langs) {
             for (int j = 0; j < st->num_sub_langs; j++)
                 free_sub_lang(&st->sub_langs[j]);
@@ -134,17 +150,19 @@ static void ts_state_destroy(Buffer *buf) {
 
 /* Public hook handlers — registered by treesitter_init. */
 void ts_on_buffer_open(HookBufferEvent *e) {
-    if (!e || !e->buf) return;
-    if (!g_ts_enabled) return;
+    if (!e || !e->buf)
+        return;
+    if (!g_ts_enabled)
+        return;
     if (ts_buffer_autoload(e->buf))
         ts_buffer_reparse(e->buf);
 }
 
 void ts_on_buffer_close(HookBufferEvent *e) {
-    if (!e || !e->buf) return;
+    if (!e || !e->buf)
+        return;
     ts_state_destroy(e->buf);
 }
-
 
 static void ts_default_base(char *out, size_t out_sz) {
     if (!out || out_sz == 0)
@@ -215,14 +233,13 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
 static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
     if (!qpath || !*qpath)
         return NULL;
-    char  *buf = NULL;
-    size_t sz  = 0;
+    char *buf = NULL;
+    size_t sz = 0;
     if (fs_file_read(qpath, &buf, &sz) != ED_OK)
         return NULL;
     uint32_t err_offset;
     TSQueryError err_type;
-    TSQuery *q =
-        ts_query_new(lang, buf, (uint32_t)sz, &err_offset, &err_type);
+    TSQuery *q = ts_query_new(lang, buf, (uint32_t)sz, &err_offset, &err_type);
     if (!q) {
         log_msg("TS query parse error in %s at offset %u (err=%d)", qpath,
                 err_offset, (int)err_type);
@@ -234,11 +251,11 @@ static TSQuery *load_query_file(TSLanguage *lang, const char *qpath) {
 /* Plugin-registered query strings. Keyed by "<lang>/<qname>"; values
  * are borrowed pointers to caller-owned static strings. */
 typedef struct {
-    char       *key;
+    char *key;
     const char *value;
 } QEntry;
 static QEntry *g_query_registry = NULL;
-static int     g_query_registry_inited = 0;
+static int g_query_registry_inited = 0;
 
 static void make_qkey(char *out, size_t out_sz, const char *lang,
                       const char *qname) {
@@ -273,10 +290,10 @@ static TSQuery *parse_query_string(TSLanguage *lang, const char *src,
                                    const char *origin) {
     if (!lang || !src)
         return NULL;
-    uint32_t      err_offset;
-    TSQueryError  err_type;
-    TSQuery      *q = ts_query_new(lang, src, (uint32_t)strlen(src),
-                                   &err_offset, &err_type);
+    uint32_t err_offset;
+    TSQueryError err_type;
+    TSQuery *q =
+        ts_query_new(lang, src, (uint32_t)strlen(src), &err_offset, &err_type);
     if (!q) {
         log_msg("TS query parse error in %s at offset %u (err=%d)",
                 origin ? origin : "<embedded>", err_offset, (int)err_type);
@@ -412,9 +429,12 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
  * grammar name. Falls back to the filetype verbatim, which is right
  * for most grammars (zig, go, lua, ...). */
 static const char *ts_grammar_for_filetype(const char *ft) {
-    if (strcmp(ft, "csharp") == 0)   return "c-sharp";
-    if (strcmp(ft, "shell") == 0)    return "bash";
-    if (strcmp(ft, "Makefile") == 0) return "make";
+    if (strcmp(ft, "csharp") == 0)
+        return "c-sharp";
+    if (strcmp(ft, "shell") == 0)
+        return "bash";
+    if (strcmp(ft, "Makefile") == 0)
+        return "make";
     return ft;
 }
 
@@ -512,8 +532,7 @@ static int find_set_string_value(const TSQuery *q, uint32_t pattern_idx,
     uint32_t i = 0;
     while (i < step_count) {
         uint32_t j = i;
-        while (j < step_count &&
-               steps[j].type != TSQueryPredicateStepTypeDone)
+        while (j < step_count && steps[j].type != TSQueryPredicateStepTypeDone)
             j++;
         /* Predicate occupies [i, j); next starts at j+1. */
         if (j >= i + 3 && steps[i].type == TSQueryPredicateStepTypeString &&
@@ -621,8 +640,8 @@ static void add_injection(TSState *st, const char *lang_name, uint32_t s,
         return;
     if (st->num_injections == st->cap_injections) {
         int new_cap = st->cap_injections ? st->cap_injections * 2 : 8;
-        TSInjectionRange *grown = realloc(
-            st->injections, (size_t)new_cap * sizeof(TSInjectionRange));
+        TSInjectionRange *grown =
+            realloc(st->injections, (size_t)new_cap * sizeof(TSInjectionRange));
         if (!grown)
             return;
         st->injections = grown;
@@ -702,7 +721,7 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
     /* Distinct languages used this round (cap protects stack). */
     enum { MAX_DISTINCT = 16 };
     char langs[MAX_DISTINCT][32];
-    int  nlangs = 0;
+    int nlangs = 0;
     for (int i = 0; i < st->num_injections && nlangs < MAX_DISTINCT; i++) {
         const char *ln = st->injections[i].lang_name;
         int found = 0;
@@ -764,7 +783,8 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
 }
 
 void ts_buffer_reparse(Buffer *buf) {
-    if (!buf) return;
+    if (!buf)
+        return;
     TSState *st = ts_state_get(buf);
     if (!st || !st->parser || !st->lang)
         return;
@@ -803,56 +823,56 @@ void ts_buffer_reparse(Buffer *buf) {
 void ts_seed_default_theme(void) {
     /* --- Palette: bundled "default" colours, mirrors src/lib/theme.h.
      *     A theme plugin (e.g. tokyo_night) may overwrite any of these. --- */
-    theme_palette_set("string",     COLOR_STRING);
-    theme_palette_set("comment",    COLOR_COMMENT);
-    theme_palette_set("variable",   COLOR_VARIABLE);
-    theme_palette_set("constant",   COLOR_CONSTANT);
-    theme_palette_set("number",     COLOR_NUMBER);
-    theme_palette_set("keyword",    COLOR_KEYWORD);
-    theme_palette_set("type",       COLOR_TYPE);
-    theme_palette_set("function",   COLOR_FUNCTION);
-    theme_palette_set("attribute",  COLOR_ATTRIBUTE);
-    theme_palette_set("label",      COLOR_LABEL);
-    theme_palette_set("operator",   COLOR_OPERATOR);
+    theme_palette_set("string", COLOR_STRING);
+    theme_palette_set("comment", COLOR_COMMENT);
+    theme_palette_set("variable", COLOR_VARIABLE);
+    theme_palette_set("constant", COLOR_CONSTANT);
+    theme_palette_set("number", COLOR_NUMBER);
+    theme_palette_set("keyword", COLOR_KEYWORD);
+    theme_palette_set("type", COLOR_TYPE);
+    theme_palette_set("function", COLOR_FUNCTION);
+    theme_palette_set("attribute", COLOR_ATTRIBUTE);
+    theme_palette_set("label", COLOR_LABEL);
+    theme_palette_set("operator", COLOR_OPERATOR);
     theme_palette_set("punctuation", COLOR_PUNCT);
-    theme_palette_set("title",      COLOR_TITLE);
-    theme_palette_set("uri",        COLOR_URI);
+    theme_palette_set("title", COLOR_TITLE);
+    theme_palette_set("uri", COLOR_URI);
     theme_palette_set("diag.error", COLOR_DIAG_ERROR);
-    theme_palette_set("diag.warn",  COLOR_DIAG_WARN);
-    theme_palette_set("diag.note",  COLOR_DIAG_NOTE);
+    theme_palette_set("diag.warn", COLOR_DIAG_WARN);
+    theme_palette_set("diag.note", COLOR_DIAG_NOTE);
 
     /* --- Role map: capture name → palette token. Plugins can overwrite
      *     individual entries (e.g. markdown plugin re-maps text.emphasis
      *     to a raw italic SGR). --- */
-    highlight_set("string",         "string");
-    highlight_set("escape",         "string");
-    highlight_set("comment",        "comment");
-    highlight_set("variable",       "variable");
-    highlight_set("constant",       "constant");
-    highlight_set("number",         "number");
-    highlight_set("keyword",        "keyword");
-    highlight_set("conditional",    "keyword");
-    highlight_set("repeat",         "keyword");
-    highlight_set("include",        "keyword");
-    highlight_set("type",           "type");
-    highlight_set("module",         "type");
-    highlight_set("constructor",    "type");
-    highlight_set("function",       "function");
-    highlight_set("property",       "attribute");
-    highlight_set("attribute",      "attribute");
-    highlight_set("label",          "label");
-    highlight_set("operator",       "operator");
-    highlight_set("punctuation",    "punctuation");
-    highlight_set("delimiter",      "punctuation");
-    highlight_set("text",           "comment");
-    highlight_set("text.title",     "title");
-    highlight_set("text.literal",   "string");
-    highlight_set("text.uri",       "uri");
+    highlight_set("string", "string");
+    highlight_set("escape", "string");
+    highlight_set("comment", "comment");
+    highlight_set("variable", "variable");
+    highlight_set("constant", "constant");
+    highlight_set("number", "number");
+    highlight_set("keyword", "keyword");
+    highlight_set("conditional", "keyword");
+    highlight_set("repeat", "keyword");
+    highlight_set("include", "keyword");
+    highlight_set("type", "type");
+    highlight_set("module", "type");
+    highlight_set("constructor", "type");
+    highlight_set("function", "function");
+    highlight_set("property", "attribute");
+    highlight_set("attribute", "attribute");
+    highlight_set("label", "label");
+    highlight_set("operator", "operator");
+    highlight_set("punctuation", "punctuation");
+    highlight_set("delimiter", "punctuation");
+    highlight_set("text", "comment");
+    highlight_set("text.title", "title");
+    highlight_set("text.literal", "string");
+    highlight_set("text.uri", "uri");
     highlight_set("text.reference", "type");
-    highlight_set("text.danger",    "diag.error");
-    highlight_set("text.warning",   "diag.warn");
-    highlight_set("text.note",      "diag.note");
-    highlight_set("exception",      "diag.error");
+    highlight_set("text.danger", "diag.error");
+    highlight_set("text.warning", "diag.warn");
+    highlight_set("text.note", "diag.note");
+    highlight_set("exception", "diag.error");
 }
 
 static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
@@ -872,7 +892,8 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
                                  const uint32_t *line_starts,
                                  const int *line_lens, int num_rows,
                                  AttrSpans *spans) {
-    if (!tree || !query) return;
+    if (!tree || !query)
+        return;
     TSNode root = ts_tree_root_node(tree);
     TSQueryCursor *cur = ts_query_cursor_new();
     ts_query_cursor_exec(cur, query, root);
@@ -885,14 +906,19 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
             const char *name;
             uint32_t nlen;
             name = ts_query_capture_name_for_id(query, c.index, &nlen);
-            if (!name) continue;
+            if (!name)
+                continue;
             const char *sgr = capture_name_to_sgr(name, nlen);
-            if (!sgr) continue;
+            if (!sgr)
+                continue;
             uint32_t s = ts_node_start_byte(c.node);
             uint32_t e = ts_node_end_byte(c.node);
-            if (e <= clip_start || s >= clip_end) continue;
-            if (s < clip_start) s = clip_start;
-            if (e > clip_end)   e = clip_end;
+            if (e <= clip_start || s >= clip_end)
+                continue;
+            if (s < clip_start)
+                s = clip_start;
+            if (e > clip_end)
+                e = clip_end;
 
             /* Walk the rows this capture intersects and push one span
              * per row's slice. Linear scan from a binary-searched
@@ -900,17 +926,20 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
             int lo = 0, hi = num_rows - 1, row = 0;
             while (lo <= hi) {
                 int mid = (lo + hi) / 2;
-                if (line_starts[mid] <= s) { row = mid; lo = mid + 1; }
-                else                       { hi = mid - 1; }
+                if (line_starts[mid] <= s) {
+                    row = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
             }
             while (row < num_rows && line_starts[row] < e) {
                 uint32_t row_start = line_starts[row];
-                uint32_t row_end   = row_start + (uint32_t)line_lens[row];
+                uint32_t row_end = row_start + (uint32_t)line_lens[row];
                 uint32_t cs = s > row_start ? s : row_start;
-                uint32_t ce = e < row_end   ? e : row_end;
+                uint32_t ce = e < row_end ? e : row_end;
                 if (ce > cs) {
-                    attrspan_push(spans, row,
-                                  (int)(cs - row_start),
+                    attrspan_push(spans, row, (int)(cs - row_start),
                                   (int)(ce - row_start), sgr, 0);
                 }
                 row++;
@@ -921,24 +950,29 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
 }
 
 void ts_render_pre_hook(const struct HookRenderEvent *event) {
-    if (!event || !event->buf || !event->spans) return;
+    if (!event || !event->buf || !event->spans)
+        return;
     Buffer *buf = event->buf;
-    if (!g_ts_enabled) return;
+    if (!g_ts_enabled)
+        return;
     TSState *st = ts_state_get(buf);
-    if (!st) return;
+    if (!st)
+        return;
     /* Reparse if the buffer changed since the last frame. Replaces
      * the per-frame reparse-all loop that used to live in
      * src/terminal.c — the renderer fires this hook once per visible
      * window, so tree-sitter sees the same trigger. */
     if (st->parser && st->lang && st->parsed_dirty != buf->dirty)
         ts_buffer_reparse(buf);
-    if (!st->tree || !st->query) return;
-    if (buf->num_rows <= 0) return;
+    if (!st->tree || !st->query)
+        return;
+    if (buf->num_rows <= 0)
+        return;
 
     /* Precompute per-row byte offsets in chars-space. */
     int n = buf->num_rows;
     uint32_t *line_starts = malloc((size_t)n * sizeof(uint32_t));
-    int      *line_lens   = malloc((size_t)n * sizeof(int));
+    int *line_lens = malloc((size_t)n * sizeof(int));
     if (!line_starts || !line_lens) {
         free(line_starts);
         free(line_lens);
@@ -947,23 +981,23 @@ void ts_render_pre_hook(const struct HookRenderEvent *event) {
     uint32_t off = 0;
     for (int r = 0; r < n; r++) {
         line_starts[r] = off;
-        line_lens[r]   = (int)buf->rows[r].chars.len;
+        line_lens[r] = (int)buf->rows[r].chars.len;
         off += (uint32_t)line_lens[r] + 1; /* +1 for newline */
     }
     uint32_t total = off > 0 ? off - 1 : 0;
 
     /* Host segments over the whole buffer. */
-    push_spans_from_tree(st->tree, st->query, 0, total, 0, total,
-                         line_starts, line_lens, n, event->spans);
+    push_spans_from_tree(st->tree, st->query, 0, total, 0, total, line_starts,
+                         line_lens, n, event->spans);
 
     /* Sub-language segments for each injection range. */
     for (int j = 0; j < st->num_injections; j++) {
         TSInjectionRange *ir = &st->injections[j];
         TSSubLang *sub = find_sub_lang(st, ir->lang_name);
-        if (!sub || !sub->tree || !sub->query) continue;
-        push_spans_from_tree(sub->tree, sub->query,
-                             ir->start_byte, ir->end_byte,
-                             ir->start_byte, ir->end_byte,
+        if (!sub || !sub->tree || !sub->query)
+            continue;
+        push_spans_from_tree(sub->tree, sub->query, ir->start_byte,
+                             ir->end_byte, ir->start_byte, ir->end_byte,
                              line_starts, line_lens, n, event->spans);
     }
 

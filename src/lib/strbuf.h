@@ -44,11 +44,11 @@ void strbuf_append_shell_quoted(StrBuf *s, const char *in);
 
 StrView strview(const char *data, size_t len);
 StrView strview_from_cstr(const char *s);
-StrView strbuf_view(const StrBuf *s);          /* borrow a StrBuf, no copy */
-int     strview_eq(StrView a, StrView b);
+StrView strbuf_view(const StrBuf *s); /* borrow a StrBuf, no copy */
+int strview_eq(StrView a, StrView b);
 
 /* Bridges from a borrowed view back to owned StrBuf storage (these copy). */
 StrBuf strbuf_from_view(StrView v);
-void   strbuf_append_view(StrBuf *s, StrView v);
+void strbuf_append_view(StrBuf *s, StrView v);
 
 #endif

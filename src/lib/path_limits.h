@@ -13,11 +13,11 @@
 #include <limits.h>
 
 #ifndef PATH_MAX
-#  ifdef MAX_PATH
-#    define PATH_MAX MAX_PATH
-#  else
-#    define PATH_MAX 4096
-#  endif
+#ifdef MAX_PATH
+#define PATH_MAX MAX_PATH
+#else
+#define PATH_MAX 4096
+#endif
 #endif
 
 #endif /* HED_PATH_LIMITS_H */

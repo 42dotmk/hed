@@ -1,22 +1,22 @@
 #include "commands/cmd_misc.h"
-#include "editor.h"
-#include "commands/registry.h"
 #include "buf/buf_helpers.h"
-#include "input/picker.h"
-#include "utils/yank.h"
-#include "terminal.h"
-#include "lib/log.h"
-#include "ui/winmodal.h"
-#include <unistd.h>
+#include "commands/registry.h"
+#include "editor.h"
+#include "input/keybinds.h"
 #include "input/macros.h"
+#include "input/picker.h"
 #include "input/registers.h"
+#include "lib/log.h"
+#include "lib/strutil.h"
+#include "terminal.h"
+#include "ui/winmodal.h"
 #include "utils/fold.h"
 #include "utils/fold_methods.h"
-#include "input/keybinds.h"
-#include "lib/strutil.h"
+#include "utils/yank.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* Helper functions for escape sequence parsing */
 static int hexval(int c) {
@@ -88,14 +88,16 @@ static char *unescape_string(const char *in) {
 }
 
 void cmd_list_commands(const char *args) {
-    if (picker_invoke("commands", args)) return;
+    if (picker_invoke("commands", args))
+        return;
     /* No picker installed — just report how many we have. */
     ed_set_status_message("commands: %td registered (no picker installed)",
                           arrlen(commands));
 }
 
 void cmd_list_keybinds(const char *args) {
-    if (picker_invoke("keybinds", args)) return;
+    if (picker_invoke("keybinds", args))
+        return;
     ed_set_status_message("keybinds: %d registered (no picker installed)",
                           keybind_get_count());
 }
@@ -209,7 +211,8 @@ void cmd_put(const char *args) {
 void cmd_undo(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     if (!undo_apply(buf))
         ed_set_status_message("Already at oldest change");
 }
@@ -217,7 +220,8 @@ void cmd_undo(const char *args) {
 void cmd_redo(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     if (!redo_apply(buf))
         ed_set_status_message("Already at newest change");
 }
@@ -343,10 +347,10 @@ void cmd_logclear(const char *args) {
     ed_set_status_message("log cleared");
 }
 
-void cmd_buf_refresh(const char* args){
-	(void)args;
-	Buffer *buf=buf_cur();
-	buf_reload(buf);
+void cmd_buf_refresh(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    buf_reload(buf);
 }
 void cmd_new_line(const char *args) {
     (void)args;
@@ -563,9 +567,10 @@ static const char *foldmethod_list_str(void) {
     int n = fold_method_count();
     for (int i = 0; i < n; i++) {
         const char *name = fold_method_name_at(i);
-        if (!name) continue;
-        int written = snprintf(buf + off, sizeof(buf) - off,
-                               "%s%s", off ? ", " : "", name);
+        if (!name)
+            continue;
+        int written = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+                               off ? ", " : "", name);
         if (written < 0 || (size_t)written >= sizeof(buf) - off)
             break;
         off += (size_t)written;
@@ -587,8 +592,8 @@ void cmd_foldmethod(const char *args) {
     }
 
     if (!fold_method_lookup(args)) {
-        ed_set_status_message("foldmethod: unknown method '%s' (%s)",
-                              args, foldmethod_list_str());
+        ed_set_status_message("foldmethod: unknown method '%s' (%s)", args,
+                              foldmethod_list_str());
         return;
     }
 

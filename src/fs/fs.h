@@ -161,12 +161,12 @@ typedef struct FsDir FsDir;
 
 typedef struct {
     const char *name;
-    bool        is_dir;
+    bool is_dir;
 } FsDirEntry;
 
 EdError fs_dir_open(FsDir **out, const char *path);
-bool    fs_dir_next(FsDir *d, FsDirEntry *out);
-void    fs_dir_close(FsDir *d);
+bool fs_dir_next(FsDir *d, FsDirEntry *out);
+void fs_dir_close(FsDir *d);
 
 /* =====================================================================
  * Mutating operations.
@@ -194,7 +194,7 @@ EdError fs_rename(const char *from, const char *to);
  * Working directory.
  * ===================================================================== */
 
-bool    fs_getcwd(char *out, size_t out_sz);
+bool fs_getcwd(char *out, size_t out_sz);
 EdError fs_chdir(const char *path);
 
 /* =====================================================================

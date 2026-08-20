@@ -1,7 +1,7 @@
 /* Parser tests for ed_parse_key_from_fd: feed byte sequences through a
  * pipe and assert on the decoded key, with focus on SGR mouse events. */
-#include "../src/input/input.h"
 #include "../src/editor.h"
+#include "../src/input/input.h"
 #include "unity/unity.h"
 
 #include <stdio.h>
@@ -9,8 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 
-void setUp(void) { }
-void tearDown(void) { }
+void setUp(void) {}
+void tearDown(void) {}
 
 /* input.c calls die() on hard read errors; tests never hit that path. */
 void die(const char *s) {

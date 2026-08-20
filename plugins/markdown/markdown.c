@@ -24,8 +24,8 @@ static int markdown_init(void) {
 }
 
 const Plugin plugin_markdown = {
-    .name   = "markdown",
-    .desc   = "highlights + heading-based folding for markdown",
-    .init   = markdown_init,
+    .name = "markdown",
+    .desc = "highlights + heading-based folding for markdown",
+    .init = markdown_init,
     .deinit = NULL,
 };

@@ -22,9 +22,9 @@
  * Cursor sets are per (buffer, window) pair — core parks and restores
  * them as focus moves (see buf_cursors_bind_window). */
 
+#include "multicursor/multicursor.h"
 #include "hed.h"
 #include "input/prompt.h"
-#include "multicursor/multicursor.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,14 +49,16 @@ static int mode_is_visual(int mode) {
 static int cursor_pos_cmp_desc(const void *a, const void *b) {
     const Cursor *ca = *(const Cursor *const *)a;
     const Cursor *cb = *(const Cursor *const *)b;
-    if (ca->y != cb->y) return cb->y - ca->y;
+    if (ca->y != cb->y)
+        return cb->y - ca->y;
     return cb->x - ca->x;
 }
 
 static int cursor_pos_cmp_asc(const void *a, const void *b) {
     const Cursor *ca = *(const Cursor *const *)a;
     const Cursor *cb = *(const Cursor *const *)b;
-    if (ca->y != cb->y) return ca->y - cb->y;
+    if (ca->y != cb->y)
+        return ca->y - cb->y;
     return ca->x - cb->x;
 }
 
@@ -75,32 +77,39 @@ static int cursor_pos_cmp_asc(const void *a, const void *b) {
  * sequences (operators, leaders) and mode changes (i/a/o/Esc) build up
  * independently per cursor. */
 static void on_keypress(HookKeyEvent *event) {
-    if (in_replay || !event) return;
+    if (in_replay || !event)
+        return;
     /* Sync off: extras are passive markers; the key dispatches normally
      * at the active cursor only. */
-    if (!mc_sync) return;
+    if (!mc_sync)
+        return;
     Buffer *buf = buf_cur();
-    if (!buf || buf_cursor_count(buf) <= 1) return;
+    if (!buf || buf_cursor_count(buf) <= 1)
+        return;
 
     /* Prompt input ( `:` / `/` / `?` ) is a single global line — every
      * dispatch appends to the same buffer, so replaying at N cursors
      * would type each char N times. Modals (dired/lsp/selectlist) also
      * route keys globally; replaying makes no sense there either. */
-    if (prompt_active() || winmodal_current() != NULL) return;
+    if (prompt_active() || winmodal_current() != NULL)
+        return;
 
     /* The selection is global too (one anchor per window, not per
      * cursor) — replaying a visual-mode key re-anchors it at every
      * cursor, leaving the anchor wherever the last replay ran. That
      * turned `v` + motion + <C-n> into a bogus multi-line selection.
      * Dispatch normally at the active cursor only. */
-    if (mode_is_visual(E.mode)) return;
+    if (mode_is_visual(E.mode))
+        return;
 
     int n = buf_cursor_count(buf);
     Cursor *original_active = buf->cursor;
 
     Cursor **all = malloc(sizeof(Cursor *) * (size_t)n);
-    if (!all) return;
-    for (int i = 0; i < n; i++) all[i] = buf->all_cursors[i];
+    if (!all)
+        return;
+    for (int i = 0; i < n; i++)
+        all[i] = buf->all_cursors[i];
 
     KeybindState saved_kb;
     keybind_state_save(&saved_kb);
@@ -120,8 +129,8 @@ static void on_keypress(HookKeyEvent *event) {
     /* buf->cursor is already original_active. */
 
     if (mc_debug && original_active)
-        log_msg("mc:   active before (%d,%d) mode=%d",
-                original_active->y, original_active->x, E.mode);
+        log_msg("mc:   active before (%d,%d) mode=%d", original_active->y,
+                original_active->x, E.mode);
 
     /* Capture any follow-on keys the handler reads synchronously via
      * ed_read_key() (operator text objects like `diw`/`ciw`, `r`<char>,
@@ -134,7 +143,8 @@ static void on_keypress(HookKeyEvent *event) {
     int follow[64];
     if (follow_n > (int)(sizeof(follow) / sizeof(follow[0])))
         follow_n = (int)(sizeof(follow) / sizeof(follow[0]));
-    for (int i = 0; i < follow_n; i++) follow[i] = follow_keys[i];
+    for (int i = 0; i < follow_n; i++)
+        follow[i] = follow_keys[i];
 
     /* The active cursor may have been removed (Q) or replaced — e.g.
      * mc_skip points buf->cursor at the next cursor and removes the
@@ -159,8 +169,7 @@ static void on_keypress(HookKeyEvent *event) {
     }
 
     if (mc_debug)
-        log_msg("mc:   after active, arrlen=%d",
-                (int)arrlen(buf->all_cursors));
+        log_msg("mc:   after active, arrlen=%d", (int)arrlen(buf->all_cursors));
 
     /* A cursor-list operation happened (C-n, Q, mc_add_*, mc_clear) —
      * exactly one dispatch is the right amount. Don't replay. Leave
@@ -196,9 +205,12 @@ static void on_keypress(HookKeyEvent *event) {
 
     in_replay = 1;
     for (int i = 0; i < n; i++) {
-        if ((int)arrlen(buf->all_cursors) < n) break;
-        if (prompt_active() || winmodal_current() != NULL) break;
-        if (all[i] == original_active) continue;
+        if ((int)arrlen(buf->all_cursors) < n)
+            break;
+        if (prompt_active() || winmodal_current() != NULL)
+            break;
+        if (all[i] == original_active)
+            continue;
 
         keybind_state_load(&saved_kb);
         E.mode = saved_mode;
@@ -211,15 +223,17 @@ static void on_keypress(HookKeyEvent *event) {
         }
 
         if (mc_debug)
-            log_msg("mc:   extra %d before (%d,%d) mode=%d",
-                    i, all[i]->y, all[i]->x, E.mode);
+            log_msg("mc:   extra %d before (%d,%d) mode=%d", i, all[i]->y,
+                    all[i]->x, E.mode);
 
         /* Replay the same follow-on keys the active cursor consumed so a
          * multi-key handler (operator + text object, r/f/t) completes here
          * too rather than blocking on terminal input. */
-        if (follow_n > 0) ed_key_replay_begin(follow, follow_n);
+        if (follow_n > 0)
+            ed_key_replay_begin(follow, follow_n);
         ed_dispatch_key(c);
-        if (follow_n > 0) ed_key_replay_finish();
+        if (follow_n > 0)
+            ed_key_replay_finish();
 
         if (w) {
             all[i]->x = w->cursor.x;
@@ -227,8 +241,8 @@ static void on_keypress(HookKeyEvent *event) {
         }
 
         if (mc_debug)
-            log_msg("mc:   extra %d after  (%d,%d) mode=%d",
-                    i, all[i]->y, all[i]->x, E.mode);
+            log_msg("mc:   extra %d after  (%d,%d) mode=%d", i, all[i]->y,
+                    all[i]->x, E.mode);
     }
     in_replay = 0;
 
@@ -255,15 +269,17 @@ static void on_keypress(HookKeyEvent *event) {
 
 /* --- next-match search --- */
 
-typedef struct { int y, x; } McPos;
+typedef struct {
+    int y, x;
+} McPos;
 
 /* Case-sensitive substring search starting at (start_y, start_x),
  * wrapping past the last row. Fills *out_y / *out_x and returns 1 on
  * match; returns 0 if the query isn't found anywhere. */
-static int mc_find_next(Buffer *buf, const char *q, size_t qlen,
-                        int start_y, int start_x,
-                        int *out_y, int *out_x) {
-    if (!buf || !q || qlen == 0 || buf->num_rows == 0) return 0;
+static int mc_find_next(Buffer *buf, const char *q, size_t qlen, int start_y,
+                        int start_x, int *out_y, int *out_x) {
+    if (!buf || !q || qlen == 0 || buf->num_rows == 0)
+        return 0;
     int rows = buf->num_rows;
 
     for (int i = 0; i <= rows; i++) {
@@ -271,7 +287,8 @@ static int mc_find_next(Buffer *buf, const char *q, size_t qlen,
         Row *row = &buf->rows[y];
         int len = (int)row->chars.len;
         int from = (i == 0) ? start_x : 0;
-        if (from < 0) from = 0;
+        if (from < 0)
+            from = 0;
         for (int x = from; x + (int)qlen <= len; x++) {
             if (memcmp(row->chars.data + x, q, qlen) == 0) {
                 *out_y = y;
@@ -286,19 +303,19 @@ static int mc_find_next(Buffer *buf, const char *q, size_t qlen,
 /* Mirror of mc_find_next walking backward. On the start row the match
  * must end at or before start_x (i.e. match-start <= start_x - qlen);
  * wrapped rows are scanned from the rightmost candidate position. */
-static int mc_find_prev(Buffer *buf, const char *q, size_t qlen,
-                        int start_y, int start_x,
-                        int *out_y, int *out_x) {
-    if (!buf || !q || qlen == 0 || buf->num_rows == 0) return 0;
+static int mc_find_prev(Buffer *buf, const char *q, size_t qlen, int start_y,
+                        int start_x, int *out_y, int *out_x) {
+    if (!buf || !q || qlen == 0 || buf->num_rows == 0)
+        return 0;
     int rows = buf->num_rows;
 
     for (int i = 0; i <= rows; i++) {
         int y = ((start_y - i) % rows + rows) % rows;
         Row *row = &buf->rows[y];
         int len = (int)row->chars.len;
-        int upper = (i == 0) ? (start_x - (int)qlen)
-                             : (len - (int)qlen);
-        if (upper > len - (int)qlen) upper = len - (int)qlen;
+        int upper = (i == 0) ? (start_x - (int)qlen) : (len - (int)qlen);
+        if (upper > len - (int)qlen)
+            upper = len - (int)qlen;
         for (int x = upper; x >= 0; x--) {
             if (memcmp(row->chars.data + x, q, qlen) == 0) {
                 *out_y = y;
@@ -315,25 +332,34 @@ static int mc_find_prev(Buffer *buf, const char *q, size_t qlen,
  * On success fills *q (caller frees) plus the query's location in the
  * buffer — (*sy, *sx) is the start, *ex one past the end — and
  * returns 1. Returns 0 with a status message set otherwise. */
-static int mc_query_at_cursor(Buffer *buf, Window *win, StrBuf *q,
-                              int *sy, int *sx, int *ex) {
+static int mc_query_at_cursor(Buffer *buf, Window *win, StrBuf *q, int *sy,
+                              int *sx, int *ex) {
     if (E.mode == MODE_VISUAL) {
         /* The live end of the selection is win->cursor — sel.cursor_*
          * is not updated by motions, only the anchor is real. */
         int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
         int cy = win->cursor.y, cx = win->cursor.x;
         if (ay > cy || (ay == cy && ax > cx)) {
-            int ty = ay, tx = ax; ay = cy; ax = cx; cy = ty; cx = tx;
+            int ty = ay, tx = ax;
+            ay = cy;
+            ax = cx;
+            cy = ty;
+            cx = tx;
         }
         if (ay != cy) {
-            ed_set_status_message("multicursor: multi-line selection not supported");
+            ed_set_status_message(
+                "multicursor: multi-line selection not supported");
             return 0;
         }
         Row *row = &buf->rows[ay];
-        if (ax < 0) ax = 0;
-        if (cx > (int)row->chars.len - 1) cx = (int)row->chars.len - 1;
-        int sel_end = cx + 1; /* visual selection is inclusive on the cursor side */
-        if (sel_end > (int)row->chars.len) sel_end = (int)row->chars.len;
+        if (ax < 0)
+            ax = 0;
+        if (cx > (int)row->chars.len - 1)
+            cx = (int)row->chars.len - 1;
+        int sel_end =
+            cx + 1; /* visual selection is inclusive on the cursor side */
+        if (sel_end > (int)row->chars.len)
+            sel_end = (int)row->chars.len;
         if (sel_end <= ax) {
             ed_set_status_message("multicursor: empty selection");
             return 0;
@@ -352,9 +378,8 @@ static int mc_query_at_cursor(Buffer *buf, Window *win, StrBuf *q,
     }
     Row *row = &buf->rows[win->cursor.y];
     int b = win->cursor.x, e = win->cursor.x;
-    while (b > 0 &&
-           (isalnum((unsigned char)row->chars.data[b-1]) ||
-            row->chars.data[b-1] == '_'))
+    while (b > 0 && (isalnum((unsigned char)row->chars.data[b - 1]) ||
+                     row->chars.data[b - 1] == '_'))
         b--;
     while (e < (int)row->chars.len &&
            (isalnum((unsigned char)row->chars.data[e]) ||
@@ -385,8 +410,9 @@ static void mc_activate_match(Buffer *buf, Window *win, int my, int mx) {
             buf->cursor = c;
             win->cursor.y = my;
             win->cursor.x = mx;
-            ed_set_status_message("multicursor: %d cursors (moved to existing match)",
-                                  buf_cursor_count(buf));
+            ed_set_status_message(
+                "multicursor: %d cursors (moved to existing match)",
+                buf_cursor_count(buf));
             return;
         }
     }
@@ -411,9 +437,11 @@ static void mc_activate_match(Buffer *buf, Window *win, int my, int mx) {
  * Skipped during replay — adding a cursor is a global action, not a
  * per-cursor edit, so we want exactly one new cursor per keypress. */
 static void kb_mc_add_next_match(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (buf->num_rows == 0) return;
+    if (buf->num_rows == 0)
+        return;
     /* The active cursor's stored position may trail win->cursor (motions
      * only move the window cursor) — snap it before it becomes a parked
      * cursor, or it would land where the cursor was long ago. */
@@ -421,15 +449,18 @@ static void kb_mc_add_next_match(void) {
 
     StrBuf q = {0};
     int sy, sx, ex;
-    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex))
+        return;
 
     /* Preserve the cursor's offset inside the word / selection so the
      * new cursor lands at the same relative position in the match —
      * synced edits then line up at every cursor instead of the new
      * one acting from the start of the word. */
     int off = win->cursor.x - sx;
-    if (off < 0) off = 0;
-    if (off > (int)q.len - 1) off = (int)q.len - 1;
+    if (off < 0)
+        off = 0;
+    if (off > (int)q.len - 1)
+        off = (int)q.len - 1;
 
     /* Search from one past the end of the current word / selection so
      * the occurrence at the cursor isn't matched again. */
@@ -449,20 +480,25 @@ static void kb_mc_add_next_match(void) {
  * the current occurrence and advances the active cursor to the previous
  * match. */
 static void kb_mc_add_prev_match(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (buf->num_rows == 0) return;
+    if (buf->num_rows == 0)
+        return;
     buf_cursor_sync_from_window(buf);
 
     StrBuf q = {0};
     int sy, sx, ex;
-    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex))
+        return;
     (void)ex;
 
     /* Same relative-position rule as kb_mc_add_next_match. */
     int off = win->cursor.x - sx;
-    if (off < 0) off = 0;
-    if (off > (int)q.len - 1) off = (int)q.len - 1;
+    if (off < 0)
+        off = 0;
+    if (off > (int)q.len - 1)
+        off = (int)q.len - 1;
 
     /* Search backward from the start of the current word / selection
      * so we look for an earlier occurrence, not this one again. */
@@ -485,22 +521,27 @@ static void kb_mc_add_prev_match(void) {
  * query came from. Matches are non-overlapping, scanned left to
  * right. */
 static void kb_mc_match_all(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (buf->num_rows == 0) return;
+    if (buf->num_rows == 0)
+        return;
     buf_cursor_sync_from_window(buf);
 
     StrBuf q = {0};
     int sy, sx, ex;
-    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex)) return;
+    if (!mc_query_at_cursor(buf, win, &q, &sy, &sx, &ex))
+        return;
     (void)ex;
 
     /* Same relative-position rule as kb_mc_add_next_match — every
      * cursor sits at this offset inside its match, so the active one
      * stays put and synced edits line up. */
     int off = win->cursor.x - sx;
-    if (off < 0) off = 0;
-    if (off > (int)q.len - 1) off = (int)q.len - 1;
+    if (off < 0)
+        off = 0;
+    if (off > (int)q.len - 1)
+        off = (int)q.len - 1;
 
     McPos *matches = NULL;
     for (int y = 0; y < buf->num_rows; y++) {
@@ -509,7 +550,7 @@ static void kb_mc_match_all(void) {
         int x = 0;
         while (x + (int)q.len <= len) {
             if (memcmp(row->chars.data + x, q.data, q.len) == 0) {
-                McPos p = { y, x };
+                McPos p = {y, x};
                 arrput(matches, p);
                 x += (int)q.len;
             } else {
@@ -534,7 +575,10 @@ static void kb_mc_match_all(void) {
      * match at or after it, then to the first match overall. */
     int active = -1;
     for (int i = 0; i < n; i++) {
-        if (matches[i].y == sy && matches[i].x == sx) { active = i; break; }
+        if (matches[i].y == sy && matches[i].x == sx) {
+            active = i;
+            break;
+        }
     }
     if (active < 0) {
         for (int i = 0; i < n; i++) {
@@ -545,7 +589,8 @@ static void kb_mc_match_all(void) {
             }
         }
     }
-    if (active < 0) active = 0;
+    if (active < 0)
+        active = 0;
 
     /* Rebuild the cursor set: one cursor per match, nothing else. */
     buf_cursor_clear_extras(buf);
@@ -553,7 +598,8 @@ static void kb_mc_match_all(void) {
     buf->cursor->x = matches[active].x + off;
     int oom = 0;
     for (int i = 0; i < n; i++) {
-        if (i == active) continue;
+        if (i == active)
+            continue;
         if (!buf_cursor_add(buf, matches[i].y, matches[i].x + off)) {
             oom = 1;
             break;
@@ -577,7 +623,8 @@ static void kb_mc_match_all(void) {
 /* Q: drop the active cursor; activate the next in cyclic (y,x) order.
  * Skipped during replay — Q is a "cursor list" operation, not an edit. */
 static void kb_mc_skip(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
     int n = buf_cursor_count(buf);
     if (n <= 1) {
@@ -586,18 +633,27 @@ static void kb_mc_skip(void) {
     }
     buf_cursor_sync_from_window(buf);
     Cursor *active = buf->cursor;
-    if (!active) return;
+    if (!active)
+        return;
 
     Cursor **sorted = malloc(sizeof(Cursor *) * (size_t)n);
-    if (!sorted) return;
-    for (int i = 0; i < n; i++) sorted[i] = buf->all_cursors[i];
+    if (!sorted)
+        return;
+    for (int i = 0; i < n; i++)
+        sorted[i] = buf->all_cursors[i];
     qsort(sorted, (size_t)n, sizeof(Cursor *), cursor_pos_cmp_asc);
 
     int idx = -1;
     for (int i = 0; i < n; i++) {
-        if (sorted[i] == active) { idx = i; break; }
+        if (sorted[i] == active) {
+            idx = i;
+            break;
+        }
     }
-    if (idx < 0) { free(sorted); return; }
+    if (idx < 0) {
+        free(sorted);
+        return;
+    }
 
     Cursor *next = sorted[(idx + 1) % n];
     free(sorted);
@@ -616,7 +672,8 @@ static void kb_mc_skip(void) {
  * order without dropping any — the way to hop between parked cursors
  * when sync is off. dir is +1 (next) or -1 (previous). */
 static void mc_jump(int dir) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
     int n = buf_cursor_count(buf);
     if (n <= 1) {
@@ -625,18 +682,27 @@ static void mc_jump(int dir) {
     }
     buf_cursor_sync_from_window(buf);
     Cursor *active = buf->cursor;
-    if (!active) return;
+    if (!active)
+        return;
 
     Cursor **sorted = malloc(sizeof(Cursor *) * (size_t)n);
-    if (!sorted) return;
-    for (int i = 0; i < n; i++) sorted[i] = buf->all_cursors[i];
+    if (!sorted)
+        return;
+    for (int i = 0; i < n; i++)
+        sorted[i] = buf->all_cursors[i];
     qsort(sorted, (size_t)n, sizeof(Cursor *), cursor_pos_cmp_asc);
 
     int idx = -1;
     for (int i = 0; i < n; i++) {
-        if (sorted[i] == active) { idx = i; break; }
+        if (sorted[i] == active) {
+            idx = i;
+            break;
+        }
     }
-    if (idx < 0) { free(sorted); return; }
+    if (idx < 0) {
+        free(sorted);
+        return;
+    }
 
     int target = (idx + dir + n) % n;
     Cursor *next = sorted[target];
@@ -658,9 +724,13 @@ static void kb_mc_jump_prev(void) { mc_jump(-1); }
  * a trail" of cursors as you descend (and C-Up as you ascend), which
  * mirrors how C-n leaves a cursor behind at each previous match. */
 static void mc_add_and_advance(int dy) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (!buf->cursor) { ed_set_status_message("multicursor: no cursor"); return; }
+    if (!buf->cursor) {
+        ed_set_status_message("multicursor: no cursor");
+        return;
+    }
     buf_cursor_sync_from_window(buf);
     int new_y = buf->cursor->y + dy;
     if (new_y < 0 || new_y >= buf->num_rows) {
@@ -670,7 +740,8 @@ static void mc_add_and_advance(int dy) {
     }
     int x = buf->cursor->x;
     int len = (int)buf->rows[new_y].chars.len;
-    if (x > len) x = len;
+    if (x > len)
+        x = len;
     Cursor *nc = buf_cursor_add(buf, new_y, x);
     if (!nc) {
         ed_set_status_message("multicursor: out of memory");
@@ -686,14 +757,19 @@ static void mc_add_and_advance(int dy) {
  * active cursor — the previous active stays parked here as a marker
  * to come back to with :mc_jump_next/_prev. */
 static void mc_add_here(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (!buf->cursor) { ed_set_status_message("multicursor: no cursor"); return; }
+    if (!buf->cursor) {
+        ed_set_status_message("multicursor: no cursor");
+        return;
+    }
     buf_cursor_sync_from_window(buf);
     /* Don't stack a third cursor on a spot that already has a parked one. */
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
-        if (c != buf->cursor && c->y == win->cursor.y && c->x == win->cursor.x) {
+        if (c != buf->cursor && c->y == win->cursor.y &&
+            c->x == win->cursor.x) {
             ed_set_status_message("multicursor: cursor already here");
             return;
         }
@@ -712,13 +788,18 @@ static void mc_add_here(void) {
  * (mc_add_here semantics — the new cursor becomes active, the previous
  * active stays parked here as the marker). */
 static void mc_toggle_here(void) {
-    if (in_replay) return;
+    if (in_replay)
+        return;
     BUFWIN(buf, win)
-    if (!buf->cursor) { ed_set_status_message("multicursor: no cursor"); return; }
+    if (!buf->cursor) {
+        ed_set_status_message("multicursor: no cursor");
+        return;
+    }
     buf_cursor_sync_from_window(buf);
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
-        if (c != buf->cursor && c->y == win->cursor.y && c->x == win->cursor.x) {
+        if (c != buf->cursor && c->y == win->cursor.y &&
+            c->x == win->cursor.x) {
             buf_cursor_remove(buf, c);
             ed_set_status_message("multicursor: %d cursors (removed here)",
                                   buf_cursor_count(buf));
@@ -808,7 +889,8 @@ static void cmd_mc_jump_prev(const char *args) {
 static void cmd_mc_sync(const char *args) {
     /* Global switch, not a per-cursor edit — never run on a replay
      * (an even cursor count would toggle it back to where it was). */
-    if (in_replay) return;
+    if (in_replay)
+        return;
     if (!args || !*args || strcmp(args, "toggle") == 0) {
         mc_sync = !mc_sync;
     } else if (strcmp(args, "on") == 0) {
@@ -824,7 +906,8 @@ static void cmd_mc_sync(const char *args) {
 }
 
 static void cmd_mc_debug(const char *args) {
-    if (in_replay) return; /* global switch — same replay hazard as mc_sync */
+    if (in_replay)
+        return; /* global switch — same replay hazard as mc_sync */
     if (!args || !*args) {
         mc_debug = !mc_debug;
     } else if (strcmp(args, "on") == 0) {
@@ -839,60 +922,71 @@ static void cmd_mc_debug(const char *args) {
 
 /* --- Keybind wrappers (mapn callbacks take void) --- */
 
-static void kb_mc_add_below(void)   { cmd_mc_add_below(NULL); }
-static void kb_mc_add_above(void)   { cmd_mc_add_above(NULL); }
-static void kb_mc_clear(void)       { cmd_mc_clear(NULL); }
+static void kb_mc_add_below(void) { cmd_mc_add_below(NULL); }
+static void kb_mc_add_above(void) { cmd_mc_add_above(NULL); }
+static void kb_mc_clear(void) { cmd_mc_clear(NULL); }
 static void kb_mc_sync_toggle(void) { cmd_mc_sync(NULL); }
 
 /* --- lifecycle --- */
 
 static int multicursor_init(void) {
-    cmd("mc_add_below",  cmd_mc_add_below,  "multicursor: add cursor below");
-    cmd("mc_add_above",  cmd_mc_add_above,  "multicursor: add cursor above");
-    cmd("mc_add_here",   cmd_mc_add_here,   "multicursor: add cursor at current position");
-    cmd("mc_toggle_here", cmd_mc_toggle_here, "multicursor: toggle cursor at current position");
-    cmd("mc_clear",      cmd_mc_clear,      "multicursor: keep only active cursor");
-    cmd("mc_count",      cmd_mc_count,      "multicursor: show cursor count");
-    cmd("mc_next_match", cmd_mc_next_match, "multicursor: add cursor at next match");
-    cmd("mc_prev_match", cmd_mc_prev_match, "multicursor: add cursor at previous match");
-    cmd("mc_match_all",  cmd_mc_match_all,  "multicursor: cursor at every match");
-    cmd("mc_skip",       cmd_mc_skip,       "multicursor: skip current cursor");
-    cmd("mc_jump_next",  cmd_mc_jump_next,  "multicursor: jump to next cursor");
-    cmd("mc_jump_prev",  cmd_mc_jump_prev,  "multicursor: jump to previous cursor");
-    cmd("mc_sync",       cmd_mc_sync,       "multicursor: sync edits at all cursors [on|off|toggle]");
-    cmd("mc_debug",      cmd_mc_debug,      "multicursor: toggle dispatch logging");
+    cmd("mc_add_below", cmd_mc_add_below, "multicursor: add cursor below");
+    cmd("mc_add_above", cmd_mc_add_above, "multicursor: add cursor above");
+    cmd("mc_add_here", cmd_mc_add_here,
+        "multicursor: add cursor at current position");
+    cmd("mc_toggle_here", cmd_mc_toggle_here,
+        "multicursor: toggle cursor at current position");
+    cmd("mc_clear", cmd_mc_clear, "multicursor: keep only active cursor");
+    cmd("mc_count", cmd_mc_count, "multicursor: show cursor count");
+    cmd("mc_next_match", cmd_mc_next_match,
+        "multicursor: add cursor at next match");
+    cmd("mc_prev_match", cmd_mc_prev_match,
+        "multicursor: add cursor at previous match");
+    cmd("mc_match_all", cmd_mc_match_all, "multicursor: cursor at every match");
+    cmd("mc_skip", cmd_mc_skip, "multicursor: skip current cursor");
+    cmd("mc_jump_next", cmd_mc_jump_next, "multicursor: jump to next cursor");
+    cmd("mc_jump_prev", cmd_mc_jump_prev,
+        "multicursor: jump to previous cursor");
+    cmd("mc_sync", cmd_mc_sync,
+        "multicursor: sync edits at all cursors [on|off|toggle]");
+    cmd("mc_debug", cmd_mc_debug, "multicursor: toggle dispatch logging");
 
     /* ' cluster — same letters as <space>m. Bare ' must stay unbound:
      * keybind_process fires an exact match immediately, so binding it
      * would make every two-key 'x sequence unreachable. */
-    mapn("''", mc_toggle_here,       "multicursor: toggle cursor here");
-    mapn("'a", mc_add_here,          "multicursor: add cursor here");
-    mapn("'d", kb_mc_add_below,      "multicursor: add cursor below");
-    mapn("'u", kb_mc_add_above,      "multicursor: add cursor above");
-    mapn("'c", kb_mc_clear,          "multicursor: clear extras");
-    mapn("'j", kb_mc_jump_next,      "multicursor: jump to next cursor");
-    mapn("'k", kb_mc_jump_prev,      "multicursor: jump to previous cursor");
-    mapn("'s", kb_mc_sync_toggle,    "multicursor: toggle synced edits");
+    mapn("''", mc_toggle_here, "multicursor: toggle cursor here");
+    mapn("'a", mc_add_here, "multicursor: add cursor here");
+    mapn("'d", kb_mc_add_below, "multicursor: add cursor below");
+    mapn("'u", kb_mc_add_above, "multicursor: add cursor above");
+    mapn("'c", kb_mc_clear, "multicursor: clear extras");
+    mapn("'j", kb_mc_jump_next, "multicursor: jump to next cursor");
+    mapn("'k", kb_mc_jump_prev, "multicursor: jump to previous cursor");
+    mapn("'s", kb_mc_sync_toggle, "multicursor: toggle synced edits");
     mapn("'n", kb_mc_add_next_match, "multicursor: cursor at next match");
     mapn("'p", kb_mc_add_prev_match, "multicursor: cursor at previous match");
-    mapn("'*", kb_mc_match_all,      "multicursor: cursor at every match");
+    mapn("'*", kb_mc_match_all, "multicursor: cursor at every match");
 
     mapn("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
-    mapn("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
+    mapn("<C-Up>", kb_mc_add_above, "multicursor: add cursor above");
     mapi("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
-    mapi("<C-Up>",   kb_mc_add_above, "multicursor: add cursor above");
+    mapi("<C-Up>", kb_mc_add_above, "multicursor: add cursor above");
 
     mapn("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match");
-    mapn("<M-n>", kb_mc_match_all,      "multicursor: cursor at every match");
+    mapn("<M-n>", kb_mc_match_all, "multicursor: cursor at every match");
 
     /* In VISUAL these match the selected text and drop back to NORMAL. */
-    mapv("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match of selection");
-    mapv("<M-n>", kb_mc_match_all,      "multicursor: cursor at every match of selection");
-    mapv("'n",    kb_mc_add_next_match, "multicursor: cursor at next match of selection");
-    mapv("'p",    kb_mc_add_prev_match, "multicursor: cursor at previous match of selection");
-    mapv("'*",    kb_mc_match_all,      "multicursor: cursor at every match of selection");
+    mapv("<C-n>", kb_mc_add_next_match,
+         "multicursor: cursor at next match of selection");
+    mapv("<M-n>", kb_mc_match_all,
+         "multicursor: cursor at every match of selection");
+    mapv("'n", kb_mc_add_next_match,
+         "multicursor: cursor at next match of selection");
+    mapv("'p", kb_mc_add_prev_match,
+         "multicursor: cursor at previous match of selection");
+    mapv("'*", kb_mc_match_all,
+         "multicursor: cursor at every match of selection");
 
-    mapn("Q",     kb_mc_skip,           "multicursor: skip cursor / cycle to next");
+    mapn("Q", kb_mc_skip, "multicursor: skip cursor / cycle to next");
 
     /* Single keypress hook handles every mode and every key — the
      * dispatch is replayed at each cursor with restored state. */
@@ -902,8 +996,8 @@ static int multicursor_init(void) {
 }
 
 const Plugin plugin_multicursor = {
-    .name   = "multicursor",
-    .desc   = "synchronized edits at multiple cursors",
-    .init   = multicursor_init,
+    .name = "multicursor",
+    .desc = "synchronized edits at multiple cursors",
+    .init = multicursor_init,
     .deinit = NULL,
 };

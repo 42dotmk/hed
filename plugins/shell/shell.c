@@ -16,10 +16,10 @@
  * the colon command machinery.
  */
 
+#include "shell.h"
 #include "hed.h"
 #include "input/keybinds_builtins.h"
 #include "input/prompt.h"
-#include "shell.h"
 #include "utils/yank.h"
 
 #include <ctype.h>
@@ -32,10 +32,10 @@
 
 typedef enum {
     CAP_NONE = 0,
-    CAP_REPLACE_BUF,    /* >%b  — replace whole buffer */
-    CAP_APPEND_CURSOR,  /* >>%b — splice at cursor */
-    CAP_REPLACE_SEL,    /* >%v  — replace visual selection */
-    CAP_YANK,           /* >%y  — store stdout in unnamed/yank register */
+    CAP_REPLACE_BUF,   /* >%b  — replace whole buffer */
+    CAP_APPEND_CURSOR, /* >>%b — splice at cursor */
+    CAP_REPLACE_SEL,   /* >%v  — replace visual selection */
+    CAP_YANK,          /* >%y  — store stdout in unnamed/yank register */
 } CaptureMode;
 
 /* Strip the trailing capture token (if any) by writing a NUL where it
@@ -43,20 +43,28 @@ typedef enum {
  * before >%b (longer match wins). The token must be preceded by
  * whitespace or start-of-string to qualify. */
 static CaptureMode peel_capture_token(char *src) {
-    if (!src) return CAP_NONE;
+    if (!src)
+        return CAP_NONE;
     size_t end = strlen(src);
-    while (end > 0 && isspace((unsigned char)src[end - 1])) end--;
+    while (end > 0 && isspace((unsigned char)src[end - 1]))
+        end--;
 
-    struct { const char *tok; size_t toklen; CaptureMode mode; } table[] = {
-        { ">>%b", 4, CAP_APPEND_CURSOR },
-        { ">%b",  3, CAP_REPLACE_BUF   },
-        { ">%v",  3, CAP_REPLACE_SEL   },
-        { ">%y",  3, CAP_YANK          },
+    struct {
+        const char *tok;
+        size_t toklen;
+        CaptureMode mode;
+    } table[] = {
+        {">>%b", 4, CAP_APPEND_CURSOR},
+        {">%b", 3, CAP_REPLACE_BUF},
+        {">%v", 3, CAP_REPLACE_SEL},
+        {">%y", 3, CAP_YANK},
     };
     for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
         size_t tl = table[i].toklen;
-        if (end < tl) continue;
-        if (memcmp(src + end - tl, table[i].tok, tl) != 0) continue;
+        if (end < tl)
+            continue;
+        if (memcmp(src + end - tl, table[i].tok, tl) != 0)
+            continue;
         size_t before = end - tl;
         if (before != 0 && !isspace((unsigned char)src[before - 1]))
             continue;
@@ -74,7 +82,8 @@ static CaptureMode peel_capture_token(char *src) {
  * the next char must be a non-letter or end). %% emits a literal %.
  * Returns malloc'd expanded command, or NULL on OOM. */
 static char *expand_shell_template(const char *src, Buffer *buf) {
-    if (!src) return NULL;
+    if (!src)
+        return NULL;
     size_t total = strlen(src);
 
     const char *fname = (buf && buf->filename) ? buf->filename : "";
@@ -84,12 +93,13 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
     size_t dirlen = 0;
     if (slash) {
         dirlen = (size_t)(slash - fname);
-        if (dirlen == 0) dirlen = 1;
+        if (dirlen == 0)
+            dirlen = 1;
     }
 
     StrBuf out = strbuf_new();
 
-    for (size_t i = 0; i < total; ) {
+    for (size_t i = 0; i < total;) {
         if (src[i] != '%') {
             strbuf_append_char(&out, src[i]);
             i++;
@@ -106,12 +116,15 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
         if (tok == '%') {
             strbuf_append_char(&out, '%');
             i += 2;
-        } else if (boundary && (tok == 'b' || tok == 'p' ||
-                                tok == 'd' || tok == 'n' || tok == 'y')) {
+        } else if (boundary && (tok == 'b' || tok == 'p' || tok == 'd' ||
+                                tok == 'n' || tok == 'y')) {
             if (tok == 'b') {
                 size_t blen = 0;
                 char *txt = buf_to_text(buf, &blen);
-                if (!txt) { strbuf_free(&out); return NULL; }
+                if (!txt) {
+                    strbuf_free(&out);
+                    return NULL;
+                }
                 strbuf_append_shell_quoted_n(&out, txt, blen);
                 free(txt);
             } else if (tok == 'p') {
@@ -142,26 +155,34 @@ static char *expand_shell_template(const char *src, Buffer *buf) {
 
 /* Splice: delete bytes [sy:sx, ey:ex) and insert `lines` at (sy, sx),
  * all within one undo group named `desc`. */
-static void splice_lines_at_range(Buffer *buf, int sy, int sx,
-                                  int ey, int ex,
-                                  char **lines, int count,
-                                  const char *desc) {
-    if (!buf) return;
+static void splice_lines_at_range(Buffer *buf, int sy, int sx, int ey, int ex,
+                                  char **lines, int count, const char *desc) {
+    if (!buf)
+        return;
 
     if (buf->num_rows == 0) {
         buf_row_insert_in(buf, 0, "", 0);
         sy = ey = sx = ex = 0;
     }
 
-    if (sy < 0) sy = 0;
-    if (sy >= buf->num_rows) sy = buf->num_rows - 1;
-    if (ey < sy) ey = sy;
-    if (ey >= buf->num_rows) ey = buf->num_rows - 1;
-    if (sx < 0) sx = 0;
-    if (sx > (int)buf->rows[sy].chars.len) sx = (int)buf->rows[sy].chars.len;
-    if (ex < 0) ex = 0;
-    if (ex > (int)buf->rows[ey].chars.len) ex = (int)buf->rows[ey].chars.len;
-    if (sy == ey && ex < sx) ex = sx;
+    if (sy < 0)
+        sy = 0;
+    if (sy >= buf->num_rows)
+        sy = buf->num_rows - 1;
+    if (ey < sy)
+        ey = sy;
+    if (ey >= buf->num_rows)
+        ey = buf->num_rows - 1;
+    if (sx < 0)
+        sx = 0;
+    if (sx > (int)buf->rows[sy].chars.len)
+        sx = (int)buf->rows[sy].chars.len;
+    if (ex < 0)
+        ex = 0;
+    if (ex > (int)buf->rows[ey].chars.len)
+        ex = (int)buf->rows[ey].chars.len;
+    if (sy == ey && ex < sx)
+        ex = sx;
 
     undo_begin(buf, desc);
 
@@ -194,7 +215,8 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
         }
         end_y = sy + count - 1;
         end_x = (int)strlen(lines[count - 1] ? lines[count - 1] : "");
-        if (count == 1) end_x = sx + (int)s0len;
+        if (count == 1)
+            end_x = sx + (int)s0len;
     }
 
     if (tail.len > 0)
@@ -206,11 +228,15 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
 
     undo_end(buf);
 
-    if (end_y >= buf->num_rows) end_y = buf->num_rows - 1;
-    if (end_y < 0) end_y = 0;
+    if (end_y >= buf->num_rows)
+        end_y = buf->num_rows - 1;
+    if (end_y < 0)
+        end_y = 0;
     int row_len = (int)buf->rows[end_y].chars.len;
-    if (end_x > row_len) end_x = row_len;
-    if (end_x < 0) end_x = 0;
+    if (end_x > row_len)
+        end_x = row_len;
+    if (end_x < 0)
+        end_x = 0;
     buf->cursor->y = end_y;
     buf->cursor->x = end_x;
     Window *win = window_cur();
@@ -223,21 +249,25 @@ static void splice_lines_at_range(Buffer *buf, int sy, int sx,
 /* Convert win->sel into byte coordinates (sy, sx, ey, ex) with
  * exclusive end. Returns 1 on success, 0 if the selection isn't
  * usable (NONE, BLOCK, or out-of-bounds). On block, sets *was_block. */
-static int sel_to_byte_range(Window *win, Buffer *buf,
-                             int *out_sy, int *out_sx,
-                             int *out_ey, int *out_ex,
-                             int *was_block) {
-    if (was_block) *was_block = 0;
-    if (!win || !buf) return 0;
-    if (win->sel.type == SEL_NONE) return 0;
+static int sel_to_byte_range(Window *win, Buffer *buf, int *out_sy, int *out_sx,
+                             int *out_ey, int *out_ex, int *was_block) {
+    if (was_block)
+        *was_block = 0;
+    if (!win || !buf)
+        return 0;
+    if (win->sel.type == SEL_NONE)
+        return 0;
     if (win->sel.type == SEL_VISUAL_BLOCK) {
-        if (was_block) *was_block = 1;
+        if (was_block)
+            *was_block = 1;
         return 0;
     }
     int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
     int cy = win->cursor.y, cx = win->cursor.x;
-    if (ay < 0 || ay >= buf->num_rows) return 0;
-    if (cy < 0 || cy >= buf->num_rows) return 0;
+    if (ay < 0 || ay >= buf->num_rows)
+        return 0;
+    if (cy < 0 || cy >= buf->num_rows)
+        return 0;
 
     if (win->sel.type == SEL_VISUAL_LINE) {
         int sy = ay < cy ? ay : cy;
@@ -256,9 +286,15 @@ static int sel_to_byte_range(Window *win, Buffer *buf,
 
     int sy, sx, ey, ex;
     if (ay < cy || (ay == cy && ax <= cx)) {
-        sy = ay; sx = ax; ey = cy; ex = cx;
+        sy = ay;
+        sx = ax;
+        ey = cy;
+        ex = cx;
     } else {
-        sy = cy; sx = cx; ey = ay; ex = ax;
+        sy = cy;
+        sx = cx;
+        ey = ay;
+        ex = ax;
     }
     int row_len = (int)buf->rows[ey].chars.len;
     if (ex < row_len) {
@@ -269,8 +305,10 @@ static int sel_to_byte_range(Window *win, Buffer *buf,
     } else {
         ex = row_len;
     }
-    *out_sy = sy; *out_sx = sx;
-    *out_ey = ey; *out_ex = ex;
+    *out_sy = sy;
+    *out_sx = sx;
+    *out_ey = ey;
+    *out_ex = ex;
     return 1;
 }
 
@@ -325,9 +363,9 @@ static void shell_execute(const char *args) {
         }
         if (!sel_to_byte_range(win, buf, &sel_sy, &sel_sx, &sel_ey, &sel_ex,
                                &was_block)) {
-            ed_set_status_message(was_block
-                ? ">%v: visual-block selection not supported"
-                : ">%v: no visual selection");
+            ed_set_status_message(
+                was_block ? ">%v: visual-block selection not supported"
+                          : ">%v: no visual selection");
             return;
         }
     } else if (capture == CAP_REPLACE_BUF || capture == CAP_APPEND_CURSOR) {
@@ -361,29 +399,32 @@ static void shell_execute(const char *args) {
         switch (capture) {
         case CAP_REPLACE_BUF: {
             int last = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
-            int last_x = (buf->num_rows > 0)
-                       ? (int)buf->rows[last].chars.len : 0;
-            splice_lines_at_range(buf, 0, 0, last, last_x,
-                                  lines, count, "shell-capture");
-            if (win) { win->row_offset = 0; win->col_offset = 0; }
-            ed_set_status_message("Captured %d line%s into buffer",
-                                  count, count == 1 ? "" : "s");
+            int last_x =
+                (buf->num_rows > 0) ? (int)buf->rows[last].chars.len : 0;
+            splice_lines_at_range(buf, 0, 0, last, last_x, lines, count,
+                                  "shell-capture");
+            if (win) {
+                win->row_offset = 0;
+                win->col_offset = 0;
+            }
+            ed_set_status_message("Captured %d line%s into buffer", count,
+                                  count == 1 ? "" : "s");
             break;
         }
         case CAP_APPEND_CURSOR: {
             int cy = win ? win->cursor.y : (buf->cursor ? buf->cursor->y : 0);
             int cx = win ? win->cursor.x : (buf->cursor ? buf->cursor->x : 0);
-            splice_lines_at_range(buf, cy, cx, cy, cx,
-                                  lines, count, "shell-append");
-            ed_set_status_message("Inserted %d line%s at cursor",
-                                  count, count == 1 ? "" : "s");
+            splice_lines_at_range(buf, cy, cx, cy, cx, lines, count,
+                                  "shell-append");
+            ed_set_status_message("Inserted %d line%s at cursor", count,
+                                  count == 1 ? "" : "s");
             break;
         }
         case CAP_REPLACE_SEL:
-            splice_lines_at_range(buf, sel_sy, sel_sx, sel_ey, sel_ex,
-                                  lines, count, "shell-replace-sel");
-            ed_set_status_message("Replaced selection with %d line%s",
-                                  count, count == 1 ? "" : "s");
+            splice_lines_at_range(buf, sel_sy, sel_sx, sel_ey, sel_ex, lines,
+                                  count, "shell-replace-sel");
+            ed_set_status_message("Replaced selection with %d line%s", count,
+                                  count == 1 ? "" : "s");
             break;
         case CAP_YANK: {
             size_t total = 0;
@@ -397,17 +438,21 @@ static void shell_execute(const char *args) {
             size_t off = 0;
             for (int i = 0; i < count; i++) {
                 size_t n = lines[i] ? strlen(lines[i]) : 0;
-                if (n) { memcpy(joined + off, lines[i], n); off += n; }
+                if (n) {
+                    memcpy(joined + off, lines[i], n);
+                    off += n;
+                }
                 joined[off++] = '\n';
             }
             joined[off] = '\0';
             regs_set_yank(joined, off);
             free(joined);
-            ed_set_status_message("Yanked %d line%s",
-                                  count, count == 1 ? "" : "s");
+            ed_set_status_message("Yanked %d line%s", count,
+                                  count == 1 ? "" : "s");
             break;
         }
-        case CAP_NONE: break;
+        case CAP_NONE:
+            break;
         }
         term_cmd_free(lines, count);
         ed_render_frame();
@@ -437,11 +482,14 @@ static const char *shell_label(Prompt *p) {
 
 static void shell_on_submit(Prompt *p, const char *line, int len) {
     (void)p;
-    if (!line || len <= 0) return;
+    if (!line || len <= 0)
+        return;
     /* Bail on whitespace-only — same UX as cancelling. */
     int i = 0;
-    while (i < len && isspace((unsigned char)line[i])) i++;
-    if (i >= len) return;
+    while (i < len && isspace((unsigned char)line[i]))
+        i++;
+    if (i >= len)
+        return;
     shell_execute(line);
 }
 
@@ -453,8 +501,8 @@ static PromptResult shell_on_key(Prompt *p, int key) {
     if (key == '\r' && p->len > 0 && p->buf[p->len - 1] == '\\') {
         if (p->len < (int)sizeof(p->buf) - 1) {
             p->buf[p->len++] = '\n';
-            p->buf[p->len]   = '\0';
-            p->cursor        = p->len;
+            p->buf[p->len] = '\0';
+            p->cursor = p->len;
         }
         return PROMPT_CONTINUE;
     }
@@ -462,23 +510,28 @@ static PromptResult shell_on_key(Prompt *p, int key) {
 }
 
 static const PromptVTable shell_vt = {
-    .label     = shell_label,
-    .on_key    = shell_on_key,
+    .label = shell_label,
+    .on_key = shell_on_key,
     .on_submit = shell_on_submit,
     .on_cancel = NULL,
-    .complete  = NULL,
-    .history   = NULL,
+    .complete = NULL,
+    .history = NULL,
 };
 
 void shell_open_prompt(const char *text, int len) {
     prompt_open(&shell_vt, NULL);
-    if (!text) return;
-    if (len < 0) len = (int)strlen(text);
-    if (len <= 0) return;
+    if (!text)
+        return;
+    if (len < 0)
+        len = (int)strlen(text);
+    if (len <= 0)
+        return;
     Prompt *p = prompt_current();
-    if (!p) return;
+    if (!p)
+        return;
     int cap = (int)sizeof(p->buf) - 1;
-    if (len > cap) len = cap;
+    if (len > cap)
+        len = cap;
     prompt_set_text(p, text, len);
 }
 
@@ -509,10 +562,12 @@ static void shell_kb_visual_to_prompt(void) {
         const StrBuf *r = &yd.rows[i];
         if (i > 0) {
             const char *sep = " \\\n";
-            for (int k = 0; k < 3 && blen < cap; k++) buf2[blen++] = sep[k];
+            for (int k = 0; k < 3 && blen < cap; k++)
+                buf2[blen++] = sep[k];
         }
         int take = (int)r->len;
-        if (take > cap - blen) take = cap - blen;
+        if (take > cap - blen)
+            take = cap - blen;
         if (take > 0) {
             memcpy(buf2 + blen, r->data, (size_t)take);
             blen += take;
@@ -535,7 +590,8 @@ void cmd_shell(const char *args) {
         return;
     }
     const char *p = args;
-    while (*p && isspace((unsigned char)*p)) p++;
+    while (*p && isspace((unsigned char)*p))
+        p++;
     if (!*p) {
         prompt_open(&shell_vt, NULL);
         return;
@@ -545,15 +601,15 @@ void cmd_shell(const char *args) {
 
 static int shell_init(void) {
     cmd("shell", cmd_shell, "run shell cmd");
-    mapv ("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
+    mapv("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
     mapvl("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
     mapvb("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
     return 0;
 }
 
 const Plugin plugin_shell = {
-    .name   = "shell",
-    .desc   = "`:shell` command and `!` prompt",
-    .init   = shell_init,
+    .name = "shell",
+    .desc = "`:shell` command and `!` prompt",
+    .init = shell_init,
     .deinit = NULL,
 };

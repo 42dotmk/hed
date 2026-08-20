@@ -36,11 +36,12 @@ static void cmd_history_fzf(const char *args) {
     int nitems = 0;
     for (int i = 0; i < hlen; i++) {
         const char *line = hist_get(&E.history, i);
-        if (line) items[nitems++] = line;
+        if (line)
+            items[nitems++] = line;
     }
 
     char **sel = NULL;
-    int cnt    = 0;
+    int cnt = 0;
     fzf_pick_list(items, nitems, 0, &sel, &cnt);
     free(items);
 
@@ -73,24 +74,25 @@ static void cmd_jumplist_fzf(const char *args) {
     fzf_input_init(&in, 1);
     for (int i = jlen - 1; i >= 0; i--) {
         JumpEntry *e = &E.jump_list.entries[i];
-        if (!e->filepath) continue;
+        if (!e->filepath)
+            continue;
         char ln[PATH_MAX + 32];
-        snprintf(ln, sizeof(ln), "%s:%d:%d",
-                 e->filepath, e->cursor_y + 1, e->cursor_x + 1);
-        const char *row[1] = { ln };
+        snprintf(ln, sizeof(ln), "%s:%d:%d", e->filepath, e->cursor_y + 1,
+                 e->cursor_x + 1);
+        const char *row[1] = {ln};
         fzf_input_row(&in, row);
     }
 
     const char *fzf_opts =
         "--delimiter ':' "
         "--preview 'command -v bat >/dev/null 2>&1 "
-            "&& bat --style=plain --color=always --highlight-line {2} "
-                "--line-range {2}:+30 {1} "
-            "|| awk \"NR>={2}-5 && NR<={2}+25\" {1}' "
+        "&& bat --style=plain --color=always --highlight-line {2} "
+        "--line-range {2}:+30 {1} "
+        "|| awk \"NR>={2}-5 && NR<={2}+25\" {1}' "
         "--preview-window 'right,60%,+{2}-5'";
 
     char **sel = NULL;
-    int cnt    = 0;
+    int cnt = 0;
     fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt);
     fzf_input_free(&in);
 
@@ -102,12 +104,18 @@ static void cmd_jumplist_fzf(const char *args) {
     /* Parse "filepath:line:col" by walking colons from the right. */
     char *entry = sel[0];
     char *last_colon = strrchr(entry, ':');
-    if (!last_colon) { fzf_free(sel, cnt); return; }
+    if (!last_colon) {
+        fzf_free(sel, cnt);
+        return;
+    }
     int col = atoi(last_colon + 1) - 1;
     *last_colon = '\0';
 
     char *prev_colon = strrchr(entry, ':');
-    if (!prev_colon) { fzf_free(sel, cnt); return; }
+    if (!prev_colon) {
+        fzf_free(sel, cnt);
+        return;
+    }
     int line = atoi(prev_colon + 1) - 1;
     *prev_colon = '\0';
 
@@ -116,10 +124,14 @@ static void cmd_jumplist_fzf(const char *args) {
     Window *win = window_cur();
     if (buf) {
         int row = (line < buf->num_rows) ? line : buf->num_rows - 1;
-        if (row < 0) row = 0;
+        if (row < 0)
+            row = 0;
         buf->cursor->y = row;
         buf->cursor->x = col;
-        if (win) { win->cursor.y = row; win->cursor.x = col; }
+        if (win) {
+            win->cursor.y = row;
+            win->cursor.x = col;
+        }
     }
     fzf_free(sel, cnt);
 }
@@ -150,12 +162,12 @@ static void cmd_cpick(const char *args) {
     snprintf(fzf_opts_buf, sizeof(fzf_opts_buf),
              "--delimiter '\t' --with-nth 1 --preview 'echo {2}' "
              "--preview-window right,60%%,wrap%s%s",
-             qescaped[0] ? " --query " : "",
-             qescaped[0] ? qescaped : "");
+             qescaped[0] ? " --query " : "", qescaped[0] ? qescaped : "");
     const char *fzf_opts = fzf_opts_buf;
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) ||
+        cnt == 0) {
         ed_set_status_message("c: canceled");
         fzf_input_free(&in);
         fzf_free(sel, cnt);
@@ -176,11 +188,12 @@ static void cmd_cpick(const char *args) {
     Prompt *p = prompt_current();
     if (p) {
         size_t ll = strlen(picked);
-        if (ll + 1 >= sizeof(p->buf)) ll = sizeof(p->buf) - 2;
+        if (ll + 1 >= sizeof(p->buf))
+            ll = sizeof(p->buf) - 2;
         char tmp[PROMPT_BUF_CAP];
         memcpy(tmp, picked, ll);
-        tmp[ll]   = ' ';
-        tmp[ll+1] = '\0';
+        tmp[ll] = ' ';
+        tmp[ll + 1] = '\0';
         prompt_set_text(p, tmp, (int)ll + 1);
         ed_set_status_message(":%s", p->buf);
         prompt_keep_open();
@@ -255,7 +268,8 @@ static void cmd_recent(const char *args) {
 /* Named pickers registered with src/picker.h                          */
 /* ------------------------------------------------------------------ */
 
-/* "buffers": jump to a buffer. Format per row: idx<TAB>name<TAB>mod<TAB>lines. */
+/* "buffers": jump to a buffer. Format per row: idx<TAB>name<TAB>mod<TAB>lines.
+ */
 static void pick_buffers(const char *seed) {
     (void)seed;
     if (arrlen(E.buffers) <= 0) {
@@ -266,7 +280,7 @@ static void pick_buffers(const char *seed) {
     fzf_input_init(&in, 4);
     for (int i = 0; i < (int)arrlen(E.buffers); i++) {
         char idxs[16], lines[32];
-        snprintf(idxs,  sizeof(idxs),  "%d", i + 1);
+        snprintf(idxs, sizeof(idxs), "%d", i + 1);
         snprintf(lines, sizeof(lines), "%d", E.buffers[i].num_rows);
         const char *row[4] = {
             idxs,
@@ -285,7 +299,8 @@ static void pick_buffers(const char *seed) {
         "--preview-window right,60%,wrap";
     char **sel = NULL;
     int cnt = 0;
-    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) || cnt == 0) {
+    if (!fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) ||
+        cnt == 0) {
         fzf_input_free(&in);
         fzf_free(sel, cnt);
         ed_set_status_message("buffers: canceled");
@@ -294,7 +309,8 @@ static void pick_buffers(const char *seed) {
     fzf_input_free(&in);
     char *picked = sel[0];
     char *tab = strchr(picked, '\t');
-    if (tab) *tab = '\0';
+    if (tab)
+        *tab = '\0';
     int idx = atoi(picked);
     if (idx >= 1 && idx <= (int)arrlen(E.buffers))
         buf_switch(idx - 1);
@@ -316,18 +332,24 @@ static void pick_keybinds(const char *seed) {
     for (int i = 0; i < count; i++) {
         const char *seq = NULL, *desc = NULL, *ft = NULL, *cmdline = NULL;
         int mode = 0;
-        if (!keybind_get_at_ext(i, &seq, &desc, &mode, &ft, &cmdline)) continue;
+        if (!keybind_get_at_ext(i, &seq, &desc, &mode, &ft, &cmdline))
+            continue;
         const char *mp = "";
-        if      (mode == MODE_NORMAL)       mp = "[N] ";
-        else if (mode == MODE_INSERT)       mp = "[I] ";
-        else if (mode == MODE_VISUAL)       mp = "[V] ";
-        else if (mode == MODE_VISUAL_BLOCK) mp = "[VB] ";
-        else if (mode == MODE_COMMAND)      mp = "[C] ";
+        if (mode == MODE_NORMAL)
+            mp = "[N] ";
+        else if (mode == MODE_INSERT)
+            mp = "[I] ";
+        else if (mode == MODE_VISUAL)
+            mp = "[V] ";
+        else if (mode == MODE_VISUAL_BLOCK)
+            mp = "[VB] ";
+        else if (mode == MODE_COMMAND)
+            mp = "[C] ";
         const char *ft_tag = (ft && *ft) ? ft : "*";
         char display[320];
-        snprintf(display, sizeof(display), "%s[%s] %s",
-                 mp, ft_tag, seq ? seq : "");
-        const char *row[2] = { display, desc ? desc : "" };
+        snprintf(display, sizeof(display), "%s[%s] %s", mp, ft_tag,
+                 seq ? seq : "");
+        const char *row[2] = {display, desc ? desc : ""};
         fzf_input_row(&in, row);
     }
     char **sel = NULL;
@@ -343,17 +365,19 @@ static void pick_plugins(const char *seed) {
     (void)seed;
     FzfInput in;
     fzf_input_init(&in, 2);
-    int count  = plugin_get_count();
+    int count = plugin_get_count();
     int active = 0;
     for (int i = 0; i < count; i++) {
         const char *name = NULL, *desc = NULL;
         int enabled = 0;
-        if (!plugin_get_at(i, &name, &desc, &enabled)) continue;
-        if (enabled) active++;
+        if (!plugin_get_at(i, &name, &desc, &enabled))
+            continue;
+        if (enabled)
+            active++;
         char display[256];
-        snprintf(display, sizeof(display), "[%c] %s",
-                 enabled ? 'x' : ' ', name);
-        const char *row[2] = { display, desc[0] ? desc : "(no description)" };
+        snprintf(display, sizeof(display), "[%c] %s", enabled ? 'x' : ' ',
+                 name);
+        const char *row[2] = {display, desc[0] ? desc : "(no description)"};
         fzf_input_row(&in, row);
     }
     const char *fzf_opts =
@@ -374,10 +398,11 @@ static void pick_files(const char *seed) {
     if (seed && *seed) {
         char esc[PATH_MAX * 2];
         shell_escape_single(seed, esc, sizeof(esc));
-        snprintf(fzf_opts, sizeof(fzf_opts),
-                 "--select-1 --exit-0 --query %s --preview '"
-                 FZF_FILE_PREVIEW_BODY "' --preview-window right,60%%,wrap",
-                 esc);
+        snprintf(
+            fzf_opts, sizeof(fzf_opts),
+            "--select-1 --exit-0 --query %s --preview '" FZF_FILE_PREVIEW_BODY
+            "' --preview-window right,60%%,wrap",
+            esc);
     } else {
         snprintf(fzf_opts, sizeof(fzf_opts),
                  "--preview '" FZF_FILE_PREVIEW_BODY
@@ -415,7 +440,7 @@ static void pick_logs(const char *seed) {
     snprintf(find_cmd, sizeof(find_cmd),
              "find %s -maxdepth 2 -type f -name log 2>/dev/null", esc_dir);
     char **lines = NULL;
-    int    count = 0;
+    int count = 0;
     if (!fzf_run(find_cmd, 0, &lines, &count) || count == 0) {
         fzf_free(lines, count);
         return;
@@ -425,20 +450,20 @@ static void pick_logs(const char *seed) {
 }
 
 static int pickers_init(void) {
-    cmd("c",      cmd_cpick,        "pick cmd");
-    cmd("fzf",    cmd_fzf,          "pick a file(s)");
-    cmd("recent", cmd_recent,       "recent files");
-    cmd("hfzf",   cmd_history_fzf,  "fuzzy search command history");
-    cmd("jfzf",   cmd_jumplist_fzf, "fuzzy search jump list");
+    cmd("c", cmd_cpick, "pick cmd");
+    cmd("fzf", cmd_fzf, "pick a file(s)");
+    cmd("recent", cmd_recent, "recent files");
+    cmd("hfzf", cmd_history_fzf, "fuzzy search command history");
+    cmd("jfzf", cmd_jumplist_fzf, "fuzzy search jump list");
 
     /* Named pickers core commands invoke through picker_invoke. */
-    picker_register("command",  cmd_cpick);     /* colon Tab escalation */
-    picker_register("commands", cmd_cpick);     /* :commands lists same set */
+    picker_register("command", cmd_cpick);  /* colon Tab escalation */
+    picker_register("commands", cmd_cpick); /* :commands lists same set */
     picker_register("keybinds", pick_keybinds);
-    picker_register("buffers",  pick_buffers);
-    picker_register("plugins",  pick_plugins);
-    picker_register("files",    pick_files);
-    picker_register("logs",     pick_logs);
+    picker_register("buffers", pick_buffers);
+    picker_register("plugins", pick_plugins);
+    picker_register("files", pick_files);
+    picker_register("logs", pick_logs);
 
     /* Generic list-picker backend — domain plugins (mail, tmux,
      * treesitter, man) feed items through picker_list() and stay
@@ -448,8 +473,8 @@ static int pickers_init(void) {
 }
 
 const Plugin plugin_pickers = {
-    .name   = "pickers",
-    .desc   = "fzf pickers (files, recent, palette, history, jump list)",
-    .init   = pickers_init,
+    .name = "pickers",
+    .desc = "fzf pickers (files, recent, palette, history, jump list)",
+    .init = pickers_init,
     .deinit = NULL,
 };

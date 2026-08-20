@@ -1,17 +1,17 @@
 #include "input/keybinds.h"
-#include "editor.h"
+#include "buf/textobj.h"
 #include "commands/registry.h"
+#include "editor.h"
 #include "hooks.h"
+#include "input/keybinds_builtins.h"
+#include "input/registers.h"
 #include "lib/log.h"
+#include "lib/safe_string.h"
 #include "stb_ds.h"
-#include <stdio.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "input/registers.h"
-#include "lib/safe_string.h"
-#include "buf/textobj.h"
-#include "input/keybinds_builtins.h"
 #include <time.h>
 
 #define KEY_BUFFER_SIZE 16
@@ -44,22 +44,49 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         char prefix[16];
         int p = 0;
         prefix[p++] = '<';
-        if (KEY_IS_META(key))  { prefix[p++] = 'M'; prefix[p++] = '-'; }
-        if (KEY_IS_CTRL(key))  { prefix[p++] = 'C'; prefix[p++] = '-'; }
-        if (KEY_IS_SHIFT(key)) { prefix[p++] = 'S'; prefix[p++] = '-'; }
+        if (KEY_IS_META(key)) {
+            prefix[p++] = 'M';
+            prefix[p++] = '-';
+        }
+        if (KEY_IS_CTRL(key)) {
+            prefix[p++] = 'C';
+            prefix[p++] = '-';
+        }
+        if (KEY_IS_SHIFT(key)) {
+            prefix[p++] = 'S';
+            prefix[p++] = '-';
+        }
         prefix[p] = '\0';
 
         const char *named = NULL;
         switch (base) {
-        case KEY_ARROW_UP:    named = "Up";    break;
-        case KEY_ARROW_DOWN:  named = "Down";  break;
-        case KEY_ARROW_LEFT:  named = "Left";  break;
-        case KEY_ARROW_RIGHT: named = "Right"; break;
-        case KEY_HOME:        named = "Home";  break;
-        case KEY_END:         named = "End";   break;
-        case KEY_PAGE_UP:     named = "PageUp";   break;
-        case KEY_PAGE_DOWN:   named = "PageDown"; break;
-        case KEY_DELETE:      named = "Del";   break;
+        case KEY_ARROW_UP:
+            named = "Up";
+            break;
+        case KEY_ARROW_DOWN:
+            named = "Down";
+            break;
+        case KEY_ARROW_LEFT:
+            named = "Left";
+            break;
+        case KEY_ARROW_RIGHT:
+            named = "Right";
+            break;
+        case KEY_HOME:
+            named = "Home";
+            break;
+        case KEY_END:
+            named = "End";
+            break;
+        case KEY_PAGE_UP:
+            named = "PageUp";
+            break;
+        case KEY_PAGE_DOWN:
+            named = "PageDown";
+            break;
+        case KEY_DELETE:
+            named = "Del";
+            break;
         }
         if (named) {
             snprintf(buf, bufsize, "%s%s>", prefix, named);
@@ -145,19 +172,21 @@ void keybind_init(void) {
 }
 
 void keybind_state_save(KeybindState *out) {
-    if (!out) return;
+    if (!out)
+        return;
     memcpy(out->key_buffer, key_buffer, sizeof(out->key_buffer));
     out->key_buffer_len = key_buffer_len;
-    out->pending_count  = pending_count;
-    out->have_count     = have_count;
+    out->pending_count = pending_count;
+    out->have_count = have_count;
 }
 
 void keybind_state_load(const KeybindState *in) {
-    if (!in) return;
+    if (!in)
+        return;
     memcpy(key_buffer, in->key_buffer, sizeof(key_buffer));
     key_buffer_len = in->key_buffer_len;
-    pending_count  = in->pending_count;
-    have_count     = in->have_count;
+    pending_count = in->pending_count;
+    have_count = in->have_count;
 }
 
 /* Drop any prior keybind with the same (mode, sequence, filetype) tuple so
@@ -165,13 +194,15 @@ void keybind_state_load(const KeybindState *in) {
 static void remove_duplicate(int mode, const char *sequence,
                              const char *filetype) {
     for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
-        if (keybinds[i].mode != mode) continue;
-        if (strcmp(keybinds[i].sequence, sequence) != 0) continue;
-        int same_ft =
-            (keybinds[i].filetype == NULL && filetype == NULL) ||
-            (keybinds[i].filetype && filetype &&
-             strcmp(keybinds[i].filetype, filetype) == 0);
-        if (!same_ft) continue;
+        if (keybinds[i].mode != mode)
+            continue;
+        if (strcmp(keybinds[i].sequence, sequence) != 0)
+            continue;
+        int same_ft = (keybinds[i].filetype == NULL && filetype == NULL) ||
+                      (keybinds[i].filetype && filetype &&
+                       strcmp(keybinds[i].filetype, filetype) == 0);
+        if (!same_ft)
+            continue;
 
         free(keybinds[i].sequence);
         free(keybinds[i].desc);
@@ -183,17 +214,17 @@ static void remove_duplicate(int mode, const char *sequence,
 }
 
 /* Register a keybinding */
-void keybind_register(int mode, const char *sequence,
-                      KeybindCallback callback, const char *desc) {
+void keybind_register(int mode, const char *sequence, KeybindCallback callback,
+                      const char *desc) {
     remove_duplicate(mode, sequence, NULL);
     Keybind kb = {
-        .sequence         = strdup(sequence),
-        .callback         = callback,
+        .sequence = strdup(sequence),
+        .callback = callback,
         .command_callback = NULL,
-        .mode             = mode,
-        .desc             = desc ? strdup(desc) : NULL,
-        .cmdline          = NULL,
-        .filetype         = NULL,
+        .mode = mode,
+        .desc = desc ? strdup(desc) : NULL,
+        .cmdline = NULL,
+        .filetype = NULL,
     };
     arrput(keybinds, kb);
 }
@@ -202,13 +233,13 @@ void keybind_register_ft(int mode, const char *sequence, const char *filetype,
                          KeybindCallback callback, const char *desc) {
     remove_duplicate(mode, sequence, filetype);
     Keybind kb = {
-        .sequence         = strdup(sequence),
-        .callback         = callback,
+        .sequence = strdup(sequence),
+        .callback = callback,
         .command_callback = NULL,
-        .mode             = mode,
-        .desc             = desc ? strdup(desc) : NULL,
-        .cmdline          = NULL,
-        .filetype         = filetype ? strdup(filetype) : NULL,
+        .mode = mode,
+        .desc = desc ? strdup(desc) : NULL,
+        .cmdline = NULL,
+        .filetype = filetype ? strdup(filetype) : NULL,
     };
     arrput(keybinds, kb);
 }
@@ -239,29 +270,29 @@ void keybind_register_command(int mode, const char *sequence,
                               const char *cmdline, const char *desc) {
     remove_duplicate(mode, sequence, NULL);
     Keybind kb = {
-        .sequence         = strdup(sequence),
-        .callback         = NULL,
+        .sequence = strdup(sequence),
+        .callback = NULL,
         .command_callback = kb_run_command,
-        .mode             = mode,
-        .desc             = (desc && *desc) ? strdup(desc) : NULL,
-        .cmdline          = cmdline ? strdup(cmdline) : strdup(""),
-        .filetype         = NULL,
+        .mode = mode,
+        .desc = (desc && *desc) ? strdup(desc) : NULL,
+        .cmdline = cmdline ? strdup(cmdline) : strdup(""),
+        .filetype = NULL,
     };
     arrput(keybinds, kb);
 }
 
 void keybind_register_command_ft(int mode, const char *sequence,
-                                  const char *filetype, const char *cmdline,
-                                  const char *desc) {
+                                 const char *filetype, const char *cmdline,
+                                 const char *desc) {
     remove_duplicate(mode, sequence, filetype);
     Keybind kb = {
-        .sequence         = strdup(sequence),
-        .callback         = NULL,
+        .sequence = strdup(sequence),
+        .callback = NULL,
         .command_callback = kb_run_command,
-        .mode             = mode,
-        .desc             = (desc && *desc) ? strdup(desc) : NULL,
-        .cmdline          = cmdline ? strdup(cmdline) : strdup(""),
-        .filetype         = filetype ? strdup(filetype) : NULL,
+        .mode = mode,
+        .desc = (desc && *desc) ? strdup(desc) : NULL,
+        .cmdline = cmdline ? strdup(cmdline) : strdup(""),
+        .filetype = filetype ? strdup(filetype) : NULL,
     };
     arrput(keybinds, kb);
 }
@@ -275,12 +306,11 @@ void keybind_clear_buffer(void) {
 }
 
 /* Get the total number of registered keybindings */
-int keybind_get_count(void) {
-    return (int)arrlen(keybinds);
-}
+int keybind_get_count(void) { return (int)arrlen(keybinds); }
 
 /* Get keybinding info at the given index */
-int keybind_get_at(int index, const char **sequence, const char **desc, int *mode) {
+int keybind_get_at(int index, const char **sequence, const char **desc,
+                   int *mode) {
     if (index < 0 || (ptrdiff_t)index >= arrlen(keybinds))
         return 0;
 
@@ -298,20 +328,29 @@ int keybind_get_at(int index, const char **sequence, const char **desc, int *mod
  * (NULL for global bindings) and the command line for cmap*
  * bindings (NULL otherwise). */
 int keybind_get_at_ext(int index, const char **sequence, const char **desc,
-                      int *mode, const char **filetype, const char **cmdline) {
+                       int *mode, const char **filetype, const char **cmdline) {
     if (index < 0 || (ptrdiff_t)index >= arrlen(keybinds))
         return 0;
-    if (sequence) *sequence = keybinds[index].sequence;
-    if (desc)     *desc     = keybinds[index].desc;
-    if (mode)     *mode     = keybinds[index].mode;
-    if (filetype) *filetype = keybinds[index].filetype;
-    if (cmdline)  *cmdline  = keybinds[index].command_callback
-                              ? keybinds[index].cmdline
-                              : NULL;
+    if (sequence)
+        *sequence = keybinds[index].sequence;
+    if (desc)
+        *desc = keybinds[index].desc;
+    if (mode)
+        *mode = keybinds[index].mode;
+    if (filetype)
+        *filetype = keybinds[index].filetype;
+    if (cmdline)
+        *cmdline =
+            keybinds[index].command_callback ? keybinds[index].cmdline : NULL;
     return 1;
 }
 
-/* Get and consume the pending numeric count (for commands that read additional keys) */
+/* Get and consume the pending numeric count (for commands that read additional
+ * keys) */
+int keybind_has_pending_count(void) {
+    return have_count;
+}
+
 int keybind_get_and_clear_pending_count(void) {
     int count = have_count ? pending_count : 1;
     if (count < 1)
@@ -325,14 +364,14 @@ int keybind_get_and_clear_pending_count(void) {
 static KeybindMatchView make_view(const Keybind *kb) {
     bool is_command = kb->command_callback != NULL;
     KeybindMatchView v = {
-        .sequence          = kb->sequence,
-        .desc              = kb->desc,
-        .mode              = kb->mode,
-        .is_command        = is_command,
+        .sequence = kb->sequence,
+        .desc = kb->desc,
+        .mode = kb->mode,
+        .is_command = is_command,
         .filetype_specific = kb->filetype != NULL,
-        .callback          = kb->callback,
-        .command_callback  = kb->command_callback,
-        .cmdline           = is_command ? kb->cmdline : NULL,
+        .callback = kb->callback,
+        .command_callback = kb->command_callback,
+        .cmdline = is_command ? kb->cmdline : NULL,
     };
     return v;
 }
@@ -366,8 +405,8 @@ KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
     clock_gettime(CLOCK_MONOTONIC, &last_key_time);
 
     /* Numeric prefix: consumed before any sequence char is appended. */
-    if (has_normal && key_buffer_len == 0 &&
-        key >= '0' && key <= '9' && (have_count || key != '0')) {
+    if (has_normal && key_buffer_len == 0 && key >= '0' && key <= '9' &&
+        (have_count || key != '0')) {
         int digit = key - '0';
         pending_count = pending_count * 10 + digit;
         if (pending_count > 1000000) {
@@ -376,17 +415,17 @@ KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
         }
         have_count = true;
 
-        r.active_sequence     = key_buffer; /* still empty */
-        r.active_len          = 0;
-        r.count               = pending_count;
-        r.has_count           = true;
+        r.active_sequence = key_buffer; /* still empty */
+        r.active_len = 0;
+        r.count = pending_count;
+        r.has_count = true;
         r.consumed_count_only = true;
 
         HookKeybindFeedEvent ev = {
-            .active_sequence     = r.active_sequence,
-            .active_len          = r.active_len,
-            .count               = r.count,
-            .has_count           = r.has_count,
+            .active_sequence = r.active_sequence,
+            .active_len = r.active_len,
+            .count = r.count,
+            .has_count = r.has_count,
             .consumed_count_only = true,
         };
         hook_fire_keybind_feed(HOOK_KEYBIND_FEED, &ev);
@@ -420,21 +459,24 @@ KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
     const char *cur_ft = NULL;
     {
         Buffer *cb = buf_cur();
-        if (cb) cur_ft = cb->filetype;
+        if (cb)
+            cur_ft = cb->filetype;
     }
 
     int exact_idx = -1;
     for (int m = 0; m < nmodes; m++) {
         int exact_global = -1;
-        int exact_ft     = -1;
+        int exact_ft = -1;
 
         for (ptrdiff_t i = 0; i < arrlen(keybinds); i++) {
-            if (keybinds[i].mode != modes[m]) continue;
+            if (keybinds[i].mode != modes[m])
+                continue;
 
             bool ft_applicable =
                 keybinds[i].filetype == NULL ||
                 (cur_ft && strcmp(keybinds[i].filetype, cur_ft) == 0);
-            if (!ft_applicable) continue;
+            if (!ft_applicable)
+                continue;
 
             bool is_exact = strcmp(keybinds[i].sequence, key_buffer) == 0;
             bool is_prefix =
@@ -459,10 +501,10 @@ KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
     }
 
     r.active_sequence = key_buffer;
-    r.active_len      = key_buffer_len;
-    r.count           = pending_count;
-    r.has_count       = have_count;
-    r.exact           = exact_idx >= 0;
+    r.active_len = key_buffer_len;
+    r.count = pending_count;
+    r.has_count = have_count;
+    r.exact = exact_idx >= 0;
     if (r.exact) {
         r.exact_match = make_view(&keybinds[exact_idx]);
     }
@@ -479,15 +521,15 @@ KeybindFeedResult keybind_feed_modes(int key, const int *modes, int nmodes) {
     }
 
     HookKeybindFeedEvent ev = {
-        .active_sequence     = r.active_sequence,
-        .active_len          = r.active_len,
-        .count               = r.count,
-        .has_count           = r.has_count,
-        .exact               = r.exact,
-        .partial             = r.partial,
+        .active_sequence = r.active_sequence,
+        .active_len = r.active_len,
+        .count = r.count,
+        .has_count = r.has_count,
+        .exact = r.exact,
+        .partial = r.partial,
         .consumed_count_only = r.consumed_count_only,
-        .matches             = r.matches,
-        .match_count         = (int)arrlen(r.matches),
+        .matches = r.matches,
+        .match_count = (int)arrlen(r.matches),
     };
     hook_fire_keybind_feed(HOOK_KEYBIND_FEED, &ev);
 
@@ -499,16 +541,19 @@ KeybindFeedResult keybind_feed(int key, int mode) {
 }
 
 void keybind_feed_result_free(KeybindFeedResult *r) {
-    if (!r) return;
+    if (!r)
+        return;
     arrfree(r->matches);
     r->matches = NULL;
 }
 
 void keybind_invoke(const KeybindMatchView *m, int repeat) {
-    if (!m) return;
-    if (repeat < 1) repeat = 1;
+    if (!m)
+        return;
+    if (repeat < 1)
+        repeat = 1;
 
-    HookKeybindInvokeEvent ev = { .match = m, .repeat = repeat };
+    HookKeybindInvokeEvent ev = {.match = m, .repeat = repeat};
     hook_fire_keybind_invoke(HOOK_KEYBIND_INVOKE, &ev);
 
     /* Count-aware callbacks (gg/G via goto_line_or) consume the pending
@@ -519,13 +564,15 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
         for (int i = 0; i < repeat; i++) {
             bool had = have_count;
             m->callback();
-            if (had && !have_count) break;
+            if (had && !have_count)
+                break;
         }
     } else if (m->command_callback) {
         for (int i = 0; i < repeat; i++) {
             bool had = have_count;
             m->command_callback(m->cmdline);
-            if (had && !have_count) break;
+            if (had && !have_count)
+                break;
         }
     } else {
         return;
@@ -583,9 +630,9 @@ bool keybind_process(int key, int mode) {
 
 /* Text object keybinding structure */
 typedef struct {
-    char keys[16];          /* Key sequence (e.g., "w", "iw", "aw") */
-    TextObjFunc func;       /* Callback that fills TextSelection */
-    char desc[128];         /* Description */
+    char keys[16];    /* Key sequence (e.g., "w", "iw", "aw") */
+    TextObjFunc func; /* Callback that fills TextSelection */
+    char desc[128];   /* Description */
 } TextObjKeybind;
 
 /* Global text object storage */

@@ -7,7 +7,8 @@
 char *strdup(const char *s) {
     size_t len = strlen(s) + 1;
     char *copy = malloc(len);
-    if (copy) memcpy(copy, s, len);
+    if (copy)
+        memcpy(copy, s, len);
     return copy;
 }
 
@@ -214,7 +215,8 @@ int utf8_char_width(const char *str, size_t byte_len, int *out_adv) {
         return 0;
     }
     wchar_t wc;
-    size_t char_len = utf8_decode_char((const unsigned char *)str, byte_len, &wc);
+    size_t char_len =
+        utf8_decode_char((const unsigned char *)str, byte_len, &wc);
     if (char_len == 0) {
         /* Invalid byte: render as a single replacement column. */
         if (out_adv)

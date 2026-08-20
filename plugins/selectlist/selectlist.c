@@ -5,43 +5,45 @@
  * pick callback receives (index, item, user) AFTER the modal is torn
  * down, so the callback may itself open a new picker. */
 
-#include "hed.h"
 #include "selectlist/selectlist.h"
-#include "ui/winmodal.h"
 #include "buf/buffer.h"
 #include "buf/row.h"
-#include <string.h>
+#include "hed.h"
+#include "ui/winmodal.h"
 #include <stdlib.h>
-
+#include <string.h>
 
 static struct {
-    int     active;
+    int active;
     Window *modal;
-    int     buf_idx;
-    char  **items;
-    int     count;
-    int     selected;
+    int buf_idx;
+    char **items;
+    int count;
+    int selected;
     SelectListCallback cb;
-    void   *user;
+    void *user;
 } sl;
 
 static void sl_repopulate(void) {
-    if (!sl.active) return;
+    if (!sl.active)
+        return;
     Buffer *buf = &E.buffers[sl.buf_idx];
-    while (buf->num_rows > 0) buf_row_del_in(buf, 0);
+    while (buf->num_rows > 0)
+        buf_row_del_in(buf, 0);
     for (int i = 0; i < sl.count; i++) {
         const char *prefix = (i == sl.selected) ? "> " : "  ";
         size_t plen = 2;
         size_t ilen = strlen(sl.items[i]);
-        char  *line = malloc(plen + ilen + 1);
-        if (!line) continue;
+        char *line = malloc(plen + ilen + 1);
+        if (!line)
+            continue;
         memcpy(line, prefix, plen);
         memcpy(line + plen, sl.items[i], ilen);
         line[plen + ilen] = '\0';
         buf_row_insert_in(buf, i, line, plen + ilen);
         free(line);
     }
-    buf->dirty    = 0;
+    buf->dirty = 0;
     buf->readonly = 1;
 
     if (sl.modal) {
@@ -55,11 +57,12 @@ static void sl_repopulate(void) {
 }
 
 static void sl_close(void) {
-    if (!sl.active) return;
-    Window *modal   = sl.modal;
-    int     buf_idx = sl.buf_idx;
-    char  **items   = sl.items;
-    int     count   = sl.count;
+    if (!sl.active)
+        return;
+    Window *modal = sl.modal;
+    int buf_idx = sl.buf_idx;
+    char **items = sl.items;
+    int count = sl.count;
     memset(&sl, 0, sizeof(sl));
     sl.buf_idx = -1;
 
@@ -71,14 +74,17 @@ static void sl_close(void) {
         E.buffers[buf_idx].dirty = 0;
         buf_close(buf_idx);
     }
-    for (int i = 0; i < count; i++) free(items[i]);
+    for (int i = 0; i < count; i++)
+        free(items[i]);
     free(items);
 }
 
 static void sl_keypress(HookKeyEvent *event) {
-    if (!sl.active || !event) return;
+    if (!sl.active || !event)
+        return;
     Window *modal = winmodal_current();
-    if (!modal || modal != sl.modal) return;
+    if (!modal || modal != sl.modal)
+        return;
 
     /* Swallow every key while our modal is open — otherwise unhandled
      * keys would fall through to the editor and edit the modal buffer
@@ -88,12 +94,14 @@ static void sl_keypress(HookKeyEvent *event) {
     switch (event->key) {
     case 'j':
     case KEY_ARROW_DOWN:
-        if (sl.selected < sl.count - 1) sl.selected++;
+        if (sl.selected < sl.count - 1)
+            sl.selected++;
         sl_repopulate();
         break;
     case 'k':
     case KEY_ARROW_UP:
-        if (sl.selected > 0) sl.selected--;
+        if (sl.selected > 0)
+            sl.selected--;
         sl_repopulate();
         break;
     case 'g':
@@ -106,12 +114,13 @@ static void sl_keypress(HookKeyEvent *event) {
         break;
     case '\r':
     case '\n': {
-        SelectListCallback cb   = sl.cb;
-        void              *user = sl.user;
-        int                idx  = sl.selected;
-        char              *copy = sl.items[idx] ? strdup(sl.items[idx]) : NULL;
+        SelectListCallback cb = sl.cb;
+        void *user = sl.user;
+        int idx = sl.selected;
+        char *copy = sl.items[idx] ? strdup(sl.items[idx]) : NULL;
         sl_close();
-        if (cb) cb(idx, copy ? copy : "", user);
+        if (cb)
+            cb(idx, copy ? copy : "", user);
         free(copy);
         break;
     }
@@ -122,8 +131,7 @@ static void sl_keypress(HookKeyEvent *event) {
     }
 }
 
-static int sl_attach(Window *modal,
-                     const char *const *items, int count,
+static int sl_attach(Window *modal, const char *const *items, int count,
                      SelectListCallback cb, void *user) {
     int buf_idx = -1;
     if (buf_new_scratch("select", &buf_idx) != ED_OK) {
@@ -134,14 +142,14 @@ static int sl_attach(Window *modal,
 
     modal->buffer_index = buf_idx;
 
-    sl.active   = 1;
-    sl.modal    = modal;
-    sl.buf_idx  = buf_idx;
+    sl.active = 1;
+    sl.modal = modal;
+    sl.buf_idx = buf_idx;
     sl.selected = 0;
-    sl.cb       = cb;
-    sl.user     = user;
-    sl.count    = count;
-    sl.items    = malloc(sizeof(char *) * (size_t)count);
+    sl.cb = cb;
+    sl.user = user;
+    sl.count = count;
+    sl.items = malloc(sizeof(char *) * (size_t)count);
     if (!sl.items) {
         memset(&sl, 0, sizeof(sl));
         sl.buf_idx = -1;
@@ -150,7 +158,8 @@ static int sl_attach(Window *modal,
         winmodal_destroy(modal);
         return -1;
     }
-    for (int i = 0; i < count; i++) sl.items[i] = strdup(items[i] ? items[i] : "");
+    for (int i = 0; i < count; i++)
+        sl.items[i] = strdup(items[i] ? items[i] : "");
 
     sl_repopulate();
     winmodal_show(modal);
@@ -159,29 +168,39 @@ static int sl_attach(Window *modal,
 }
 
 int selectlist_open(int x, int y, int width, int height,
-                    const char *const *items, int count,
-                    SelectListCallback cb, void *user) {
-    if (!items || count <= 0) return -1;
-    if (sl.active) sl_close();
-    if (width  <= 0) width  = 30;
-    if (height <= 0) height = count > 10 ? 10 : count;
+                    const char *const *items, int count, SelectListCallback cb,
+                    void *user) {
+    if (!items || count <= 0)
+        return -1;
+    if (sl.active)
+        sl_close();
+    if (width <= 0)
+        width = 30;
+    if (height <= 0)
+        height = count > 10 ? 10 : count;
 
     Window *modal = winmodal_create(x, y, width, height);
-    if (!modal) return -1;
+    if (!modal)
+        return -1;
     return sl_attach(modal, items, count, cb, user);
 }
 
 int selectlist_open_anchored(int anchor_x, int anchor_y, int width,
                              const char *const *items, int count,
-                             WModalAnchor prefer,
-                             SelectListCallback cb, void *user) {
-    if (!items || count <= 0) return -1;
-    if (sl.active) sl_close();
-    if (width <= 0) width = 30;
+                             WModalAnchor prefer, SelectListCallback cb,
+                             void *user) {
+    if (!items || count <= 0)
+        return -1;
+    if (sl.active)
+        sl_close();
+    if (width <= 0)
+        width = 30;
     int height = count > 10 ? 10 : count;
 
-    Window *modal = winmodal_create_anchored(anchor_x, anchor_y, width, height, prefer);
-    if (!modal) return -1;
+    Window *modal =
+        winmodal_create_anchored(anchor_x, anchor_y, width, height, prefer);
+    if (!modal)
+        return -1;
     return sl_attach(modal, items, count, cb, user);
 }
 
@@ -195,8 +214,8 @@ static void on_demo_pick(int idx, const char *item, void *user) {
 static void cmd_selectlist_demo(const char *args) {
     (void)args;
     static const char *demo[] = {
-        "alpha",   "bravo", "charlie", "delta",
-        "echo",    "foxtrot", "golf",  "hotel",
+        "alpha", "bravo",   "charlie", "delta",
+        "echo",  "foxtrot", "golf",    "hotel",
     };
     int n = (int)(sizeof(demo) / sizeof(demo[0]));
 
@@ -208,17 +227,17 @@ static void cmd_selectlist_demo(const char *args) {
 
     int anchor_y = (cur->cursor.y - cur->row_offset) + cur->top;
     int anchor_x = cur->left;
-    Buffer *buf  = (cur->buffer_index >= 0 &&
-                    cur->buffer_index < (int)arrlen(E.buffers))
-                       ? &E.buffers[cur->buffer_index]
-                       : NULL;
+    Buffer *buf =
+        (cur->buffer_index >= 0 && cur->buffer_index < (int)arrlen(E.buffers))
+            ? &E.buffers[cur->buffer_index]
+            : NULL;
     if (buf && cur->cursor.y < buf->num_rows) {
-        int rx   = buf_row_cx_to_rx(&buf->rows[cur->cursor.y], cur->cursor.x);
+        int rx = buf_row_cx_to_rx(&buf->rows[cur->cursor.y], cur->cursor.x);
         anchor_x = (rx - cur->col_offset) + cur->left;
     }
 
-    selectlist_open_anchored(anchor_x, anchor_y, 24, demo, n,
-                             WMODAL_AUTO, on_demo_pick, NULL);
+    selectlist_open_anchored(anchor_x, anchor_y, 24, demo, n, WMODAL_AUTO,
+                             on_demo_pick, NULL);
 }
 
 static int selectlist_init(void) {
@@ -230,8 +249,8 @@ static int selectlist_init(void) {
 }
 
 const Plugin plugin_selectlist = {
-    .name   = "selectlist",
-    .desc   = "in-process selection picker (modal)",
-    .init   = selectlist_init,
+    .name = "selectlist",
+    .desc = "in-process selection picker (modal)",
+    .init = selectlist_init,
     .deinit = NULL,
 };

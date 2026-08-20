@@ -1,11 +1,11 @@
 #include "ctags/tags.h"
+#include "buf/buf_helpers.h"
+#include "editor.h"
 #include "fs/fs.h"
 #include "lib/log.h"
-#include "editor.h"
-#include "buf/buf_helpers.h"
 #include "lib/strbuf.h"
-#include "utils/term_cmd.h"
 #include "lib/strutil.h"
+#include "utils/term_cmd.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +25,8 @@ static int find_tags_file(char *out_path, size_t size) {
 #pragma GCC diagnostic ignored "-Wformat-truncation"
         snprintf(out_path, size, "%s/tags", E.cwd);
 #pragma GCC diagnostic pop
-        if (fs_is_file(out_path)) return 1;
+        if (fs_is_file(out_path))
+            return 1;
     }
 
     /* Try buffer's directory if available */
@@ -189,8 +190,8 @@ TagEntry *find_tag(const char *tag_name) {
 
     char cmd[4096];
     snprintf(cmd, sizeof(cmd),
-             "rg --no-heading --color=never --max-count=1 -- %s %s",
-             esc_regex, esc_path);
+             "rg --no-heading --color=never --max-count=1 -- %s %s", esc_regex,
+             esc_path);
 
     /* Run the command */
     char **lines = NULL;

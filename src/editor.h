@@ -1,15 +1,15 @@
 #ifndef EDITOR_H
 #define EDITOR_H
 
-#include <limits.h>
 #include "buf/buffer.h"
+#include "lib/strbuf.h"
+#include "stb_ds.h"
+#include "ui/window.h"
 #include "utils/history.h"
 #include "utils/jump_list.h"
 #include "utils/quickfix.h"
 #include "utils/recent_files.h"
-#include "lib/strbuf.h"
-#include "stb_ds.h"
-#include "ui/window.h"
+#include <limits.h>
 
 #ifndef HED_VERSION
 #define HED_VERSION "dev"
@@ -19,7 +19,9 @@
 #define CMD_HISTORY_MAX 1000
 
 /* Special key codes */
-#define KEY_DELETE 1009 /* forward-delete (CSI 3~), distinct from BS byte 127 */
+#define KEY_DELETE                                                             \
+    1009 /* forward-delete (CSI 3~), distinct from BS byte 127                 \
+          */
 #define KEY_PAGE_UP 1000
 #define KEY_PAGE_DOWN 1001
 #define KEY_ARROW_UP 1002
@@ -29,15 +31,15 @@
 #define KEY_HOME 1006
 #define KEY_END 1007
 #define KEY_BTAB 1008 /* Shift+Tab (backtab), CSI Z */
-#define KEY_F1  1010
-#define KEY_F2  1011
-#define KEY_F3  1012
-#define KEY_F4  1013
-#define KEY_F5  1014
-#define KEY_F6  1015
-#define KEY_F7  1016
-#define KEY_F8  1017
-#define KEY_F9  1018
+#define KEY_F1 1010
+#define KEY_F2 1011
+#define KEY_F3 1012
+#define KEY_F4 1013
+#define KEY_F5 1014
+#define KEY_F6 1015
+#define KEY_F7 1016
+#define KEY_F8 1017
+#define KEY_F9 1018
 #define KEY_F10 1019
 #define KEY_F11 1020
 #define KEY_F12 1021
@@ -47,7 +49,7 @@
  * keystrokes" from "user pasted N bytes" and avoid running per-char
  * hooks (auto-pair, smart-indent) and keymap dispatch on every byte. */
 #define KEY_PASTE_START 1030
-#define KEY_PASTE_END   1031
+#define KEY_PASTE_END 1031
 
 /* Mouse sentinel (SGR mode 1006). A mouse event carries more data than
  * one int (button, column, row, press/drag/release), so the parser
@@ -63,14 +65,14 @@
  *               Plain Ctrl+letter is still encoded as bytes 1..26;
  *               KEY_CTRL is only used for non-byte keys (arrows etc.).
  */
-#define KEY_META  0x10000
-#define KEY_CTRL  0x20000
+#define KEY_META 0x10000
+#define KEY_CTRL 0x20000
 #define KEY_SHIFT 0x40000
-#define KEY_IS_META(k)  (((k) & KEY_META)  != 0)
-#define KEY_IS_CTRL(k)  (((k) & KEY_CTRL)  != 0)
+#define KEY_IS_META(k) (((k) & KEY_META) != 0)
+#define KEY_IS_CTRL(k) (((k) & KEY_CTRL) != 0)
 #define KEY_IS_SHIFT(k) (((k) & KEY_SHIFT) != 0)
-#define KEY_NO_META(k)  ((k) & 0xFFFF)
-#define KEY_BASE(k)     ((k) & 0xFFFF)
+#define KEY_NO_META(k) ((k) & 0xFFFF)
+#define KEY_BASE(k) ((k) & 0xFFFF)
 
 #define CURSOR_STYLE_NONE "\x1b[0 q"
 #define CURSOR_STYLE_BLOCK "\x1b[1 q"
@@ -123,17 +125,18 @@ typedef struct {
 
     /* Macro replay queue - simulates keyboard input */
     struct {
-        char *buffer;   /* String buffer with readable sequences like "dd<Esc>jj" */
-        int capacity;   /* Allocated capacity */
-        int length;     /* String length */
-        int position;   /* Current read position in buffer */
+        char *
+            buffer; /* String buffer with readable sequences like "dd<Esc>jj" */
+        int capacity; /* Allocated capacity */
+        int length;   /* String length */
+        int position; /* Current read position in buffer */
     } macro_queue;
 
     /* Macro recording state */
     struct {
-        int recording;        /* 1 if currently recording */
-        char register_name;   /* Register being recorded to (a-z) */
-        char last_played;     /* Last register played with @ (for @@) */
+        int recording;      /* 1 if currently recording */
+        char register_name; /* Register being recorded to (a-z) */
+        char last_played;   /* Last register played with @ (for @@) */
     } macro_recording;
 
     /* Called when the editor needs a fallback buffer (startup with no
@@ -165,7 +168,7 @@ int ed_read_key(void);
 void ed_key_capture_begin(void);
 /* Stops capture; sets *out_keys to an internal buffer of the captured
  * keys (valid until the next capture_begin) and returns the count. */
-int  ed_key_capture_end(const int **out_keys);
+int ed_key_capture_end(const int **out_keys);
 /* Loads keys for replay and activates strict replay (exhaustion -> ESC). */
 void ed_key_replay_begin(const int *keys, int n);
 /* Deactivates replay; ed_read_key reverts to macro queue / terminal. */
@@ -186,7 +189,7 @@ void ed_set_mode(EditorMode new_mode);
  * keymaps that are conceptually modeless. Visual and Command modes are
  * preserved. */
 void ed_set_modeless(int on);
-int  ed_is_modeless(void);
+int ed_is_modeless(void);
 void ed_set_status_message(const char *fmt, ...);
 
 void ed_init(int create_default_buffer);

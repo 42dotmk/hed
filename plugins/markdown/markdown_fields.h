@@ -37,8 +37,7 @@ const MdFieldDef *md_field_lookup(const char *name, int len);
 
 /* Parse `key:: value` from (s,len). Fills key span [k0,k1) and trimmed
  * value span [v0,v1). Returns 1 if the line is a field line, else 0. */
-int md_parse_field(const char *s, int len,
-                   int *k0, int *k1, int *v0, int *v1);
+int md_parse_field(const char *s, int len, int *k0, int *k1, int *v0, int *v1);
 
 /* True if `row` is any `key:: value` field line (recognized or not). */
 int md_is_field_line(const Row *row);

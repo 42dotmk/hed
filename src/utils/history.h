@@ -7,7 +7,7 @@
 
 typedef struct {
     char **items; /* stb_ds dynamic array; newest at index 0 */
-    int idx; /* browsing index; -1 when not browsing */
+    int idx;      /* browsing index; -1 when not browsing */
     char saved_line[80];
     int saved_len;
     char prefix[80];

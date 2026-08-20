@@ -1,14 +1,16 @@
-#include "hed.h"
 #include "session.h"
+#include "hed.h"
 
 EdError session_save(const char *path) {
-    if (!path || !*path) return ED_ERR_INVALID_INDEX;
+    if (!path || !*path)
+        return ED_ERR_INVALID_INDEX;
 
     /* Compose the whole session into one buffer, then write atomically. */
     StrBuf txt = strbuf_new();
     for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
         const Buffer *b = &E.buffers[i];
-        if (!b->filename || !*b->filename) continue;
+        if (!b->filename || !*b->filename)
+            continue;
         strbuf_append(&txt, ((int)i == E.current_buffer) ? "* " : "  ", 2);
         strbuf_append(&txt, b->filename, strlen(b->filename));
         strbuf_append_char(&txt, '\n');
@@ -20,32 +22,39 @@ EdError session_save(const char *path) {
 }
 
 EdError session_restore(const char *path) {
-    if (!path || !*path) return ED_ERR_INVALID_INDEX;
+    if (!path || !*path)
+        return ED_ERR_INVALID_INDEX;
 
     FsLines *r = NULL;
-    if (fs_lines_open(&r, path) != ED_OK) return ED_ERR_INVALID_INDEX;
+    if (fs_lines_open(&r, path) != ED_OK)
+        return ED_ERR_INVALID_INDEX;
 
     int target = -1;
     const char *line;
-    size_t      n;
+    size_t n;
     while (fs_lines_next(r, &line, &n)) {
-        if (n < 2) continue;
+        if (n < 2)
+            continue;
         int is_current = (line[0] == '*');
-        const char *file = line + 2;  /* skip "* " or "  " */
-        if (!*file) continue;
+        const char *file = line + 2; /* skip "* " or "  " */
+        if (!*file)
+            continue;
 
         buf_open_or_switch(file, false);
-        if (is_current) target = E.current_buffer;
+        if (is_current)
+            target = E.current_buffer;
     }
     fs_lines_close(r);
 
     /* Close any empty, unnamed placeholder buffer left from startup.
      * Closing shifts higher indices down, so adjust target. */
-    for (ptrdiff_t i = 0; i < arrlen(E.buffers); ) {
+    for (ptrdiff_t i = 0; i < arrlen(E.buffers);) {
         Buffer *b = &E.buffers[i];
         if ((!b->filename || !*b->filename) && b->num_rows == 0 && !b->dirty) {
-            if ((int)i < target) target--;
-            else if ((int)i == target) target = -1;
+            if ((int)i < target)
+                target--;
+            else if ((int)i == target)
+                target = -1;
             buf_close((int)i);
             continue;
         }

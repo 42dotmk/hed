@@ -22,18 +22,22 @@ static void cmd_goto(const char *args) {
     }
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
 
-    while (*args == ' ' || *args == '\t') args++;
+    while (*args == ' ' || *args == '\t')
+        args++;
 
     /* If the whole arg parses as a positive integer, treat as line jump. */
     {
         char *end;
         long n = strtol(args, &end, 10);
         const char *trail = end;
-        while (*trail == ' ' || *trail == '\t') trail++;
+        while (*trail == ' ' || *trail == '\t')
+            trail++;
         if (end != args && *trail == '\0' && n >= 1) {
-            if (n > buf->num_rows) n = buf->num_rows;
+            if (n > buf->num_rows)
+                n = buf->num_rows;
             win->cursor.y = (int)n - 1;
             win->cursor.x = 0;
             return;
@@ -43,7 +47,8 @@ static void cmd_goto(const char *args) {
     /* Otherwise: motion symbol, optionally followed by a count. */
     char motion[32];
     int mi = 0;
-    while (*args && *args != ' ' && *args != '\t' && mi < (int)sizeof(motion) - 1) {
+    while (*args && *args != ' ' && *args != '\t' &&
+           mi < (int)sizeof(motion) - 1) {
         motion[mi++] = *args++;
     }
     motion[mi] = '\0';
@@ -52,12 +57,14 @@ static void cmd_goto(const char *args) {
         return;
     }
 
-    while (*args == ' ' || *args == '\t') args++;
+    while (*args == ' ' || *args == '\t')
+        args++;
     int count = 1;
     if (*args) {
         char *end;
         long c = strtol(args, &end, 10);
-        if (end != args && c >= 1) count = (int)c;
+        if (end != args && c >= 1)
+            count = (int)c;
     }
 
     for (int i = 0; i < count; i++) {
@@ -84,14 +91,20 @@ static void cmd_pos(const char *args) {
     }
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0) return;
+    if (!buf || !win || buf->num_rows == 0)
+        return;
 
-    while (*args == ' ' || *args == '\t') args++;
+    while (*args == ' ' || *args == '\t')
+        args++;
     char *end;
     long pos = strtol(args, &end, 10);
     int bytes = 0;
-    if (*end == 'b' || *end == 'B') { bytes = 1; end++; }
-    while (*end == ' ' || *end == '\t') end++;
+    if (*end == 'b' || *end == 'B') {
+        bytes = 1;
+        end++;
+    }
+    while (*end == ' ' || *end == '\t')
+        end++;
     if (end == args || *end != '\0' || pos < 0) {
         ed_set_status_message(":pos: invalid offset '%s'", args);
         return;
@@ -104,7 +117,8 @@ static void cmd_pos(const char *args) {
             if (remaining <= (long)chars->len) {
                 size_t x = (size_t)remaining;
                 /* Snap back to the start of the enclosing codepoint. */
-                while (x > 0 && (chars->data[x] & 0xC0) == 0x80) x--;
+                while (x > 0 && (chars->data[x] & 0xC0) == 0x80)
+                    x--;
                 win->cursor.y = y;
                 win->cursor.x = (int)x;
                 return;
@@ -144,10 +158,12 @@ static void cmd_pos(const char *args) {
 static void cmd_vt_demo(const char *args) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
 
     static int ns = -1;
-    if (ns < 0) ns = vtext_ns_create("vt-demo");
+    if (ns < 0)
+        ns = vtext_ns_create("vt-demo");
     if (ns < 0) {
         ed_set_status_message("vt-demo: cannot create namespace");
         return;
@@ -185,10 +201,12 @@ static void cmd_vt_demo(const char *args) {
 static void cmd_vt_demo_block(const char *args) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win) return;
+    if (!buf || !win)
+        return;
 
     static int ns = -1;
-    if (ns < 0) ns = vtext_ns_create("vt-demo-block");
+    if (ns < 0)
+        ns = vtext_ns_create("vt-demo-block");
     if (ns < 0) {
         ed_set_status_message("vt-demo-block: cannot create namespace");
         return;
@@ -203,7 +221,8 @@ static void cmd_vt_demo_block(const char *args) {
     if (!args || !*args) {
         int dropped = vtext_clear_line(buf, ns, line);
         if (dropped > 0) {
-            ed_set_status_message("vt-demo-block: cleared on line %d", line + 1);
+            ed_set_status_message("vt-demo-block: cleared on line %d",
+                                  line + 1);
             return;
         }
         args = "  block line 1|  block line 2|  block line 3";
@@ -211,9 +230,13 @@ static void cmd_vt_demo_block(const char *args) {
 
     /* Build a buffer with '|' replaced by '\n'. */
     size_t n = strlen(args);
-    char  *text = malloc(n + 1);
-    if (!text) { ed_set_status_message("vt-demo-block: oom"); return; }
-    for (size_t i = 0; i < n; i++) text[i] = args[i] == '|' ? '\n' : args[i];
+    char *text = malloc(n + 1);
+    if (!text) {
+        ed_set_status_message("vt-demo-block: oom");
+        return;
+    }
+    for (size_t i = 0; i < n; i++)
+        text[i] = args[i] == '|' ? '\n' : args[i];
     text[n] = '\0';
 
     vtext_clear_line(buf, ns, line);
@@ -275,8 +298,8 @@ static void cmd_ftmap(const char *args) {
         hook_fire_buffer(HOOK_BUFFER_OPEN, &ev);
         updated++;
     }
-    ed_set_status_message("ftmap: %s -> %s (%d buffer%s updated)",
-                          key, ft, updated, updated == 1 ? "" : "s");
+    ed_set_status_message("ftmap: %s -> %s (%d buffer%s updated)", key, ft,
+                          updated, updated == 1 ? "" : "s");
 }
 
 static void cmd_log(const char *args) {
@@ -290,7 +313,8 @@ static void cmd_log(const char *args) {
 }
 
 static void cmd_logs(const char *args) {
-    if (picker_invoke("logs", args)) return;
+    if (picker_invoke("logs", args))
+        return;
     ed_set_status_message("logs: no picker registered");
 }
 
@@ -312,7 +336,7 @@ static void register_commands(void) {
     cmd("keybinds", cmd_list_keybinds, "list keybinds");
     cmd("echo", cmd_echo, "echo");
     cmd("history", cmd_history, "cmd hist");
-    cmd("log",  cmd_log,  "open the editor log file");
+    cmd("log", cmd_log, "open the editor log file");
     cmd("logs", cmd_logs, "pick a log file from the cache dir");
     cmd("reg", cmd_registers, "registers");
     cmd("put", cmd_put, "put reg");
@@ -347,10 +371,12 @@ static void register_commands(void) {
     cmd("wj", cmd_wdown, "focus window down");
     cmd("wk", cmd_wup, "focus window up");
     cmd("wl", cmd_wright, "focus window right");
-    cmd("wgrowwidth",    cmd_wgrowwidth,    "grow window width by N (default 5)");
-    cmd("wshrinkwidth",  cmd_wshrinkwidth,  "shrink window width by N (default 5)");
-    cmd("wgrowheight",   cmd_wgrowheight,   "grow window height by N (default 5)");
-    cmd("wshrinkheight", cmd_wshrinkheight, "shrink window height by N (default 5)");
+    cmd("wgrowwidth", cmd_wgrowwidth, "grow window width by N (default 5)");
+    cmd("wshrinkwidth", cmd_wshrinkwidth,
+        "shrink window width by N (default 5)");
+    cmd("wgrowheight", cmd_wgrowheight, "grow window height by N (default 5)");
+    cmd("wshrinkheight", cmd_wshrinkheight,
+        "shrink window height by N (default 5)");
     cmd("modal", cmd_modal_from_current, "convert current window to modal");
     cmd("unmodal", cmd_modal_to_layout, "convert modal back to normal window");
     cmd("foldnew", cmd_fold_new, "create fold region");
@@ -358,13 +384,17 @@ static void register_commands(void) {
     cmd("foldtoggle", cmd_fold_toggle, "toggle fold at line");
     cmd("foldmethod", cmd_foldmethod, "set fold method");
     cmd("foldupdate", cmd_foldupdate, "update folds");
-    cmd("plugins",  cmd_plugins,  "list loaded plugins");
-    cmd("goto",     cmd_goto,     "goto <line> | <motion> [count]");
-    cmd("pos",      cmd_pos,      "pos <char-offset> | <byte-offset>b — jump to absolute position (UTF-8 aware)");
+    cmd("plugins", cmd_plugins, "list loaded plugins");
+    cmd("goto", cmd_goto, "goto <line> | <motion> [count]");
+    cmd("pos", cmd_pos,
+        "pos <char-offset> | <byte-offset>b — jump to absolute position (UTF-8 "
+        "aware)");
     cmd("modeless", cmd_modeless, "modeless on|off|toggle");
-    cmd("ftmap",    cmd_ftmap,    "map extension/basename to filetype (session only)");
-    cmd("vt-demo",       cmd_vt_demo,       "toggle demo EOL virtual text on current line");
-    cmd("vt-demo-block", cmd_vt_demo_block, "toggle demo BLOCK_BELOW rows (use | as row separator)");
+    cmd("ftmap", cmd_ftmap,
+        "map extension/basename to filetype (session only)");
+    cmd("vt-demo", cmd_vt_demo, "toggle demo EOL virtual text on current line");
+    cmd("vt-demo-block", cmd_vt_demo_block,
+        "toggle demo BLOCK_BELOW rows (use | as row separator)");
 }
 
 static void register_hooks(void) {
@@ -379,8 +409,8 @@ static int core_init(void) {
 }
 
 const Plugin plugin_core = {
-    .name   = "core",
-    .desc   = "default command set + editor-wide hooks",
-    .init   = core_init,
+    .name = "core",
+    .desc = "default command set + editor-wide hooks",
+    .init = core_init,
     .deinit = NULL,
 };

@@ -20,10 +20,12 @@ static int scratch_find_buf(void) {
 
 static int scratch_find_or_create_buf(void) {
     int idx = scratch_find_buf();
-    if (idx >= 0) return idx;
+    if (idx >= 0)
+        return idx;
 
     int new_idx = -1;
-    if (buf_new_scratch(SCRATCH_TITLE, &new_idx) != ED_OK) return -1;
+    if (buf_new_scratch(SCRATCH_TITLE, &new_idx) != ED_OK)
+        return -1;
     return new_idx;
 }
 
@@ -58,15 +60,14 @@ static void cmd_scratch(const char *args) {
 
     windows_split_vertical();
     Window *w = window_cur();
-    if (w) win_attach_buf(w, &E.buffers[buf_idx]);
+    if (w)
+        win_attach_buf(w, &E.buffers[buf_idx]);
     E.buffers[buf_idx].dirty = 0;
 }
 
 /* Fallback hook for the editor: when no buffers remain, return the
  * scratch buffer instead of letting core create a nameless empty one. */
-static int scratch_fallback_buf(void) {
-    return scratch_find_or_create_buf();
-}
+static int scratch_fallback_buf(void) { return scratch_find_or_create_buf(); }
 
 static int scratch_init(void) {
     cmd("scratch", cmd_scratch, "open/focus the scratch buffer in a vsplit");
@@ -75,8 +76,8 @@ static int scratch_init(void) {
 }
 
 const Plugin plugin_scratch = {
-    .name   = "scratch",
-    .desc   = "ephemeral, unnamed buffer for quick notes",
-    .init   = scratch_init,
+    .name = "scratch",
+    .desc = "ephemeral, unnamed buffer for quick notes",
+    .init = scratch_init,
     .deinit = NULL,
 };

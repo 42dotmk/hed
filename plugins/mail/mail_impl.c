@@ -1,10 +1,10 @@
+#include "buf/row.h"
+#include "hed.h"
+#include "input/prompt.h"
+#include "lib/theme.h"
 #include "mail.h"
 #include "mail_parse.h"
-#include "hed.h"
-#include "buf/row.h"
-#include "lib/theme.h"
 #include "open/open.h"
-#include "input/prompt.h"
 #include "utils/term_cmd.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -15,20 +15,20 @@
 #include <time.h>
 #include <unistd.h>
 
-#define MAIL_MAX        500
-#define MAIL_MBOX_MAX   256
+#define MAIL_MAX 500
+#define MAIL_MBOX_MAX 256
 #define MAIL_ATTACH_MAX 32
-#define MAIL_LIST_BUF   "mail://list"
-#define MAIL_MBOX_BUF   "mail://mailboxes"
+#define MAIL_LIST_BUF "mail://list"
+#define MAIL_MBOX_BUF "mail://mailboxes"
 
 typedef struct {
     char msg_id[256];
-    int  part_id;
+    int part_id;
     char filename[256];
 } MailAttach;
 
 static MailAttach attachments[MAIL_ATTACH_MAX];
-static int        attach_count = 0;
+static int attach_count = 0;
 
 /* ------------------------------------------------------------------ */
 /* State                                                               */
@@ -37,18 +37,21 @@ static int        attach_count = 0;
 typedef struct {
     char thread_id[128]; /* "thread:0000000000001234" */
     char display[512];   /* rest of the notmuch summary line */
-    int  is_unread;      /* 1 if the "unread" tag is present */
+    int is_unread;       /* 1 if the "unread" tag is present */
 } MailEntry;
 
 /* Check for "unread" as a whole word inside the last (...) tag group. */
 static int has_unread_tag(const char *line) {
     const char *last_paren = strrchr(line, '(');
-    if (!last_paren) return 0;
+    if (!last_paren)
+        return 0;
     const char *p = last_paren + 1;
     while (*p && *p != ')') {
-        while (*p == ' ') p++;
+        while (*p == ' ')
+            p++;
         const char *word = p;
-        while (*p && *p != ' ' && *p != ')') p++;
+        while (*p && *p != ' ' && *p != ')')
+            p++;
         size_t wlen = (size_t)(p - word);
         if (wlen == 6 && memcmp(word, "unread", 6) == 0)
             return 1;
@@ -57,29 +60,29 @@ static int has_unread_tag(const char *line) {
 }
 
 static MailEntry mail_entries[MAIL_MAX];
-static int       mail_entry_count = 0;
+static int mail_entry_count = 0;
 
-static char base_query[512]     = "*";
-static char filter_query[512]   = "";
-static char mailbox_query[512]  = "";
+static char base_query[512] = "*";
+static char filter_query[512] = "";
+static char mailbox_query[512] = "";
 static char mbsync_profile[128] = "-a";
-static char mail_dir[512]       = "";  /* lazily initialised to $HOME/.mail */
+static char mail_dir[512] = ""; /* lazily initialised to $HOME/.mail */
 
 typedef enum {
-    MBE_ALL,      /* "[All mail]" — clears both base and mailbox */
-    MBE_VIEW,     /* saved view — sets base_query */
-    MBE_MAILBOX,  /* account/folder — sets mailbox_query */
-    MBE_HEADER,   /* visual separator, not selectable */
+    MBE_ALL,     /* "[All mail]" — clears both base and mailbox */
+    MBE_VIEW,    /* saved view — sets base_query */
+    MBE_MAILBOX, /* account/folder — sets mailbox_query */
+    MBE_HEADER,  /* visual separator, not selectable */
 } MailboxKind;
 
 typedef struct {
-    char        display[256];
-    char        query[256];
+    char display[256];
+    char query[256];
     MailboxKind kind;
 } MailboxEntry;
 
 static MailboxEntry mailbox_entries[MAIL_MBOX_MAX];
-static int          mailbox_entry_count = 0;
+static int mailbox_entry_count = 0;
 
 #define MAIL_VIEWS_MAX 32
 typedef struct {
@@ -87,10 +90,11 @@ typedef struct {
     char query[256];
 } MailView;
 static MailView views[MAIL_VIEWS_MAX];
-static int      view_count = 0;
+static int view_count = 0;
 
 void mail_add_view(const char *name, const char *query) {
-    if (!name || !*name) return;
+    if (!name || !*name)
+        return;
     /* Update or remove existing by name. */
     for (int i = 0; i < view_count; i++) {
         if (strcmp(views[i].name, name) == 0) {
@@ -102,10 +106,12 @@ void mail_add_view(const char *name, const char *query) {
             return;
         }
     }
-    if (!query || !*query) return;
-    if (view_count >= MAIL_VIEWS_MAX) return;
+    if (!query || !*query)
+        return;
+    if (view_count >= MAIL_VIEWS_MAX)
+        return;
     MailView *v = &views[view_count++];
-    snprintf(v->name,  sizeof(v->name),  "%s", name);
+    snprintf(v->name, sizeof(v->name), "%s", name);
     snprintf(v->query, sizeof(v->query), "%s", query);
 }
 
@@ -132,15 +138,18 @@ static int q_is_wild(const char *q) {
 static void build_full_query(char *out, size_t sz) {
     out[0] = '\0';
     int n = 0;
-    const char *parts[3] = { base_query, mailbox_query, filter_query };
+    const char *parts[3] = {base_query, mailbox_query, filter_query};
     for (int i = 0; i < 3; i++) {
-        if (q_is_wild(parts[i])) continue;
-        int w = snprintf(out + n, sz - n,
-                         n == 0 ? "(%s)" : " AND (%s)", parts[i]);
-        if (w < 0 || (size_t)w >= sz - n) break;
+        if (q_is_wild(parts[i]))
+            continue;
+        int w =
+            snprintf(out + n, sz - n, n == 0 ? "(%s)" : " AND (%s)", parts[i]);
+        if (w < 0 || (size_t)w >= sz - n)
+            break;
         n += w;
     }
-    if (n == 0) snprintf(out, sz, "*");
+    if (n == 0)
+        snprintf(out, sz, "*");
 }
 
 void mail_set_mailbox(const char *q) {
@@ -158,7 +167,8 @@ void mail_set_dir(const char *dir) {
 }
 
 static const char *resolve_mail_dir(void) {
-    if (mail_dir[0]) return mail_dir;
+    if (mail_dir[0])
+        return mail_dir;
     /* "$HOME/.mail", or just ".mail" when HOME is unset. */
     fs_path_home_join(".mail", mail_dir, sizeof(mail_dir));
     return mail_dir;
@@ -169,18 +179,21 @@ const char *mail_get_dir(void) { return resolve_mail_dir(); }
 static int is_maildir(const char *path) {
     char p[1024];
     snprintf(p, sizeof(p), "%s/cur", path);
-    if (!fs_is_dir(p)) return 0;
+    if (!fs_is_dir(p))
+        return 0;
     snprintf(p, sizeof(p), "%s/new", path);
-    if (!fs_is_dir(p)) return 0;
+    if (!fs_is_dir(p))
+        return 0;
     return 1;
 }
 
 /* Append an entry, bounds-checked. */
 static void mbox_add(const char *display, const char *query, MailboxKind k) {
-    if (mailbox_entry_count >= MAIL_MBOX_MAX) return;
+    if (mailbox_entry_count >= MAIL_MBOX_MAX)
+        return;
     MailboxEntry *e = &mailbox_entries[mailbox_entry_count++];
     snprintf(e->display, sizeof(e->display), "%s", display);
-    snprintf(e->query,   sizeof(e->query),   "%s", query ? query : "");
+    snprintf(e->query, sizeof(e->query), "%s", query ? query : "");
     e->kind = k;
 }
 
@@ -192,34 +205,42 @@ static int cmp_str(const void *a, const void *b) {
  * like "cur" / "new" / "tmp"). Caller frees each entry and the array. */
 static int read_subdirs(const char *path, char ***out) {
     FsDir *d = NULL;
-    if (fs_dir_open(&d, path) != ED_OK) { *out = NULL; return 0; }
+    if (fs_dir_open(&d, path) != ED_OK) {
+        *out = NULL;
+        return 0;
+    }
 
     char **names = NULL;
-    int    cap   = 0;
-    int    n     = 0;
+    int cap = 0;
+    int n = 0;
     FsDirEntry de;
     while (fs_dir_next(d, &de)) {
         const char *name = de.name;
-        if (!de.is_dir) continue;
+        if (!de.is_dir)
+            continue;
         if (!strcmp(name, "cur") || !strcmp(name, "new") ||
-            !strcmp(name, "tmp")) continue;
+            !strcmp(name, "tmp"))
+            continue;
 
         if (n == cap) {
             cap = cap ? cap * 2 : 16;
             char **nn = realloc(names, (size_t)cap * sizeof(*nn));
-            if (!nn) break;
+            if (!nn)
+                break;
             names = nn;
         }
         names[n++] = strdup(name);
     }
     fs_dir_close(d);
-    if (n > 1) qsort(names, (size_t)n, sizeof(*names), cmp_str);
+    if (n > 1)
+        qsort(names, (size_t)n, sizeof(*names), cmp_str);
     *out = names;
     return n;
 }
 
 static void free_names(char **names, int n) {
-    for (int i = 0; i < n; i++) free(names[i]);
+    for (int i = 0; i < n; i++)
+        free(names[i]);
     free(names);
 }
 
@@ -247,8 +268,9 @@ static void mailboxes_scan(void) {
     }
 
     char **accounts = NULL;
-    int    nacc     = read_subdirs(root, &accounts);
-    if (nacc > 0) mbox_add("── Mailboxes ──", "", MBE_HEADER);
+    int nacc = read_subdirs(root, &accounts);
+    if (nacc > 0)
+        mbox_add("── Mailboxes ──", "", MBE_HEADER);
 
     for (int i = 0; i < nacc; i++) {
         const char *acct = accounts[i];
@@ -268,11 +290,12 @@ static void mailboxes_scan(void) {
         }
 
         char **folders = NULL;
-        int    nf      = read_subdirs(acct_path, &folders);
+        int nf = read_subdirs(acct_path, &folders);
         for (int j = 0; j < nf; j++) {
             char child[2048];
             snprintf(child, sizeof(child), "%s/%s", acct_path, folders[j]);
-            if (!is_maildir(child)) continue;
+            if (!is_maildir(child))
+                continue;
             char qf[256], disp[256];
             snprintf(disp, sizeof(disp), "  %s", folders[j]);
             snprintf(qf, sizeof(qf), "folder:%s/%s", acct, folders[j]);
@@ -314,7 +337,7 @@ static void clear_buffer(Buffer *buf) {
     for (int i = 0; i < buf->num_rows; i++)
         row_free(&buf->rows[i]);
     free(buf->rows);
-    buf->rows     = NULL;
+    buf->rows = NULL;
     buf->num_rows = 0;
 }
 
@@ -323,37 +346,40 @@ static void clear_buffer(Buffer *buf) {
 /* ------------------------------------------------------------------ */
 
 /* Colors for the mail list — unread entries are bold throughout. */
-#define MC_UNREAD_FLAG    "\x1b[1;38;2;247;118;142m"  /* bold red            */
-#define MC_UNREAD_COUNT   "\x1b[1;38;2;86;95;137m"    /* bold muted          */
-#define MC_UNREAD_SENDER  "\x1b[1;38;2;122;162;247m"  /* bold blue           */
-#define MC_UNREAD_SUBJECT "\x1b[1;38;2;192;202;245m"  /* bold fg             */
-#define MC_READ_FLAG      COLOR_COMMENT                /* dim flag column     */
-#define MC_READ_COUNT     COLOR_COMMENT                /* dim [N/M]           */
-#define MC_READ_SENDER    COLOR_FUNCTION               /* blue                */
-#define MC_READ_SUBJECT   COLOR_VARIABLE               /* normal fg           */
-#define MC_META           COLOR_COMMENT                /* date / tags / dim   */
+#define MC_UNREAD_FLAG "\x1b[1;38;2;247;118;142m"    /* bold red            */
+#define MC_UNREAD_COUNT "\x1b[1;38;2;86;95;137m"     /* bold muted          */
+#define MC_UNREAD_SENDER "\x1b[1;38;2;122;162;247m"  /* bold blue           */
+#define MC_UNREAD_SUBJECT "\x1b[1;38;2;192;202;245m" /* bold fg             */
+#define MC_READ_FLAG COLOR_COMMENT                   /* dim flag column     */
+#define MC_READ_COUNT COLOR_COMMENT                  /* dim [N/M]           */
+#define MC_READ_SENDER COLOR_FUNCTION                /* blue                */
+#define MC_READ_SUBJECT COLOR_VARIABLE               /* normal fg           */
+#define MC_META COLOR_COMMENT                        /* date / tags / dim   */
 
 /* Colors for the mail message view. */
-#define MC_MSG_MARKER     COLOR_DELIMITER              /* \fpart{ lines       */
-#define MC_MSG_HDR_KEY    COLOR_KEYWORD                /* From: / Subject: …  */
-#define MC_MSG_HDR_VAL    COLOR_VARIABLE               /* header value        */
-#define MC_MSG_QUOTE      COLOR_COMMENT                /* > quoted lines      */
+#define MC_MSG_MARKER COLOR_DELIMITER /* \fpart{ lines       */
+#define MC_MSG_HDR_KEY COLOR_KEYWORD  /* From: / Subject: …  */
+#define MC_MSG_HDR_VAL COLOR_VARIABLE /* header value        */
+#define MC_MSG_QUOTE COLOR_COMMENT    /* > quoted lines      */
 
 /* A coloured span: [s, e) bytes in the row → SGR escape. */
-typedef struct { int s, e; const char *sgr; } MailSpan;
+typedef struct {
+    int s, e;
+    const char *sgr;
+} MailSpan;
 
 /* Build colour spans for one mail-list row.
  * Row format (after our 2-char flag prefix):
  *   [N/M] sender1, sender2; Subject line (relative-date) (tags) */
-static int parse_list_spans(const char *raw, int len,
-                             MailSpan *sp, int max) {
+static int parse_list_spans(const char *raw, int len, MailSpan *sp, int max) {
     int n = 0;
-    if (len < 2 || n + 1 > max) return 0;
+    if (len < 2 || n + 1 > max)
+        return 0;
 
     int unread = (raw[0] == 'U');
 
     /* 2-char flag column */
-    sp[n++] = (MailSpan){ 0, 2, unread ? MC_UNREAD_FLAG : MC_READ_FLAG };
+    sp[n++] = (MailSpan){0, 2, unread ? MC_UNREAD_FLAG : MC_READ_FLAG};
     int pos = 2;
 
     /* Thread count [N/M] followed by a space */
@@ -361,8 +387,10 @@ static int parse_list_spans(const char *raw, int len,
         const char *close = memchr(raw + pos, ']', (size_t)(len - pos));
         if (close) {
             int end = (int)(close - raw) + 2; /* include '] ' */
-            if (end > len) end = len;
-            sp[n++] = (MailSpan){ pos, end, unread ? MC_UNREAD_COUNT : MC_READ_COUNT };
+            if (end > len)
+                end = len;
+            sp[n++] =
+                (MailSpan){pos, end, unread ? MC_UNREAD_COUNT : MC_READ_COUNT};
             pos = end;
         }
     }
@@ -371,37 +399,45 @@ static int parse_list_spans(const char *raw, int len,
     const char *semi = memchr(raw + pos, ';', (size_t)(len - pos));
     if (semi && n < max) {
         int end = (int)(semi - raw) + 1;
-        sp[n++] = (MailSpan){ pos, end, unread ? MC_UNREAD_SENDER : MC_READ_SENDER };
+        sp[n++] =
+            (MailSpan){pos, end, unread ? MC_UNREAD_SENDER : MC_READ_SENDER};
         pos = end;
-        if (pos < len && raw[pos] == ' ') pos++;
+        if (pos < len && raw[pos] == ' ')
+            pos++;
     }
 
     /* Subject: everything up to the last '(' (date/tag group) */
     int last_paren = -1;
     for (int i = len - 1; i >= pos; i--) {
-        if (raw[i] == '(') { last_paren = i; break; }
+        if (raw[i] == '(') {
+            last_paren = i;
+            break;
+        }
     }
     if (last_paren > pos && n < max) {
-        sp[n++] = (MailSpan){ pos, last_paren,
-                              unread ? MC_UNREAD_SUBJECT : MC_READ_SUBJECT };
+        sp[n++] = (MailSpan){pos, last_paren,
+                             unread ? MC_UNREAD_SUBJECT : MC_READ_SUBJECT};
         pos = last_paren;
     }
 
     /* Date / tags: remainder */
     if (pos < len && n < max)
-        sp[n++] = (MailSpan){ pos, len, MC_META };
+        sp[n++] = (MailSpan){pos, len, MC_META};
 
     return n;
 }
 
 static void mail_list_render_hook(const HookRenderEvent *e) {
-    if (!e || !e->buf || !e->spans) return;
+    if (!e || !e->buf || !e->spans)
+        return;
     Buffer *buf = e->buf;
     for (int row = e->row_start; row < e->row_end; row++) {
-        if (row < 0 || row >= buf->num_rows) continue;
+        if (row < 0 || row >= buf->num_rows)
+            continue;
         const char *raw = buf->rows[row].chars.data;
-        int         len = (int)buf->rows[row].chars.len;
-        if (!raw || len <= 0) continue;
+        int len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0)
+            continue;
         MailSpan ms[16];
         int n = parse_list_spans(raw, len, ms, 16);
         for (int i = 0; i < n; i++)
@@ -411,35 +447,36 @@ static void mail_list_render_hook(const HookRenderEvent *e) {
 
 /* Known RFC 2822 header names we want to colour. */
 static const char *const MAIL_HEADERS[] = {
-    "From:", "To:", "Cc:", "Bcc:", "Subject:", "Date:",
-    "Reply-To:", "Message-Id:", "In-Reply-To:", "References:",
-    NULL
-};
+    "From:",        "To:",         "Cc:",       "Bcc:",
+    "Subject:",     "Date:",       "Reply-To:", "Message-Id:",
+    "In-Reply-To:", "References:", NULL};
 
 /* Build colour spans for one mail-message row. */
-static int parse_msg_spans(const char *raw, int len,
-                            MailSpan *sp, int max) {
+static int parse_msg_spans(const char *raw, int len, MailSpan *sp, int max) {
     int n = 0;
-    if (len <= 0) return 0;
+    if (len <= 0)
+        return 0;
 
     /* Section separator emitted by mail_parse between messages. */
     if ((unsigned char)raw[0] >= 0x80) {
-        if (n < max) sp[n++] = (MailSpan){ 0, len, MC_MSG_MARKER };
+        if (n < max)
+            sp[n++] = (MailSpan){0, len, MC_MSG_MARKER};
         return n;
     }
 
     /* "Attachments:" pseudo-header gets the same colouring as real headers. */
     if (len > 12 && strncmp(raw, "Attachments:", 12) == 0) {
         if (n + 1 < max) {
-            sp[n++] = (MailSpan){ 0,  12,  MC_MSG_HDR_KEY };
-            sp[n++] = (MailSpan){ 12, len, MC_MSG_HDR_VAL };
+            sp[n++] = (MailSpan){0, 12, MC_MSG_HDR_KEY};
+            sp[n++] = (MailSpan){12, len, MC_MSG_HDR_VAL};
         }
         return n;
     }
 
     /* Quoted lines */
     if (raw[0] == '>') {
-        if (n < max) sp[n++] = (MailSpan){ 0, len, MC_MSG_QUOTE };
+        if (n < max)
+            sp[n++] = (MailSpan){0, len, MC_MSG_QUOTE};
         return n;
     }
 
@@ -449,8 +486,8 @@ static int parse_msg_spans(const char *raw, int len,
         if ((size_t)len > hlen &&
             strncasecmp(raw, MAIL_HEADERS[i], hlen) == 0) {
             if (n + 1 < max) {
-                sp[n++] = (MailSpan){ 0,        (int)hlen, MC_MSG_HDR_KEY };
-                sp[n++] = (MailSpan){ (int)hlen, len,      MC_MSG_HDR_VAL };
+                sp[n++] = (MailSpan){0, (int)hlen, MC_MSG_HDR_KEY};
+                sp[n++] = (MailSpan){(int)hlen, len, MC_MSG_HDR_VAL};
             }
             return n;
         }
@@ -460,13 +497,16 @@ static int parse_msg_spans(const char *raw, int len,
 }
 
 static void mail_msg_render_hook(const HookRenderEvent *e) {
-    if (!e || !e->buf || !e->spans) return;
+    if (!e || !e->buf || !e->spans)
+        return;
     Buffer *buf = e->buf;
     for (int row = e->row_start; row < e->row_end; row++) {
-        if (row < 0 || row >= buf->num_rows) continue;
+        if (row < 0 || row >= buf->num_rows)
+            continue;
         const char *raw = buf->rows[row].chars.data;
-        int         len = (int)buf->rows[row].chars.len;
-        if (!raw || len <= 0) continue;
+        int len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0)
+            continue;
         MailSpan ms[8];
         int n = parse_msg_spans(raw, len, ms, 8);
         for (int i = 0; i < n; i++)
@@ -486,17 +526,19 @@ static void mail_run_query(void) {
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[2400];
     snprintf(cmd, sizeof(cmd),
-             "notmuch search --sort=newest-first --limit=%d --output=summary -- %s 2>/dev/null",
+             "notmuch search --sort=newest-first --limit=%d --output=summary "
+             "-- %s 2>/dev/null",
              MAIL_MAX, qq);
 
     char **lines = NULL;
-    int    count = 0;
+    int count = 0;
     term_cmd_capture(cmd, &lines, &count);
 
     mail_entry_count = 0;
     for (int i = 0; i < count && mail_entry_count < MAIL_MAX; i++) {
         const char *line = lines[i];
-        if (!line || !line[0]) continue;
+        if (!line || !line[0])
+            continue;
 
         MailEntry *e = &mail_entries[mail_entry_count];
 
@@ -527,7 +569,7 @@ static void mail_run_query(void) {
 void mail_open_list(void) {
     mail_run_query();
 
-    int idx      = -1;
+    int idx = -1;
     int existing = buf_find_by_filename(MAIL_LIST_BUF);
     if (existing >= 0) {
         buf_switch(existing);
@@ -540,9 +582,11 @@ void mail_open_list(void) {
     }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);    buf->title    = strdup("Mail");
-    free(buf->filetype); buf->filetype = strdup("mail");
-    buf->readonly   = 1;
+    free(buf->title);
+    buf->title = strdup("Mail");
+    free(buf->filetype);
+    buf->filetype = strdup("mail");
+    buf->readonly = 1;
     /* Highlighting comes from mail_list_render_hook registered in
      * mail_plugin_init; the filetype is the dispatch filter. */
 
@@ -570,7 +614,8 @@ void mail_open_list(void) {
 
     int unread = 0;
     for (int i = 0; i < mail_entry_count; i++)
-        if (mail_entries[i].is_unread) unread++;
+        if (mail_entries[i].is_unread)
+            unread++;
     int read = mail_entry_count - unread;
 
     if (mail_entry_count == 0 && mailbox_query[0] && !q_is_wild(base_query)) {
@@ -582,8 +627,10 @@ void mail_open_list(void) {
         ed_set_status_message(
             "mail: %d threads (%d unread, %d read)  [%s]%s%s%s%s",
             mail_entry_count, unread, read, base_query,
-            mailbox_query[0] ? "  mbox=" : "", mailbox_query[0] ? mailbox_query : "",
-            filter_query[0]  ? "  filter=" : "", filter_query[0]  ? filter_query  : "");
+            mailbox_query[0] ? "  mbox=" : "",
+            mailbox_query[0] ? mailbox_query : "",
+            filter_query[0] ? "  filter=" : "",
+            filter_query[0] ? filter_query : "");
     }
 }
 
@@ -595,18 +642,21 @@ void mail_open_list(void) {
  * the "U " prefix on the mail-list row. No-op if the thread isn't
  * unread. */
 static void mark_thread_read(int row) {
-    if (row < 0 || row >= mail_entry_count) return;
-    if (!mail_entries[row].is_unread) return;
+    if (row < 0 || row >= mail_entry_count)
+        return;
+    if (!mail_entries[row].is_unread)
+        return;
 
     const char *tid = mail_entries[row].thread_id;
-    if (!tid[0]) return;
+    if (!tid[0])
+        return;
 
     char tidq[256];
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[512];
-    snprintf(cmd, sizeof(cmd),
-             "notmuch tag -unread -- %s 2>/dev/null", tidq);
-    if (term_cmd_system(cmd) != 0) return;
+    snprintf(cmd, sizeof(cmd), "notmuch tag -unread -- %s 2>/dev/null", tidq);
+    if (term_cmd_system(cmd) != 0)
+        return;
 
     mail_entries[row].is_unread = 0;
 
@@ -629,7 +679,8 @@ static void mark_thread_read(int row) {
  * current listing (e.g. followed from a mail:// link) — then the
  * rendered Subject: header stands in. */
 static void open_thread_tid(const char *tid, const char *title) {
-    if (!tid || !*tid) return;
+    if (!tid || !*tid)
+        return;
 
     /* Reuse an already-open thread buffer if present. */
     char bufname[256];
@@ -638,7 +689,8 @@ static void open_thread_tid(const char *tid, const char *title) {
     int existing = buf_find_by_filename(bufname);
     if (existing >= 0) {
         buf_switch(existing);
-        if (title) ed_set_status_message("%s", title);
+        if (title)
+            ed_set_status_message("%s", title);
         return;
     }
 
@@ -649,8 +701,9 @@ static void open_thread_tid(const char *tid, const char *title) {
     }
 
     Buffer *tbuf = &E.buffers[idx];
-    free(tbuf->filetype); tbuf->filetype = strdup("mail-message");
-    tbuf->readonly   = 1;
+    free(tbuf->filetype);
+    tbuf->filetype = strdup("mail-message");
+    tbuf->readonly = 1;
     /* Highlighting via mail_msg_render_hook (registered in
      * mail_plugin_init, filtered on filetype). */
 
@@ -658,10 +711,11 @@ static void open_thread_tid(const char *tid, const char *title) {
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[600];
     snprintf(cmd, sizeof(cmd),
-             "notmuch show --format=text --include-html -- %s 2>/dev/null", tidq);
+             "notmuch show --format=text --include-html -- %s 2>/dev/null",
+             tidq);
 
     char **lines = NULL;
-    int    count = 0;
+    int count = 0;
     term_cmd_capture(cmd, &lines, &count);
 
     MailRender mr;
@@ -689,11 +743,13 @@ static void open_thread_tid(const char *tid, const char *title) {
 
     /* Cache attachments for :mail-attach without rescanning the buffer. */
     attach_count = 0;
-    for (int i = 0; i < mr.attach_count && attach_count < MAIL_ATTACH_MAX; i++) {
+    for (int i = 0; i < mr.attach_count && attach_count < MAIL_ATTACH_MAX;
+         i++) {
         MailAttach *a = &attachments[attach_count++];
         a->part_id = mr.attaches[i].part_id;
-        snprintf(a->msg_id,   sizeof(a->msg_id),   "%s", mr.attaches[i].msg_id);
-        snprintf(a->filename, sizeof(a->filename), "%s", mr.attaches[i].filename);
+        snprintf(a->msg_id, sizeof(a->msg_id), "%s", mr.attaches[i].msg_id);
+        snprintf(a->filename, sizeof(a->filename), "%s",
+                 mr.attaches[i].filename);
     }
     mail_render_free(&mr);
 
@@ -711,19 +767,24 @@ static void open_thread_tid(const char *tid, const char *title) {
 }
 
 static void open_thread_row(int row) {
-    if (row < 0 || row >= mail_entry_count) return;
+    if (row < 0 || row >= mail_entry_count)
+        return;
 
     const char *tid = mail_entries[row].thread_id;
-    if (!tid[0]) return;
+    if (!tid[0])
+        return;
 
     mark_thread_read(row);
     open_thread_tid(tid, mail_entries[row].display);
 }
 
 void mail_open_thread(const char *tid) {
-    if (!tid) return;
-    if (strncmp(tid, "mail://", 7) == 0) tid += 7;
-    if (!*tid) return;
+    if (!tid)
+        return;
+    if (strncmp(tid, "mail://", 7) == 0)
+        tid += 7;
+    if (!*tid)
+        return;
     /* Prefer the listing row when present so the thread is marked read
      * and the list cursor bookkeeping applies. */
     for (int i = 0; i < mail_entry_count; i++) {
@@ -737,17 +798,21 @@ void mail_open_thread(const char *tid) {
 
 void mail_handle_enter(void) {
     Buffer *buf = buf_cur();
-    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0) return;
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail") != 0)
+        return;
 
     Window *win = window_cur();
-    if (!win) return;
+    if (!win)
+        return;
 
     int row = win->cursor.y;
-    if (row < 0 || row >= mail_entry_count) return;
+    if (row < 0 || row >= mail_entry_count)
+        return;
 
     /* Record current position so <C-o> returns to the mail list. */
     if (buf->filename)
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
 
     /* Persist the mail-list cursor onto the buffer so closing the thread
      * buffer (which restores from buf->cursor) returns us to this row. */
@@ -765,18 +830,23 @@ void mail_handle_enter(void) {
  * current listing. */
 static int find_current_message_row(void) {
     Buffer *buf = buf_cur();
-    if (!buf || !buf->filename || !buf->filetype) return -1;
-    if (strcmp(buf->filetype, "mail-message") != 0) return -1;
-    if (strncmp(buf->filename, "mail://", 7) != 0) return -1;
+    if (!buf || !buf->filename || !buf->filetype)
+        return -1;
+    if (strcmp(buf->filetype, "mail-message") != 0)
+        return -1;
+    if (strncmp(buf->filename, "mail://", 7) != 0)
+        return -1;
     const char *tid = buf->filename + 7;
     for (int i = 0; i < mail_entry_count; i++) {
-        if (strcmp(mail_entries[i].thread_id, tid) == 0) return i;
+        if (strcmp(mail_entries[i].thread_id, tid) == 0)
+            return i;
     }
     return -1;
 }
 
 static void goto_message_at(int row) {
-    if (row < 0 || row >= mail_entry_count) return;
+    if (row < 0 || row >= mail_entry_count)
+        return;
     /* Keep the mail-list cursor in sync so closing the message buffer
      * later returns the user to the right row. */
     int lidx = buf_find_by_filename(MAIL_LIST_BUF);
@@ -833,12 +903,16 @@ static int parse_tag_args(const char *args, char *out, size_t cap) {
     size_t n = 0;
     const char *p = args;
     while (*p) {
-        while (*p == ' ' || *p == '\t') p++;
-        if (!*p) break;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (!*p)
+            break;
         const char *tok = p;
-        while (*p && *p != ' ' && *p != '\t') p++;
+        while (*p && *p != ' ' && *p != '\t')
+            p++;
         size_t tlen = (size_t)(p - tok);
-        if (tlen == 0) continue;
+        if (tlen == 0)
+            continue;
 
         char sign = '+';
         const char *body = tok;
@@ -862,7 +936,8 @@ static int parse_tag_args(const char *args, char *out, size_t cap) {
             ed_set_status_message("mail-tag: too many tags");
             return -1;
         }
-        if (n) out[n++] = ' ';
+        if (n)
+            out[n++] = ' ';
         out[n++] = sign;
         memcpy(out + n, body, blen);
         n += blen;
@@ -898,27 +973,30 @@ void mail_apply_tags(const char *args) {
         return;
     }
     Window *win = window_cur();
-    if (!win) return;
+    if (!win)
+        return;
 
     int row_start = win->cursor.y;
-    int row_end   = win->cursor.y;
-    if (win->sel.type == SEL_VISUAL ||
-        win->sel.type == SEL_VISUAL_LINE ||
+    int row_end = win->cursor.y;
+    if (win->sel.type == SEL_VISUAL || win->sel.type == SEL_VISUAL_LINE ||
         win->sel.type == SEL_VISUAL_BLOCK) {
         int ay = win->sel.anchor_y;
         int cy = win->cursor.y;
         row_start = ay < cy ? ay : cy;
-        row_end   = ay > cy ? ay : cy;
+        row_end = ay > cy ? ay : cy;
     }
-    if (row_start < 0) row_start = 0;
-    if (row_end >= mail_entry_count) row_end = mail_entry_count - 1;
+    if (row_start < 0)
+        row_start = 0;
+    if (row_end >= mail_entry_count)
+        row_end = mail_entry_count - 1;
     if (row_start > row_end) {
         ed_set_status_message("mail-tag: no thread under cursor");
         return;
     }
 
     char tag_args[512];
-    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0) return;
+    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0)
+        return;
 
     /* Build a thread-id query: thread:a or thread:b or ... */
     char query[4096];
@@ -926,7 +1004,8 @@ void mail_apply_tags(const char *args) {
     int applied = 0;
     for (int r = row_start; r <= row_end; r++) {
         const char *tid = mail_entries[r].thread_id;
-        if (!tid[0]) continue;
+        if (!tid[0])
+            continue;
         size_t tlen = strlen(tid);
         const char *sep = applied ? " or " : "";
         size_t slen = strlen(sep);
@@ -934,8 +1013,10 @@ void mail_apply_tags(const char *args) {
             ed_set_status_message("mail-tag: too many threads selected");
             return;
         }
-        memcpy(query + qout, sep, slen); qout += slen;
-        memcpy(query + qout, tid, tlen); qout += tlen;
+        memcpy(query + qout, sep, slen);
+        qout += slen;
+        memcpy(query + qout, tid, tlen);
+        qout += tlen;
         applied++;
     }
     query[qout] = '\0';
@@ -947,8 +1028,8 @@ void mail_apply_tags(const char *args) {
     char qq[8200];
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[8800];
-    snprintf(cmd, sizeof(cmd),
-             "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
+    snprintf(cmd, sizeof(cmd), "notmuch tag %s -- %s 2>/dev/null", tag_args,
+             qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
@@ -961,11 +1042,12 @@ void mail_apply_tags(const char *args) {
 
     mail_refresh_keep_cursor();
 
-    if (was_visual) ed_set_mode(MODE_NORMAL);
-    //kb_move_down();
+    if (was_visual)
+        ed_set_mode(MODE_NORMAL);
+    // kb_move_down();
 
-    ed_set_status_message("mail-tag: %s applied to %d thread%s",
-                          tag_args, applied, applied == 1 ? "" : "s");
+    ed_set_status_message("mail-tag: %s applied to %d thread%s", tag_args,
+                          applied, applied == 1 ? "" : "s");
 }
 
 void mail_apply_tags_query(const char *args) {
@@ -976,7 +1058,8 @@ void mail_apply_tags_query(const char *args) {
     }
 
     char tag_args[512];
-    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0) return;
+    if (parse_tag_args(args, tag_args, sizeof(tag_args)) != 0)
+        return;
 
     char full_query[1100];
     build_full_query(full_query, sizeof(full_query));
@@ -984,8 +1067,8 @@ void mail_apply_tags_query(const char *args) {
     char qq[2300];
     shell_escape_single(full_query, qq, sizeof(qq));
     char cmd[3000];
-    snprintf(cmd, sizeof(cmd),
-             "notmuch tag %s -- %s 2>/dev/null", tag_args, qq);
+    snprintf(cmd, sizeof(cmd), "notmuch tag %s -- %s 2>/dev/null", tag_args,
+             qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
@@ -993,8 +1076,8 @@ void mail_apply_tags_query(const char *args) {
     }
 
     mail_refresh_keep_cursor();
-    ed_set_status_message("mail-tag: %s applied to all (%s)",
-                          tag_args, full_query);
+    ed_set_status_message("mail-tag: %s applied to all (%s)", tag_args,
+                          full_query);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1014,14 +1097,12 @@ static void filter_submit(Prompt *p, const char *line, int len) {
 }
 
 static const PromptVTable filter_vt = {
-    .label     = filter_label,
-    .on_key    = prompt_default_on_key,
+    .label = filter_label,
+    .on_key = prompt_default_on_key,
     .on_submit = filter_submit,
 };
 
-void mail_filter_prompt(void) {
-    prompt_open(&filter_vt, NULL);
-}
+void mail_filter_prompt(void) { prompt_open(&filter_vt, NULL); }
 
 /* ------------------------------------------------------------------ */
 /* Mailbox sidebar                                                     */
@@ -1029,33 +1110,46 @@ void mail_filter_prompt(void) {
 
 /* Highlight: indented rows (folders) dim, top-level rows bold. */
 static void mailbox_render_hook(const HookRenderEvent *ev) {
-    if (!ev || !ev->buf || !ev->spans) return;
+    if (!ev || !ev->buf || !ev->spans)
+        return;
     Buffer *buf = ev->buf;
     for (int row = ev->row_start; row < ev->row_end; row++) {
-        if (row < 0 || row >= buf->num_rows) continue;
+        if (row < 0 || row >= buf->num_rows)
+            continue;
         const char *raw = buf->rows[row].chars.data;
-        int         len = (int)buf->rows[row].chars.len;
-        if (!raw || len <= 0) continue;
+        int len = (int)buf->rows[row].chars.len;
+        if (!raw || len <= 0)
+            continue;
 
         int indented = (len >= 2 && raw[0] == ' ' && raw[1] == ' ');
         MailboxKind kind = (row < mailbox_entry_count)
-                               ? mailbox_entries[row].kind : MBE_MAILBOX;
+                               ? mailbox_entries[row].kind
+                               : MBE_MAILBOX;
 
         int active = 0;
         if (row < mailbox_entry_count) {
             const MailboxEntry *e = &mailbox_entries[row];
-            if      (e->kind == MBE_MAILBOX) active = strcmp(e->query, mailbox_query) == 0;
-            else if (e->kind == MBE_VIEW)    active = strcmp(e->query, base_query)    == 0;
-            else if (e->kind == MBE_ALL)     active = !mailbox_query[0] && q_is_wild(base_query);
+            if (e->kind == MBE_MAILBOX)
+                active = strcmp(e->query, mailbox_query) == 0;
+            else if (e->kind == MBE_VIEW)
+                active = strcmp(e->query, base_query) == 0;
+            else if (e->kind == MBE_ALL)
+                active = !mailbox_query[0] && q_is_wild(base_query);
         }
 
         const char *sgr;
-        if (kind == MBE_HEADER) sgr = MC_META;
-        else if (active)        sgr = MC_UNREAD_SUBJECT;     /* bold fg */
-        else if (kind == MBE_ALL)  sgr = MC_READ_SUBJECT;    /* normal  */
-        else if (kind == MBE_VIEW) sgr = MC_UNREAD_FLAG;     /* bold accent */
-        else if (indented)         sgr = MC_META;            /* dim     */
-        else                       sgr = MC_READ_SENDER;     /* blue    */
+        if (kind == MBE_HEADER)
+            sgr = MC_META;
+        else if (active)
+            sgr = MC_UNREAD_SUBJECT; /* bold fg */
+        else if (kind == MBE_ALL)
+            sgr = MC_READ_SUBJECT; /* normal  */
+        else if (kind == MBE_VIEW)
+            sgr = MC_UNREAD_FLAG; /* bold accent */
+        else if (indented)
+            sgr = MC_META; /* dim     */
+        else
+            sgr = MC_READ_SENDER; /* blue    */
 
         attrspan_push(ev->spans, row, 0, len, sgr, 0);
     }
@@ -1075,9 +1169,11 @@ void mail_open_mailboxes(void) {
     }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);    buf->title    = strdup("Mailboxes");
-    free(buf->filetype); buf->filetype = strdup("mail-mailboxes");
-    buf->readonly   = 1;
+    free(buf->title);
+    buf->title = strdup("Mailboxes");
+    free(buf->filetype);
+    buf->filetype = strdup("mail-mailboxes");
+    buf->readonly = 1;
     /* Highlighting via mailbox_render_hook (registered in
      * mail_plugin_init, filtered on filetype). */
 
@@ -1089,7 +1185,8 @@ void mail_open_mailboxes(void) {
         int active_row = 0;
         for (int i = 0; i < mailbox_entry_count; i++) {
             const MailboxEntry *e = &mailbox_entries[i];
-            buf_row_insert_in(buf, buf->num_rows, e->display, strlen(e->display));
+            buf_row_insert_in(buf, buf->num_rows, e->display,
+                              strlen(e->display));
             if (e->kind == MBE_MAILBOX && strcmp(e->query, mailbox_query) == 0)
                 active_row = i;
             else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
@@ -1120,20 +1217,21 @@ static void sanitize_name(const char *in, char *out, size_t cap) {
     for (const char *p = in; *p && n + 1 < cap; p++) {
         unsigned char c = (unsigned char)*p;
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '.' || c == '-' || c == '_')
+            (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_')
             out[n++] = (char)c;
         else
             out[n++] = '_';
     }
-    if (n == 0) out[n++] = 'x';
+    if (n == 0)
+        out[n++] = 'x';
     out[n] = '\0';
 }
 
 /* Expand a leading ~ or ~/ into $HOME (leaving ~user and HOME-missing
  * as-is). Returns a freshly malloced string; the caller frees. */
 static char *expand_home_dup(const char *in) {
-    if (!in) return NULL;
+    if (!in)
+        return NULL;
     char buf[PATH_MAX];
     str_expand_tilde(in, buf, sizeof(buf));
     return strdup(buf);
@@ -1144,7 +1242,8 @@ static char *expand_home_dup(const char *in) {
  * Returns 0 on success, non-zero on failure. */
 static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     char safe[256];
-    sanitize_name(a->filename[0] ? a->filename : "attachment", safe, sizeof(safe));
+    sanitize_name(a->filename[0] ? a->filename : "attachment", safe,
+                  sizeof(safe));
 
     char path[1024];
     if (dest_dir) {
@@ -1166,9 +1265,11 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
              "notmuch show --part=%d --format=raw -- %s > %s 2>/dev/null",
              a->part_id, qq, pq);
     int rc = term_cmd_system(cmd);
-    if (rc != 0) return rc;
+    if (rc != 0)
+        return rc;
 
-    if (!dest_dir) open_path(path);
+    if (!dest_dir)
+        open_path(path);
     return 0;
 }
 
@@ -1178,43 +1279,52 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
  * + timestamp + monotonic counter) so concurrent forwards don't
  * stomp each other. */
 int mail_extract_attachments_to_tmp(char ***out_paths) {
-    if (out_paths) *out_paths = NULL;
+    if (out_paths)
+        *out_paths = NULL;
 
     Buffer *buf = buf_cur();
-    if (!buf || !buf->filetype ||
-        strcmp(buf->filetype, "mail-message") != 0)
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0)
         return 0;
-    if (attach_count == 0) return 0;
+    if (attach_count == 0)
+        return 0;
 
     static int fwd_seq = 0;
     fwd_seq++;
     char dir[256];
-    snprintf(dir, sizeof(dir), "/tmp/hed-mail-fwd-%d-%ld-%d",
-             (int)getpid(), (long)time(NULL), fwd_seq);
-    if (fs_mkdir_p(dir) != ED_OK) return 0;
+    snprintf(dir, sizeof(dir), "/tmp/hed-mail-fwd-%d-%ld-%d", (int)getpid(),
+             (long)time(NULL), fwd_seq);
+    if (fs_mkdir_p(dir) != ED_OK)
+        return 0;
 
     char **paths = calloc((size_t)attach_count, sizeof(char *));
-    if (!paths) return 0;
+    if (!paths)
+        return 0;
     int n = 0;
 
     for (int i = 0; i < attach_count; i++) {
         /* Reuse extract_attachment so we share one extraction path. */
-        if (extract_attachment(&attachments[i], dir) != 0) continue;
+        if (extract_attachment(&attachments[i], dir) != 0)
+            continue;
         char safe[256];
-        sanitize_name(attachments[i].filename[0]
-                      ? attachments[i].filename : "attachment",
+        sanitize_name(attachments[i].filename[0] ? attachments[i].filename
+                                                 : "attachment",
                       safe, sizeof(safe));
         char path[1024];
         snprintf(path, sizeof(path), "%s/%s", dir, safe);
         paths[n] = strdup(path);
-        if (paths[n]) n++;
+        if (paths[n])
+            n++;
     }
 
-    if (n == 0) { free(paths); return 0; }
+    if (n == 0) {
+        free(paths);
+        return 0;
+    }
     if (out_paths) {
         *out_paths = paths;
     } else {
-        for (int i = 0; i < n; i++) free(paths[i]);
+        for (int i = 0; i < n; i++)
+            free(paths[i]);
         free(paths);
     }
     return n;
@@ -1226,15 +1336,17 @@ static void act_on_attachments(const MailAttach **picks, int n,
                                const char *dest_dir) {
     int ok = 0, fail = 0;
     for (int i = 0; i < n; i++) {
-        if (extract_attachment(picks[i], dest_dir) == 0) ok++;
-        else fail++;
+        if (extract_attachment(picks[i], dest_dir) == 0)
+            ok++;
+        else
+            fail++;
     }
     if (dest_dir) {
         if (fail == 0)
             ed_set_status_message("mail-attach: saved %d to %s", ok, dest_dir);
         else
-            ed_set_status_message(
-                "mail-attach: saved %d, %d failed (dir %s)", ok, fail, dest_dir);
+            ed_set_status_message("mail-attach: saved %d, %d failed (dir %s)",
+                                  ok, fail, dest_dir);
     } else if (fail > 0) {
         ed_set_status_message("mail-attach: opened %d, %d failed", ok, fail);
     }
@@ -1242,8 +1354,7 @@ static void act_on_attachments(const MailAttach **picks, int n,
 
 void mail_attach_action(int part_id, const char *dest_dir) {
     Buffer *buf = buf_cur();
-    if (!buf || !buf->filetype ||
-        strcmp(buf->filetype, "mail-message") != 0) {
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0) {
         ed_set_status_message("mail-attach: open a message first");
         return;
     }
@@ -1263,7 +1374,8 @@ void mail_attach_action(int part_id, const char *dest_dir) {
         }
         /* Trim a single trailing slash so "%s/%s" stays clean. */
         size_t L = strlen(resolved_dir);
-        while (L > 1 && resolved_dir[L - 1] == '/') resolved_dir[--L] = '\0';
+        while (L > 1 && resolved_dir[L - 1] == '/')
+            resolved_dir[--L] = '\0';
         if (fs_mkdir_p(resolved_dir) != ED_OK) {
             ed_set_status_message("mail-attach: cannot create dir %s",
                                   resolved_dir);
@@ -1276,7 +1388,7 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     if (part_id >= 0) {
         for (int i = 0; i < attach_count; i++) {
             if (attachments[i].part_id == part_id) {
-                const MailAttach *one[1] = { &attachments[i] };
+                const MailAttach *one[1] = {&attachments[i]};
                 act_on_attachments(one, 1, resolved_dir);
                 free(resolved_dir);
                 return;
@@ -1290,7 +1402,7 @@ void mail_attach_action(int part_id, const char *dest_dir) {
 
     /* Auto-pick when there is only one attachment. */
     if (attach_count == 1) {
-        const MailAttach *one[1] = { &attachments[0] };
+        const MailAttach *one[1] = {&attachments[0]};
         act_on_attachments(one, 1, resolved_dir);
         free(resolved_dir);
         return;
@@ -1301,23 +1413,25 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     const char **items = malloc(sizeof(char *) * (size_t)attach_count);
     char **labels = malloc(sizeof(char *) * (size_t)attach_count);
     if (!items || !labels) {
-        free(items); free(labels); free(resolved_dir);
+        free(items);
+        free(labels);
+        free(resolved_dir);
         ed_set_status_message("mail-attach: out of memory");
         return;
     }
     for (int i = 0; i < attach_count; i++) {
         char tmp[320];
-        snprintf(tmp, sizeof(tmp), "[%d] %s",
-                 attachments[i].part_id,
-                 attachments[i].filename[0]
-                     ? attachments[i].filename : "(unnamed)");
+        snprintf(tmp, sizeof(tmp), "[%d] %s", attachments[i].part_id,
+                 attachments[i].filename[0] ? attachments[i].filename
+                                            : "(unnamed)");
         labels[i] = strdup(tmp);
-        items[i]  = labels[i];
+        items[i] = labels[i];
     }
     char **sel = NULL;
     int cnt = 0;
     int ok = picker_list(items, attach_count, 1, &sel, &cnt);
-    for (int i = 0; i < attach_count; i++) free(labels[i]);
+    for (int i = 0; i < attach_count; i++)
+        free(labels[i]);
     free(labels);
     free(items);
 
@@ -1337,9 +1451,11 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     }
     int picked = 0;
     for (int i = 0; i < cnt; i++) {
-        if (!sel[i] || sel[i][0] != '[') continue;
+        if (!sel[i] || sel[i][0] != '[')
+            continue;
         int pid = -1;
-        if (sscanf(sel[i], "[%d]", &pid) != 1 || pid < 0) continue;
+        if (sscanf(sel[i], "[%d]", &pid) != 1 || pid < 0)
+            continue;
         for (int j = 0; j < attach_count; j++) {
             if (attachments[j].part_id == pid) {
                 picks[picked++] = &attachments[j];
@@ -1360,13 +1476,15 @@ void mail_attach_action(int part_id, const char *dest_dir) {
 
 void mail_handle_mailbox_enter(void) {
     Buffer *buf = buf_cur();
-    if (!buf || !buf->filetype ||
-        strcmp(buf->filetype, "mail-mailboxes") != 0) return;
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-mailboxes") != 0)
+        return;
 
     Window *win = window_cur();
-    if (!win) return;
+    if (!win)
+        return;
     int row = win->cursor.y;
-    if (row < 0 || row >= mailbox_entry_count) return;
+    if (row < 0 || row >= mailbox_entry_count)
+        return;
 
     MailboxEntry *e = &mailbox_entries[row];
     switch (e->kind) {
@@ -1387,8 +1505,7 @@ void mail_handle_mailbox_enter(void) {
 }
 
 void mail_register_render_hooks(void) {
-    hook_register_render(HOOK_RENDER_PRE, -1, "mail",
-                         mail_list_render_hook);
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail", mail_list_render_hook);
     hook_register_render(HOOK_RENDER_PRE, -1, "mail-message",
                          mail_msg_render_hook);
     /* Same shape as mail-message — composing a reply or new message

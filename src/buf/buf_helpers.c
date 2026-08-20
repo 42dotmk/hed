@@ -256,7 +256,7 @@ void buf_cursor_move_bottom(void) {
 /*** Screen positioning helpers ***/
 
 void buf_center_screen(void) {
-	BUFWIN(buf,win);
+    BUFWIN(buf, win);
     if (!PTR_VALID(win))
         return;
     /* Center current line in the middle of the current window (logical rows) */
@@ -279,7 +279,8 @@ void buf_scroll_half_page_up(void) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
     if (buf->filename)
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
     int half_page = E.screen_rows / 2;
     win->cursor.y -= half_page;
     if (win->cursor.y < 0)
@@ -292,7 +293,8 @@ void buf_scroll_half_page_down(void) {
     if (!PTR_VALID(buf) || !PTR_VALID(win))
         return;
     if (buf->filename)
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
     int half_page = E.screen_rows / 2;
     win->cursor.y += half_page;
     if (win->cursor.y >= buf->num_rows) {
@@ -358,13 +360,13 @@ void buf_join_lines(void) {
 }
 
 void buf_duplicate_line(void) {
-	BUF(buf)
+    BUF(buf)
     buf_yank_line_in(buf);
     paste_from_register(buf, '"', true);
 }
 
 void buf_move_line_up(void) {
-	ASSERT_EDIT(buf, win);
+    ASSERT_EDIT(buf, win);
     if (win->cursor.y <= 0)
         return;
     undo_begin(buf, "move line up");
@@ -379,7 +381,7 @@ void buf_move_line_up(void) {
 }
 
 void buf_move_line_down(void) {
-	ASSERT_EDIT(buf, win)
+    ASSERT_EDIT(buf, win)
     if (win->cursor.y >= buf->num_rows - 1)
         return;
     undo_begin(buf, "move line down");
@@ -530,11 +532,14 @@ void buf_goto_line(int line_num) {
 
     /* Convert from 1-indexed to 0-indexed */
     line_num--;
-    if (line_num < 0) line_num = 0;
-    if (line_num >= buf->num_rows) line_num = buf->num_rows - 1;
+    if (line_num < 0)
+        line_num = 0;
+    if (line_num >= buf->num_rows)
+        line_num = buf->num_rows - 1;
 
     if (abs(line_num - win->cursor.y) >= 5 && buf->filename)
-        jump_list_add(&E.jump_list, buf->filename, win->cursor.x, win->cursor.y);
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
 
     win->cursor.y = line_num;
     win->cursor.x = 0;
@@ -551,7 +556,7 @@ int buf_get_line_under_cursor(StrBuf *out) {
     Row *row = &buf->rows[sel.start.line];
     strbuf_free(out);
     *out = strbuf_from(row->chars.data + sel.start.col,
-                     (size_t)(sel.end.col - sel.start.col));
+                       (size_t)(sel.end.col - sel.start.col));
     return 1;
 }
 
@@ -760,7 +765,7 @@ int buf_get_paragraph_under_cursor(StrBuf *out) {
             end_col = (int)r->chars.len;
         if (end_col > start_col) {
             strbuf_append(out, r->chars.data + start_col,
-                        (size_t)(end_col - start_col));
+                          (size_t)(end_col - start_col));
         }
         if (y != sel.end.line)
             strbuf_append_char(out, '\n');
@@ -879,18 +884,24 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
  * below the block, and shorter rows are left untouched. */
 void buf_delete_block(Buffer *buf, int sy, int ey, int start_rx,
                       int end_rx_excl) {
-    if (!buf) return;
-    if (sy < 0) sy = 0;
-    if (ey >= buf->num_rows) ey = buf->num_rows - 1;
+    if (!buf)
+        return;
+    if (sy < 0)
+        sy = 0;
+    if (ey >= buf->num_rows)
+        ey = buf->num_rows - 1;
     /* One undo group for the whole rectangle, so a single `u` restores it. */
     undo_begin(buf, "block delete");
     for (int y = sy; y <= ey; y++) {
         Row *r = &buf->rows[y];
         int c0 = buf_row_rx_to_cx(r, start_rx);
         int c1 = buf_row_rx_to_cx(r, end_rx_excl);
-        if (c0 > (int)r->chars.len) c0 = (int)r->chars.len;
-        if (c1 > (int)r->chars.len) c1 = (int)r->chars.len;
-        if (c1 <= c0) continue;
+        if (c0 > (int)r->chars.len)
+            c0 = (int)r->chars.len;
+        if (c1 > (int)r->chars.len)
+            c1 = (int)r->chars.len;
+        if (c1 <= c0)
+            continue;
         undo_record_replace(buf, y);
         size_t tail = r->chars.len - (size_t)c1;
         memmove(r->chars.data + c0, r->chars.data + c1, tail);
@@ -916,7 +927,11 @@ void buf_delete_selection(TextSelection *sel) {
      * keeps any other caller from triggering a linear line-spanning delete.) */
     if (sel->type == SEL_VISUAL_BLOCK) {
         int sy = sel->start.line, ey = sel->end.line;
-        if (sy > ey) { int t = sy; sy = ey; ey = t; }
+        if (sy > ey) {
+            int t = sy;
+            sy = ey;
+            ey = t;
+        }
         Row *r0 = (sy >= 0 && sy < buf->num_rows) ? &buf->rows[sy] : NULL;
         Row *r1 = (ey >= 0 && ey < buf->num_rows) ? &buf->rows[ey] : NULL;
         int srx = r0 ? buf_row_cx_to_rx(r0, sel->start.col) : 0;
@@ -935,8 +950,8 @@ void buf_delete_selection(TextSelection *sel) {
     int full_line_cross = (sel->end.line == sel->start.line + 1 &&
                            sel->end.col == 0 && sel->start.col == 0);
     int full_line_last = 0;
-    if (!full_line_cross && sel->start.line == sel->end.line &&
-        del_line >= 0 && del_line < buf->num_rows) {
+    if (!full_line_cross && sel->start.line == sel->end.line && del_line >= 0 &&
+        del_line < buf->num_rows) {
         int row_len = (int)buf->rows[del_line].chars.len;
         full_line_last = (sel->start.col == 0 && sel->end.col == row_len);
     }
@@ -960,8 +975,8 @@ void buf_delete_selection(TextSelection *sel) {
     int cx = win->cursor.x;
     if (cy >= 0 && cy < buf->num_rows) {
         Row *row = &buf->rows[cy];
-        if (cx > 0 && cx < (int)row->chars.len &&
-            row->chars.data[cx] == ' ' && row->chars.data[cx - 1] == ' ') {
+        if (cx > 0 && cx < (int)row->chars.len && row->chars.data[cx] == ' ' &&
+            row->chars.data[cx - 1] == ' ') {
             undo_record_replace(buf, cy);
             size_t tail = row->chars.len - (cx + 1);
             memmove(row->chars.data + cx, row->chars.data + cx + 1, tail);
@@ -1292,7 +1307,8 @@ void buf_select_paragraph(void) {
 
 /* Yank data insertion */
 
-EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankData *yd, bool after) {
+EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col,
+                             const YankData *yd, bool after) {
     if (!buf || !yd || yd->num_rows == 0 || !yd->rows) {
         return ED_ERR_INVALID_ARG;
     }
@@ -1308,106 +1324,113 @@ EdError buf_insert_yank_data(Buffer *buf, int at_line, int at_col, const YankDat
     }
 
     /* Clamp line to valid range */
-    if (at_line < 0) at_line = 0;
-    if (at_line >= buf->num_rows) at_line = buf->num_rows - 1;
+    if (at_line < 0)
+        at_line = 0;
+    if (at_line >= buf->num_rows)
+        at_line = buf->num_rows - 1;
 
     switch (yd->type) {
-        case SEL_VISUAL: {
-            /* Character-wise paste: inline at cursor */
-            Row *r = &buf->rows[at_line];
-            int insert_col = at_col;
+    case SEL_VISUAL: {
+        /* Character-wise paste: inline at cursor */
+        Row *r = &buf->rows[at_line];
+        int insert_col = at_col;
 
-            if (after && insert_col < (int)r->chars.len) {
-                insert_col++;
-            }
-            if (insert_col < 0) insert_col = 0;
-            if (insert_col > (int)r->chars.len) insert_col = (int)r->chars.len;
-
-            if (yd->num_rows == 1) {
-                /* Single line: insert inline */
-                for (size_t i = 0; i < yd->rows[0].len; i++) {
-                    buf_row_insert_char_in(buf, r, insert_col + (int)i, yd->rows[0].data[i]);
-                }
-            } else {
-                /* Multiple lines: split current line and insert between */
-                /* Save text after cursor */
-                undo_record_replace(buf, at_line);
-                StrBuf rest = strbuf_new();
-                if (insert_col < (int)r->chars.len) {
-                    strbuf_append(&rest, r->chars.data + insert_col,
-                               r->chars.len - (size_t)insert_col);
-                    r->chars.len = (size_t)insert_col;
-                }
-
-                /* Append first yank row to current line */
-                strbuf_append(&r->chars, yd->rows[0].data, yd->rows[0].len);
-                buf_row_update(r);
-
-                /* Insert middle rows as new lines */
-                for (int i = 1; i < yd->num_rows - 1; i++) {
-                    buf_row_insert_in(buf, at_line + i,
-                                     yd->rows[i].data, yd->rows[i].len);
-                }
-
-                /* Insert last row with saved rest */
-                int last_idx = at_line + yd->num_rows - 1;
-                StrBuf last_line = strbuf_new();
-                strbuf_append(&last_line, yd->rows[yd->num_rows - 1].data,
-                           yd->rows[yd->num_rows - 1].len);
-                strbuf_append(&last_line, rest.data, rest.len);
-                buf_row_insert_in(buf, last_idx, last_line.data, last_line.len);
-
-                strbuf_free(&last_line);
-                strbuf_free(&rest);
-            }
-            break;
+        if (after && insert_col < (int)r->chars.len) {
+            insert_col++;
         }
+        if (insert_col < 0)
+            insert_col = 0;
+        if (insert_col > (int)r->chars.len)
+            insert_col = (int)r->chars.len;
 
-        case SEL_VISUAL_LINE: {
-            /* Line-wise paste: insert as full lines */
-            int insert_line = after ? (at_line + 1) : at_line;
-            if (insert_line > buf->num_rows) insert_line = buf->num_rows;
-
-            for (int i = 0; i < yd->num_rows; i++) {
-                buf_row_insert_in(buf, insert_line + i,
-                                 yd->rows[i].data, yd->rows[i].len);
+        if (yd->num_rows == 1) {
+            /* Single line: insert inline */
+            for (size_t i = 0; i < yd->rows[0].len; i++) {
+                buf_row_insert_char_in(buf, r, insert_col + (int)i,
+                                       yd->rows[0].data[i]);
             }
-            break;
-        }
-
-        case SEL_VISUAL_BLOCK: {
-            /* Block-wise paste: insert block at column */
-            int insert_col = after ? (at_col + 1) : at_col;
-            if (insert_col < 0) insert_col = 0;
-
-            for (int i = 0; i < yd->num_rows; i++) {
-                int target_line = at_line + i;
-
-                /* Ensure we have enough lines */
-                while (target_line >= buf->num_rows) {
-                    buf_row_insert_in(buf, buf->num_rows, "", 0);
-                }
-
-                Row *r = &buf->rows[target_line];
-
-                /* Pad line with spaces if needed */
-                if ((int)r->chars.len < insert_col) {
-                    undo_record_replace(buf, target_line);
-                    while ((int)r->chars.len < insert_col)
-                        strbuf_append_char(&r->chars, ' ');
-                }
-
-                /* Insert the block segment */
-                for (size_t j = 0; j < yd->rows[i].len; j++) {
-                    buf_row_insert_char_in(buf, r, insert_col + (int)j,
-                                          yd->rows[i].data[j]);
-                }
+        } else {
+            /* Multiple lines: split current line and insert between */
+            /* Save text after cursor */
+            undo_record_replace(buf, at_line);
+            StrBuf rest = strbuf_new();
+            if (insert_col < (int)r->chars.len) {
+                strbuf_append(&rest, r->chars.data + insert_col,
+                              r->chars.len - (size_t)insert_col);
+                r->chars.len = (size_t)insert_col;
             }
-            break;
-        }
 
-        case SEL_NONE:
-            return ED_ERR_INVALID_ARG;
+            /* Append first yank row to current line */
+            strbuf_append(&r->chars, yd->rows[0].data, yd->rows[0].len);
+            buf_row_update(r);
+
+            /* Insert middle rows as new lines */
+            for (int i = 1; i < yd->num_rows - 1; i++) {
+                buf_row_insert_in(buf, at_line + i, yd->rows[i].data,
+                                  yd->rows[i].len);
+            }
+
+            /* Insert last row with saved rest */
+            int last_idx = at_line + yd->num_rows - 1;
+            StrBuf last_line = strbuf_new();
+            strbuf_append(&last_line, yd->rows[yd->num_rows - 1].data,
+                          yd->rows[yd->num_rows - 1].len);
+            strbuf_append(&last_line, rest.data, rest.len);
+            buf_row_insert_in(buf, last_idx, last_line.data, last_line.len);
+
+            strbuf_free(&last_line);
+            strbuf_free(&rest);
+        }
+        break;
+    }
+
+    case SEL_VISUAL_LINE: {
+        /* Line-wise paste: insert as full lines */
+        int insert_line = after ? (at_line + 1) : at_line;
+        if (insert_line > buf->num_rows)
+            insert_line = buf->num_rows;
+
+        for (int i = 0; i < yd->num_rows; i++) {
+            buf_row_insert_in(buf, insert_line + i, yd->rows[i].data,
+                              yd->rows[i].len);
+        }
+        break;
+    }
+
+    case SEL_VISUAL_BLOCK: {
+        /* Block-wise paste: insert block at column */
+        int insert_col = after ? (at_col + 1) : at_col;
+        if (insert_col < 0)
+            insert_col = 0;
+
+        for (int i = 0; i < yd->num_rows; i++) {
+            int target_line = at_line + i;
+
+            /* Ensure we have enough lines */
+            while (target_line >= buf->num_rows) {
+                buf_row_insert_in(buf, buf->num_rows, "", 0);
+            }
+
+            Row *r = &buf->rows[target_line];
+
+            /* Pad line with spaces if needed */
+            if ((int)r->chars.len < insert_col) {
+                undo_record_replace(buf, target_line);
+                while ((int)r->chars.len < insert_col)
+                    strbuf_append_char(&r->chars, ' ');
+            }
+
+            /* Insert the block segment */
+            for (size_t j = 0; j < yd->rows[i].len; j++) {
+                buf_row_insert_char_in(buf, r, insert_col + (int)j,
+                                       yd->rows[i].data[j]);
+            }
+        }
+        break;
+    }
+
+    case SEL_NONE:
+        return ED_ERR_INVALID_ARG;
     }
 
     buf->dirty++;

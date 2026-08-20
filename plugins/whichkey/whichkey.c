@@ -6,30 +6,30 @@
  * the panel; if you keep typing within the delay window the timer
  * is rescheduled. */
 
+#include "buf/buffer.h"
+#include "commands/registry.h"
+#include "editor.h"
 #include "hed.h"
 #include "hooks.h"
 #include "input/keybinds.h"
-#include "commands/registry.h"
 #include "select_loop.h"
-#include "buf/buffer.h"
-#include "editor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* Display caps. The status_msg buffer is 4 KB; leave headroom. */
-#define MAX_LINES   18
-#define MIN_COL_W   28   /* below this we drop to fewer columns */
-#define COL_SEP     " | "  /* delimiter rendered between cells */
-#define COL_SEP_W   3      /* width of COL_SEP */
-#define MAX_COLS    4
+#define MAX_LINES 18
+#define MIN_COL_W 28  /* below this we drop to fewer columns */
+#define COL_SEP " | " /* delimiter rendered between cells */
+#define COL_SEP_W 3   /* width of COL_SEP */
+#define MAX_COLS 4
 
-#define WK_TIMER_NAME    "whichkey"
-#define WK_DEFAULT_DELAY 300  /* ms */
+#define WK_TIMER_NAME "whichkey"
+#define WK_DEFAULT_DELAY 300 /* ms */
 
 /* Track whether we currently own the message bar so we don't clobber
  * unrelated status messages (e.g. ":w" feedback) on the next clear. */
-static int wk_active  = 0;
+static int wk_active = 0;
 static int wk_enabled = 1;
 static int wk_delay_ms = WK_DEFAULT_DELAY;
 
@@ -37,7 +37,7 @@ static int wk_delay_ms = WK_DEFAULT_DELAY;
  * flushes whatever's here when it fires; on_feed overwrites it on
  * every keystroke so the popup always reflects the latest state. */
 static char wk_pending[3800];
-static int  wk_pending_ready = 0;
+static int wk_pending_ready = 0;
 
 static void on_feed(const HookKeybindFeedEvent *e);
 static void on_invoke(const HookKeybindInvokeEvent *e);
@@ -74,21 +74,21 @@ static void wk_clear(void) {
 
 /* Format the partial-match table for `e` into `out`. Returns the
  * number of bytes written (NUL-terminated). */
-static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) {
+static size_t wk_format(const HookKeybindFeedEvent *e, char *out,
+                        size_t outsz) {
     size_t off = 0;
 
     /* Header: current sequence (and count if any). */
     if (e->has_count) {
-        off += (size_t)snprintf(out + off, outsz - off,
-                                "%d %s\n", e->count,
+        off += (size_t)snprintf(out + off, outsz - off, "%d %s\n", e->count,
                                 e->active_sequence ? e->active_sequence : "");
     } else {
-        off += (size_t)snprintf(out + off, outsz - off,
-                                "%s\n", e->active_sequence ? e->active_sequence : "");
+        off += (size_t)snprintf(out + off, outsz - off, "%s\n",
+                                e->active_sequence ? e->active_sequence : "");
     }
 
     int prefix_len = e->active_len;
-    int truncated  = 0;
+    int truncated = 0;
 
     /* Collect visible matches (drop the exact match — we're showing
      * what *more* the user could type) and sort by tail. ASCII puts
@@ -102,8 +102,10 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
     if (sorted) {
         for (int i = 0; i < e->match_count; i++) {
             const KeybindMatchView *m = &e->matches[i];
-            if (!m->sequence) continue;
-            if ((int)strlen(m->sequence) == prefix_len) continue;
+            if (!m->sequence)
+                continue;
+            if ((int)strlen(m->sequence) == prefix_len)
+                continue;
             sorted[n++] = m;
         }
         wk_sort_prefix_len = prefix_len;
@@ -121,29 +123,35 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
         }
     }
     int col_w = (term_cols - COL_SEP_W * (ncols - 1)) / ncols;
-    if (col_w < MIN_COL_W) col_w = MIN_COL_W;
+    if (col_w < MIN_COL_W)
+        col_w = MIN_COL_W;
 
     /* Pick the tail column width from the data, capped so descriptions
      * still get room. */
     int max_tail = 1;
     for (int i = 0; i < n; i++) {
         int t = (int)strlen(sorted[i]->sequence + prefix_len);
-        if (t > max_tail) max_tail = t;
+        if (t > max_tail)
+            max_tail = t;
     }
     int tail_w = max_tail;
-    if (tail_w > col_w / 3) tail_w = col_w / 3;
+    if (tail_w > col_w / 3)
+        tail_w = col_w / 3;
     int desc_w = col_w - tail_w - 2;
-    if (desc_w < 4) desc_w = 4;
+    if (desc_w < 4)
+        desc_w = 4;
 
     int max_cells = MAX_LINES * ncols;
     int cells = n < max_cells ? n : max_cells;
-    if (cells < n) truncated = 1;
+    if (cells < n)
+        truncated = 1;
 
     /* Column-major layout: items fill the first column top-to-bottom,
      * then the second, etc. Reading down a column gives an
      * alphabetical run, so visual order matches the sort. */
     int nrows = (cells + ncols - 1) / ncols;
-    if (nrows < 1) nrows = 1;
+    if (nrows < 1)
+        nrows = 1;
 
     for (int r = 0; r < nrows; r++) {
         for (int c = 0; c < ncols; c++) {
@@ -157,8 +165,8 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
                     truncated = 1;
                     break;
                 }
-                off += (size_t)snprintf(out + off, outsz - off,
-                                        " %-*s %-*s", tail_w, "", desc_w, "");
+                off += (size_t)snprintf(out + off, outsz - off, " %-*s %-*s",
+                                        tail_w, "", desc_w, "");
             } else {
                 const KeybindMatchView *m = sorted[idx];
                 const char *tail = m->sequence + prefix_len;
@@ -171,18 +179,22 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
                 char cmdname[64];
                 if ((!desc || !*desc) && m->is_command && m->cmdline) {
                     const char *p = m->cmdline;
-                    while (*p == ' ' || *p == '\t' || *p == ':') p++;
+                    while (*p == ' ' || *p == '\t' || *p == ':')
+                        p++;
                     const char *end = p;
-                    while (*end && *end != ' ' && *end != '\t') end++;
+                    while (*end && *end != ' ' && *end != '\t')
+                        end++;
                     size_t len = (size_t)(end - p);
                     if (len > 0 && len < sizeof(cmdname)) {
                         memcpy(cmdname, p, len);
                         cmdname[len] = '\0';
                         const char *cdesc = command_find_desc(cmdname);
-                        if (cdesc && *cdesc) desc = cdesc;
+                        if (cdesc && *cdesc)
+                            desc = cdesc;
                     }
                 }
-                if (!desc) desc = m->cmdline ? m->cmdline : "";
+                if (!desc)
+                    desc = m->cmdline ? m->cmdline : "";
 
                 if (off + (size_t)col_w + 4 > outsz) {
                     truncated = 1;
@@ -193,17 +205,19 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
                 snprintf(tbuf, sizeof(tbuf), "%.*s", tail_w, tail);
                 snprintf(dbuf, sizeof(dbuf), "%.*s", desc_w, desc);
 
-                off += (size_t)snprintf(out + off, outsz - off,
-                                        " %-*s %-*s", tail_w, tbuf, desc_w, dbuf);
+                off += (size_t)snprintf(out + off, outsz - off, " %-*s %-*s",
+                                        tail_w, tbuf, desc_w, dbuf);
             }
 
             if (last_col) {
-                if (off < outsz) out[off++] = '\n';
+                if (off < outsz)
+                    out[off++] = '\n';
             } else {
                 off += (size_t)snprintf(out + off, outsz - off, "%s", COL_SEP);
             }
         }
-        if (truncated) break;
+        if (truncated)
+            break;
     }
     free(sorted);
 
@@ -220,7 +234,8 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
     const char *cur_ft = NULL;
     {
         Buffer *cb = buf_cur();
-        if (cb) cur_ft = cb->filetype;
+        if (cb)
+            cur_ft = cb->filetype;
     }
     if (cur_ft && *cur_ft) {
         /* Collect ft bindings for the current mode that aren't already
@@ -233,24 +248,29 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
             int kmode = 0;
             if (!keybind_get_at_ext(i, &seq, &desc, &kmode, &ft, &cmd))
                 continue;
-            if (kmode != (int)E.mode) continue;
-            if (!ft || strcmp(ft, cur_ft) != 0) continue;
-            if (!seq) continue;
+            if (kmode != (int)E.mode)
+                continue;
+            if (!ft || strcmp(ft, cur_ft) != 0)
+                continue;
+            if (!seq)
+                continue;
 
             /* Skip anything that already appeared in the prefix list. */
             int seen = 0;
             for (int j = 0; j < e->match_count; j++) {
                 if (e->matches[j].sequence &&
                     strcmp(e->matches[j].sequence, seq) == 0) {
-                    seen = 1; break;
+                    seen = 1;
+                    break;
                 }
             }
-            if (seen) continue;
+            if (seen)
+                continue;
 
             /* Fall back to the cmap's command line if no description
              * was attached at registration time. */
-            const char *display_desc = (desc && *desc) ? desc
-                                       : (cmd ? cmd : "");
+            const char *display_desc =
+                (desc && *desc) ? desc : (cmd ? cmd : "");
             arrput(ft_seqs, seq);
             arrput(ft_descs, display_desc);
         }
@@ -265,18 +285,22 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
             int ft_max_tail = 1;
             for (int i = 0; i < ft_n; i++) {
                 int t = (int)strlen(ft_seqs[i]);
-                if (t > ft_max_tail) ft_max_tail = t;
+                if (t > ft_max_tail)
+                    ft_max_tail = t;
             }
             int ft_tail_w = ft_max_tail;
-            if (ft_tail_w > col_w / 3) ft_tail_w = col_w / 3;
+            if (ft_tail_w > col_w / 3)
+                ft_tail_w = col_w / 3;
             int ft_desc_w = col_w - ft_tail_w - 2;
-            if (ft_desc_w < 4) ft_desc_w = 4;
+            if (ft_desc_w < 4)
+                ft_desc_w = 4;
 
             int ft_max_cells = MAX_LINES * ncols;
             int ft_cells = ft_n < ft_max_cells ? ft_n : ft_max_cells;
             int ft_truncated = ft_cells < ft_n;
             int ft_rows = (ft_cells + ncols - 1) / ncols;
-            if (ft_rows < 1) ft_rows = 1;
+            if (ft_rows < 1)
+                ft_rows = 1;
 
             for (int r = 0; r < ft_rows; r++) {
                 for (int c = 0; c < ncols; c++) {
@@ -284,33 +308,36 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
                     int last_col = (c == ncols - 1);
                     if (idx >= ft_cells) {
                         if (off + (size_t)col_w + 4 > outsz) {
-                            ft_truncated = 1; break;
+                            ft_truncated = 1;
+                            break;
                         }
                         off += (size_t)snprintf(out + off, outsz - off,
-                                                " %-*s %-*s",
-                                                ft_tail_w, "", ft_desc_w, "");
+                                                " %-*s %-*s", ft_tail_w, "",
+                                                ft_desc_w, "");
                     } else {
                         if (off + (size_t)col_w + 4 > outsz) {
-                            ft_truncated = 1; break;
+                            ft_truncated = 1;
+                            break;
                         }
                         char tbuf[64], dbuf[256];
-                        snprintf(tbuf, sizeof(tbuf), "%.*s",
-                                 ft_tail_w, ft_seqs[idx]);
-                        snprintf(dbuf, sizeof(dbuf), "%.*s",
-                                 ft_desc_w, ft_descs[idx]);
+                        snprintf(tbuf, sizeof(tbuf), "%.*s", ft_tail_w,
+                                 ft_seqs[idx]);
+                        snprintf(dbuf, sizeof(dbuf), "%.*s", ft_desc_w,
+                                 ft_descs[idx]);
                         off += (size_t)snprintf(out + off, outsz - off,
-                                                " %-*s %-*s",
-                                                ft_tail_w, tbuf,
+                                                " %-*s %-*s", ft_tail_w, tbuf,
                                                 ft_desc_w, dbuf);
                     }
                     if (last_col) {
-                        if (off < outsz) out[off++] = '\n';
+                        if (off < outsz)
+                            out[off++] = '\n';
                     } else {
-                        off += (size_t)snprintf(out + off, outsz - off,
-                                                "%s", COL_SEP);
+                        off += (size_t)snprintf(out + off, outsz - off, "%s",
+                                                COL_SEP);
                     }
                 }
-                if (ft_truncated) break;
+                if (ft_truncated)
+                    break;
             }
             if (ft_truncated && off + 8 < outsz)
                 off += (size_t)snprintf(out + off, outsz - off, " ...\n");
@@ -332,13 +359,15 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out, size_t outsz) 
  * wk_pending to the status bar. */
 static void wk_timer_fire(void *ud) {
     (void)ud;
-    if (!wk_pending_ready) return;
+    if (!wk_pending_ready)
+        return;
     ed_set_status_message("%s", wk_pending);
     wk_active = 1;
 }
 
 static void on_feed(const HookKeybindFeedEvent *e) {
-    if (!e) return;
+    if (!e)
+        return;
 
     if (!e->partial) {
         wk_clear();
@@ -368,12 +397,14 @@ static void on_invoke(const HookKeybindInvokeEvent *e) {
 
 /* :whichkey [on|off|toggle|delay <ms>] */
 static void cmd_whichkey(const char *args) {
-    while (args && (*args == ' ' || *args == '\t')) args++;
+    while (args && (*args == ' ' || *args == '\t'))
+        args++;
 
     if (args && strncmp(args, "delay", 5) == 0 &&
         (args[5] == ' ' || args[5] == '\t' || args[5] == '\0')) {
         const char *p = args + 5;
-        while (*p == ' ' || *p == '\t') p++;
+        while (*p == ' ' || *p == '\t')
+            p++;
         if (!*p) {
             ed_set_status_message("whichkey: delay = %d ms", wk_delay_ms);
             return;
@@ -397,7 +428,8 @@ static void cmd_whichkey(const char *args) {
     } else if (strcmp(args, "off") == 0) {
         want = 0;
     } else {
-        ed_set_status_message("whichkey: unknown arg '%s' (use on|off|toggle|delay <ms>)", args);
+        ed_set_status_message(
+            "whichkey: unknown arg '%s' (use on|off|toggle|delay <ms>)", args);
         return;
     }
 
@@ -422,8 +454,9 @@ static int whichkey_init(void) {
 }
 
 const Plugin plugin_whichkey = {
-    .name   = "whichkey",
-    .desc   = "list candidate completions when a multi-key sequence is partway typed (with idle delay)",
-    .init   = whichkey_init,
+    .name = "whichkey",
+    .desc = "list candidate completions when a multi-key sequence is partway "
+            "typed (with idle delay)",
+    .init = whichkey_init,
     .deinit = NULL,
 };

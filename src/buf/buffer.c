@@ -1,22 +1,21 @@
-#include "buf/buf_helpers.h"
 #include "buf/buffer.h"
-#include "fs/fs.h"
-#include "input/registers.h"
+#include "buf/buf_helpers.h"
 #include "editor.h"
+#include "fs/fs.h"
 #include "hooks.h"
-#include "terminal.h"
+#include "input/registers.h"
 #include "lib/log.h"
+#include "lib/safe_string.h"
 #include "lib/strutil.h"
 #include "stb_ds.h"
+#include "terminal.h"
+#include "utils/fold_methods.h"
 #include "utils/recent_files.h"
+#include <assert.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "lib/safe_string.h"
-#include "utils/fold_methods.h"
-#include <assert.h>
-#include <regex.h>
-
 
 /* Internal low-level row helpers (not part of public API) */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
@@ -139,7 +138,7 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     }
 
     const char *line;
-    size_t      linelen;
+    size_t linelen;
     while (fs_lines_next(r, &line, &linelen))
         buf_row_insert_in(buf, buf->num_rows, line, linelen);
     fs_lines_close(r);
@@ -208,14 +207,19 @@ void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
  * buffer's current contents (the stored position may predate edits
  * made through another window). */
 static void win_restore_cursor_from(Buffer *buf, Window *win) {
-    if (!buf || !win || !buf->cursor) return;
+    if (!buf || !win || !buf->cursor)
+        return;
     int y = buf->cursor->y;
     int x = buf->cursor->x;
-    if (y >= buf->num_rows) y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
-    if (y < 0) y = 0;
+    if (y >= buf->num_rows)
+        y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+    if (y < 0)
+        y = 0;
     int len = (y < buf->num_rows) ? (int)buf->rows[y].chars.len : 0;
-    if (x > len) x = len;
-    if (x < 0) x = 0;
+    if (x > len)
+        x = len;
+    if (x < 0)
+        x = 0;
     win->cursor.y = y;
     win->cursor.x = x;
 }
@@ -280,7 +284,8 @@ void buf_prev(void) {
     Window *win = window_cur();
     buf_cursor_sync_from_window(buf_cur());
 
-    E.current_buffer = (E.current_buffer - 1 + arrlen(E.buffers)) % arrlen(E.buffers);
+    E.current_buffer =
+        (E.current_buffer - 1 + arrlen(E.buffers)) % arrlen(E.buffers);
     if (win)
         win->buffer_index = E.current_buffer;
     Buffer *buf = buf_cur();
@@ -351,14 +356,18 @@ EdError buf_close(int index) {
 
     if (arrlen(E.buffers) == 0) {
         int idx = -1;
-        if (E.fallback_buf_fn) idx = E.fallback_buf_fn();
-        if (idx < 0 && buf_new(NULL, &idx) != ED_OK) idx = -1;
-        if (idx >= 0) E.current_buffer = idx;
+        if (E.fallback_buf_fn)
+            idx = E.fallback_buf_fn();
+        if (idx < 0 && buf_new(NULL, &idx) != ED_OK)
+            idx = -1;
+        if (idx >= 0)
+            E.current_buffer = idx;
         /* If buffer creation fails, editor will be in an invalid state, but
          * better than crashing */
     } else {
         if (E.current_buffer > index) {
-            /* Closed buffer was before current — keep current buffer focused. */
+            /* Closed buffer was before current — keep current buffer focused.
+             */
             E.current_buffer--;
         } else if (was_current) {
             /* Walk jump list from newest to oldest, skipping the just-closed
@@ -368,7 +377,8 @@ EdError buf_close(int index) {
             int target = -1;
             for (ptrdiff_t i = arrlen(E.jump_list.entries) - 1; i >= 0; i--) {
                 const char *fp = E.jump_list.entries[i].filepath;
-                if (!fp) continue;
+                if (!fp)
+                    continue;
                 if (closed_filename && strcmp(fp, closed_filename) == 0)
                     continue;
                 int found = buf_find_by_filename(fp);
@@ -388,14 +398,16 @@ EdError buf_close(int index) {
 
         /* Keep the focused window's buffer_index in sync. */
         Window *win = window_cur();
-        if (win) win->buffer_index = E.current_buffer;
+        if (win)
+            win->buffer_index = E.current_buffer;
 
         /* Restore window cursor from the new buffer's cursor. */
         Buffer *new_buf = buf_cur();
         if (was_current && win && new_buf && new_buf->cursor) {
             buf_cursors_bind_window(new_buf, win);
             win_restore_cursor_from(new_buf, win);
-            HookBufferEvent ev = {.buf = new_buf, .filename = new_buf->filename};
+            HookBufferEvent ev = {.buf = new_buf,
+                                  .filename = new_buf->filename};
             hook_fire_buffer(HOOK_BUFFER_SWITCH, &ev);
         }
     }
@@ -407,9 +419,11 @@ EdError buf_close(int index) {
 /*** Multi-cursor list management ***/
 
 Cursor *buf_cursor_add(Buffer *buf, int y, int x) {
-    if (!buf) return NULL;
+    if (!buf)
+        return NULL;
     Cursor *c = calloc(1, sizeof(Cursor));
-    if (!c) return NULL;
+    if (!c)
+        return NULL;
     c->x = x;
     c->y = y;
     arrput(buf->all_cursors, c);
@@ -417,8 +431,10 @@ Cursor *buf_cursor_add(Buffer *buf, int y, int x) {
 }
 
 int buf_cursor_remove(Buffer *buf, Cursor *c) {
-    if (!buf || !c) return 0;
-    if (c == buf->cursor) return 0;
+    if (!buf || !c)
+        return 0;
+    if (c == buf->cursor)
+        return 0;
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         if (buf->all_cursors[i] == c) {
             free(c);
@@ -430,7 +446,8 @@ int buf_cursor_remove(Buffer *buf, Cursor *c) {
 }
 
 void buf_cursor_clear_extras(Buffer *buf) {
-    if (!buf || !buf->cursor) return;
+    if (!buf || !buf->cursor)
+        return;
     Cursor *keep = buf->cursor;
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         if (buf->all_cursors[i] != keep)
@@ -441,7 +458,8 @@ void buf_cursor_clear_extras(Buffer *buf) {
 }
 
 int buf_cursor_set_active(Buffer *buf, Cursor *c) {
-    if (!buf || !c) return 0;
+    if (!buf || !c)
+        return 0;
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         if (buf->all_cursors[i] == c) {
             buf->cursor = c;
@@ -457,11 +475,13 @@ int buf_cursor_count(const Buffer *buf) {
 
 void buf_cursor_sync_from_window(Buffer *buf) {
     Window *win = window_cur();
-    if (!buf || !win || !buf->cursor) return;
+    if (!buf || !win || !buf->cursor)
+        return;
     /* Only sync when the focused window shows this buffer. */
     if (win->buffer_index < 0 || win->buffer_index >= (int)arrlen(E.buffers))
         return;
-    if (&E.buffers[win->buffer_index] != buf) return;
+    if (&E.buffers[win->buffer_index] != buf)
+        return;
     buf->cursor->x = win->cursor.x;
     buf->cursor->y = win->cursor.y;
 }
@@ -469,7 +489,8 @@ void buf_cursor_sync_from_window(Buffer *buf) {
 /*** Per-(buffer, window) cursor sets ***/
 
 static void cursor_set_free(CursorSet *set) {
-    if (!set) return;
+    if (!set)
+        return;
     for (ptrdiff_t i = 0; i < arrlen(set->cursors); i++)
         free(set->cursors[i]);
     arrfree(set->cursors);
@@ -479,11 +500,12 @@ static void cursor_set_free(CursorSet *set) {
 
 /* Park the live set under its current owner id. */
 static void cursors_stash_live(Buffer *buf) {
-    if (!buf->all_cursors) return;
+    if (!buf->all_cursors)
+        return;
     CursorSet set = {
-        .win_id  = buf->cursor_win_id,
+        .win_id = buf->cursor_win_id,
         .cursors = buf->all_cursors,
-        .active  = buf->cursor,
+        .active = buf->cursor,
     };
     arrput(buf->cursor_sets, set);
     buf->all_cursors = NULL;
@@ -491,16 +513,19 @@ static void cursors_stash_live(Buffer *buf) {
 }
 
 void buf_cursors_bind_window(Buffer *buf, struct Window *win) {
-    if (!buf || !win || win->is_modal || win->id <= 0) return;
-    if (buf->cursor_win_id == win->id) return;
-    if (buf < E.buffers || buf >= E.buffers + arrlen(E.buffers)) return;
+    if (!buf || !win || win->is_modal || win->id <= 0)
+        return;
+    if (buf->cursor_win_id == win->id)
+        return;
+    if (buf < E.buffers || buf >= E.buffers + arrlen(E.buffers))
+        return;
     int buf_idx = (int)(buf - E.buffers);
 
     /* Capture the previous owner's window position into the live set
      * before parking it — its window cursor is the source of truth. */
     Window *owner = window_find_by_id(buf->cursor_win_id);
-    int owner_alive = owner && !owner->is_modal &&
-                      owner->buffer_index == buf_idx;
+    int owner_alive =
+        owner && !owner->is_modal && owner->buffer_index == buf_idx;
     if (owner_alive && buf->cursor) {
         buf->cursor->x = owner->cursor.x;
         buf->cursor->y = owner->cursor.y;
@@ -519,7 +544,10 @@ void buf_cursors_bind_window(Buffer *buf, struct Window *win) {
 
     ptrdiff_t mine = -1;
     for (ptrdiff_t i = 0; i < arrlen(buf->cursor_sets); i++) {
-        if (buf->cursor_sets[i].win_id == win->id) { mine = i; break; }
+        if (buf->cursor_sets[i].win_id == win->id) {
+            mine = i;
+            break;
+        }
     }
 
     if (mine >= 0) {
@@ -534,10 +562,10 @@ void buf_cursors_bind_window(Buffer *buf, struct Window *win) {
             arrfree(buf->all_cursors);
         }
         buf->all_cursors = incoming.cursors;
-        buf->cursor = incoming.active ? incoming.active
-                                      : (arrlen(incoming.cursors) > 0
-                                             ? incoming.cursors[0]
-                                             : NULL);
+        buf->cursor =
+            incoming.active
+                ? incoming.active
+                : (arrlen(incoming.cursors) > 0 ? incoming.cursors[0] : NULL);
     } else if (owner_alive) {
         /* The owner window still shows this buffer and keeps its set;
          * the new pair starts fresh with a single cursor where the
@@ -561,10 +589,13 @@ void buf_cursors_bind_window(Buffer *buf, struct Window *win) {
 
 CursorVec buf_cursors_for_window(Buffer *buf, const struct Window *win,
                                  Cursor **skip_active) {
-    if (skip_active) *skip_active = NULL;
-    if (!buf || !win || win->id <= 0) return NULL;
+    if (skip_active)
+        *skip_active = NULL;
+    if (!buf || !win || win->id <= 0)
+        return NULL;
     if (buf->cursor_win_id == win->id) {
-        if (skip_active) *skip_active = buf->cursor;
+        if (skip_active)
+            *skip_active = buf->cursor;
         return buf->all_cursors;
     }
     for (ptrdiff_t i = 0; i < arrlen(buf->cursor_sets); i++) {
@@ -584,12 +615,14 @@ CursorVec buf_cursors_for_window(Buffer *buf, const struct Window *win,
  * cursor) and over every parked set (no skips — parked actives are
  * not window-synced, they must shift like any other cursor). */
 static void cursors_shift_all(Buffer *buf,
-                              void (*fn)(Buffer *, Cursor *, int, int),
-                              int a, int b) {
-    if (!buf) return;
+                              void (*fn)(Buffer *, Cursor *, int, int), int a,
+                              int b) {
+    if (!buf)
+        return;
     for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
         Cursor *c = buf->all_cursors[i];
-        if (c == buf->cursor) continue;
+        if (c == buf->cursor)
+            continue;
         fn(buf, c, a, b);
     }
     for (ptrdiff_t s = 0; s < arrlen(buf->cursor_sets); s++) {
@@ -601,12 +634,14 @@ static void cursors_shift_all(Buffer *buf,
 
 static void shift_insert_char(Buffer *buf, Cursor *c, int iy, int ix) {
     (void)buf;
-    if (c->y == iy && c->x >= ix) c->x++;
+    if (c->y == iy && c->x >= ix)
+        c->x++;
 }
 
 static void shift_delete_char(Buffer *buf, Cursor *c, int iy, int ix) {
     (void)buf;
-    if (c->y == iy && c->x > ix) c->x--;
+    if (c->y == iy && c->x > ix)
+        c->x--;
 }
 
 static void shift_insert_newline(Buffer *buf, Cursor *c, int iy, int ix) {
@@ -635,7 +670,8 @@ static void shift_delete_line(Buffer *buf, Cursor *c, int iy, int unused) {
         c->y--;
     } else if (c->y == iy) {
         /* Row gone; cursor lands on what's now at iy (or clamps). */
-        if (c->y >= buf->num_rows) c->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+        if (c->y >= buf->num_rows)
+            c->y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
         c->x = 0;
     }
 }
@@ -986,7 +1022,7 @@ void buf_reload(Buffer *buf) {
         return;
     }
     const char *line;
-    size_t      len;
+    size_t len;
     while (fs_lines_next(r, &line, &len))
         buf_row_insert_in(buf, buf->num_rows, line, len);
     fs_lines_close(r);

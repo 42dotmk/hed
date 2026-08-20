@@ -1,22 +1,22 @@
 #ifndef HED_H
 #define HED_H
 
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
 /* Library helpers - must come first for type definitions */
+#include "fs/fs.h"
 #include "lib/ansi.h"
 #include "lib/errors.h"
-#include "fs/fs.h"
 #include "lib/log.h"
 #include "lib/safe_string.h"
 #include "lib/strbuf.h"
@@ -26,16 +26,16 @@
 #include "stb_ds.h"
 
 /* Core modules */
-#include "commands/registry.h"
 #include "commands/cmd_builtins.h"
+#include "commands/registry.h"
 #include "editor.h"
 #include "hook_builtins.h"
 #include "hooks.h"
 #include "input/keybinds.h"
 #include "input/keybinds_builtins.h"
 #include "input/picker.h"
-#include "plugin.h"
 #include "input/registers.h"
+#include "plugin.h"
 #include "terminal.h"
 #include "utils/undo.h"
 

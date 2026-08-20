@@ -3,13 +3,15 @@
 #include "hed.h"
 
 static void osc52_copy(const char *data, size_t len) {
-    if (!data || len == 0) return;
+    if (!data || len == 0)
+        return;
 
     static const char b64[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     size_t enc_len = 4 * ((len + 2) / 3);
     char *enc = malloc(enc_len + 1);
-    if (!enc) return;
+    if (!enc)
+        return;
     size_t o = 0;
     for (size_t i = 0; i < len; i += 3) {
         unsigned a = (unsigned char)data[i];
@@ -36,7 +38,8 @@ static void osc52_copy(const char *data, size_t len) {
 
 static void sync_unnamed(void) {
     const StrBuf *r = regs_get('"');
-    if (r && r->data && r->len > 0) osc52_copy(r->data, r->len);
+    if (r && r->data && r->len > 0)
+        osc52_copy(r->data, r->len);
 }
 
 static void kb_yank_line_clip(void) {
@@ -55,15 +58,15 @@ static void kb_visual_yank_selection_clip(void) {
 }
 
 static int clipboard_init(void) {
-    mapv("y",  kb_visual_yank_selection_clip, "yank (+clipboard)");
-    mapn("y",  kb_operator_yank_clip,         "yank operator (+clipboard)");
-    mapn("yy", kb_yank_line_clip,             "yank line (+clipboard)");
+    mapv("y", kb_visual_yank_selection_clip, "yank (+clipboard)");
+    mapn("y", kb_operator_yank_clip, "yank operator (+clipboard)");
+    mapn("yy", kb_yank_line_clip, "yank line (+clipboard)");
     return 0;
 }
 
 const Plugin plugin_clipboard = {
-    .name   = "clipboard",
-    .desc   = "mirror yank to system clipboard via OSC 52",
-    .init   = clipboard_init,
+    .name = "clipboard",
+    .desc = "mirror yank to system clipboard via OSC 52",
+    .init = clipboard_init,
     .deinit = NULL,
 };

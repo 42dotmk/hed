@@ -28,8 +28,8 @@ static int sed_init(void) {
 }
 
 const Plugin plugin_sed = {
-    .name   = "sed",
-    .desc   = "apply a sed expression to the current buffer",
-    .init   = sed_init,
+    .name = "sed",
+    .desc = "apply a sed expression to the current buffer",
+    .init = sed_init,
     .deinit = NULL,
 };

@@ -6,9 +6,9 @@
 
 #include "lsp/cjson/cJSON.h"
 
-#define CP_READ_BUF_SIZE  65536
-#define CP_PENDING_MAX    32
-#define CP_DEBOUNCE_MS    250
+#define CP_READ_BUF_SIZE 65536
+#define CP_PENDING_MAX 32
+#define CP_DEBOUNCE_MS 250
 
 typedef enum {
     CP_REQ_NONE = 0,
@@ -21,47 +21,47 @@ typedef enum {
 } CpReqKind;
 
 typedef struct {
-    int       id;
+    int id;
     CpReqKind kind;
 } CpPending;
 
 typedef struct {
     /* Child process */
-    int   pid;
-    int   to_fd;     /* editor writes here -> child stdin */
-    int   from_fd;   /* editor reads here  <- child stdout */
+    int pid;
+    int to_fd;   /* editor writes here -> child stdin */
+    int from_fd; /* editor reads here  <- child stdout */
 
     /* Handshake state */
-    int   spawned;
-    int   initialized;
-    int   next_id;
+    int spawned;
+    int initialized;
+    int next_id;
 
     /* Receive framing */
-    char  read_buf[CP_READ_BUF_SIZE];
-    int   read_buf_len;
-    int   content_length;     /* -1 while waiting for header */
+    char read_buf[CP_READ_BUF_SIZE];
+    int read_buf_len;
+    int content_length; /* -1 while waiting for header */
     char *msg_body;
-    int   msg_body_len;
+    int msg_body_len;
 
     /* Pending request -> kind table */
     CpPending pending[CP_PENDING_MAX];
 
     /* Document sync */
-    int   doc_version;        /* monotonically increasing across all docs */
+    int doc_version; /* monotonically increasing across all docs */
 
     /* Auth */
-    char  user_code[64];      /* set by signInInitiate response */
-    char  user_login[128];    /* set by checkStatus / signInConfirm */
-    int   signed_in;
+    char user_code[64];   /* set by signInInitiate response */
+    char user_login[128]; /* set by checkStatus / signInConfirm */
+    int signed_in;
 
     /* Suggestion state */
-    int    vt_ns;
-    char  *suggestion_text;   /* full inserted text for the active alt */
-    char  *suggestion_display;/* displayText for the active alt */
-    char  *suggestion_uuid;   /* uuid for telemetry on the active alt */
-    int    suggestion_line;
-    int    suggestion_col;
-    int    has_suggestion;
+    int vt_ns;
+    char *suggestion_text;    /* full inserted text for the active alt */
+    char *suggestion_display; /* displayText for the active alt */
+    char *suggestion_uuid;    /* uuid for telemetry on the active alt */
+    int suggestion_line;
+    int suggestion_col;
+    int has_suggestion;
 
     /* Alternatives. alts[] is owned (each entry's strings are heap).
      * alts_active is the index currently rendered as ghost text. */
@@ -70,14 +70,14 @@ typedef struct {
         char *display;
         char *uuid;
     } *alts;
-    int    alts_count;
-    int    alts_active;
+    int alts_count;
+    int alts_active;
 
     /* Last sent did-change version per buffer (kept simple: just the
      * buffer pointer + version we last sent for it). v1 only tracks
      * the most recently changed buffer. */
-    void  *last_buf;
-    int    last_buf_opened;   /* did we send didOpen for last_buf yet? */
+    void *last_buf;
+    int last_buf_opened; /* did we send didOpen for last_buf yet? */
 } Copilot;
 
 extern Copilot CP;
@@ -86,11 +86,11 @@ extern Copilot CP;
 
 /* Spawn the language server child. Returns 0 on success, -1 on failure
  * (with status message set). Caller must not have one already running. */
-int  cp_proto_spawn(void);
+int cp_proto_spawn(void);
 
 /* Send a JSON-RPC request. params is consumed (added to the message
  * and freed). Records the kind in the pending table. Returns the id. */
-int  cp_proto_request(const char *method, cJSON *params, CpReqKind kind);
+int cp_proto_request(const char *method, cJSON *params, CpReqKind kind);
 
 /* Send a JSON-RPC notification. params is consumed. */
 void cp_proto_notify(const char *method, cJSON *params);

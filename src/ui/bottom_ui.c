@@ -1,7 +1,7 @@
 #include "ui/bottom_ui.h"
-#include "lib/ansi.h"
 #include "editor.h"
 #include "input/prompt.h"
+#include "lib/ansi.h"
 #include "terminal.h"
 
 /* Count rows needed by `s`, wrapping at the terminal width. */
@@ -20,17 +20,20 @@ static int count_msg_lines(const char *s) {
             }
         }
     }
-    if (lines < 1) lines = 1;
+    if (lines < 1)
+        lines = 1;
     return lines;
 }
 
 int ui_message_lines_needed(void) {
     if (prompt_active()) {
         Prompt *pr = prompt_current();
-        if (!pr) return 1;
+        if (!pr)
+            return 1;
         int prompt_lines = 1;
         for (int i = 0; i < pr->len; i++)
-            if (pr->buf[i] == '\n') prompt_lines++;
+            if (pr->buf[i] == '\n')
+                prompt_lines++;
         /* Stack the prompt's own hint above the input when one is set
          * (e.g. Tab-completion's "N matches" message). E.status_msg is
          * skipped here — async plugin chatter would clobber the hint
@@ -132,7 +135,8 @@ void draw_message_bar(Abuf *ab, const Layout *lo) {
         }
         const char *label = pr->vt->label ? pr->vt->label(pr) : "";
         int label_len = (int)strlen(label);
-        if (label_len > lo->term_cols) label_len = lo->term_cols;
+        if (label_len > lo->term_cols)
+            label_len = lo->term_cols;
         ansi_move(ab, row, 1);
         ansi_clear_eol(ab);
         ab_append(ab, label, label_len);

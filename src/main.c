@@ -1,14 +1,14 @@
+#include "buf/buffer.h"
+#include "commands/registry.h"
 #include "editor.h"
 #include "fs/fs.h"
-#include "lib/log.h"
 #include "hooks.h"
-#include "commands/registry.h"
-#include "terminal.h"
-#include "select_loop.h"
 #include "input/macros.h"
-#include "buf/buffer.h"
-#include "ui/window.h"
+#include "lib/log.h"
+#include "select_loop.h"
 #include "stb_ds.h"
+#include "terminal.h"
+#include "ui/window.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -23,11 +23,10 @@
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
 
 typedef struct {
-    const char  *startup_cmd;  /* -c argument; not owned */
-    char       **files;        /* heap array of argv pointers */
-    int          file_count;
+    const char *startup_cmd; /* -c argument; not owned */
+    char **files;            /* heap array of argv pointers */
+    int file_count;
 } CliArgs;
-
 
 /* ------------------------------------------------------------------------- */
 /* Argument parsing                                                          */
@@ -39,10 +38,11 @@ typedef struct {
  * Returns 0 on success, non-zero on usage error (and writes to stderr). */
 static int parse_args(int argc, char *argv[], CliArgs *out) {
     out->startup_cmd = NULL;
-    out->files       = NULL;
-    out->file_count  = 0;
+    out->files = NULL;
+    out->file_count = 0;
 
-    if (argc <= 1) return 0;
+    if (argc <= 1)
+        return 0;
 
     out->files = calloc((size_t)(argc - 1), sizeof(char *));
     if (!out->files) {
@@ -96,13 +96,15 @@ static void open_initial_buffers(char **files, int file_count) {
 
     if (arrlen(E.buffers) == 0) {
         int empty_idx = -1;
-        if (E.fallback_buf_fn) empty_idx = E.fallback_buf_fn();
+        if (E.fallback_buf_fn)
+            empty_idx = E.fallback_buf_fn();
         if (empty_idx < 0 && buf_new(NULL, &empty_idx) != ED_OK)
             empty_idx = -1;
         if (empty_idx >= 0) {
             E.current_buffer = empty_idx;
             Window *win = window_cur();
-            if (win) win->buffer_index = empty_idx;
+            if (win)
+                win->buffer_index = empty_idx;
         }
     }
 
@@ -110,7 +112,8 @@ static void open_initial_buffers(char **files, int file_count) {
         int last_idx = (int)arrlen(E.buffers) - 1;
         E.current_buffer = last_idx;
         Window *win = window_cur();
-        if (win) win->buffer_index = last_idx;
+        if (win)
+            win->buffer_index = last_idx;
     }
 }
 
@@ -119,16 +122,17 @@ static void open_initial_buffers(char **files, int file_count) {
 
 /* Skip the optional leading ':' and any whitespace. */
 static const char *strip_command_prefix(const char *s) {
-    if (*s == ':') s++;
-    while (*s && isspace((unsigned char)*s)) s++;
+    if (*s == ':')
+        s++;
+    while (*s && isspace((unsigned char)*s))
+        s++;
     return s;
 }
 
 /* Split "name [args...]" into a name buffer and an args pointer that
  * points into the original string (or NULL when no args remain). */
-static void split_command_line(const char *cmdline,
-                                char *name, size_t name_cap,
-                                const char **args_out) {
+static void split_command_line(const char *cmdline, char *name, size_t name_cap,
+                               const char **args_out) {
     size_t nlen = 0;
     while (cmdline[nlen] && !isspace((unsigned char)cmdline[nlen]) &&
            nlen < name_cap - 1) {
@@ -140,21 +144,25 @@ static void split_command_line(const char *cmdline,
     const char *args = NULL;
     if (cmdline[nlen]) {
         args = cmdline + nlen + 1;
-        while (*args && isspace((unsigned char)*args)) args++;
-        if (*args == '\0') args = NULL;
+        while (*args && isspace((unsigned char)*args))
+            args++;
+        if (*args == '\0')
+            args = NULL;
     }
     *args_out = args;
 }
 
 static void run_startup_command(const char *cmdline) {
-    if (!cmdline || !*cmdline) return;
+    if (!cmdline || !*cmdline)
+        return;
 
     cmdline = strip_command_prefix(cmdline);
-    char        name[128];
+    char name[128];
     const char *args = NULL;
     split_command_line(cmdline, name, sizeof(name), &args);
 
-    if (!name[0]) return;
+    if (!name[0])
+        return;
     if (!command_execute(name, args))
         ed_set_status_message("Unknown command: %s", name);
 }
@@ -163,7 +171,8 @@ static void run_startup_command(const char *cmdline) {
 /* Event loop                                                                */
 
 static void on_stdin_readable(int fd, void *ud) {
-    (void)fd; (void)ud;
+    (void)fd;
+    (void)ud;
     ed_process_keypress();
 }
 
@@ -183,7 +192,6 @@ static void event_loop(void) {
     }
 }
 
-
 /* ------------------------------------------------------------------------- */
 /* Pager mode: handle being invoked with stdin attached to a pipe            */
 /*                                                                           */
@@ -195,29 +203,36 @@ static void event_loop(void) {
 /* user's actual terminal. The slurped content is dropped into a scratch     */
 /* `[stdin]` buffer once ed_init has run.                                    */
 
-static char  *g_pipe_buf  = NULL;
-static size_t g_pipe_len  = 0;
+static char *g_pipe_buf = NULL;
+static size_t g_pipe_len = 0;
 
 static void capture_stdin_if_pipe(void) {
-    if (isatty(STDIN_FILENO)) return;
+    if (isatty(STDIN_FILENO))
+        return;
 
     size_t cap = 4096, len = 0;
-    char  *buf = malloc(cap);
-    if (!buf) return;
+    char *buf = malloc(cap);
+    if (!buf)
+        return;
     for (;;) {
         if (len == cap) {
-            size_t nc  = cap * 2;
-            char  *nb  = realloc(buf, nc);
-            if (!nb) { free(buf); return; }
+            size_t nc = cap * 2;
+            char *nb = realloc(buf, nc);
+            if (!nb) {
+                free(buf);
+                return;
+            }
             buf = nb;
             cap = nc;
         }
         ssize_t n = read(STDIN_FILENO, buf + len, cap - len);
         if (n < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             break;
         }
-        if (n == 0) break;
+        if (n == 0)
+            break;
         len += (size_t)n;
     }
     g_pipe_buf = buf;
@@ -231,12 +246,14 @@ static void capture_stdin_if_pipe(void) {
     int tty = open("/dev/tty", O_RDWR);
     if (tty >= 0) {
         dup2(tty, STDIN_FILENO);
-        if (tty > 2) close(tty);
+        if (tty > 2)
+            close(tty);
     }
 }
 
 static void open_pipe_buffer(void) {
-    if (!g_pipe_buf) return;
+    if (!g_pipe_buf)
+        return;
 
     int idx = -1;
     if (buf_new(NULL, &idx) != ED_OK) {
@@ -246,26 +263,30 @@ static void open_pipe_buffer(void) {
         return;
     }
     Buffer *b = &E.buffers[idx];
-    free(b->filename); b->filename = NULL;
-    free(b->title);    b->title    = strdup("[stdin]");
+    free(b->filename);
+    b->filename = NULL;
+    free(b->title);
+    b->title = strdup("[stdin]");
 
     /* Split on '\n', tolerant of an optional trailing '\r'. */
     size_t start = 0;
     for (size_t i = 0; i <= g_pipe_len; i++) {
         if (i == g_pipe_len || g_pipe_buf[i] == '\n') {
             size_t llen = i - start;
-            if (llen > 0 && g_pipe_buf[start + llen - 1] == '\r') llen--;
+            if (llen > 0 && g_pipe_buf[start + llen - 1] == '\r')
+                llen--;
             buf_row_insert_in(b, b->num_rows, g_pipe_buf + start, llen);
             start = i + 1;
         }
     }
 
-    b->dirty    = 0;
+    b->dirty = 0;
     b->readonly = 1;
 
     E.current_buffer = idx;
     Window *win = window_cur();
-    if (win) win->buffer_index = idx;
+    if (win)
+        win->buffer_index = idx;
 
     free(g_pipe_buf);
     g_pipe_buf = NULL;

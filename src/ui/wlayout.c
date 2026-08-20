@@ -1,6 +1,6 @@
-#include "lib/ansi.h"
 #include "ui/wlayout.h"
 #include "editor.h"
+#include "lib/ansi.h"
 #include <stdlib.h>
 
 static void wdecor_set_defaults(WDecor *d, int for_split_node) {
@@ -261,7 +261,8 @@ static void compute_node(WLayoutNode *node, int top, int left, int height,
 
     if (node->dir == WL_SINGLE) {
         /* Assign geometry to the target leaf */
-        if (node->leaf_index >= 0 && node->leaf_index < (int)arrlen(E.windows)) {
+        if (node->leaf_index >= 0 &&
+            node->leaf_index < (int)arrlen(E.windows)) {
             Window *w = &E.windows[node->leaf_index];
             w->top = itop;
             w->left = ileft;
@@ -501,8 +502,8 @@ int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta) {
     return 1;
 }
 
-int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
-                       WSplitDir dir, int delta) {
+int wlayout_resize_dir(WLayoutNode *root, int leaf_index, WSplitDir dir,
+                       int delta) {
     if (!root || dir == WL_SINGLE || delta == 0)
         return 0;
     WLayoutNode *leaf = wlayout_find_leaf_by_index(root, leaf_index);
@@ -542,7 +543,7 @@ int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
             continue;
         }
         int sz = (dir == WL_VERTICAL) ? parent->child[i]->width
-                                       : parent->child[i]->height;
+                                      : parent->child[i]->height;
         if (sz < 1)
             sz = 1;
         parent->weight[i] = sz;
@@ -554,7 +555,7 @@ int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
         delta = -(parent->weight[pos] - 1);
     if (delta == 0)
         return 0;
-    parent->weight[pos]      += delta;
+    parent->weight[pos] += delta;
     parent->weight[neighbor] -= delta;
     return 1;
 }

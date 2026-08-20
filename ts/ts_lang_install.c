@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 /* This is a CLI helper that builds and copies grammar files; every snprintf
  * here is path concatenation where truncation just makes the operation fail
@@ -41,7 +41,8 @@ static int file_exists(const char *path) {
 static int mkdir_if_needed(const char *path) {
     struct stat st;
     if (stat(path, &st) == 0) {
-        if (S_ISDIR(st.st_mode)) return 0;
+        if (S_ISDIR(st.st_mode))
+            return 0;
         fprintf(stderr, "Path exists but is not a directory: %s\n", path);
         return -1;
     }
@@ -56,15 +57,18 @@ static int mkdir_if_needed(const char *path) {
 /* Recursively create a directory and all parents. Equivalent to
  * `mkdir -p`. Returns 0 on success or if it already exists. */
 static int mkdir_p(const char *path) {
-    if (!path || !*path) return 0;
+    if (!path || !*path)
+        return 0;
     char tmp[1024];
     snprintf(tmp, sizeof(tmp), "%s", path);
     size_t len = strlen(tmp);
-    if (tmp[len - 1] == '/') tmp[--len] = '\0';
+    if (tmp[len - 1] == '/')
+        tmp[--len] = '\0';
     for (size_t i = 1; i < len; i++) {
         if (tmp[i] == '/') {
             tmp[i] = '\0';
-            if (mkdir_if_needed(tmp) != 0) return -1;
+            if (mkdir_if_needed(tmp) != 0)
+                return -1;
             tmp[i] = '/';
         }
     }
@@ -74,11 +78,15 @@ static int mkdir_p(const char *path) {
 /* Mirror the loader's default in plugins/treesitter/ts_impl.c so that
  * installed grammars land where hed will look for them by default. */
 static void default_install_base(char *out, size_t out_sz) {
-    if (!out || out_sz == 0) return;
+    if (!out || out_sz == 0)
+        return;
     out[0] = '\0';
 
     const char *env = getenv("HED_TS_PATH");
-    if (env && *env) { snprintf(out, out_sz, "%s", env); return; }
+    if (env && *env) {
+        snprintf(out, out_sz, "%s", env);
+        return;
+    }
 
     const char *xdg_config = getenv("XDG_CONFIG_HOME");
     if (xdg_config && *xdg_config) {
@@ -146,10 +154,12 @@ static int install_query(const char *build_dir, const char *install_base,
     }
     char queries_dir[1024];
     snprintf(queries_dir, sizeof(queries_dir), "%s/queries", install_base);
-    if (mkdir_p(queries_dir) != 0) return -1;
+    if (mkdir_p(queries_dir) != 0)
+        return -1;
     char dst_dir[1024];
     snprintf(dst_dir, sizeof(dst_dir), "%s/%s", queries_dir, lang);
-    if (mkdir_if_needed(dst_dir) != 0) return -1;
+    if (mkdir_if_needed(dst_dir) != 0)
+        return -1;
     char dst[1024];
     snprintf(dst, sizeof(dst), "%s/%s", dst_dir, qname);
     fprintf(stderr, "Installing %s -> %s\n", src, dst);
@@ -171,7 +181,8 @@ void print_help(const char *prog_name) {
     fprintf(stderr, "  --help       Print this help message\n");
     fprintf(stderr, "  --url <url>  Specify custom git repository URL\n");
 }
-void parse_args(int argc, char **argv, const char **lang, const char **custom_url) {
+void parse_args(int argc, char **argv, const char **lang,
+                const char **custom_url) {
     for (int i = 1; i < argc; i++) {
         if (i == 1 && argv[i][0] != '-') {
             *lang = argv[i];
@@ -194,7 +205,7 @@ void parse_args(int argc, char **argv, const char **lang, const char **custom_ur
         }
     }
 }
-/* Main function 
+/* Main function
  * argv[1]: language name
  * Optional arguments:
  * --help : print usage
@@ -204,7 +215,7 @@ int main(int argc, char **argv) {
     if (argc < 2) {
         print_usage(argv[0]);
     }
-    const char *lang=NULL;  // Default to C language
+    const char *lang = NULL; // Default to C language
     const char *custom_url = NULL;
     parse_args(argc, argv, &lang, &custom_url);
 
@@ -220,8 +231,10 @@ int main(int argc, char **argv) {
     }
 
     /* Prepare build directory: ./ts/build/<lang> */
-    if (mkdir_if_needed("ts") != 0) return 1;
-    if (mkdir_if_needed("ts/build") != 0) return 1;
+    if (mkdir_if_needed("ts") != 0)
+        return 1;
+    if (mkdir_if_needed("ts/build") != 0)
+        return 1;
 
     char build_dir[1024];
     snprintf(build_dir, sizeof(build_dir), "ts/build/%s", lang);
@@ -233,8 +246,8 @@ int main(int argc, char **argv) {
 
         if (custom_url) {
             snprintf(repo_url, sizeof(repo_url), "%s", custom_url);
-            snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s",
-                     repo_url, build_dir);
+            snprintf(cmd, sizeof(cmd), "git clone --depth 1 %s %s", repo_url,
+                     build_dir);
             fprintf(stderr, "Cloning %s into %s\n", repo_url, build_dir);
             if (run_cmd(cmd) == 0) {
                 cloned = 1;
@@ -266,7 +279,8 @@ int main(int argc, char **argv) {
 
         if (!cloned) {
             fprintf(stderr,
-                    "Failed to clone Tree-sitter grammar for '%s' from all sources.\n",
+                    "Failed to clone Tree-sitter grammar for '%s' from all "
+                    "sources.\n",
                     lang);
             return 1;
         }
@@ -331,8 +345,8 @@ int main(int argc, char **argv) {
         snprintf(link_cmd, sizeof(link_cmd),
                  "cc -shared -o %s parser.o scanner.o", so_name);
     } else {
-        snprintf(link_cmd, sizeof(link_cmd),
-                 "cc -shared -o %s parser.o", so_name);
+        snprintf(link_cmd, sizeof(link_cmd), "cc -shared -o %s parser.o",
+                 so_name);
     }
     fprintf(stderr, "Linking %s\n", so_name);
     if (run_cmd(link_cmd) != 0) {
@@ -367,9 +381,12 @@ int main(int argc, char **argv) {
     }
 
     /* Install query files (highlights, injections, locals) if present. */
-    if (install_query(build_dir, base, lang, "highlights.scm") < 0) return 1;
-    if (install_query(build_dir, base, lang, "injections.scm") < 0) return 1;
-    if (install_query(build_dir, base, lang, "locals.scm") < 0) return 1;
+    if (install_query(build_dir, base, lang, "highlights.scm") < 0)
+        return 1;
+    if (install_query(build_dir, base, lang, "injections.scm") < 0)
+        return 1;
+    if (install_query(build_dir, base, lang, "locals.scm") < 0)
+        return 1;
 
     fprintf(stderr, "Done. Language '%s' installed.\n", lang);
     fprintf(stderr, "  Shared library: %s/%s.so\n", base, lang);

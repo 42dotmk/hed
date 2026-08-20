@@ -7,8 +7,8 @@
  */
 
 #include "commands/commands_ui.h"
-#include "lib/strutil.h"
 #include "editor.h"
+#include "lib/strutil.h"
 #include "ui/wlayout.h"
 #include <stdlib.h>
 #include <string.h>

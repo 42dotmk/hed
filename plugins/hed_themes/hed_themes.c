@@ -25,8 +25,8 @@ static int hed_themes_init(void) {
 }
 
 const Plugin plugin_hed_themes = {
-    .name   = "hed-themes",
-    .desc   = "catalogue of runtime-swappable colour schemes",
-    .init   = hed_themes_init,
+    .name = "hed-themes",
+    .desc = "catalogue of runtime-swappable colour schemes",
+    .init = hed_themes_init,
     .deinit = NULL,
 };

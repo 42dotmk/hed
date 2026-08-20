@@ -1,23 +1,23 @@
 #include "editor.h"
-#include "fs/fs.h"
-#include "input/input.h"
-#include "hooks.h"
-#include "input/prompt.h"
-#include "select_loop.h"
-#include "input/keybinds.h"
-#include "terminal.h"
 #include "buf/buf_helpers.h"
-#include "utils/fold_methods.h"
-#include "input/registers.h"
 #include "commands/registry.h"
-#include "ui/wlayout.h"
+#include "config.h"
+#include "fs/fs.h"
+#include "hooks.h"
+#include "input/command_mode.h"
+#include "input/input.h"
+#include "input/keybinds.h"
+#include "input/macros.h"
+#include "input/prompt.h"
+#include "input/registers.h"
 #include "lib/log.h"
+#include "lib/path_limits.h"
+#include "select_loop.h"
+#include "terminal.h"
+#include "ui/wlayout.h"
+#include "utils/fold_methods.h"
 #include <ctype.h>
 #include <errno.h>
-#include "input/command_mode.h"
-#include "config.h"
-#include "input/macros.h"
-#include "lib/path_limits.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +34,7 @@ void ed_change_cursor_shape(void) {
         break;
     case MODE_COMMAND:
     case MODE_VISUAL:
-	case MODE_VISUAL_LINE:
+    case MODE_VISUAL_LINE:
     case MODE_VISUAL_BLOCK:
         write(STDOUT_FILENO, CURSOR_STYLE_BLOCK, 5);
         break;
@@ -70,12 +70,12 @@ void ed_set_mode(EditorMode new_mode) {
      * defer past MODE_COMMAND so a colon-command (e.g. :shell foo >%v)
      * can still see the selection. Cleanup fires when command mode
      * itself exits. */
-    int leaving_visual = (old_mode == MODE_VISUAL ||
-                          old_mode == MODE_VISUAL_LINE ||
-                          old_mode == MODE_VISUAL_BLOCK);
-    int entering_visual = (new_mode == MODE_VISUAL ||
-                           new_mode == MODE_VISUAL_LINE ||
-                           new_mode == MODE_VISUAL_BLOCK);
+    int leaving_visual =
+        (old_mode == MODE_VISUAL || old_mode == MODE_VISUAL_LINE ||
+         old_mode == MODE_VISUAL_BLOCK);
+    int entering_visual =
+        (new_mode == MODE_VISUAL || new_mode == MODE_VISUAL_LINE ||
+         new_mode == MODE_VISUAL_BLOCK);
     int should_clear =
         (leaving_visual && !entering_visual && new_mode != MODE_COMMAND) ||
         (old_mode == MODE_COMMAND && !entering_visual);
@@ -89,7 +89,6 @@ void ed_set_mode(EditorMode new_mode) {
     keybind_clear_buffer();
     HookModeEvent event = {old_mode, new_mode};
     hook_fire_mode(HOOK_MODE_CHANGE, &event);
-
 }
 
 /* --- Synchronous follow-on key capture/replay (see editor.h). --- */
@@ -110,13 +109,16 @@ void ed_key_capture_begin(void) {
 
 int ed_key_capture_end(const int **out_keys) {
     ed_key_capture_active = 0;
-    if (out_keys) *out_keys = ed_key_capture_buf;
+    if (out_keys)
+        *out_keys = ed_key_capture_buf;
     return ed_key_capture_len;
 }
 
 void ed_key_replay_begin(const int *keys, int n) {
-    if (n > ED_KEY_REPLAY_MAX) n = ED_KEY_REPLAY_MAX;
-    for (int i = 0; i < n; i++) ed_key_replay_buf[i] = keys[i];
+    if (n > ED_KEY_REPLAY_MAX)
+        n = ED_KEY_REPLAY_MAX;
+    for (int i = 0; i < n; i++)
+        ed_key_replay_buf[i] = keys[i];
     ed_key_replay_len = n;
     ed_key_replay_pos = 0;
     ed_key_replay_active = 1;
@@ -200,29 +202,34 @@ static void ed_handle_paste(void) {
      * regardless of whether the user was in NORMAL/VISUAL/etc.
      * Restore afterwards. */
     EditorMode prev_mode = E.mode;
-    if (can_insert && E.mode != MODE_INSERT) ed_set_mode(MODE_INSERT);
+    if (can_insert && E.mode != MODE_INSERT)
+        ed_set_mode(MODE_INSERT);
 
-    if (can_insert) undo_begin(buf, "paste");
+    if (can_insert)
+        undo_begin(buf, "paste");
 
     /* End-marker matcher: ESC '[' '2' '0' '1' '~'.
      * If the match fails partway through, the consumed prefix has to
      * be re-emitted as literal text (paste content is allowed to
      * contain arbitrary bytes, including stray ESC). */
-    static const char END_MARKER[6] = { '\x1b', '[', '2', '0', '1', '~' };
+    static const char END_MARKER[6] = {'\x1b', '[', '2', '0', '1', '~'};
     int matched = 0;
 
     for (;;) {
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
-        if (n == 0) break;            /* EOF — terminal closed */
+        if (n == 0)
+            break; /* EOF — terminal closed */
         if (n < 0) {
-            if (errno == EINTR || errno == EAGAIN) continue;
+            if (errno == EINTR || errno == EAGAIN)
+                continue;
             break;
         }
 
         if (c == END_MARKER[matched]) {
             matched++;
-            if (matched == (int)sizeof(END_MARKER)) break;
+            if (matched == (int)sizeof(END_MARKER))
+                break;
             continue;
         }
 
@@ -244,10 +251,14 @@ static void ed_handle_paste(void) {
             }
             matched = 0;
             /* Fall through to handle `c` itself below. */
-            if (c == END_MARKER[0]) { matched = 1; continue; }
+            if (c == END_MARKER[0]) {
+                matched = 1;
+                continue;
+            }
         }
 
-        if (!can_insert) continue;
+        if (!can_insert)
+            continue;
         if (c == '\n' || c == '\r') {
             buf_insert_newline_in(buf);
         } else if ((unsigned char)c >= 0x20 || c == '\t') {
@@ -256,10 +267,11 @@ static void ed_handle_paste(void) {
         /* Drop other control bytes silently. */
     }
 
-    if (can_insert) undo_end(buf);
-    if (can_insert && prev_mode != MODE_INSERT) ed_set_mode(prev_mode);
+    if (can_insert)
+        undo_end(buf);
+    if (can_insert && prev_mode != MODE_INSERT)
+        ed_set_mode(prev_mode);
 }
-
 
 static void handle_edit_mode_keypress(int c) {
     switch (E.mode) {
@@ -315,7 +327,7 @@ void ed_dispatch_key(int c) {
 
     win = window_cur();
     buf = buf_cur();
-    
+
     if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {
         HookCursorEvent ev = {buf, old_x, old_y, win->cursor.x, win->cursor.y};
         hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
@@ -329,7 +341,8 @@ void ed_process_keypress(void) {
         ed_handle_paste();
         return;
     }
-    if (c == KEY_PASTE_END) return;
+    if (c == KEY_PASTE_END)
+        return;
     if (c == KEY_MOUSE) {
         /* Mouse bypasses keymap dispatch entirely; semantics live in
          * HOOK_MOUSE handlers (plugins/mouse). Mirror ed_dispatch_key's
@@ -341,10 +354,9 @@ void ed_process_keypress(void) {
         hook_fire_mouse(HOOK_MOUSE, ed_last_mouse());
         win = window_cur();
         Buffer *buf = buf_cur();
-        if (buf && win &&
-            (win->cursor.x != old_x || win->cursor.y != old_y)) {
-            HookCursorEvent ev = {buf, old_x, old_y,
-                                  win->cursor.x, win->cursor.y};
+        if (buf && win && (win->cursor.x != old_x || win->cursor.y != old_y)) {
+            HookCursorEvent ev = {buf, old_x, old_y, win->cursor.x,
+                                  win->cursor.y};
             hook_fire_cursor(HOOK_CURSOR_MOVE, &ev);
         }
         return;
@@ -362,12 +374,12 @@ void ed_process_keypress(void) {
             buf_cursor_sync_from_window(buf);
         }
     }
-    HookKeyEvent kev = { c, 0 };
+    HookKeyEvent kev = {c, 0};
     hook_fire_key(HOOK_KEYPRESS, &kev);
-    if (kev.consumed) return;
+    if (kev.consumed)
+        return;
     ed_dispatch_key(c);
 }
-
 
 void ed_init_state() {
     E.current_buffer = 0;
@@ -417,10 +429,12 @@ void ed_init(int create_default_buffer) {
     /* Ensure at least one editable buffer exists at startup if requested */
     if (create_default_buffer) {
         int empty_idx = -1;
-        if (E.fallback_buf_fn) empty_idx = E.fallback_buf_fn();
+        if (E.fallback_buf_fn)
+            empty_idx = E.fallback_buf_fn();
         if (empty_idx < 0 && buf_new(NULL, &empty_idx) != ED_OK)
             empty_idx = -1;
-        if (empty_idx >= 0) E.current_buffer = empty_idx;
+        if (empty_idx >= 0)
+            E.current_buffer = empty_idx;
     }
 
     windows_init();

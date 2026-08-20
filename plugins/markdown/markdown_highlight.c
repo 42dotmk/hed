@@ -26,17 +26,17 @@
 /* Per-heading-level colour ramp. Bold + a colour graded from accent to
  * muted, mirroring the visual weight a reader expects from rendered
  * markdown. Themes can replace these palette entries to re-tone the ramp. */
-#define MD_H1 "\x1b[1;38;2;247;118;142m"  /* bold magenta-red */
-#define MD_H2 "\x1b[1;38;2;255;158;100m"  /* bold orange */
-#define MD_H3 "\x1b[1;38;2;224;175;104m"  /* bold amber */
-#define MD_H4 "\x1b[1;38;2;158;206;106m"  /* bold green */
-#define MD_H5 "\x1b[1;38;2;122;162;247m"  /* bold blue */
-#define MD_H6 "\x1b[1;38;2;187;154;247m"  /* bold purple */
+#define MD_H1 "\x1b[1;38;2;247;118;142m" /* bold magenta-red */
+#define MD_H2 "\x1b[1;38;2;255;158;100m" /* bold orange */
+#define MD_H3 "\x1b[1;38;2;224;175;104m" /* bold amber */
+#define MD_H4 "\x1b[1;38;2;158;206;106m" /* bold green */
+#define MD_H5 "\x1b[1;38;2;122;162;247m" /* bold blue */
+#define MD_H6 "\x1b[1;38;2;187;154;247m" /* bold purple */
 
 /* Inline emphasis: italic + accent over the keyword colour. */
-#define MD_EMPHASIS "\x1b[3;38;2;187;154;247m"  /* italic + purple */
-#define MD_STRONG   "\x1b[1;38;2;255;158;100m"  /* bold + orange */
-#define MD_STRIKE   "\x1b[9;38;2;86;95;137m"    /* strikethrough + comment */
+#define MD_EMPHASIS "\x1b[3;38;2;187;154;247m" /* italic + purple */
+#define MD_STRONG "\x1b[1;38;2;255;158;100m"   /* bold + orange */
+#define MD_STRIKE "\x1b[9;38;2;86;95;137m"     /* strikethrough + comment */
 
 /* Custom highlights.scm. Distinguishes heading levels by inspecting which
  * h<n>_marker child the heading contains. The bundled query (used by
@@ -121,8 +121,8 @@ void md_init_highlights(void) {
      * italic/bold/strike are decorations a reader recognises regardless of
      * theme. */
     highlight_set("text.emphasis", MD_EMPHASIS);
-    highlight_set("text.strong",   MD_STRONG);
-    highlight_set("text.strike",   MD_STRIKE);
+    highlight_set("text.strong", MD_STRONG);
+    highlight_set("text.strike", MD_STRIKE);
 
     /* Plug the per-level queries into the treesitter loader as a fallback,
      * so they apply even when the user hasn't installed a queries override

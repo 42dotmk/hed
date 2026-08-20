@@ -43,8 +43,8 @@ static int reload_init(void) {
 }
 
 const Plugin plugin_reload = {
-    .name   = "reload",
-    .desc   = "rebuild and restart hed in place; hands open buffers to session",
-    .init   = reload_init,
+    .name = "reload",
+    .desc = "rebuild and restart hed in place; hands open buffers to session",
+    .init = reload_init,
     .deinit = NULL,
 };

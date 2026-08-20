@@ -10,10 +10,9 @@
 #include "editor.h"
 #include "fs/fs.h"
 #include "hooks.h"
-#include "lib/strutil.h"
 #include "input/picker.h"
-#include "terminal.h"
 #include "lib/strutil.h"
+#include "terminal.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -41,8 +40,10 @@ void cmd_buffer_alt(const char *args) {
     const char *cur_fn = cur ? cur->filename : NULL;
     for (ptrdiff_t i = arrlen(E.jump_list.entries) - 1; i >= 0; i--) {
         const char *fp = E.jump_list.entries[i].filepath;
-        if (!fp) continue;
-        if (cur_fn && strcmp(fp, cur_fn) == 0) continue;
+        if (!fp)
+            continue;
+        if (cur_fn && strcmp(fp, cur_fn) == 0)
+            continue;
         int idx = buf_find_by_filename(fp);
         if (idx >= 0 && idx != E.current_buffer) {
             buf_switch(idx);
@@ -57,7 +58,8 @@ void cmd_buffer_list(const char *args) {
         ed_set_status_message("No buffers");
         return;
     }
-    if (picker_invoke("buffers", args)) return;
+    if (picker_invoke("buffers", args))
+        return;
     ed_set_status_message("buffers: %td open (no picker installed)",
                           arrlen(E.buffers));
 }
@@ -123,21 +125,19 @@ void cmd_buffer_delete_force(const char *args) {
 
     EdError err = buf_close(buf_idx);
     if (err != ED_OK) {
-        ed_set_status_message("Error closing buffer: %s",
-                              ed_error_string(err));
+        ed_set_status_message("Error closing buffer: %s", ed_error_string(err));
     } else {
         ed_set_status_message("Buffer closed (forced)");
     }
 }
-
-
 
 void cmd_buffers(const char *args) {
     if (arrlen(E.buffers) <= 0) {
         ed_set_status_message("no buffers");
         return;
     }
-    if (picker_invoke("buffers", args)) return;
+    if (picker_invoke("buffers", args))
+        return;
     ed_set_status_message("buffers: %td open (no picker installed)",
                           arrlen(E.buffers));
 }

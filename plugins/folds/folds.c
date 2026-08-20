@@ -72,10 +72,18 @@ static int bstack_pop(BracketStack *s) {
 static bool char_is_inside_string(const char *line, size_t pos) {
     bool in_sq = false, in_dq = false, escaped = false;
     for (size_t i = 0; i < pos; i++) {
-        if (escaped) { escaped = false; continue; }
-        if (line[i] == '\\') { escaped = true; continue; }
-        if (line[i] == '\'' && !in_dq) in_sq = !in_sq;
-        else if (line[i] == '"' && !in_sq) in_dq = !in_dq;
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (line[i] == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (line[i] == '\'' && !in_dq)
+            in_sq = !in_sq;
+        else if (line[i] == '"' && !in_sq)
+            in_dq = !in_dq;
     }
     return in_sq || in_dq;
 }
@@ -121,9 +129,12 @@ static int indent_width(Row *row) {
     int indent = 0;
     for (size_t i = 0; i < row->chars.len; i++) {
         char c = row->chars.data[i];
-        if (c == ' ') indent++;
-        else if (c == '\t') indent += 4;
-        else break;
+        if (c == ' ')
+            indent++;
+        else if (c == '\t')
+            indent += 4;
+        else
+            break;
     }
     return indent;
 }
@@ -189,7 +200,8 @@ static void detect_indent(Buffer *buf) {
         if (next < buf->num_rows && indent_width(&buf->rows[next]) > indent) {
             if (sz >= cap) {
                 cap *= 2;
-                IndentFrame *new_stack = realloc(stack, sizeof(IndentFrame) * cap);
+                IndentFrame *new_stack =
+                    realloc(stack, sizeof(IndentFrame) * cap);
                 if (!new_stack) {
                     free(stack);
                     return;
@@ -226,29 +238,29 @@ static void detect_indent(Buffer *buf) {
 
 static int folds_init(void) {
     fold_method_register("bracket", detect_brackets);
-    fold_method_register("indent",  detect_indent);
+    fold_method_register("indent", detect_indent);
 
     /* Filetype defaults. Match the filetype strings emitted by
      * fs_path_detect_filetype() — anything not listed falls through
      * to "manual" (no folds) until the user picks one. */
-    fold_method_set_default("c",          "bracket");
-    fold_method_set_default("cpp",        "bracket");
+    fold_method_set_default("c", "bracket");
+    fold_method_set_default("cpp", "bracket");
     fold_method_set_default("javascript", "bracket");
     fold_method_set_default("typescript", "bracket");
-    fold_method_set_default("rust",       "bracket");
-    fold_method_set_default("java",       "bracket");
-    fold_method_set_default("go",         "bracket");
+    fold_method_set_default("rust", "bracket");
+    fold_method_set_default("java", "bracket");
+    fold_method_set_default("go", "bracket");
 
-    fold_method_set_default("python",     "indent");
-    fold_method_set_default("shell",      "indent");
-    fold_method_set_default("yaml",       "indent");
+    fold_method_set_default("python", "indent");
+    fold_method_set_default("shell", "indent");
+    fold_method_set_default("yaml", "indent");
 
     return 0;
 }
 
 const Plugin plugin_folds = {
-    .name   = "folds",
-    .desc   = "bracket + indent fold methods",
-    .init   = folds_init,
+    .name = "folds",
+    .desc = "bracket + indent fold methods",
+    .init = folds_init,
     .deinit = NULL,
 };

@@ -133,18 +133,13 @@ StrView strview_from_cstr(const char *s) {
     return strview(s, s ? strlen(s) : 0);
 }
 
-StrView strbuf_view(const StrBuf *s) {
-    return strview(s->data, s->len);
-}
+StrView strbuf_view(const StrBuf *s) { return strview(s->data, s->len); }
 
 int strview_eq(StrView a, StrView b) {
-    return a.len == b.len &&
-           (a.len == 0 || memcmp(a.data, b.data, a.len) == 0);
+    return a.len == b.len && (a.len == 0 || memcmp(a.data, b.data, a.len) == 0);
 }
 
-StrBuf strbuf_from_view(StrView v) {
-    return strbuf_from(v.data, v.len);
-}
+StrBuf strbuf_from_view(StrView v) { return strbuf_from(v.data, v.len); }
 
 void strbuf_append_view(StrBuf *s, StrView v) {
     strbuf_append(s, v.data, v.len);

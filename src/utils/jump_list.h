@@ -4,7 +4,7 @@
 /* Jump list for buffer navigation (like Vim's jumplist) */
 
 typedef struct {
-    char* filepath;
+    char *filepath;
     int cursor_x;
     int cursor_y;
 } JumpEntry;

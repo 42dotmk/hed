@@ -1,5 +1,5 @@
-#include "hed.h"
 #include "sed.h"
+#include "hed.h"
 
 EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
     /* 1. Validate inputs */
@@ -73,8 +73,7 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
         buf_row_insert_in(buf, 0, "", 0);
     } else {
         for (int i = 0; i < output_count; i++) {
-            buf_row_insert_in(buf, i, output_lines[i],
-                            strlen(output_lines[i]));
+            buf_row_insert_in(buf, i, output_lines[i], strlen(output_lines[i]));
         }
     }
 

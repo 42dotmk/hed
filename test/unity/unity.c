@@ -19,8 +19,8 @@ void UnityBegin(const char *filename) {
 }
 
 void UnityConcludeTest(void) {
-    printf("[%s]\n", Unity.CurrentTestName ? Unity.CurrentTestName
-                                           : "(unnamed test)");
+    printf("[%s]\n",
+           Unity.CurrentTestName ? Unity.CurrentTestName : "(unnamed test)");
     if (Unity.CurrentTestIgnored) {
         Unity.TestIgnores++;
         printf("  IGNORE at %s:%u\n", Unity.CurrentTestFile,

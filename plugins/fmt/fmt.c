@@ -1,26 +1,31 @@
 #include "hed.h"
 
 /* Filetype → command template. `%s` is replaced by the (escaped) path. */
-typedef struct { const char *ft; const char *tmpl; } FmtRule;
+typedef struct {
+    const char *ft;
+    const char *tmpl;
+} FmtRule;
 
 static const FmtRule rules[] = {
-    { "c",          "clang-format -i %s" },
-    { "cpp",        "clang-format -i %s" },
-    { "rust",       "rustfmt %s" },
-    { "go",         "gofmt -w %s" },
-    { "python",     "black %s" },
-    { "javascript", "prettier --write %s" },
-    { "typescript", "prettier --write %s" },
-    { "json",       "prettier --parser json --write %s" },
-    { "html",       "prettier --write %s" },
-    { "css",        "prettier --write %s" },
-    { "markdown",   "prettier --write %s" },
+    {"c", "clang-format -i %s"},
+    {"cpp", "clang-format -i %s"},
+    {"rust", "rustfmt %s"},
+    {"go", "gofmt -w %s"},
+    {"python", "black %s"},
+    {"javascript", "prettier --write %s"},
+    {"typescript", "prettier --write %s"},
+    {"json", "prettier --parser json --write %s"},
+    {"html", "prettier --write %s"},
+    {"css", "prettier --write %s"},
+    {"markdown", "prettier --write %s"},
 };
 
 static const char *find_tmpl(const char *ft) {
-    if (!ft) return NULL;
-    for (size_t i = 0; i < sizeof(rules)/sizeof(rules[0]); i++) {
-        if (strcmp(ft, rules[i].ft) == 0) return rules[i].tmpl;
+    if (!ft)
+        return NULL;
+    for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+        if (strcmp(ft, rules[i].ft) == 0)
+            return rules[i].tmpl;
     }
     return NULL;
 }
@@ -28,7 +33,8 @@ static const char *find_tmpl(const char *ft) {
 static void cmd_fmt(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) return;
+    if (!buf)
+        return;
     if (!buf->filename || !*buf->filename) {
         ed_set_status_message("fmt: buffer has no filename");
         return;
@@ -70,8 +76,8 @@ static int fmt_init(void) {
 }
 
 const Plugin plugin_fmt = {
-    .name   = "fmt",
-    .desc   = "external code formatters (clang-format, rustfmt, prettier, ...)",
-    .init   = fmt_init,
+    .name = "fmt",
+    .desc = "external code formatters (clang-format, rustfmt, prettier, ...)",
+    .init = fmt_init,
     .deinit = NULL,
 };

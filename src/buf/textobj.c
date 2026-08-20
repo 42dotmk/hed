@@ -718,7 +718,8 @@ int textobj_line(Buffer *buf, int line, int col, TextSelection *sel) {
     int len = (int)row->chars.len;
     TextPos cursor = {y, x};
     int ok = set_selection(sel, (TextPos){y, 0}, (TextPos){y, len}, cursor);
-    if (ok) sel->type = SEL_VISUAL_LINE;
+    if (ok)
+        sel->type = SEL_VISUAL_LINE;
     return ok;
 }
 

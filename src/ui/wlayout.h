@@ -37,11 +37,11 @@ typedef struct WLayoutNode {
     WSplitDir dir;
     WDecor decor;
     int nchildren;
-    struct WLayoutNode **child; 
-    int *weight;                
-    int leaf_index; 
-    int leaf_kind;  /* reserved for future use */
-    int fixed_size; 
+    struct WLayoutNode **child;
+    int *weight;
+    int leaf_index;
+    int leaf_kind; /* reserved for future use */
+    int fixed_size;
     int top, left, height, width;
 } WLayoutNode;
 
@@ -58,7 +58,8 @@ void wlayout_reindex_after_close(WLayoutNode *node, int closed_idx);
 WLayoutNode *wlayout_find_leaf_by_index(WLayoutNode *node, int leaf_index);
 
 /* Layout computation and rendering */
-void wlayout_compute(WLayoutNode *root, int top, int left, int height, int width);
+void wlayout_compute(WLayoutNode *root, int top, int left, int height,
+                     int width);
 void wlayout_draw_decorations(Abuf *ab, const WLayoutNode *root);
 
 /* Utilities for global decoration control */
@@ -74,6 +75,6 @@ int wlayout_adjust_weight(WLayoutNode *root, int leaf_index, int delta);
  * cells between the focused subtree and an adjacent sibling. Operates
  * on the sizes from the most recent layout pass, so the move is exact.
  * Returns 1 on success, 0 if no matching ancestor or no room to move. */
-int wlayout_resize_dir(WLayoutNode *root, int leaf_index,
-                       WSplitDir dir, int delta);
+int wlayout_resize_dir(WLayoutNode *root, int leaf_index, WSplitDir dir,
+                       int delta);
 #endif /* WLAYOUT_H */

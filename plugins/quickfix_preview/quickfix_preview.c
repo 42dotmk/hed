@@ -4,15 +4,20 @@
 #include "hed.h"
 
 static void cursor_hook(const HookCursorEvent *event) {
-    if (!event || !event->buf) return;
+    if (!event || !event->buf)
+        return;
     Buffer *buf = event->buf;
-    if (!buf->filetype || strcmp(buf->filetype, "quickfix") != 0) return;
+    if (!buf->filetype || strcmp(buf->filetype, "quickfix") != 0)
+        return;
 
-    if (arrlen(E.qf.items) == 0) return;
+    if (arrlen(E.qf.items) == 0)
+        return;
 
     int row = event->new_y;
-    if (row < 0) row = 0;
-    if (row >= (int)arrlen(E.qf.items)) row = (int)arrlen(E.qf.items) - 1;
+    if (row < 0)
+        row = 0;
+    if (row >= (int)arrlen(E.qf.items))
+        row = (int)arrlen(E.qf.items) - 1;
 
     E.qf.sel = row;
     qf_update_view(&E.qf);
@@ -20,13 +25,14 @@ static void cursor_hook(const HookCursorEvent *event) {
 }
 
 static int quickfix_preview_init(void) {
-    hook_register_cursor(HOOK_CURSOR_MOVE, MODE_NORMAL, "quickfix", cursor_hook);
+    hook_register_cursor(HOOK_CURSOR_MOVE, MODE_NORMAL, "quickfix",
+                         cursor_hook);
     return 0;
 }
 
 const Plugin plugin_quickfix_preview = {
-    .name   = "quickfix_preview",
-    .desc   = "live preview of quickfix entry under cursor",
-    .init   = quickfix_preview_init,
+    .name = "quickfix_preview",
+    .desc = "live preview of quickfix entry under cursor",
+    .init = quickfix_preview_init,
     .deinit = NULL,
 };

@@ -14,9 +14,9 @@
 
 /* Fold region structure - represents a collapsible region in the buffer */
 typedef struct FoldRegion {
-    int start_line;     /* Line where fold starts (inclusive) */
-    int end_line;       /* Line where fold ends (inclusive) */
-    bool is_collapsed;  /* Whether this fold is currently collapsed */
+    int start_line;    /* Line where fold starts (inclusive) */
+    int end_line;      /* Line where fold ends (inclusive) */
+    bool is_collapsed; /* Whether this fold is currently collapsed */
 } FoldRegion;
 
 /* Fold list - dynamic array of fold regions for a buffer */

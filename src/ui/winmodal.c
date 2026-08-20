@@ -1,5 +1,5 @@
-#include "editor.h"
 #include "ui/winmodal.h"
+#include "editor.h"
 #include <stdlib.h>
 
 Window *winmodal_create(int x, int y, int width, int height) {
@@ -60,12 +60,12 @@ Window *winmodal_create(int x, int y, int width, int height) {
     return modal;
 }
 
-Window *winmodal_create_anchored(int anchor_x, int anchor_y,
-                                 int width, int height,
-                                 WModalAnchor prefer) {
-    int below_y     = anchor_y + 1;
-    int space_below = E.screen_rows - below_y + 1; /* rows from below_y inclusive */
-    int space_above = anchor_y - 1;                /* rows above anchor_y */
+Window *winmodal_create_anchored(int anchor_x, int anchor_y, int width,
+                                 int height, WModalAnchor prefer) {
+    int below_y = anchor_y + 1;
+    int space_below =
+        E.screen_rows - below_y + 1; /* rows from below_y inclusive */
+    int space_above = anchor_y - 1;  /* rows above anchor_y */
 
     int place_below;
     if (prefer == WMODAL_ABOVE) {
@@ -80,14 +80,21 @@ Window *winmodal_create_anchored(int anchor_x, int anchor_y,
     if (place_below) {
         y = below_y;
         int avail = E.screen_rows - y + 1;
-        if (avail < 1) { y = E.screen_rows; avail = 1; }
-        if (height > avail) height = avail;
+        if (avail < 1) {
+            y = E.screen_rows;
+            avail = 1;
+        }
+        if (height > avail)
+            height = avail;
     } else {
-        if (height > space_above) height = space_above > 0 ? space_above : 1;
+        if (height > space_above)
+            height = space_above > 0 ? space_above : 1;
         y = anchor_y - height;
-        if (y < 1) y = 1;
+        if (y < 1)
+            y = 1;
     }
-    if (height < 1) height = 1;
+    if (height < 1)
+        height = 1;
 
     return winmodal_create(anchor_x, y, width, height);
 }
@@ -133,7 +140,9 @@ void winmodal_destroy(Window *modal) {
     free(modal);
 }
 
-int winmodal_is_shown(void) { return E.modal_window != NULL && E.modal_window->visible; }
+int winmodal_is_shown(void) {
+    return E.modal_window != NULL && E.modal_window->visible;
+}
 
 Window *winmodal_current(void) {
     if (E.modal_window && E.modal_window->visible)

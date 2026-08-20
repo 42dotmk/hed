@@ -12,9 +12,9 @@
 
 #include "mail_git_patch.h"
 #include "hed.h"
-#include "mail/mail.h"
 #include "input/command_mode.h"
 #include "input/prompt.h"
+#include "mail/mail.h"
 #include "utils/term_cmd.h"
 
 #include <stdio.h>
@@ -43,12 +43,11 @@ static void cmd_mail_git_patch(const char *args) {
     }
 
     char **raw = NULL;
-    int    raw_count = 0;
+    int raw_count = 0;
     term_cmd_capture(cmd, &raw, &raw_count);
     if (raw_count == 0) {
         ed_set_status_message(
-            "mail-git-patch: git produced no output (bad range '%s'?)",
-            range);
+            "mail-git-patch: git produced no output (bad range '%s'?)", range);
         term_cmd_free(raw, raw_count);
         return;
     }
@@ -91,13 +90,14 @@ static void cmd_mail_git_patch(const char *args) {
 
     const char *from = mail_get_from();
     int wrote_from = 0, wrote_to = 0, wrote_cc = 0;
-    int in_header  = 1;
-    int n_out      = 0;
+    int in_header = 1;
+    int n_out = 0;
 
     for (int i = start; i < end; i++) {
         const char *l = raw[i] ? raw[i] : "";
         char *line = strdup(l);
-        if (!line) break;
+        if (!line)
+            break;
         str_chomp(line);
 
         if (in_header) {
@@ -105,13 +105,14 @@ static void cmd_mail_git_patch(const char *args) {
                 /* End of header block — inject the headers we owe. */
                 if (!wrote_from) {
                     char fl[512];
-                    snprintf(fl, sizeof(fl), "From: %s",
-                             from[0] ? from : "");
+                    snprintf(fl, sizeof(fl), "From: %s", from[0] ? from : "");
                     out[n_out++] = strdup(fl);
                 }
-                if (!wrote_to) out[n_out++] = strdup("To: ");
-                if (!wrote_cc) out[n_out++] = strdup("Cc: ");
-                out[n_out++] = line;     /* the blank separator */
+                if (!wrote_to)
+                    out[n_out++] = strdup("To: ");
+                if (!wrote_cc)
+                    out[n_out++] = strdup("Cc: ");
+                out[n_out++] = line; /* the blank separator */
                 in_header = 0;
                 continue;
             }
@@ -126,9 +127,12 @@ static void cmd_mail_git_patch(const char *args) {
                 wrote_from = 1;
                 continue;
             }
-            if (strncasecmp(line, "From:",    5) == 0) wrote_from = 1;
-            if (strncasecmp(line, "To:",      3) == 0) wrote_to   = 1;
-            if (strncasecmp(line, "Cc:",      3) == 0) wrote_cc   = 1;
+            if (strncasecmp(line, "From:", 5) == 0)
+                wrote_from = 1;
+            if (strncasecmp(line, "To:", 3) == 0)
+                wrote_to = 1;
+            if (strncasecmp(line, "Cc:", 3) == 0)
+                wrote_cc = 1;
         }
         out[n_out++] = line;
     }
@@ -140,14 +144,17 @@ static void cmd_mail_git_patch(const char *args) {
             snprintf(fl, sizeof(fl), "From: %s", from[0] ? from : "");
             out[n_out++] = strdup(fl);
         }
-        if (!wrote_to) out[n_out++] = strdup("To: ");
-        if (!wrote_cc) out[n_out++] = strdup("Cc: ");
+        if (!wrote_to)
+            out[n_out++] = strdup("To: ");
+        if (!wrote_cc)
+            out[n_out++] = strdup("Cc: ");
         out[n_out++] = strdup("");
     }
 
     mail_compose_with_lines("Patch", out, n_out);
 
-    for (int i = 0; i < n_out; i++) free(out[i]);
+    for (int i = 0; i < n_out; i++)
+        free(out[i]);
     free(out);
     term_cmd_free(raw, raw_count);
 
@@ -167,7 +174,8 @@ static void cmd_mail_git_patch(const char *args) {
 /* True if `s` looks like a flag (starts with '-'), false if it looks
  * like a path or freeform text. */
 static int looks_like_flag(const char *s) {
-    while (*s == ' ' || *s == '\t') s++;
+    while (*s == ' ' || *s == '\t')
+        s++;
     return s[0] == '-';
 }
 
@@ -191,7 +199,8 @@ static void cmd_mail_git_am(const char *args) {
     }
 
     const char *arg = args ? args : "";
-    while (*arg == ' ' || *arg == '\t') arg++;
+    while (*arg == ' ' || *arg == '\t')
+        arg++;
 
     int use_buffer_mbox = 0;
     const char *tid = NULL;
@@ -201,7 +210,7 @@ static void cmd_mail_git_am(const char *args) {
         if (buf && buf->filename && buf->filetype &&
             strcmp(buf->filetype, "mail-message") == 0 &&
             strncmp(buf->filename, "mail://", 7) == 0) {
-            tid             = buf->filename + 7;
+            tid = buf->filename + 7;
             use_buffer_mbox = 1;
         } else if (!*arg) {
             ed_set_status_message(
@@ -215,16 +224,15 @@ static void cmd_mail_git_am(const char *args) {
     }
 
     char cmd[1024];
-    int  n;
+    int n;
     if (use_buffer_mbox) {
         /* Thread ids from notmuch are alnum + ':' — safe to single-
          * quote without further escaping. */
         n = snprintf(cmd, sizeof(cmd),
-                     "notmuch show --format=mbox -- '%s' | git am%s%s",
-                     tid, *arg ? " " : "", arg);
-    } else {
-        n = snprintf(cmd, sizeof(cmd), "git am%s%s",
+                     "notmuch show --format=mbox -- '%s' | git am%s%s", tid,
                      *arg ? " " : "", arg);
+    } else {
+        n = snprintf(cmd, sizeof(cmd), "git am%s%s", *arg ? " " : "", arg);
     }
     if (n < 0 || (size_t)n >= sizeof(cmd)) {
         ed_set_status_message("mail-git-am: command too long");
@@ -256,7 +264,8 @@ void kb_mail_git_patch_prompt(void) {
      * Enter immediately runs the default `-1 HEAD`. */
     cmd_prompt_open();
     Prompt *p = prompt_current();
-    if (!p) return;
+    if (!p)
+        return;
     static const char pref[] = "mail-git-patch ";
     prompt_set_text(p, pref, (int)(sizeof(pref) - 1));
     ed_set_status_message(":%s", p->buf);
@@ -266,14 +275,14 @@ static int mail_git_patch_init(void) {
     cmd("mail-git-patch", cmd_mail_git_patch,
         "compose a git format-patch email of the current repo "
         "(default range: -1 HEAD)");
-    cmd("mail-git-am",    cmd_mail_git_am,
+    cmd("mail-git-am", cmd_mail_git_am,
         "apply the current patch email (or a file) via `git am`");
     return 0;
 }
 
 const Plugin plugin_mail_git_patch = {
-    .name   = "mail_git_patch",
-    .desc   = "compose an email from `git format-patch` output of the cwd repo",
-    .init   = mail_git_patch_init,
+    .name = "mail_git_patch",
+    .desc = "compose an email from `git format-patch` output of the cwd repo",
+    .init = mail_git_patch_init,
     .deinit = NULL,
 };

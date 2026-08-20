@@ -6,19 +6,19 @@
 extern const Plugin plugin_mail;
 
 /* Set the base notmuch query (default: "tag:inbox"). */
-void        mail_set_query(const char *q);
+void mail_set_query(const char *q);
 const char *mail_get_query(void);
 
 /* Set an extra filter ANDed with the base query. Empty string clears it. */
 void mail_set_filter(const char *filter);
 
 /* Set the maildir root used for mailbox discovery (default: "$HOME/.mail"). */
-void        mail_set_dir(const char *dir);
+void mail_set_dir(const char *dir);
 const char *mail_get_dir(void);
 
 /* Restrict the listing to a notmuch sub-query, e.g. `folder:work/Inbox`
  * or `path:work/...`. Empty string clears the scope (all mailboxes). */
-void        mail_set_mailbox(const char *q);
+void mail_set_mailbox(const char *q);
 const char *mail_get_mailbox(void);
 
 /* Register a named saved view shown at the top of the mailbox sidebar.

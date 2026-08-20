@@ -1,5 +1,5 @@
-#include "tmux.h"
 #include "hed.h"
+#include "tmux.h"
 #include <stdarg.h>
 #include <sys/wait.h>
 
@@ -12,17 +12,17 @@
  * slot.
  */
 
-#define TMUX_PANES_MAX        8
-#define TMUX_PANE_NAME_MAX    32
-#define TMUX_PANE_SPAWN_MAX   256
-#define TMUX_PANE_ID_MAX      64
+#define TMUX_PANES_MAX 8
+#define TMUX_PANE_NAME_MAX 32
+#define TMUX_PANE_SPAWN_MAX 256
+#define TMUX_PANE_ID_MAX 64
 
 typedef struct {
-    char         name[TMUX_PANE_NAME_MAX];
-    char         spawn_cmd[TMUX_PANE_SPAWN_MAX];
-    char         pane_id[TMUX_PANE_ID_MAX];
-    int          pane_id_set;
-    int          in_use;
+    char name[TMUX_PANE_NAME_MAX];
+    char spawn_cmd[TMUX_PANE_SPAWN_MAX];
+    char pane_id[TMUX_PANE_ID_MAX];
+    int pane_id_set;
+    int in_use;
     TmuxSplitDir dir;
 } TmuxPaneSlot;
 
@@ -433,9 +433,8 @@ int tmux_pane_toggle(const char *name) {
             slot->pane_id_set = 0;
             slot->pane_id[0] = '\0';
             if (kill_status == 0) {
-                ed_set_status_message(
-                    "tmux: %s pane closed (break failed: %d)", slot->name,
-                    status);
+                ed_set_status_message("tmux: %s pane closed (break failed: %d)",
+                                      slot->name, status);
                 return 1;
             }
             ed_set_status_message("tmux: failed to hide %s pane (status %d)",
@@ -575,7 +574,7 @@ int tmux_pane_send_focused(const char *cmd) {
 
 /* ---- Single-pane convenience API (operates on "runner") ---------------- */
 
-int tmux_ensure_pane(void)              { return tmux_pane_ensure("runner"); }
-int tmux_toggle_pane(void)              { return tmux_pane_toggle("runner"); }
-int tmux_kill_pane(void)                { return tmux_pane_kill("runner"); }
-int tmux_send_command(const char *cmd)  { return tmux_pane_send("runner", cmd); }
+int tmux_ensure_pane(void) { return tmux_pane_ensure("runner"); }
+int tmux_toggle_pane(void) { return tmux_pane_toggle("runner"); }
+int tmux_kill_pane(void) { return tmux_pane_kill("runner"); }
+int tmux_send_command(const char *cmd) { return tmux_pane_send("runner", cmd); }

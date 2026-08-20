@@ -1,9 +1,9 @@
 #include "utils/undo.h"
 #include "buf/buffer.h"
+#include "buf/row.h"
 #include "editor.h"
 #include "hooks.h"
 #include "lib/log.h"
-#include "buf/row.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,8 +49,7 @@ static UndoRec *group_add_rec(UndoGroup *g) {
 static void stack_push(UndoGroup ***stack, int *len, int *cap, UndoGroup *g) {
     if (*len == *cap) {
         int nc = *cap ? *cap * 2 : 16;
-        UndoGroup **ns =
-            realloc(*stack, (size_t)nc * sizeof(UndoGroup *));
+        UndoGroup **ns = realloc(*stack, (size_t)nc * sizeof(UndoGroup *));
         if (!ns) {
             group_free(g);
             return;
@@ -248,8 +247,8 @@ static void apply_rec(struct Buffer *buf, UndoRec *r, int dir) {
         buf->dirty++;
         return;
     }
-    int doing_insert = (r->kind == UR_INSERT && dir > 0) ||
-                       (r->kind == UR_DELETE && dir < 0);
+    int doing_insert =
+        (r->kind == UR_INSERT && dir > 0) || (r->kind == UR_DELETE && dir < 0);
     if (doing_insert) {
         buf_row_insert_in(buf, r->row_idx, r->data.data, r->data.len);
     } else {

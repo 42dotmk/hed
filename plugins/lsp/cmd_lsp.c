@@ -1,10 +1,11 @@
-#include "hed.h"
 #include "cmd_lsp.h"
+#include "hed.h"
 #include "lsp.h"
 
 /* Skip leading whitespace; return pointer into s. */
 static const char *skip_ws(const char *s) {
-    while (s && isspace((unsigned char)*s)) s++;
+    while (s && isspace((unsigned char)*s))
+        s++;
     return s;
 }
 
@@ -25,22 +26,21 @@ static const char *next_token(const char *s, char *dst, int dst_sz) {
  */
 void cmd_lsp_connect(const char *args) {
     if (!args || !*args) {
-        ed_set_status_message(
-            "Usage: lsp_connect <lang> tcp <host>:<port>  "
-            "or  lsp_connect <lang> <to_pipe> <from_pipe>");
+        ed_set_status_message("Usage: lsp_connect <lang> tcp <host>:<port>  "
+                              "or  lsp_connect <lang> <to_pipe> <from_pipe>");
         return;
     }
 
-    char lang[64]     = {0};
-    char arg2[512]    = {0};
-    char arg3[512]    = {0};
-    char root[512]    = {0};
+    char lang[64] = {0};
+    char arg2[512] = {0};
+    char arg3[512] = {0};
+    char root[512] = {0};
 
     const char *p = args;
-    p = next_token(p, lang,  sizeof(lang));
-    p = next_token(p, arg2,  sizeof(arg2));
-    p = next_token(p, arg3,  sizeof(arg3));
-    p = next_token(p, root,  sizeof(root));
+    p = next_token(p, lang, sizeof(lang));
+    p = next_token(p, arg2, sizeof(arg2));
+    p = next_token(p, arg3, sizeof(arg3));
+    p = next_token(p, root, sizeof(root));
 
     if (!lang[0] || !arg2[0]) {
         ed_set_status_message("LSP: missing arguments");
@@ -75,10 +75,11 @@ void cmd_lsp_start(const char *args) {
     next_token(skip_ws(args ? args : ""), lang, sizeof(lang));
 
     Buffer *buf = buf_cur();
-    const char *use_lang = lang[0] ? lang
-                          : (buf && buf->filetype ? buf->filetype : NULL);
+    const char *use_lang =
+        lang[0] ? lang : (buf && buf->filetype ? buf->filetype : NULL);
     if (!use_lang) {
-        ed_set_status_message("LSP: usage: lsp_start <lang>  (no filetype on current buffer)");
+        ed_set_status_message(
+            "LSP: usage: lsp_start <lang>  (no filetype on current buffer)");
         return;
     }
     const char *hint = (buf && buf->filename) ? buf->filename : NULL;
@@ -89,7 +90,10 @@ void cmd_lsp_start(const char *args) {
 void cmd_lsp_disconnect(const char *args) {
     char lang[64] = {0};
     next_token(skip_ws(args ? args : ""), lang, sizeof(lang));
-    if (!lang[0]) { ed_set_status_message("LSP: specify a language"); return; }
+    if (!lang[0]) {
+        ed_set_status_message("LSP: specify a language");
+        return;
+    }
     lsp_cmd_disconnect(lang);
 }
 
@@ -103,7 +107,10 @@ void cmd_lsp_status(const char *args) {
 void cmd_lsp_hover(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) { ed_set_status_message("LSP: no buffer"); return; }
+    if (!buf) {
+        ed_set_status_message("LSP: no buffer");
+        return;
+    }
     lsp_request_hover(buf, buf->cursor->y, buf->cursor->x);
 }
 
@@ -111,7 +118,10 @@ void cmd_lsp_hover(const char *args) {
 void cmd_lsp_definition(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) { ed_set_status_message("LSP: no buffer"); return; }
+    if (!buf) {
+        ed_set_status_message("LSP: no buffer");
+        return;
+    }
     lsp_request_definition(buf, buf->cursor->y, buf->cursor->x);
 }
 
@@ -119,7 +129,10 @@ void cmd_lsp_definition(const char *args) {
 void cmd_lsp_completion(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();
-    if (!buf) { ed_set_status_message("LSP: no buffer"); return; }
+    if (!buf) {
+        ed_set_status_message("LSP: no buffer");
+        return;
+    }
     lsp_request_completion(buf, buf->cursor->y, buf->cursor->x);
 }
 

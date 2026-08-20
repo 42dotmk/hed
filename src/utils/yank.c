@@ -1,8 +1,8 @@
 #include "utils/yank.h"
-#include "editor.h"
 #include "buf/buf_helpers.h"
-#include "input/registers.h"
 #include "buf/row.h"
+#include "editor.h"
+#include "input/registers.h"
 #include "ui/window.h"
 #include <stdlib.h>
 #include <string.h>
@@ -26,35 +26,35 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
 
     /* Serialize based on type */
     switch (yd->type) {
-        case SEL_VISUAL:
-        case SEL_VISUAL_LINE:
-            /* Join rows with newlines */
-            for (int i = 0; i < yd->num_rows; i++) {
-                strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
-                if (i < yd->num_rows - 1) {
-                    strbuf_append_char(&result, '\n');
-                }
-            }
-            /* Trailing newline marks the yank as line-wise so paste
-             * inserts as new lines (matches vim yy/p semantics). */
-            if (yd->type == SEL_VISUAL_LINE) {
+    case SEL_VISUAL:
+    case SEL_VISUAL_LINE:
+        /* Join rows with newlines */
+        for (int i = 0; i < yd->num_rows; i++) {
+            strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
+            if (i < yd->num_rows - 1) {
                 strbuf_append_char(&result, '\n');
             }
-            break;
+        }
+        /* Trailing newline marks the yank as line-wise so paste
+         * inserts as new lines (matches vim yy/p semantics). */
+        if (yd->type == SEL_VISUAL_LINE) {
+            strbuf_append_char(&result, '\n');
+        }
+        break;
 
-        case SEL_VISUAL_BLOCK:
-            /* Join rows with newlines (preserving block structure) */
-            for (int i = 0; i < yd->num_rows; i++) {
-                strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
-                if (i < yd->num_rows - 1) {
-                    strbuf_append_char(&result, '\n');
-                }
+    case SEL_VISUAL_BLOCK:
+        /* Join rows with newlines (preserving block structure) */
+        for (int i = 0; i < yd->num_rows; i++) {
+            strbuf_append(&result, yd->rows[i].data, yd->rows[i].len);
+            if (i < yd->num_rows - 1) {
+                strbuf_append_char(&result, '\n');
             }
-            break;
+        }
+        break;
 
-        case SEL_NONE:
-            *out_len = 0;
-            return NULL;
+    case SEL_NONE:
+        *out_len = 0;
+        return NULL;
     }
 
     *out_len = result.len;
@@ -68,7 +68,8 @@ static char *yank_data_to_string(const YankData *yd, size_t *out_len) {
 }
 
 void yank_data_free(YankData *yd) {
-    if (!yd) return;
+    if (!yd)
+        return;
     if (yd->rows) {
         for (int i = 0; i < yd->num_rows; i++) {
             strbuf_free(&yd->rows[i]);
@@ -95,65 +96,69 @@ YankData yank_data_new(Buffer *buf, const TextSelection *sel) {
     }
 
     int num_rows = ey - sy + 1;
-    YankData yd = {
-        .type = sel->type,
-        .num_rows = num_rows,
-        .rows = calloc((size_t)num_rows, sizeof(StrBuf))
-    };
+    YankData yd = {.type = sel->type,
+                   .num_rows = num_rows,
+                   .rows = calloc((size_t)num_rows, sizeof(StrBuf))};
 
     switch (sel->type) {
-        case SEL_VISUAL:
-        case SEL_VISUAL_LINE:
-            /* Character-wise or line-wise: store text with newlines */
-            for (int y = sy; y <= ey; y++) {
-                if (y >= buf->num_rows) break;
-                Row *r = &buf->rows[y];
-                int start_col = (y == sy) ? sx : 0;
-                int end_col = (y == ey) ? ex : (int)r->chars.len;
+    case SEL_VISUAL:
+    case SEL_VISUAL_LINE:
+        /* Character-wise or line-wise: store text with newlines */
+        for (int y = sy; y <= ey; y++) {
+            if (y >= buf->num_rows)
+                break;
+            Row *r = &buf->rows[y];
+            int start_col = (y == sy) ? sx : 0;
+            int end_col = (y == ey) ? ex : (int)r->chars.len;
 
-                if (start_col < 0) start_col = 0;
-                if (end_col > (int)r->chars.len) end_col = (int)r->chars.len;
+            if (start_col < 0)
+                start_col = 0;
+            if (end_col > (int)r->chars.len)
+                end_col = (int)r->chars.len;
 
-                if (end_col > start_col) {
-                    int idx = y - sy;
-                    strbuf_append(&yd.rows[idx], r->chars.data + start_col,
-                               (size_t)(end_col - start_col));
-                }
-            }
-            break;
-
-        case SEL_VISUAL_BLOCK:
-            /* Block-wise: store each row segment separately */
-            for (int y = sy; y <= ey; y++) {
-                if (y >= buf->num_rows) break;
-                Row *r = &buf->rows[y];
-
-                /* For block mode, sx and ex are the column boundaries */
-                int start_col = sx;
-                int end_col = ex;
-
-                if (start_col < 0) start_col = 0;
-                if (end_col > (int)r->chars.len) end_col = (int)r->chars.len;
-
+            if (end_col > start_col) {
                 int idx = y - sy;
-                if (end_col > start_col) {
-                    strbuf_append(&yd.rows[idx], r->chars.data + start_col,
-                               (size_t)(end_col - start_col));
-                }
-                /* For block mode, rows can be empty if the line is shorter */
+                strbuf_append(&yd.rows[idx], r->chars.data + start_col,
+                              (size_t)(end_col - start_col));
             }
-            break;
+        }
+        break;
 
-        case SEL_NONE:
-            /* Empty selection */
-            break;
+    case SEL_VISUAL_BLOCK:
+        /* Block-wise: store each row segment separately */
+        for (int y = sy; y <= ey; y++) {
+            if (y >= buf->num_rows)
+                break;
+            Row *r = &buf->rows[y];
+
+            /* For block mode, sx and ex are the column boundaries */
+            int start_col = sx;
+            int end_col = ex;
+
+            if (start_col < 0)
+                start_col = 0;
+            if (end_col > (int)r->chars.len)
+                end_col = (int)r->chars.len;
+
+            int idx = y - sy;
+            if (end_col > start_col) {
+                strbuf_append(&yd.rows[idx], r->chars.data + start_col,
+                              (size_t)(end_col - start_col));
+            }
+            /* For block mode, rows can be empty if the line is shorter */
+        }
+        break;
+
+    case SEL_NONE:
+        /* Empty selection */
+        break;
     }
 
     return yd;
 }
 
 EdError yank_selection(const TextSelection *sel) {
-	BUF(buf)
+    BUF(buf)
     if (!sel) {
         return ED_ERR_INVALID_ARG;
     }
@@ -171,9 +176,9 @@ EdError yank_selection(const TextSelection *sel) {
     last_yank_was_block = (yd.type == SEL_VISUAL_BLOCK);
 
     if (data) {
-        RegType rt = yd.type == SEL_VISUAL_LINE  ? REG_LINEWISE
-                   : yd.type == SEL_VISUAL_BLOCK ? REG_BLOCKWISE
-                                                 : REG_CHARWISE;
+        RegType rt = yd.type == SEL_VISUAL_LINE    ? REG_LINEWISE
+                     : yd.type == SEL_VISUAL_BLOCK ? REG_BLOCKWISE
+                                                   : REG_CHARWISE;
         regs_set_yank_typed(data, len, rt);
         free(data);
     }
@@ -187,18 +192,24 @@ EdError yank_selection(const TextSelection *sel) {
  * the rectangle is honoured even when rows differ in width. Rows that
  * don't reach the block are stored empty, preserving the shape. */
 EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
-    if (!buf) return ED_ERR_INVALID_ARG;
-    if (sy < 0) sy = 0;
-    if (ey >= buf->num_rows) ey = buf->num_rows - 1;
-    if (sy > ey) return ED_ERR_INVALID_ARG;
+    if (!buf)
+        return ED_ERR_INVALID_ARG;
+    if (sy < 0)
+        sy = 0;
+    if (ey >= buf->num_rows)
+        ey = buf->num_rows - 1;
+    if (sy > ey)
+        return ED_ERR_INVALID_ARG;
 
     StrBuf out = strbuf_new();
     for (int y = sy; y <= ey; y++) {
         Row *r = &buf->rows[y];
         int c0 = buf_row_rx_to_cx(r, start_rx);
         int c1 = buf_row_rx_to_cx(r, end_rx_excl);
-        if (c0 > (int)r->chars.len) c0 = (int)r->chars.len;
-        if (c1 > (int)r->chars.len) c1 = (int)r->chars.len;
+        if (c0 > (int)r->chars.len)
+            c0 = (int)r->chars.len;
+        if (c1 > (int)r->chars.len)
+            c1 = (int)r->chars.len;
         if (c1 > c0)
             strbuf_append(&out, r->chars.data + c0, (size_t)(c1 - c0));
         if (y < ey)
@@ -232,9 +243,9 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
      * (visual-line yank) or not (dd) — the type, not the newline, is the
      * source of truth, so we strip at most one trailing newline. */
     RegType rt = regs_get_type(reg_name);
-    SelectionType st = rt == REG_LINEWISE  ? SEL_VISUAL_LINE
-                     : rt == REG_BLOCKWISE ? SEL_VISUAL_BLOCK
-                                           : SEL_VISUAL;
+    SelectionType st = rt == REG_LINEWISE    ? SEL_VISUAL_LINE
+                       : rt == REG_BLOCKWISE ? SEL_VISUAL_BLOCK
+                                             : SEL_VISUAL;
 
     size_t len = reg->len;
     if (st == SEL_VISUAL_LINE && len > 0 && reg->data[len - 1] == '\n')
@@ -243,14 +254,16 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     /* Split the register text into one StrBuf per line. */
     int num_rows = 1;
     for (size_t i = 0; i < len; i++)
-        if (reg->data[i] == '\n') num_rows++;
+        if (reg->data[i] == '\n')
+            num_rows++;
 
     YankData yd = {
         .type = st,
         .num_rows = num_rows,
         .rows = calloc((size_t)num_rows, sizeof(StrBuf)),
     };
-    if (!yd.rows) return ED_ERR_NOMEM;
+    if (!yd.rows)
+        return ED_ERR_NOMEM;
 
     size_t start = 0;
     int idx = 0;
@@ -272,16 +285,21 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     if (err == ED_OK) {
         if (st == SEL_VISUAL_LINE) {
             int line = after ? at_line + 1 : at_line;
-            if (line >= buf->num_rows) line = buf->num_rows - 1;
-            if (line < 0) line = 0;
+            if (line >= buf->num_rows)
+                line = buf->num_rows - 1;
+            if (line < 0)
+                line = 0;
             win->cursor.y = line;
             win->cursor.x = 0;
         } else {
             int rowlen = (at_line < buf->num_rows)
-                             ? (int)buf->rows[at_line].chars.len : 0;
+                             ? (int)buf->rows[at_line].chars.len
+                             : 0;
             int col = at_col;
-            if (after && col < rowlen) col++;
-            if (col < 0) col = 0;
+            if (after && col < rowlen)
+                col++;
+            if (col < 0)
+                col = 0;
             win->cursor.x = col;
             if (st == SEL_VISUAL && num_rows == 1 && yd.rows[0].len > 0)
                 win->cursor.x = col + (int)yd.rows[0].len - 1;
@@ -294,6 +312,4 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
 
 /* Utility */
 
-bool yank_is_block_mode(void) {
-    return last_yank_was_block;
-}
+bool yank_is_block_mode(void) { return last_yank_was_block; }

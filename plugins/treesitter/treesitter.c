@@ -8,9 +8,9 @@
  * NULL and core skips the calls. */
 
 #include "hed.h"
-#include "ts.h"
-#include "theme.h"
 #include "shell/shell.h"
+#include "theme.h"
+#include "ts.h"
 
 static void cmd_ts(const char *args) {
     if (!args || !*args) {
@@ -47,7 +47,8 @@ static void cmd_tslang(const char *args) {
         return;
     }
     Buffer *b = buf_cur();
-    if (!b) return;
+    if (!b)
+        return;
     ts_set_enabled(1);
     if (!ts_buffer_load_language(b, args)) {
         ed_set_status_message("tslang: failed for %s", args);
@@ -90,7 +91,7 @@ static void cmd_theme(const char *args) {
         n++;
 
     char **sel = NULL;
-    int    cnt = 0;
+    int cnt = 0;
     /* picker_list takes const char **; theme_list returns const char *const *.
      * The cast is safe — picker_list never writes through the array. */
     if (!picker_list((const char **)names, n, 0, &sel, &cnt) || cnt <= 0 ||
@@ -107,10 +108,10 @@ static void cmd_theme(const char *args) {
 
 static int treesitter_init(void) {
     ts_seed_default_theme();
-    cmd("ts",     cmd_ts,     "ts on|off|auto");
+    cmd("ts", cmd_ts, "ts on|off|auto");
     cmd("tslang", cmd_tslang, "tslang <name>");
-    cmd("tsi",    cmd_tsi,    "install ts lang");
-    cmd("theme",  cmd_theme,  "theme [name]");
+    cmd("tsi", cmd_tsi, "install ts lang");
+    cmd("theme", cmd_theme, "theme [name]");
     /* Phase-1 renderer abstraction: tree-sitter is the first
      * highlighter to emit AttrSpans instead of bytes. Registers for
      * every filetype — ts_render_pre_hook itself no-ops when the
@@ -119,7 +120,7 @@ static int treesitter_init(void) {
                          (HookRenderCallback)ts_render_pre_hook);
     /* Own the per-buffer lifecycle entirely from the plugin side —
      * core no longer carries any tree-sitter-shaped slots or calls. */
-    hook_register_buffer(HOOK_BUFFER_OPEN,  -1, "*", ts_on_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_OPEN, -1, "*", ts_on_buffer_open);
     hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", ts_on_buffer_close);
     /* Existing buffers (the placeholder buf_new at startup) get the
      * same treatment as buffers opened later. */
@@ -132,8 +133,8 @@ static int treesitter_init(void) {
 }
 
 const Plugin plugin_treesitter = {
-    .name   = "treesitter",
-    .desc   = "tree-sitter syntax highlighting",
-    .init   = treesitter_init,
+    .name = "treesitter",
+    .desc = "tree-sitter syntax highlighting",
+    .init = treesitter_init,
     .deinit = NULL,
 };

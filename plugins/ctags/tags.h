@@ -16,9 +16,9 @@
  */
 
 typedef struct {
-    char *tag;      /* Tag name */
-    char *file;     /* File path */
-    char *pattern;  /* Search pattern/regex */
+    char *tag;     /* Tag name */
+    char *file;    /* File path */
+    char *pattern; /* Search pattern/regex */
 } TagEntry;
 
 /*

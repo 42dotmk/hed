@@ -1,7 +1,7 @@
 #include "plugin.h"
-#include "lib/log.h"
 #include "editor.h"
 #include "input/picker.h"
+#include "lib/log.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,16 +18,19 @@ static int loaded_count = 0;
 
 static Slot *find_slot(const Plugin *p) {
     for (int i = 0; i < loaded_count; i++)
-        if (loaded[i].p == p) return &loaded[i];
+        if (loaded[i].p == p)
+            return &loaded[i];
     return NULL;
 }
 
 int plugin_load(const Plugin *p, int enabled) {
-    if (!p) return -1;
+    if (!p)
+        return -1;
     Slot *slot = find_slot(p);
     if (slot) {
         /* Already loaded. If asked to enable now, ensure init has run. */
-        if (enabled) return plugin_enable(p);
+        if (enabled)
+            return plugin_enable(p);
         return 0;
     }
     if (loaded_count >= MAX_PLUGINS) {
@@ -38,21 +41,23 @@ int plugin_load(const Plugin *p, int enabled) {
     loaded[loaded_count].p = p;
     loaded[loaded_count].enabled = 0;
     loaded_count++;
-    log_msg("plugin: loaded '%s'%s",
-            p->name ? p->name : "?",
+    log_msg("plugin: loaded '%s'%s", p->name ? p->name : "?",
             enabled ? " (enabled)" : " (disabled)");
-    if (enabled) return plugin_enable(p);
+    if (enabled)
+        return plugin_enable(p);
     return 0;
 }
 
 int plugin_enable(const Plugin *p) {
-    if (!p) return -1;
+    if (!p)
+        return -1;
     Slot *slot = find_slot(p);
     if (!slot) {
         /* Never loaded — load + enable in one shot. */
         return plugin_load(p, 1);
     }
-    if (slot->enabled) return 0;
+    if (slot->enabled)
+        return 0;
     int rc = p->init ? p->init() : 0;
     if (rc != 0) {
         log_msg("plugin: '%s' init failed (%d)", p->name ? p->name : "?", rc);
@@ -64,52 +69,58 @@ int plugin_enable(const Plugin *p) {
 }
 
 int plugin_disable(const Plugin *p) {
-    if (!p) return 0;
+    if (!p)
+        return 0;
     Slot *slot = find_slot(p);
-    if (!slot || !slot->enabled) return 0;
-    if (p->deinit) p->deinit();
+    if (!slot || !slot->enabled)
+        return 0;
+    if (p->deinit)
+        p->deinit();
     slot->enabled = 0;
     log_msg("plugin: disabled '%s'", p->name ? p->name : "?");
     return 0;
 }
 
-int plugin_get_count(void) {
-    return loaded_count;
-}
+int plugin_get_count(void) { return loaded_count; }
 
 int plugin_get_at(int index, const char **name, const char **desc,
                   int *enabled) {
-    if (index < 0 || index >= loaded_count) return 0;
+    if (index < 0 || index >= loaded_count)
+        return 0;
     const Plugin *p = loaded[index].p;
-    if (name)    *name    = p->name ? p->name : "?";
-    if (desc)    *desc    = p->desc ? p->desc : "";
-    if (enabled) *enabled = loaded[index].enabled;
+    if (name)
+        *name = p->name ? p->name : "?";
+    if (desc)
+        *desc = p->desc ? p->desc : "";
+    if (enabled)
+        *enabled = loaded[index].enabled;
     return 1;
 }
 
 /* :plugins — defer to the registered "plugins" picker. Without one,
  * just summarise to the status line. */
 void cmd_plugins(const char *args) {
-    if (picker_invoke("plugins", args)) return;
-    int count  = plugin_get_count();
+    if (picker_invoke("plugins", args))
+        return;
+    int count = plugin_get_count();
     int active = 0;
     for (int i = 0; i < count; i++)
-        if (loaded[i].enabled) active++;
-    ed_set_status_message("plugins: %d loaded, %d enabled (no picker installed)",
-                          count, active);
+        if (loaded[i].enabled)
+            active++;
+    ed_set_status_message(
+        "plugins: %d loaded, %d enabled (no picker installed)", count, active);
 }
 
 void plugin_list(void) {
     int active = 0;
     for (int i = 0; i < loaded_count; i++)
-        if (loaded[i].enabled) active++;
-    ed_set_status_message("plugins: %d loaded, %d enabled",
-                          loaded_count, active);
+        if (loaded[i].enabled)
+            active++;
+    ed_set_status_message("plugins: %d loaded, %d enabled", loaded_count,
+                          active);
     for (int i = 0; i < loaded_count; i++) {
         const Plugin *p = loaded[i].p;
-        log_msg("  [%c] %s - %s",
-                loaded[i].enabled ? 'x' : ' ',
-                p->name ? p->name : "?",
-                p->desc ? p->desc : "");
+        log_msg("  [%c] %s - %s", loaded[i].enabled ? 'x' : ' ',
+                p->name ? p->name : "?", p->desc ? p->desc : "");
     }
 }

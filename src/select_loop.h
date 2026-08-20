@@ -21,7 +21,7 @@ typedef void (*ed_fd_cb)(int fd, void *ud);
 typedef void (*ed_timer_cb)(void *ud);
 
 void ed_loop_init(void);
-int  ed_loop_register(const char *name, int fd, ed_fd_cb on_readable, void *ud);
+int ed_loop_register(const char *name, int fd, ed_fd_cb on_readable, void *ud);
 void ed_loop_unregister(int fd);
 
 /* Schedule a one-shot timer to fire roughly `delay_ms` from now. The
@@ -35,8 +35,8 @@ void ed_loop_unregister(int fd);
  *
  * Names are owned by the caller and must outlive the timer (string
  * literal is the typical choice). Returns 0 on success. */
-int  ed_loop_timer_after(const char *name, int delay_ms,
-                         ed_timer_cb cb, void *ud);
+int ed_loop_timer_after(const char *name, int delay_ms, ed_timer_cb cb,
+                        void *ud);
 
 /* Cancel the timer with the given name, if any. */
 void ed_loop_timer_cancel(const char *name);

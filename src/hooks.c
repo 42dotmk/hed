@@ -105,7 +105,8 @@ void hook_register_render(HookType type, int mode, const char *filetype,
 }
 
 int hook_unregister(HookType type, HookFn callback) {
-    if (type >= HOOK_TYPE_COUNT) return 0;
+    if (type >= HOOK_TYPE_COUNT)
+        return 0;
     int removed = 0;
     for (ptrdiff_t i = arrlen(hooks[type]) - 1; i >= 0; i--) {
         if (hooks[type][i].callback == callback) {

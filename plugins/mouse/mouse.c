@@ -26,10 +26,10 @@
 
 /* Press state carried between PRESS and the DRAG stream. */
 static struct {
-    int valid;      /* a left press has been seen */
-    int win_id;     /* Window.id of the pressed window */
-    int y, x;       /* buffer position of the press (drag anchor) */
-    int dragging;   /* visual mode entered for this press */
+    int valid;    /* a left press has been seen */
+    int win_id;   /* Window.id of the pressed window */
+    int y, x;     /* buffer position of the press (drag anchor) */
+    int dragging; /* visual mode entered for this press */
 } g_press;
 
 static Buffer *win_buffer(const Window *win) {
@@ -49,8 +49,8 @@ static int hit_window(int x, int y) {
         const Window *w = &E.windows[i];
         if (!w->visible)
             continue;
-        if (y >= w->top && y < w->top + w->height &&
-            x >= w->left && x < w->left + w->width)
+        if (y >= w->top && y < w->top + w->height && x >= w->left &&
+            x < w->left + w->width)
             return i;
     }
     return -1;
@@ -131,8 +131,7 @@ static void on_drag(const MouseEvent *ev) {
         win->sel.type = SEL_VISUAL;
         win->sel.anchor_y = g_press.y;
         win->sel.anchor_x = g_press.x;
-        win->sel.anchor_rx =
-            buf_row_cx_to_rx(&buf->rows[g_press.y], g_press.x);
+        win->sel.anchor_rx = buf_row_cx_to_rx(&buf->rows[g_press.y], g_press.x);
         ed_set_mode(MODE_VISUAL);
         ed_set_status_message("-- VISUAL --");
         g_press.dragging = 1;
@@ -156,8 +155,7 @@ static void on_wheel(const MouseEvent *ev, int dir) {
         win->row_offset = 0;
     /* Upper bound in visible lines; under wrap this under-counts
      * sublines, which only limits how far past EOF you can scroll. */
-    int max_off =
-        fold_get_visible_line_count(&buf->folds, buf->num_rows) - 1;
+    int max_off = fold_get_visible_line_count(&buf->folds, buf->num_rows) - 1;
     if (max_off < 0)
         max_off = 0;
     if (win->row_offset > max_off)
@@ -170,8 +168,8 @@ static void on_wheel(const MouseEvent *ev, int dir) {
     if (window_screen_to_buffer(win, win->top, win->left, &y, &x) &&
         win->cursor.y < y)
         win->cursor.y = y;
-    if (window_screen_to_buffer(win, win->top + win->height - 1,
-                                win->left, &y, &x) &&
+    if (window_screen_to_buffer(win, win->top + win->height - 1, win->left, &y,
+                                &x) &&
         win->cursor.y > y)
         win->cursor.y = y;
     clamp_cursor_x(win, buf);
@@ -187,8 +185,12 @@ static void on_mouse(const MouseEvent *ev) {
         return;
 
     switch (ev->type) {
-    case MOUSE_WHEEL_UP:   on_wheel(ev, -1); break;
-    case MOUSE_WHEEL_DOWN: on_wheel(ev, +1); break;
+    case MOUSE_WHEEL_UP:
+        on_wheel(ev, -1);
+        break;
+    case MOUSE_WHEEL_DOWN:
+        on_wheel(ev, +1);
+        break;
     case MOUSE_PRESS:
         if (ev->button == 0)
             on_press(ev);
@@ -234,8 +236,9 @@ static void mouse_deinit(void) {
 }
 
 const Plugin plugin_mouse = {
-    .name   = "mouse",
-    .desc   = "mouse support: click to place cursor, drag to select, wheel to scroll",
-    .init   = mouse_init,
+    .name = "mouse",
+    .desc =
+        "mouse support: click to place cursor, drag to select, wheel to scroll",
+    .init = mouse_init,
     .deinit = mouse_deinit,
 };

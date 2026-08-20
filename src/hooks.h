@@ -1,8 +1,8 @@
 #ifndef HOOKS_H
 #define HOOKS_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "buf/attrspan.h"
 
@@ -116,8 +116,8 @@ typedef struct {
 
 typedef struct {
     const char *active_sequence;
-    int  active_len;
-    int  count;
+    int active_len;
+    int count;
     bool has_count;
     bool exact;
     bool partial;
@@ -125,7 +125,7 @@ typedef struct {
     /* Pointer into the feed result's stb_ds matches array. Lives only
      * for the duration of the hook firing — do not retain. */
     const struct KeybindMatchView *matches;
-    int  match_count;
+    int match_count;
 } HookKeybindFeedEvent;
 
 typedef struct {
@@ -134,21 +134,24 @@ typedef struct {
 } HookKeybindInvokeEvent;
 
 typedef struct HookRenderEvent {
-    Buffer    *buf;
-    int        row_start;  /* first visible row (inclusive) */
-    int        row_end;    /* one past last visible row */
-    AttrSpans *spans;      /* handlers append into this */
+    Buffer *buf;
+    int row_start;    /* first visible row (inclusive) */
+    int row_end;      /* one past last visible row */
+    AttrSpans *spans; /* handlers append into this */
 } HookRenderEvent;
 
 /* Callback function pointer types */
 typedef void (*HookCharCallback)(const HookCharEvent *event);
 typedef void (*HookLineCallback)(const HookLineEvent *event);
-typedef void (*HookBufferCallback)(HookBufferEvent *event); /* non-const: handler may set consumed */
+typedef void (*HookBufferCallback)(
+    HookBufferEvent *event); /* non-const: handler may set consumed */
 typedef void (*HookModeCallback)(const HookModeEvent *event);
 typedef void (*HookCursorCallback)(const HookCursorEvent *event);
-typedef void (*HookKeyCallback)(HookKeyEvent *event); /* non-const: handler may set consumed */
+typedef void (*HookKeyCallback)(
+    HookKeyEvent *event); /* non-const: handler may set consumed */
 typedef void (*HookMouseCallback)(const struct MouseEvent *event);
-typedef void (*HookSimpleCallback)(void);              /* payload-free hooks (e.g., HOOK_STARTUP_DONE) */
+typedef void (*HookSimpleCallback)(
+    void); /* payload-free hooks (e.g., HOOK_STARTUP_DONE) */
 typedef void (*HookKeybindFeedCallback)(const HookKeybindFeedEvent *event);
 typedef void (*HookKeybindInvokeCallback)(const HookKeybindInvokeEvent *event);
 typedef void (*HookRenderCallback)(const HookRenderEvent *event);
@@ -204,8 +207,8 @@ void hook_fire_key(HookType type, HookKeyEvent *event);
 void hook_fire_mouse(HookType type, const struct MouseEvent *event);
 void hook_fire_simple(HookType type);
 void hook_fire_keybind_feed(HookType type, const HookKeybindFeedEvent *event);
-void hook_fire_keybind_invoke(HookType type, const HookKeybindInvokeEvent *event);
+void hook_fire_keybind_invoke(HookType type,
+                              const HookKeybindInvokeEvent *event);
 void hook_fire_render(HookType type, const HookRenderEvent *event);
-
 
 #endif

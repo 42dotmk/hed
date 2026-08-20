@@ -21,23 +21,23 @@
 typedef struct Buffer Buffer;
 
 typedef struct {
-    int         row;        /* buffer row (file row index) */
-    int         col_start;  /* inclusive, in chars-space byte offset */
-    int         col_end;    /* exclusive */
-    const char *sgr;        /* borrowed; lifetime must outlive the frame */
-    int         priority;   /* higher wins on overlap; ties: insertion order */
+    int row;         /* buffer row (file row index) */
+    int col_start;   /* inclusive, in chars-space byte offset */
+    int col_end;     /* exclusive */
+    const char *sgr; /* borrowed; lifetime must outlive the frame */
+    int priority;    /* higher wins on overlap; ties: insertion order */
 } AttrSpan;
 
 typedef struct {
-    AttrSpan *items;          /* stb_ds vector; NULL when empty */
-    int       sorted;         /* 1 once attrspan_sort has run for this frame */
+    AttrSpan *items; /* stb_ds vector; NULL when empty */
+    int sorted;      /* 1 once attrspan_sort has run for this frame */
     /* Row index built by attrspan_sort: row_first[r] is the index of
      * the first span on row r in `items`; row_count[r] is the count.
      * Lets per-byte lookups skip straight to the row's spans instead
      * of scanning the whole vector. Indexed by row 0..row_index_len. */
-    int      *row_first;
-    int      *row_count;
-    int       row_index_len;
+    int *row_first;
+    int *row_count;
+    int row_index_len;
 } AttrSpans;
 
 /* Lifecycle. Called from buf_new / buf_close. */

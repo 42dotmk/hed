@@ -126,7 +126,8 @@ static void apply_rose_pine(void) {
 }
 
 void hed_themes_register_all(void) {
-    if (!&theme_register) return;
+    if (!&theme_register)
+        return;
     theme_register("tokyo-night", apply_tokyo_night);
     theme_register("gruvbox", apply_gruvbox);
     theme_register("dracula", apply_dracula);

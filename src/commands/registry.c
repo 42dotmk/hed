@@ -45,16 +45,20 @@ int command_execute(const char *name, const char *args) {
 }
 
 int command_execute_line(const char *line) {
-    if (!line) return 0;
-    while (*line == ' ' || *line == '\t' || *line == ':') line++;
-    if (!*line) return 0;
+    if (!line)
+        return 0;
+    while (*line == ' ' || *line == '\t' || *line == ':')
+        line++;
+    if (!*line)
+        return 0;
 
     char name[128];
     size_t ni = 0;
     while (*line && *line != ' ' && *line != '\t' && ni + 1 < sizeof(name))
         name[ni++] = *line++;
     name[ni] = '\0';
-    while (*line == ' ' || *line == '\t') line++;
+    while (*line == ' ' || *line == '\t')
+        line++;
 
     return command_execute(name, *line ? line : NULL);
 }
@@ -64,7 +68,8 @@ int command_invoke(const char *name, const char *args) {
 }
 
 const char *command_find_desc(const char *name) {
-    if (!name) return NULL;
+    if (!name)
+        return NULL;
     for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
         if (commands[i].name && strcmp(commands[i].name, name) == 0) {
             return commands[i].desc;

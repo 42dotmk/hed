@@ -1,8 +1,8 @@
 #include "../src/buf/textobj.h"
 #include "test_helpers.h"
 #include "unity/unity.h"
-void setUp(void) { }
-void tearDown(void) { }
+void setUp(void) {}
+void tearDown(void) {}
 #define totc(fn, ...)                                                          \
     do {                                                                       \
         const char *cases[] = {__VA_ARGS__};                                   \
@@ -12,87 +12,79 @@ void tearDown(void) { }
     } while (0)
 
 void test_textobj_word(void) {
-    totc(textobj_word,
-		 "hello [wo^$rld] there",
-		 "hello [worl^$d] there",
+    totc(textobj_word, "hello [wo^$rld] there", "hello [worl^$d] there",
          "hello [^$a] there",
-         "hello[^$ ]there",      // vim iw: a single blank is a word
-         "hello[ ^$  ]there",    // vim iw: a blank run is a word
-         "hello world[^$   ]");  // trailing blanks at end of line
+         "hello[^$ ]there",     // vim iw: a single blank is a word
+         "hello[ ^$  ]there",   // vim iw: a blank run is a word
+         "hello world[^$   ]"); // trailing blanks at end of line
 }
 
 void test_textobj_word_around(void) {
     totc(textobj_word_around,
-         "hello [wo^$rld ]there",   // word + trailing blanks
-         "hello[ wor^$ld]",         // no trailing blanks -> leading blanks
-         "hello[^$ there] end",     // on blank: blanks + following word
-         "hello[ ^$  there] end",   // on blank run: blanks + following word
-         "hello [world^$  ]");      // trailing blanks, no word after -> word before
+         "hello [wo^$rld ]there", // word + trailing blanks
+         "hello[ wor^$ld]",       // no trailing blanks -> leading blanks
+         "hello[^$ there] end",   // on blank: blanks + following word
+         "hello[ ^$  there] end", // on blank run: blanks + following word
+         "hello [world^$  ]"); // trailing blanks, no word after -> word before
 }
 
 void test_textobj_WORD(void) {
     totc(textobj_WORD,
-         "hello [foo.b^$ar] there",  // WORD spans punctuation
+         "hello [foo.b^$ar] there", // WORD spans punctuation
          "x [^$--flag] y",
-         "hello[ ^$  ]x.y",          // a blank run is a WORD too
-         "a.b c.d[^$   ]");          // trailing blanks at end of line
+         "hello[ ^$  ]x.y", // a blank run is a WORD too
+         "a.b c.d[^$   ]"); // trailing blanks at end of line
 }
 
 void test_textobj_WORD_around(void) {
     totc(textobj_WORD_around,
-         "hello [foo.^$bar ]there",  // WORD + trailing blanks
-         "hello[ foo.b^$ar]",        // no trailing blanks -> leading blanks
-         "hello[^$ a.b] end",        // on blank: blanks + following WORD
-         "hello [a.b^$  ]");         // trailing blanks, no WORD after -> WORD before
+         "hello [foo.^$bar ]there", // WORD + trailing blanks
+         "hello[ foo.b^$ar]",       // no trailing blanks -> leading blanks
+         "hello[^$ a.b] end",       // on blank: blanks + following WORD
+         "hello [a.b^$  ]"); // trailing blanks, no WORD after -> WORD before
 }
 
 void test_textobj_to_word_end(void) {
-    totc(textobj_to_word_end, 
-		"hello^ [worl$d] there", //when at a non word char it should find the next word and jump to its end
-		"hello wo[^rl$d] there", // inside a word should only select from the start cursor till the end of the cursor
-		"hello [^worl$d] there", // at start of the word it should select the 
-		"hell^o [worl$d] there", //when on an end of the previous word, it should find the next word and jump there. 
-		"hello worl^d\n[secon$d] line"); //when cursor is at the end of the line and word end
+    totc(textobj_to_word_end,
+         "hello^ [worl$d] there", // when at a non word char it should find the
+                                  // next word and jump to its end
+         "hello wo[^rl$d] there", // inside a word should only select from the
+                                  // start cursor till the end of the cursor
+         "hello [^worl$d] there", // at start of the word it should select the
+         "hell^o [worl$d] there", // when on an end of the previous word, it
+                                  // should find the next word and jump there.
+         "hello worl^d\n[secon$d] line"); // when cursor is at the end of the
+                                          // line and word end
 }
 
 void test_textobj_to_word_start(void) {
-    totc(textobj_to_word_start, 
-			"hello [$world]^ there",
-			"hello [$world ^]there",
-            "hello [$wor^l]d there",
+    totc(textobj_to_word_start, "hello [$world]^ there",
+         "hello [$world ^]there", "hello [$wor^l]d there",
 
-			// when cursor is on the beggining of next line it should pass 
-			// to the end of previous like to the beggining of the last word
-			"hello world [$there]\n^second line"); 
+         // when cursor is on the beggining of next line it should pass
+         // to the end of previous like to the beggining of the last word
+         "hello world [$there]\n^second line");
 }
 
 void test_textobj_char_at_cursor(void) {
-    totc(textobj_char_at_cursor, 
-            "hello [^$w]orld", 
-            "[^$h]ello world");
+    totc(textobj_char_at_cursor, "hello [^$w]orld", "[^$h]ello world");
 }
 
 void test_textobj_line(void) {
-    totc(textobj_line, 
-         "[^$hello world]", 
-         "[hello worl$^d]",
+    totc(textobj_line, "[^$hello world]", "[hello worl$^d]",
          "[^$hello world]\nsecond line");
 }
 
 void test_textobj_line_with_newline(void) {
-    totc(textobj_line_with_newline, 
-         "[he^$llo world\n]second line",
+    totc(textobj_line_with_newline, "[he^$llo world\n]second line",
          "[$hello worl^d]");
 }
 
 void test_textobj_line_boundaries(void) {
-    totc(textobj_to_line_end, 
-		"alpha [^bet$a]\n", 
-        "alpha bet[^$a]");
+    totc(textobj_to_line_end, "alpha [^bet$a]\n", "alpha bet[^$a]");
 
-	totc(textobj_to_line_start,
-        "hello line 1\n[$alpha ^b]eta\nline 3",
-        "line 1\n[^$a]lpha beta");
+    totc(textobj_to_line_start, "hello line 1\n[$alpha ^b]eta\nline 3",
+         "line 1\n[^$a]lpha beta");
 }
 
 void test_textobj_file_boundaries(void) {
@@ -101,7 +93,7 @@ void test_textobj_file_boundaries(void) {
 }
 
 // void test_textobj_cursor_to_char_occurence(void) {
-//     totc(textobj_to_char_occurence, 
+//     totc(textobj_to_char_occurence,
 //             "hello [^world\n here we stop $?], yes"
 //             "hello [^world hello stop$?]\n here we stop , yes"
 //             );
@@ -121,7 +113,8 @@ void test_textobj_paragraphs(void) {
          "[$para1 line1\npara1 ^l]ine2\n\npara2 line1\npara2 line2");
     totc(textobj_paragraph,
          "[para1 line1\npara1 ^line2$\n]\npara2 line1\npara2 line2",
-         "something else\n\n[para1 line1\npara1 ^line2$\n]\npara2 line1\npara2 line2");
+         "something else\n\n[para1 line1\npara1 ^line2$\n]\npara2 line1\npara2 "
+         "line2");
 }
 
 int main(void) {

@@ -1,8 +1,8 @@
 /* ctags plugin: :tag lookup driven by utils/ctags.c.
  * Bind `gd` (or whatever you prefer) to :tag from config.c. */
 
-#include "hed.h"
 #include "ctags/tags.h"
+#include "hed.h"
 
 static void cmd_tag(const char *args) {
     goto_tag(args && *args ? args : NULL);
@@ -15,8 +15,8 @@ static int ctags_init(void) {
 }
 
 const Plugin plugin_ctags = {
-    .name   = "ctags",
-    .desc   = "ctags lookup (:tag)",
-    .init   = ctags_init,
+    .name = "ctags",
+    .desc = "ctags lookup (:tag)",
+    .init = ctags_init,
     .deinit = NULL,
 };

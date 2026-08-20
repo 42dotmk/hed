@@ -38,30 +38,30 @@ struct Buffer;
 
 typedef enum {
     UR_REPLACE = 1, /* swap row.chars with rec.data */
-    UR_INSERT  = 2, /* on do: insert row at idx with data; on undo: delete  */
-    UR_DELETE  = 3  /* on do: delete row at idx; on undo: insert with data  */
+    UR_INSERT = 2,  /* on do: insert row at idx with data; on undo: delete  */
+    UR_DELETE = 3   /* on do: delete row at idx; on undo: insert with data  */
 } UndoKind;
 
 typedef struct {
     UndoKind kind;
-    int      row_idx;
+    int row_idx;
     StrBuf data;
 } UndoRec;
 
 typedef struct UndoGroup {
     UndoRec *recs;
-    int      len;
-    int      cap;
-    char     desc[24];
+    int len;
+    int cap;
+    char desc[24];
 } UndoGroup;
 
 typedef struct {
     UndoGroup **undo;
-    int         undo_len, undo_cap;
+    int undo_len, undo_cap;
     UndoGroup **redo;
-    int         redo_len, redo_cap;
-    UndoGroup  *open;
-    int         applying; /* set while undo_apply / redo_apply is running */
+    int redo_len, redo_cap;
+    UndoGroup *open;
+    int applying; /* set while undo_apply / redo_apply is running */
 } UndoState;
 
 #define UNDO_MAX_DEPTH 500
@@ -72,16 +72,16 @@ void undo_state_free(UndoState *u);
 /* Group lifecycle. begin closes any prior open group first. */
 void undo_begin(struct Buffer *buf, const char *desc);
 void undo_end(struct Buffer *buf);
-int  undo_has_open(const struct Buffer *buf);
-int  undo_is_applying(const struct Buffer *buf);
+int undo_has_open(const struct Buffer *buf);
+int undo_is_applying(const struct Buffer *buf);
 
 /* Per-row capture, called BEFORE the mutation by buffer primitives.
  * If no group is open, an implicit "auto" group is opened. */
 void undo_record_replace(struct Buffer *buf, int row_idx);
-void undo_record_insert(struct Buffer *buf, int row_idx,
-                        const char *data, size_t len);
-void undo_record_delete(struct Buffer *buf, int row_idx,
-                        const char *data, size_t len);
+void undo_record_insert(struct Buffer *buf, int row_idx, const char *data,
+                        size_t len);
+void undo_record_delete(struct Buffer *buf, int row_idx, const char *data,
+                        size_t len);
 
 /* Apply. Returns 1 on success, 0 if nothing to do. */
 int undo_apply(struct Buffer *buf);

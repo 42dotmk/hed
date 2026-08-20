@@ -1,9 +1,9 @@
+#include "assert.h"
+#include "buf/buf_helpers.h"
 #include "editor.h"
 #include "lib/safe_string.h"
-#include "ui/wlayout.h"
 #include "ui/winmodal.h"
-#include "buf/buf_helpers.h"
-#include "assert.h"
+#include "ui/wlayout.h"
 
 /* Monotonic id source — ids are never reused, so a Buffer's stashed
  * cursor sets can detect that their window is gone. */
@@ -73,7 +73,8 @@ void win_attach_buf(Window *win, Buffer *buf) {
         buf_cursor_sync_from_window(&E.buffers[win->buffer_index]);
     win->buffer_index = idx;
     buf_cursors_bind_window(buf, win);
-    if (buf->cursor) win->cursor = *buf->cursor;
+    if (buf->cursor)
+        win->cursor = *buf->cursor;
     if (win->focus) {
         E.current_buffer = idx;
     }
@@ -162,9 +163,7 @@ static void windows_focus_set(int idx) {
     buf_cursors_bind_window(buf_cur(), &E.windows[idx]);
 }
 
-void windows_focus_index(int idx) {
-    windows_focus_set(idx);
-}
+void windows_focus_index(int idx) { windows_focus_set(idx); }
 
 /* Find neighbor window index in a given direction relative to current.
  * dir: 0=left, 1=right, 2=up, 3=down. Returns -1 if none. */
@@ -276,10 +275,10 @@ void windows_focus_down(void) {
 }
 
 void windows_close_current(void) {
-	if (winmodal_is_shown()){
-		 winmodal_destroy(winmodal_current());
-		return;
-	}
+    if (winmodal_is_shown()) {
+        winmodal_destroy(winmodal_current());
+        return;
+    }
     if (arrlen(E.windows) <= 1) {
         ed_set_status_message("only one window");
         return;

@@ -12,10 +12,10 @@ typedef struct TextPos {
 
 /* A generic selection with inclusive start, exclusive end, plus cursor. */
 typedef struct TextSelection {
-    TextPos start;        /* inclusive */
-    TextPos end;          /* exclusive */
-    TextPos cursor;       /* cursor location (clamped) */
-    SelectionType type;   /* selection type for yank/paste */
+    TextPos start;      /* inclusive */
+    TextPos end;        /* exclusive */
+    TextPos cursor;     /* cursor location (clamped) */
+    SelectionType type; /* selection type for yank/paste */
 } TextSelection;
 
 /* Text-object helpers. All return 1 on success, 0 on failure. */
@@ -51,7 +51,7 @@ int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel);
 /* New textobjects for character and line deletion */
 int textobj_char_at_cursor(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_line_with_newline(Buffer *buf, int line, int col,
-                               TextSelection *sel);
+                              TextSelection *sel);
 
 /* Basic movement text objects (for h/j/k/l) */
 int textobj_char_right(Buffer *buf, int line, int col, TextSelection *sel);
@@ -60,6 +60,7 @@ int textobj_line_down(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_line_up(Buffer *buf, int line, int col, TextSelection *sel);
 
 /* Helper to create TextSelection from explicit range */
-TextSelection textsel_make_range(int sy, int sx, int ey, int ex, SelectionType type);
+TextSelection textsel_make_range(int sy, int sx, int ey, int ex,
+                                 SelectionType type);
 
 #endif /* TEXTOBJ_H */

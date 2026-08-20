@@ -1,8 +1,8 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-#include "lib/errors.h"
 #include "buf/buffer.h"
+#include "lib/errors.h"
 #include "ui/window.h"
 #include <termios.h>
 
@@ -25,7 +25,7 @@ int get_window_size(int *rows, int *cols);
  * always turns reporting off so spawned programs and the shell get a
  * normal terminal back. */
 void term_mouse_set(int on);
-int  term_mouse_get(void);
+int term_mouse_get(void);
 
 EdError buf_save_in(Buffer *buf);
 
@@ -44,7 +44,7 @@ void ed_render_frame(void);
  * to the last visible line. Returns 1 and fills out_y (row index) /
  * out_x (char index) on success, 0 when the window has no buffer or
  * the cell is outside its content area. */
-int window_screen_to_buffer(const Window *win, int srow, int scol,
-                            int *out_y, int *out_x);
+int window_screen_to_buffer(const Window *win, int srow, int scol, int *out_y,
+                            int *out_x);
 
 #endif

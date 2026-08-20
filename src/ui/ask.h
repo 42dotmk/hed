@@ -17,7 +17,6 @@
 
 typedef void (*AskCallback)(const char *answer, void *ud);
 
-void ask(const char *question, const char *initial,
-         AskCallback cb, void *ud);
+void ask(const char *question, const char *initial, AskCallback cb, void *ud);
 
 #endif

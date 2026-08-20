@@ -10,8 +10,8 @@
  * the built-in behaviors (e.g., config and editor modules).
  */
 
-#include "ui/window.h"
 #include "buf/textobj.h"
+#include "ui/window.h"
 
 void kb_line_number_toggle(void);
 void kb_enter_insert_mode(void);
@@ -27,20 +27,20 @@ void kb_delete_char(void);
 void kb_operator_delete(void);
 void kb_operator_change(void);
 void kb_operator_yank(void);
-void kb_operator_move(int key);    /* Move cursor via text object (fallback) */
-void kb_operator_select(void);     /* Visual select via text object (v + motion) */
+void kb_operator_move(int key); /* Move cursor via text object (fallback) */
+void kb_operator_select(void);  /* Visual select via text object (v + motion) */
 /* Note: cursor movements now handled by text object system */
 void kb_search_next(void);
 void kb_find_under_cursor(void);
-void kb_find_selection(void);      /* Visual `*`: search the selection */
+void kb_find_selection(void); /* Visual `*`: search the selection */
 void kb_search_file_under_cursor(void);
 void kb_open_file_under_cursor(void);
 void kb_undo(void);
 void kb_redo(void);
 void kb_fzf(void);
 void kb_quit_all(void);
-void kb_jump_backward(void);  /* Ctrl-O - jump to previous buffer */
-void kb_jump_forward(void);   /* Ctrl-I - jump to next buffer */
+void kb_jump_backward(void);   /* Ctrl-O - jump to previous buffer */
+void kb_jump_forward(void);    /* Ctrl-I - jump to next buffer */
 void kb_goto_file_start(void); /* gg - go to first line */
 void kb_para_next(void);       /* }  - next paragraph  */
 void kb_para_prev(void);       /* {  - prev paragraph  */
@@ -105,17 +105,20 @@ int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
 int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
                          TextSelection *out);
 
-/* Note: kb_change_word removed - now handled by operator + text object system */
+/* Note: kb_change_word removed - now handled by operator + text object system
+ */
 void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
-void kb_replace_char(void); /* Replace char under cursor with next typed char (r) */
-void kb_visual_replace_char(void); /* Replace every char of the selection (visual r) */
+void kb_replace_char(
+    void); /* Replace char under cursor with next typed char (r) */
+void kb_visual_replace_char(
+    void); /* Replace every char of the selection (visual r) */
 
 /* Fold operations */
-void kb_fold_toggle(void);    /* za - Toggle fold at cursor */
-void kb_fold_open(void);      /* zo - Open fold at cursor */
-void kb_fold_close(void);     /* zc - Close fold at cursor */
-void kb_fold_open_all(void);  /* zR - Open all folds */
-void kb_fold_close_all(void); /* zM - Close all folds */
+void kb_fold_toggle(void);      /* za - Toggle fold at cursor */
+void kb_fold_open(void);        /* zo - Open fold at cursor */
+void kb_fold_close(void);       /* zc - Close fold at cursor */
+void kb_fold_open_all(void);    /* zR - Open all folds */
+void kb_fold_close_all(void);   /* zM - Close all folds */
 void kb_fold_cycle_level(void); /* <S-Tab> - cycle fold level 1/2/100/0 */
 
 void kb_del_win(char direction);

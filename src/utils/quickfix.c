@@ -1,6 +1,6 @@
 #include "utils/quickfix.h"
-#include "editor.h"
 #include "buf/buf_helpers.h"
+#include "editor.h"
 #include "hooks.h"
 #include "lib/safe_string.h"
 #include "lib/vector.h"
@@ -353,8 +353,8 @@ void qf_clear(Qf *qf) {
         qf_sync_buffer(qf);
 }
 
-int qf_parse_grep_line(char *line, char **out_file, int *out_line,
-                       int *out_col, const char **out_text) {
+int qf_parse_grep_line(char *line, char **out_file, int *out_line, int *out_col,
+                       const char **out_text) {
     if (!line)
         return 0;
     char *p1 = strchr(line, ':');
@@ -365,18 +365,22 @@ int qf_parse_grep_line(char *line, char **out_file, int *out_line,
         return 0; /* need at least file:line: */
     *p1 = '\0';
     *p2 = '\0';
-    int   lno  = atoi(p1 + 1);
-    int   col  = atoi(p2 + 1);
+    int lno = atoi(p1 + 1);
+    int col = atoi(p2 + 1);
     const char *text = "";
     char *p3 = strchr(p2 + 1, ':');
     if (p3) {
-        *p3  = '\0';
+        *p3 = '\0';
         text = p3 + 1;
     }
-    if (out_file) *out_file = line;
-    if (out_line) *out_line = lno;
-    if (out_col)  *out_col  = col;
-    if (out_text) *out_text = text;
+    if (out_file)
+        *out_file = line;
+    if (out_line)
+        *out_line = lno;
+    if (out_col)
+        *out_col = col;
+    if (out_text)
+        *out_text = text;
     return 1;
 }
 
@@ -384,12 +388,10 @@ int qf_add(Qf *qf, const char *filename, int line, int col, const char *text) {
     if (!qf)
         return -1;
 
-    QfItem item = {
-        .text = text ? strdup(text) : strdup(""),
-        .filename = filename ? strdup(filename) : NULL,
-        .line = line,
-        .col = col
-    };
+    QfItem item = {.text = text ? strdup(text) : strdup(""),
+                   .filename = filename ? strdup(filename) : NULL,
+                   .line = line,
+                   .col = col};
     arrput(qf->items, item);
 
     if (qf->open)
