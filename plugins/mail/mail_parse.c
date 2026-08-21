@@ -365,10 +365,14 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
     /* multipart suppression: when 1, the wrapper part itself isn't capturing
      * but its children may. We only track via the per-level mode. */
 
-    /* Attachment context: filename/type discovered between \fattachment{
-     * and \fattachment}. */
+    /* Attachment context: filename/type discovered at \fattachment{.
+     * notmuch closes the block with \fpart} (0.40 observed), so the
+     * attachment opens a part-stack level like any other part and is
+     * registered when its level closes; \fattachment} is accepted too
+     * for versions that emit it. */
     MailAttachInfo cur_att;
     int in_attachment = 0;
+    int attach_depth = 0;
 
     for (int i = 0; i < raw_count; i++) {
         const char *line = raw[i] ? raw[i] : "";
@@ -379,6 +383,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
                 msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
             in_message = 1;
             in_header = 0;
+            in_attachment = 0;
             pstack_depth = 0;
             msg.attach_start = r->attach_count;
             marker_field(line, "id:", msg.msg_id, sizeof(msg.msg_id), 0);
@@ -425,6 +430,10 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
             continue;
         }
         if (strcmp(line, "\fpart}") == 0) {
+            if (in_attachment && pstack_depth == attach_depth) {
+                attach_push(r, &cur_att);
+                in_attachment = 0;
+            }
             if (pstack_depth > 0)
                 pstack_depth--;
             continue;
@@ -441,12 +450,18 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
                          sizeof(cur_att.filename), 1);
             snprintf(cur_att.msg_id, sizeof(cur_att.msg_id), "%s", msg.msg_id);
             in_attachment = 1;
+            if (pstack_depth < PART_DEPTH_MAX)
+                pstack_mode[pstack_depth++] = 0;
+            attach_depth = pstack_depth;
             continue;
         }
         if (strcmp(line, "\fattachment}") == 0) {
-            if (in_attachment)
+            if (in_attachment) {
                 attach_push(r, &cur_att);
-            in_attachment = 0;
+                in_attachment = 0;
+                if (pstack_depth > 0)
+                    pstack_depth--;
+            }
             continue;
         }
 
