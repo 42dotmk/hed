@@ -342,21 +342,39 @@ void buf_join_lines(void) {
     if (!PTR_VALID(current) || !PTR_VALID(next))
         return;
 
-    int need_space = (current->chars.len > 0 &&
-                      current->chars.data[current->chars.len - 1] != ' ');
+    /* Vim J: the joined line's leading indentation is dropped and the
+     * two lines are separated by a single space (none when the current
+     * line already ends in whitespace or the next line is blank). */
+    const char *nd = next->chars.data;
+    size_t nlen = next->chars.len;
+    size_t skip = 0;
+    while (skip < nlen && (nd[skip] == ' ' || nd[skip] == '\t'))
+        skip++;
+
+    char last = current->chars.len > 0
+                    ? current->chars.data[current->chars.len - 1]
+                    : '\0';
+    int need_space =
+        (current->chars.len > 0 && last != ' ' && last != '\t' && skip < nlen);
 
     /* Capture original 'current' row before any direct char mutation. */
     undo_record_replace(buf, y);
 
-    /* Optional space insertion at end of current line */
-    if (need_space) {
+    int join_x = (int)current->chars.len;
+    if (need_space)
         strbuf_append_char(&current->chars, ' ');
-        buf_row_update(current);
-    }
+    if (skip < nlen)
+        strbuf_append(&current->chars, nd + skip, nlen - skip);
+    buf_row_update(current);
 
-    buf_row_append_in(buf, current, &next->chars);
+    /* Delete the (untrimmed) next row so undo restores it verbatim. */
     buf_row_del_in(buf, y + 1);
     buf->dirty++;
+
+    /* Cursor on the join point, like Vim. */
+    if (join_x > 0 && join_x >= (int)current->chars.len)
+        join_x = (int)current->chars.len - 1;
+    win->cursor.x = join_x;
 }
 
 void buf_duplicate_line(void) {
@@ -810,9 +828,11 @@ static void buf_delete_range(int sy, int sx, int ey, int ex) {
         return;
     if (sy > ey || (sy == ey && sx >= ex))
         return;
-    /* Capture to clipboard first */
+    /* Capture into the delete registers first ('1'-'9' rotation +
+     * unnamed). Deliberately not a yank: '0' keeps the last y so a
+     * delete between two pastes doesn't lose the copied text. */
     TextSelection sel = textsel_make_range(sy, sx, ey, ex, SEL_VISUAL);
-    yank_selection(&sel);
+    yank_selection_as_delete(&sel);
 
     /* Perform deletion on the buffer */
     if (sy == ey) {
@@ -939,6 +959,21 @@ void buf_delete_selection(TextSelection *sel) {
         buf_delete_block(buf, sy, ey, srx, erx);
         win->cursor.y = sy;
         win->cursor.x = sel->start.col;
+        return;
+    }
+
+    /* Line-wise selections remove whole rows — a multi-line V-d must
+     * not fall through to the range delete below, which merges the
+     * first and last row into one leftover empty line. */
+    if (sel->type == SEL_VISUAL_LINE) {
+        int sy = sel->start.line, ey = sel->end.line;
+        if (sy > ey) {
+            int t = sy;
+            sy = ey;
+            ey = t;
+        }
+        yank_selection_as_delete(sel);
+        buf_delete_lines_in(buf, sy, ey);
         return;
     }
 
@@ -1099,8 +1134,16 @@ void buf_move_cursor_key(int key) {
                 cursor_from_visual(buf, win, target, content_cols, vis_col);
             }
         } else {
-            if (win->cursor.y < buf->num_rows - 1)
+            /* Carry the render column, not the byte index: tabs and
+             * multibyte chars make the two diverge between rows. */
+            if (win->cursor.y < buf->num_rows - 1) {
+                if (row) {
+                    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+                    win->cursor.x =
+                        buf_row_rx_to_cx(&buf->rows[win->cursor.y + 1], rx);
+                }
                 win->cursor.y++;
+            }
         }
         break;
     case KEY_ARROW_UP:
@@ -1140,8 +1183,15 @@ void buf_move_cursor_key(int key) {
                 cursor_from_visual(buf, win, target, content_cols, vis_col);
             }
         } else {
-            if (win->cursor.y > 0)
+            /* See ARROW_DOWN: preserve the render column across rows. */
+            if (win->cursor.y > 0) {
+                if (row) {
+                    int rx = buf_row_cx_to_rx(row, win->cursor.x);
+                    win->cursor.x =
+                        buf_row_rx_to_cx(&buf->rows[win->cursor.y - 1], rx);
+                }
                 win->cursor.y--;
+            }
         }
         break;
     case KEY_ARROW_RIGHT:

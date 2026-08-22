@@ -738,7 +738,11 @@ static void mc_add_and_advance(int dy) {
                               dy > 0 ? "below" : "above");
         return;
     }
-    int x = buf->cursor->x;
+    /* Land on the same render column, not the same byte offset — tabs
+     * and multibyte chars make those diverge (a byte copy can even
+     * split a UTF-8 sequence). */
+    int rx = buf_row_cx_to_rx(&buf->rows[buf->cursor->y], buf->cursor->x);
+    int x = buf_row_rx_to_cx(&buf->rows[new_y], rx);
     int len = (int)buf->rows[new_y].chars.len;
     if (x > len)
         x = len;

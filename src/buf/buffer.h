@@ -102,6 +102,8 @@ void buf_insert_char_in(Buffer *buf, int c);
 void buf_insert_newline_in(Buffer *buf);
 void buf_del_char_in(Buffer *buf);
 void buf_delete_line_in(Buffer *buf);
+/* Delete whole rows sy..ey without touching registers. */
+void buf_delete_lines_in(Buffer *buf, int sy, int ey);
 void buf_yank_line_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
 /* Reload this buffer's file content from disk (discard changes) */

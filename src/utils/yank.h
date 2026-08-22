@@ -31,10 +31,20 @@ typedef struct YankData {
 /* Core operations - all use TextSelection */
 EdError yank_selection(const TextSelection *sel);
 
+/* Like yank_selection, but store as a delete: rotate through the
+ * numbered registers '1'-'9' and set unnamed, leaving the yank
+ * register '0' intact (so a delete never clobbers the last yank). */
+EdError yank_selection_as_delete(const TextSelection *sel);
+
 /* Block-wise yank of a render-column rectangle [start_rx, end_rx_excl)
  * across rows sy..ey (inclusive). Resolves columns per row (tab/UTF-8
  * aware) and stores blockwise into the yank/unnamed registers. */
 EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl);
+
+/* Same rectangle capture, stored as a delete (see
+ * yank_selection_as_delete). */
+EdError yank_block_as_delete(Buffer *buf, int sy, int ey, int start_rx,
+                             int end_rx_excl);
 
 /* Paste operations */
 EdError paste_from_register(Buffer *buf, char reg_name, bool after);

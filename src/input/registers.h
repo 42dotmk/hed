@@ -20,6 +20,11 @@ void regs_free(void);
 /* Set unnamed '"' register (also syncs editor clipboard) */
 void regs_set_unnamed(const char *data, size_t len);
 
+/* Set only the unnamed register with an explicit paste type, leaving
+ * '0' and the numbered registers alone (visual paste restores the
+ * pasted content this way so it can be pasted repeatedly). */
+void regs_set_unnamed_typed(const char *data, size_t len, RegType type);
+
 /* Set yank register '0' and unnamed */
 void regs_set_yank(const char *data, size_t len);
 void regs_set_yank_block(const char *data, size_t len, int is_block);

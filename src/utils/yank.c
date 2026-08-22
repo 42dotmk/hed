@@ -157,7 +157,11 @@ YankData yank_data_new(Buffer *buf, const TextSelection *sel) {
     return yd;
 }
 
-EdError yank_selection(const TextSelection *sel) {
+/* Shared body of yank_selection / yank_selection_as_delete: serialize
+ * the selection and store it either as a yank ('0' + unnamed) or as a
+ * delete (numbered rotation + unnamed, leaving '0' intact). */
+static EdError selection_to_registers(const TextSelection *sel,
+                                      bool as_delete) {
     BUF(buf)
     if (!sel) {
         return ED_ERR_INVALID_ARG;
@@ -179,7 +183,10 @@ EdError yank_selection(const TextSelection *sel) {
         RegType rt = yd.type == SEL_VISUAL_LINE    ? REG_LINEWISE
                      : yd.type == SEL_VISUAL_BLOCK ? REG_BLOCKWISE
                                                    : REG_CHARWISE;
-        regs_set_yank_typed(data, len, rt);
+        if (as_delete)
+            regs_push_delete_typed(data, len, rt);
+        else
+            regs_set_yank_typed(data, len, rt);
         free(data);
     }
 
@@ -187,11 +194,20 @@ EdError yank_selection(const TextSelection *sel) {
     return data ? ED_OK : ED_ERR_NOMEM;
 }
 
+EdError yank_selection(const TextSelection *sel) {
+    return selection_to_registers(sel, false);
+}
+
+EdError yank_selection_as_delete(const TextSelection *sel) {
+    return selection_to_registers(sel, true);
+}
+
 /* Block-wise yank straight from a render-column rectangle. Each row's
  * byte span is resolved independently (tab/UTF-8 aware) via rx->cx, so
  * the rectangle is honoured even when rows differ in width. Rows that
  * don't reach the block are stored empty, preserving the shape. */
-EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
+static EdError block_to_registers(Buffer *buf, int sy, int ey, int start_rx,
+                                  int end_rx_excl, bool as_delete) {
     if (!buf)
         return ED_ERR_INVALID_ARG;
     if (sy < 0)
@@ -217,9 +233,21 @@ EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
     }
 
     last_yank_was_block = true;
-    regs_set_yank_typed(out.data, out.len, REG_BLOCKWISE);
+    if (as_delete)
+        regs_push_delete_typed(out.data, out.len, REG_BLOCKWISE);
+    else
+        regs_set_yank_typed(out.data, out.len, REG_BLOCKWISE);
     strbuf_free(&out);
     return ED_OK;
+}
+
+EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
+    return block_to_registers(buf, sy, ey, start_rx, end_rx_excl, false);
+}
+
+EdError yank_block_as_delete(Buffer *buf, int sy, int ey, int start_rx,
+                             int end_rx_excl) {
+    return block_to_registers(buf, sy, ey, start_rx, end_rx_excl, true);
 }
 
 EdError paste_from_register(Buffer *buf, char reg_name, bool after) {

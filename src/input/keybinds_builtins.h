@@ -85,6 +85,7 @@ void kb_insert_backspace(void);
 void kb_insert_escape(void);
 
 void kb_visual_yank_selection(void);
+void kb_visual_paste(void);
 void kb_visual_delete_selection(void);
 void kb_visual_escape(void);
 void kb_visual_toggle_block_mode(void);

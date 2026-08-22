@@ -53,8 +53,11 @@ void test_textobj_to_word_end(void) {
          "hello [^worl$d] there", // at start of the word it should select the
          "hell^o [worl$d] there", // when on an end of the previous word, it
                                   // should find the next word and jump there.
-         "hello worl^d\n[secon$d] line"); // when cursor is at the end of the
-                                          // line and word end
+         "hello worl^d\n[secon$d] line", // when cursor is at the end of the
+                                         // line and word end
+         "piaț^ă [lum$e] mare", // multibyte last char: w must leave the word
+         "^ă [lum$e]",          // single multibyte-char word
+         "f[^ăr$ă] x");         // mid-word on a multibyte char
 }
 
 void test_textobj_to_word_start(void) {
@@ -63,7 +66,33 @@ void test_textobj_to_word_start(void) {
 
          // when cursor is on the beggining of next line it should pass
          // to the end of previous like to the beggining of the last word
-         "hello world [$there]\n^second line");
+         "hello world [$there]\n^second line",
+
+         "salut [$lum^ă] x", // multibyte last char: b goes to word start
+         "[$abc ^]ăst x",    // on a word-starting multibyte char: b must
+                             // leave the word
+         "[$fără ^]ș x");    // prev word is all multibyte
+}
+
+void test_textobj_to_word_utf8_WORD(void) {
+    totc(textobj_to_WORD_end, "piaț^ă [lum$e] mare");
+    totc(textobj_to_WORD_start, "salut [$lum^ă] x");
+}
+
+/* j/k carry the render column, not the byte offset: from 'a' after a
+ * tab (byte 1, render col TAB_STOP=4) moving down must land on byte 4
+ * of the plain row below, and moving back up must return to byte 1. */
+void test_textobj_line_updown_tabs(void) {
+    Buffer *buf = create_test_buffer("\tab\n0123456789");
+    TEST_ASSERT_NOT_NULL_MESSAGE(buf, "could not create buffer");
+    TextSelection sel;
+    TEST_ASSERT_TRUE_MESSAGE(textobj_line_down(buf, 0, 1, &sel), "j failed");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.line == 1 && sel.cursor.col == 4,
+                             "j from tab row lost the render column");
+    TEST_ASSERT_TRUE_MESSAGE(textobj_line_up(buf, 1, 4, &sel), "k failed");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.line == 0 && sel.cursor.col == 1,
+                             "k onto tab row lost the render column");
+    free_test_buffer(buf);
 }
 
 void test_textobj_char_at_cursor(void) {
@@ -125,6 +154,8 @@ int main(void) {
     RUN_TEST(test_textobj_WORD_around);
     RUN_TEST(test_textobj_to_word_end);
     RUN_TEST(test_textobj_to_word_start);
+    RUN_TEST(test_textobj_to_word_utf8_WORD);
+    RUN_TEST(test_textobj_line_updown_tabs);
     RUN_TEST(test_textobj_char_at_cursor);
     RUN_TEST(test_textobj_line);
     RUN_TEST(test_textobj_line_with_newline);

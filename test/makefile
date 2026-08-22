@@ -6,7 +6,8 @@ INCLUDES = -I../src -I../src/buf -I../src/lib -I../vendor -Iunity
 LDFLAGS =
 
 # Source files needed for tests
-TEXTOBJ_SRC = ../src/buf/textobj.c
+TEXTOBJ_SRC = ../src/buf/textobj.c ../src/buf/row.c ../src/lib/strutil.c \
+              ../src/lib/strbuf.c
 INPUT_SRC = ../src/input/input.c
 UNITY_SRC = unity/unity.c
 HELPER_SRC = test_helpers.c

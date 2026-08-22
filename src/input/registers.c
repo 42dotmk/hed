@@ -58,6 +58,11 @@ void regs_set_unnamed(const char *data, size_t len) {
     R.t_unnamed = REG_CHARWISE;
 }
 
+void regs_set_unnamed_typed(const char *data, size_t len, RegType type) {
+    rs_assign(&R.unnamed, data, len);
+    R.t_unnamed = type;
+}
+
 void regs_set_yank_typed(const char *data, size_t len, RegType type) {
     rs_assign(&R.yank0, data, len);
     rs_assign(&R.unnamed, data, len);

@@ -8,6 +8,7 @@
 #include "input/command_mode.h"
 #include "input/keybinds.h"
 #include "input/picker.h"
+#include "input/registers.h"
 #include "lib/errors.h"
 #include "lib/safe_string.h"
 #include "lib/strutil.h"
@@ -15,6 +16,7 @@
 #include "ui/wlayout.h"
 #include "utils/fold.h"
 #include "utils/undo.h"
+#include "utils/yank.h"
 #include <assert.h>
 #include <ctype.h>
 #include <limits.h>
@@ -224,13 +226,14 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
         return 0;
     }
 
-    /* Block delete: yank the rectangle, then remove only the selected
-     * columns on each row — not the lines between them. */
+    /* Block delete: capture the rectangle into the delete registers,
+     * then remove only the selected columns on each row — not the
+     * lines between them. */
     if (win->sel.type == SEL_VISUAL_BLOCK) {
         int sy, ey, s_rx, e_rx;
         if (!visual_block_range(buf, win, &sy, &ey, &s_rx, &e_rx))
             return 0;
-        yank_block(buf, sy, ey, s_rx, e_rx);
+        yank_block_as_delete(buf, sy, ey, s_rx, e_rx);
         buf_delete_block(buf, sy, ey, s_rx, e_rx);
         win->cursor.y = sy;
         win->cursor.x = buf_row_rx_to_cx(&buf->rows[sy], s_rx);
@@ -243,12 +246,8 @@ static int visual_delete(Buffer *buf, Window *win, int block_mode) {
     if (!kb_visual_to_textsel(buf, win, block_mode, &sel))
         return 0;
 
-    /* Yank first (to clipboard) */
-    EdError err = yank_selection(&sel);
-    if (err != ED_OK)
-        return 0;
-
-    /* Delete the selection */
+    /* Delete the selection; the delete paths capture the removed text
+     * into the delete registers ('1'-'9' + unnamed, '0' untouched). */
     buf_delete_selection(&sel);
 
     visual_clear(win);
@@ -285,6 +284,79 @@ void kb_visual_escape(void) {
     BUFWIN(buf, win)
     kb_visual_clear(win);
     ed_set_mode(MODE_NORMAL);
+}
+
+/* p in visual mode: replace the selection with the unnamed register.
+ * The register content is snapshotted before the deletion (which
+ * rotates the delete registers) and restored afterwards, so the same
+ * content can be pasted over selection after selection. */
+void kb_visual_paste(void) {
+    BUFWIN(buf, win)
+    if (win->sel.type == SEL_NONE) {
+        kb_paste();
+        return;
+    }
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
+    const StrBuf *reg = regs_get('"');
+    if (!reg || reg->len == 0) {
+        ed_set_status_message("Nothing to paste");
+        return;
+    }
+    size_t plen = reg->len;
+    char *pdata = malloc(plen);
+    if (!pdata)
+        return;
+    memcpy(pdata, reg->data, plen);
+    RegType pt = regs_get_type('"');
+
+    /* Paste below instead of above when a line-wise selection reached
+     * the end of the buffer — the deletion leaves the cursor on the
+     * line above the removed block. */
+    bool after = false;
+    bool whole_buffer = false;
+
+    if (win->sel.type == SEL_VISUAL_BLOCK) {
+        int sy, ey, s_rx, e_rx;
+        if (visual_block_range(buf, win, &sy, &ey, &s_rx, &e_rx)) {
+            yank_block_as_delete(buf, sy, ey, s_rx, e_rx);
+            buf_delete_block(buf, sy, ey, s_rx, e_rx);
+            win->cursor.y = sy;
+            win->cursor.x = buf_row_rx_to_cx(&buf->rows[sy], s_rx);
+        }
+    } else {
+        TextSelection sel;
+        if (kb_visual_to_textsel(buf, win, 0, &sel)) {
+            if (sel.type == SEL_VISUAL_LINE) {
+                whole_buffer =
+                    (sel.start.line == 0 && sel.end.line == buf->num_rows - 1);
+            }
+            int sy = sel.start.line;
+            buf_delete_selection(&sel);
+            if (sel.type == SEL_VISUAL_LINE && sy >= buf->num_rows)
+                after = true;
+        }
+    }
+    visual_clear(win);
+    ed_set_mode(MODE_NORMAL);
+
+    /* Restore the pasted content into unnamed (the deletion above
+     * rotated it into '1'), then paste it where the selection was. */
+    regs_set_unnamed_typed(pdata, plen, pt);
+    paste_from_register(buf, '"', after);
+
+    /* Replacing every line of the buffer leaves the placeholder empty
+     * row the deletion inserted; drop it so the paste is exact. */
+    if (whole_buffer && pt == REG_LINEWISE && buf->num_rows > 1 &&
+        buf->rows[buf->num_rows - 1].chars.len == 0) {
+        buf_delete_lines_in(buf, buf->num_rows - 1, buf->num_rows - 1);
+        win->cursor.y = 0;
+        win->cursor.x = 0;
+    }
+
+    free(pdata);
 }
 
 void kb_visual_toggle_block_mode(void) {

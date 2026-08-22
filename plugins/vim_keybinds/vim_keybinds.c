@@ -87,6 +87,8 @@ static int vim_keybinds_init(void) {
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
      * mapv covers all three visual modes. */
     mapv("r", kb_visual_replace_char, "replace selection chars");
+    mapv("p", kb_visual_paste, "paste over selection");
+    mapv("P", kb_visual_paste, "paste over selection");
     mapv("v", kb_visual_escape, "exit visual");
     mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
     mapv("<Esc>", kb_visual_escape, "exit visual");

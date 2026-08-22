@@ -905,6 +905,40 @@ void buf_delete_line_in(Buffer *buf) {
     buf_cursor_sync_from_window(buf);
     cursors_after_delete_line(buf, deleted_y);
 }
+/* Delete whole rows sy..ey (inclusive) without touching registers —
+ * callers own the register semantics. Fires HOOK_LINE_DELETE per row
+ * and leaves the cursor at column 0 of the first surviving row. */
+void buf_delete_lines_in(Buffer *buf, int sy, int ey) {
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+    if (buf->readonly) {
+        ed_set_status_message("Buffer is read-only");
+        return;
+    }
+    if (sy < 0)
+        sy = 0;
+    if (ey >= buf->num_rows)
+        ey = buf->num_rows - 1;
+    if (sy > ey)
+        return;
+
+    for (int y = ey; y >= sy; y--) {
+        HookLineEvent event = {buf, y, buf->rows[y].chars.data,
+                               buf->rows[y].chars.len};
+        hook_fire_line(HOOK_LINE_DELETE, &event);
+        buf_row_del_in(buf, y);
+        cursors_after_delete_line(buf, y);
+    }
+    if (buf->num_rows == 0) {
+        buf_row_insert_in(buf, 0, "", 0);
+        win->row_offset = 0;
+    }
+    win->cursor.y = (sy < buf->num_rows) ? sy : buf->num_rows - 1;
+    win->cursor.x = 0;
+    buf_cursor_sync_from_window(buf);
+}
+
 void buf_yank_line_in(Buffer *buf) {
     WIN(win)
     TextSelection sel;

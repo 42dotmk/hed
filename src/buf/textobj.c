@@ -790,7 +790,9 @@ int textobj_to_word_end(Buffer *buf, int line, int col, TextSelection *sel) {
     if (column_in_word(row, x)) {
         if (!word_range_at(row, x, &sx, &ex))
             return 0;
-        if (x >= ex - 1) {
+        /* "On the last char" in bytes: ex is exclusive, so the last
+         * char starts at the previous codepoint boundary, not ex-1. */
+        if (x >= utf8_prev_cp(row->chars.data, (int)row->chars.len, ex)) {
             if (!find_next_word(buf, y, ex, &target_line, &sx, &ex))
                 return 0;
             row = &buf->rows[target_line];
@@ -873,7 +875,9 @@ int textobj_to_WORD_end(Buffer *buf, int line, int col, TextSelection *sel) {
     if (column_in_word(row, x)) {
         if (!WORD_range_at(row, x, &sx, &ex))
             return 0;
-        if (x >= ex - 1) {
+        /* See textobj_to_word_end: last-char check must be
+         * codepoint-based, not ex-1. */
+        if (x >= utf8_prev_cp(row->chars.data, (int)row->chars.len, ex)) {
             if (!find_next_WORD(buf, y, ex, &target_line, &sx, &ex))
                 return 0;
             row = &buf->rows[target_line];
@@ -1249,9 +1253,11 @@ int textobj_line_down(Buffer *buf, int line, int col, TextSelection *sel) {
         new_line = buf->num_rows - 1;
     }
 
-    /* Keep column position, clamping to line length */
+    /* Keep the render column, not the byte offset — tabs and multibyte
+     * chars make them diverge between rows. */
     Row *new_row = &buf->rows[new_line];
-    int new_col = col;
+    int rx = buf_row_cx_to_rx(&buf->rows[line], col);
+    int new_col = buf_row_rx_to_cx(new_row, rx);
     if (new_col > (int)new_row->chars.len) {
         new_col = new_row->chars.len;
     }
@@ -1278,9 +1284,10 @@ int textobj_line_up(Buffer *buf, int line, int col, TextSelection *sel) {
         new_line = 0;
     }
 
-    /* Keep column position, clamping to line length */
+    /* See textobj_line_down: carry the render column across rows. */
     Row *new_row = &buf->rows[new_line];
-    int new_col = col;
+    int rx = buf_row_cx_to_rx(&buf->rows[line], col);
+    int new_col = buf_row_rx_to_cx(new_row, rx);
     if (new_col > (int)new_row->chars.len) {
         new_col = new_row->chars.len;
     }
