@@ -16,6 +16,9 @@ default `src/config.c`, so this is what you get on a fresh install.
 | Arrow keys | Same as `hjkl` |
 | `w` `b` `e` | Word forward / backward / end |
 | `f{char}` `F{char}` | To next / previous occurrence of `{char}` on the line (counts work: `2fx`; usable after operators: `dfx`, `cF(`) |
+| `t{char}` `T{char}` | Till: stop one char short of / after `{char}` (`dtx` deletes up to `x`) |
+| `;` `,` | Repeat the last `f`/`F`/`t`/`T`, same / reversed direction |
+| `.` | Repeat the last change — operator, edit, or whole insert session (`ciwfoo<Esc>` then `.`) |
 | `0` `^` `$` | Line start / first non-blank / line end |
 | `gg` `G` | Buffer top / bottom |
 | `{` `}` | Previous / next paragraph |

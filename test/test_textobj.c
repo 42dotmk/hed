@@ -86,37 +86,63 @@ void test_textobj_to_char(void) {
     TEST_ASSERT_NOT_NULL_MESSAGE(buf, "could not create buffer");
     TextSelection sel;
 
-    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 0, "x", 1, 1, &sel),
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 0, "x", 1, 1, 0, &sel),
                              "f x not found");
     TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.start.col == 0 &&
                                  sel.end.col == 5,
                              "f x: cursor on target, inclusive end");
 
-    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 7, "x", 1, 0, &sel),
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 7, "x", 1, 0, 0, &sel),
                              "F x not found");
     TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.start.col == 4 &&
                                  sel.end.col == 7,
                              "F x: cursor on target, exclusive end");
 
-    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 0, "z", 1, 1, &sel),
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 0, "z", 1, 1, 0, &sel),
                              "absent char must fail");
     /* f on the char under the cursor must skip it (search starts after) */
-    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 4, "x", 1, 1, &sel),
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 4, "x", 1, 1, 0, &sel),
                              "f must not match the cursor char");
 
     /* multibyte target: fără — ă at bytes 1 and 4 */
-    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 0, "\xc4\x83", 2, 1, &sel),
-                             "f ă not found");
+    TEST_ASSERT_TRUE_MESSAGE(
+        textobj_to_char(buf, 1, 0, "\xc4\x83", 2, 1, 0, &sel), "f ă not found");
     TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 1 && sel.end.col == 3,
                              "f ă: lands on first ă, inclusive end");
-    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 1, "\xc4\x83", 2, 1, &sel),
-                             "f ă #2");
+    TEST_ASSERT_TRUE_MESSAGE(
+        textobj_to_char(buf, 1, 1, "\xc4\x83", 2, 1, 0, &sel), "f ă #2");
     TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4,
                              "f ă from first ă finds the second");
-    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 7, "\xc4\x83", 2, 0, &sel),
-                             "F ă");
+    TEST_ASSERT_TRUE_MESSAGE(
+        textobj_to_char(buf, 1, 7, "\xc4\x83", 2, 0, 0, &sel), "F ă");
     TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.end.col == 7,
                              "F ă: back to nearest ă, exclusive end");
+
+    /* till variants: t stops before, T after, both fail when adjacent */
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 0, "x", 1, 1, 1, &sel),
+                             "t x not found");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 3 && sel.start.col == 0 &&
+                                 sel.end.col == 4,
+                             "t x: stops before target, end excludes it");
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 3, "x", 1, 1, 1, &sel),
+                             "t x adjacent must fail");
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 7, "x", 1, 0, 1, &sel),
+                             "T x not found");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 5 && sel.start.col == 5 &&
+                                 sel.end.col == 7,
+                             "T x: stops after target");
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 5, "x", 1, 0, 1, &sel),
+                             "T x adjacent must fail");
+    /* till with a multibyte target: t ă from f (byte 0) stops on f?
+     * no — first ă is at byte 1, adjacent, so it fails; from row start
+     * to the second ă it stops on r (byte 3). */
+    TEST_ASSERT_TRUE_MESSAGE(
+        !textobj_to_char(buf, 1, 0, "\xc4\x83", 2, 1, 1, &sel),
+        "t ă adjacent must fail");
+    TEST_ASSERT_TRUE_MESSAGE(
+        textobj_to_char(buf, 1, 1, "\xc4\x83", 2, 1, 1, &sel), "t ă");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 3 && sel.end.col == 4,
+                             "t ă: stops on r before second ă");
 
     free_test_buffer(buf);
 }

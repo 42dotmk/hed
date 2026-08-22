@@ -208,6 +208,9 @@ int keybind_has_pending_count(void);
  * read on iterations > 0 instead of prompting per repetition. */
 int keybind_motion_repeat_index(void);
 
+/* True while a multi-key sequence prefix is still accumulating. */
+int keybind_sequence_pending(void);
+
 /* Text Object System */
 
 /* Forward declarations */

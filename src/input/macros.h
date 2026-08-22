@@ -87,6 +87,10 @@ char macro_get_recording_register(void);
  */
 void macro_record_key(int key);
 
+/* Serialize one key code into the <...> notation macro_replay_string
+ * parses back (also used by the dot-repeat recorder). */
+void macro_key_to_string(int key, char *buf, size_t bufsize);
+
 /**
  * Play a macro from a named register
  *

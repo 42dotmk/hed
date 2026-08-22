@@ -262,9 +262,11 @@ char macro_get_recording_register(void) {
     return E.macro_recording.register_name;
 }
 
-/* Helper: Convert key code to string representation. Symmetric with the
- * <...> parser in macro_try_decode_token. */
-static void key_to_string_buf(int key, char *buf, size_t bufsize) {
+/* Convert key code to string representation. Symmetric with the <...>
+ * parser in macro_try_decode_token, so anything serialized with this
+ * (macro registers, the dot-repeat run) replays losslessly through
+ * macro_replay_string. */
+void macro_key_to_string(int key, char *buf, size_t bufsize) {
     int has_mod = KEY_IS_META(key) || KEY_IS_CTRL(key) || KEY_IS_SHIFT(key);
 
     if (!has_mod) {
@@ -329,7 +331,7 @@ void macro_record_key(int key) {
 
     /* Convert key to string representation */
     char key_str[32];
-    key_to_string_buf(key, key_str, sizeof(key_str));
+    macro_key_to_string(key, key_str, sizeof(key_str));
 
     /* Append to the recording register */
     regs_append_named(E.macro_recording.register_name, key_str,

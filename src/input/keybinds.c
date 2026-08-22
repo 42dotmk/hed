@@ -576,11 +576,9 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
         return;
     }
 
-    /* Record the invoked sequence in the . register so dot-repeat
-     * can replay it. */
-    if (m->sequence) {
-        regs_set_dot(m->sequence, strlen(m->sequence));
-    }
+    /* The '.' register is owned by the dot-repeat recorder
+     * (input/dot_repeat.c): it stores the full key run of the last
+     * buffer-modifying command, not merely the last bound sequence. */
 }
 
 /* Which iteration of a count-repeat burst (3j → 0,1,2) the current
@@ -589,6 +587,10 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
  * on every repetition. */
 static int motion_repeat_idx = 0;
 int keybind_motion_repeat_index(void) { return motion_repeat_idx; }
+
+/* True while a multi-key sequence prefix (g of gg, a leader chord…)
+ * is still accumulating. */
+int keybind_sequence_pending(void) { return key_buffer_len > 0; }
 
 /* Legacy single-call dispatch: feed + invoke on exact match, with
  * the NORMAL-mode single-key textobj fallback. Scans all given modes

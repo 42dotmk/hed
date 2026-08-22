@@ -158,6 +158,13 @@ int undo_is_applying(const struct Buffer *buf) {
  * Recording
  * =================================================================== */
 
+/* Every recorded mutation bumps this generation — a reliable "did
+ * anything change" signal (buf->dirty is not: several in-row edit
+ * paths never touch it). Not bumped while applying undo/redo, which
+ * is what dot-repeat wants. */
+static unsigned long mod_generation = 0;
+unsigned long undo_mod_generation(void) { return mod_generation; }
+
 static UndoGroup *ensure_open(struct Buffer *buf) {
     UndoState *u = &buf->undo;
     if (u->applying)
@@ -168,6 +175,7 @@ static UndoGroup *ensure_open(struct Buffer *buf) {
             return NULL;
         strncpy(u->open->desc, "auto", sizeof(u->open->desc) - 1);
     }
+    mod_generation++;
     return u->open;
 }
 

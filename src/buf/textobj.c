@@ -723,13 +723,14 @@ int textobj_line(Buffer *buf, int line, int col, TextSelection *sel) {
     return ok;
 }
 
-/* Vim f/F: find the next (forward=1) or previous occurrence of the
- * codepoint `seq` (seqlen bytes) on the cursor's line. Forward is
+/* Vim f/F/t/T: find the next (forward=1) or previous occurrence of
+ * the codepoint `seq` (seqlen bytes) on the cursor's line. Forward is
  * inclusive (df x eats through the target), backward exclusive (dF x
- * stops before the cursor char); the motion cursor lands on the
- * occurrence. Line-local like Vim; returns 0 when absent. */
+ * stops before the cursor char). With till=1 the motion stops one
+ * codepoint short of the occurrence (t/T) and fails when already
+ * adjacent, like Vim. Line-local; returns 0 when absent. */
 int textobj_to_char(Buffer *buf, int line, int col, const char *seq, int seqlen,
-                    int forward, TextSelection *sel) {
+                    int forward, int till, TextSelection *sel) {
     if (!seq || seqlen <= 0)
         return 0;
     int y = clamp_line(buf, line);
@@ -745,6 +746,14 @@ int textobj_to_char(Buffer *buf, int line, int col, const char *seq, int seqlen,
         int i = utf8_next_cp(s, len, x);
         while (i + seqlen <= len) {
             if (memcmp(s + i, seq, (size_t)seqlen) == 0) {
+                if (till) {
+                    int stop = utf8_prev_cp(s, len, i);
+                    if (stop == x)
+                        return 0; /* already adjacent to the target */
+                    TextPos cursor = {y, stop};
+                    return set_selection(sel, (TextPos){y, x}, (TextPos){y, i},
+                                         cursor);
+                }
                 TextPos cursor = {y, i};
                 return set_selection(sel, (TextPos){y, x},
                                      (TextPos){y, utf8_next_cp(s, len, i)},
@@ -758,6 +767,14 @@ int textobj_to_char(Buffer *buf, int line, int col, const char *seq, int seqlen,
     int i = utf8_prev_cp(s, len, x);
     while (i >= 0) {
         if (i + seqlen <= len && memcmp(s + i, seq, (size_t)seqlen) == 0) {
+            if (till) {
+                int stop = utf8_next_cp(s, len, i);
+                if (stop == x)
+                    return 0; /* already adjacent to the target */
+                TextPos cursor = {y, stop};
+                return set_selection(sel, (TextPos){y, stop}, (TextPos){y, x},
+                                     cursor);
+            }
             TextPos cursor = {y, i};
             return set_selection(sel, (TextPos){y, i}, (TextPos){y, x}, cursor);
         }

@@ -46,11 +46,12 @@ int textobj_to_paragraph_end(Buffer *buf, int line, int col,
                              TextSelection *sel);
 int textobj_to_paragraph_start(Buffer *buf, int line, int col,
                                TextSelection *sel);
-/* Vim f/F core: line-local search for the codepoint `seq` (seqlen
- * bytes); forward is inclusive, backward exclusive. The interactive
+/* Vim f/F/t/T core: line-local search for the codepoint `seq` (seqlen
+ * bytes); forward is inclusive, backward exclusive; till=1 stops one
+ * codepoint short (failing when already adjacent). The interactive
  * key-reading wrappers live in input/keybinds_builtins.c. */
 int textobj_to_char(Buffer *buf, int line, int col, const char *seq, int seqlen,
-                    int forward, TextSelection *sel);
+                    int forward, int till, TextSelection *sel);
 int textobj_paragraph(Buffer *buf, int line, int col, TextSelection *sel);
 
 /* New textobjects for character and line deletion */

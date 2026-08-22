@@ -817,18 +817,92 @@ static int findchar_read(void) {
     return 1;
 }
 
-int kb_textobj_find_char_fwd(Buffer *buf, int line, int col,
-                             TextSelection *sel) {
+/* Last find, for ; and , — vim remembers the char and the motion kind
+ * (f/F/t/T) across other commands. */
+static char findchar_last_seq[8];
+static int findchar_last_len = 0;
+static int findchar_last_fwd = 1;
+static int findchar_last_till = 0;
+
+static int findchar_motion(Buffer *buf, int line, int col, int forward,
+                           int till, TextSelection *sel) {
     if (!findchar_read())
         return 0;
-    return textobj_to_char(buf, line, col, findchar_seq, findchar_len, 1, sel);
+    memcpy(findchar_last_seq, findchar_seq, sizeof(findchar_seq));
+    findchar_last_len = findchar_len;
+    findchar_last_fwd = forward;
+    findchar_last_till = till;
+    return textobj_to_char(buf, line, col, findchar_seq, findchar_len, forward,
+                           till, sel);
+}
+
+int kb_textobj_find_char_fwd(Buffer *buf, int line, int col,
+                             TextSelection *sel) {
+    return findchar_motion(buf, line, col, 1, 0, sel);
 }
 
 int kb_textobj_find_char_back(Buffer *buf, int line, int col,
                               TextSelection *sel) {
-    if (!findchar_read())
+    return findchar_motion(buf, line, col, 0, 0, sel);
+}
+
+int kb_textobj_till_char_fwd(Buffer *buf, int line, int col,
+                             TextSelection *sel) {
+    return findchar_motion(buf, line, col, 1, 1, sel);
+}
+
+int kb_textobj_till_char_back(Buffer *buf, int line, int col,
+                              TextSelection *sel) {
+    return findchar_motion(buf, line, col, 0, 1, sel);
+}
+
+/* ; and , : repeat the last f/F/t/T, same or reversed direction. A
+ * till motion that stalls because the target is adjacent retries one
+ * codepoint further, so `;` after `tx` hops occurrence to occurrence
+ * like Vim. */
+static int findchar_repeat(Buffer *buf, int line, int col, int reverse,
+                           TextSelection *sel) {
+    if (findchar_last_len == 0)
         return 0;
-    return textobj_to_char(buf, line, col, findchar_seq, findchar_len, 0, sel);
+    int fwd = reverse ? !findchar_last_fwd : findchar_last_fwd;
+    if (textobj_to_char(buf, line, col, findchar_last_seq, findchar_last_len,
+                        fwd, findchar_last_till, sel))
+        return 1;
+    if (!findchar_last_till)
+        return 0;
+    Row *row =
+        (buf && line >= 0 && line < buf->num_rows) ? &buf->rows[line] : NULL;
+    if (!row)
+        return 0;
+    int len = (int)row->chars.len;
+    int retry;
+    if (fwd) {
+        if (col >= len)
+            return 0;
+        int adv = 1;
+        utf8_char_width(row->chars.data + col, (size_t)(len - col), &adv);
+        if (adv < 1)
+            adv = 1;
+        retry = col + adv;
+    } else {
+        if (col <= 0)
+            return 0;
+        retry = col - 1;
+        while (retry > 0 &&
+               ((unsigned char)row->chars.data[retry] & 0xC0) == 0x80)
+            retry--;
+    }
+    return textobj_to_char(buf, line, retry, findchar_last_seq,
+                           findchar_last_len, fwd, findchar_last_till, sel);
+}
+
+int kb_textobj_find_repeat(Buffer *buf, int line, int col, TextSelection *sel) {
+    return findchar_repeat(buf, line, col, 0, sel);
+}
+
+int kb_textobj_find_repeat_rev(Buffer *buf, int line, int col,
+                               TextSelection *sel) {
+    return findchar_repeat(buf, line, col, 1, sel);
 }
 
 /* Apply a text-object motion to the active window's cursor. Used by

@@ -87,13 +87,21 @@ void kb_insert_escape(void);
 void kb_visual_yank_selection(void);
 void kb_visual_paste(void);
 
-/* Vim f/F: interactive to-char motions (read the target char from the
- * keyboard, then defer to textobj_to_char). Registered as textobjs so
- * plain f/F, visual f/F and operator use (dfx, cFx) all work. */
+/* Vim f/F/t/T: interactive to-char motions (read the target char from
+ * the keyboard, then defer to textobj_to_char). Registered as textobjs
+ * so plain use, visual extension and operators (dfx, ctx) all work.
+ * ; and , repeat the last one, same or reversed direction. */
 int kb_textobj_find_char_fwd(Buffer *buf, int line, int col,
                              TextSelection *sel);
 int kb_textobj_find_char_back(Buffer *buf, int line, int col,
                               TextSelection *sel);
+int kb_textobj_till_char_fwd(Buffer *buf, int line, int col,
+                             TextSelection *sel);
+int kb_textobj_till_char_back(Buffer *buf, int line, int col,
+                              TextSelection *sel);
+int kb_textobj_find_repeat(Buffer *buf, int line, int col, TextSelection *sel);
+int kb_textobj_find_repeat_rev(Buffer *buf, int line, int col,
+                               TextSelection *sel);
 void kb_visual_delete_selection(void);
 void kb_visual_escape(void);
 void kb_visual_toggle_block_mode(void);

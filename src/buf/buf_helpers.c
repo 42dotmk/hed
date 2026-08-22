@@ -933,6 +933,10 @@ void buf_delete_block(Buffer *buf, int sy, int ey, int start_rx,
     buf->dirty++;
 }
 
+/* Set (briefly) by buf_change_selection so the double-space cleanup
+ * below doesn't run for change operations. */
+static int suppress_space_cleanup = 0;
+
 void buf_delete_selection(TextSelection *sel) {
     if (!sel)
         return;
@@ -1005,7 +1009,11 @@ void buf_delete_selection(TextSelection *sel) {
 
     /* If deletion left two adjacent spaces, remove one.
      * This avoids the common double-space artifact when deleting a word
-     * that had a space on each side. */
+     * that had a space on each side. Suppressed for change operations
+     * (ciw…): the insert happens between those spaces, so eating one
+     * would glue the typed text onto the next word. */
+    if (suppress_space_cleanup)
+        return;
     int cy = win->cursor.y;
     int cx = win->cursor.x;
     if (cy >= 0 && cy < buf->num_rows) {
@@ -1037,7 +1045,9 @@ void buf_change_selection(TextSelection *sel) {
      * alone; Esc closes it. */
     if (buf)
         undo_begin(buf, "change");
+    suppress_space_cleanup = 1;
     buf_delete_selection(sel);
+    suppress_space_cleanup = 0;
     ed_set_mode(MODE_INSERT);
 }
 

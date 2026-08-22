@@ -87,6 +87,11 @@ void undo_record_delete(struct Buffer *buf, int row_idx, const char *data,
 int undo_apply(struct Buffer *buf);
 int redo_apply(struct Buffer *buf);
 
+/* Monotonic counter of recorded mutations across all buffers (not
+ * bumped by undo/redo application). Lets callers detect "something
+ * changed between two points in time" — used by dot-repeat. */
+unsigned long undo_mod_generation(void);
+
 /* Register undo's mode-change hook (opens insert group on entry, closes
  * on exit). Call from config_init. */
 void undo_register_hooks(void);
