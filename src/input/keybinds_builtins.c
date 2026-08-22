@@ -779,6 +779,58 @@ void kb_move_right(void) { buf_move_cursor_key(KEY_ARROW_RIGHT); }
 void kb_move_up(void) { buf_move_cursor_key(KEY_ARROW_UP); }
 void kb_move_down(void) { buf_move_cursor_key(KEY_ARROW_DOWN); }
 
+/* f/F argument: the target char typed after the motion key. Multibyte
+ * chars arrive byte-at-a-time from ed_read_key, so continuation bytes
+ * are collected into one codepoint. During a count-repeat burst (3fx)
+ * only the first iteration prompts; later ones reuse the read. */
+static char findchar_seq[8];
+static int findchar_len = 0;
+static int findchar_read(void) {
+    if (keybind_motion_repeat_index() > 0)
+        return findchar_len > 0;
+
+    findchar_len = 0;
+    int c = ed_read_key();
+    /* Decoded special keys (arrows, F-keys, meta combos) are > 0xff
+     * and cancel the motion. Raw high bytes come sign-extended from
+     * the reader, so normalize before classifying. */
+    if (c > 0xff)
+        return 0;
+    unsigned char b = (unsigned char)c;
+    /* Printable bytes and tab only; Esc and control chars cancel. */
+    if (b < 0x20 && b != '\t')
+        return 0;
+    findchar_seq[findchar_len++] = (char)b;
+    int cont = 0;
+    if ((b & 0xE0) == 0xC0)
+        cont = 1;
+    else if ((b & 0xF0) == 0xE0)
+        cont = 2;
+    else if ((b & 0xF8) == 0xF0)
+        cont = 3;
+    for (int i = 0; i < cont; i++) {
+        int cc = ed_read_key();
+        if (cc > 0xff || ((unsigned char)cc & 0xC0) != 0x80)
+            break;
+        findchar_seq[findchar_len++] = (char)(unsigned char)cc;
+    }
+    return 1;
+}
+
+int kb_textobj_find_char_fwd(Buffer *buf, int line, int col,
+                             TextSelection *sel) {
+    if (!findchar_read())
+        return 0;
+    return textobj_to_char(buf, line, col, findchar_seq, findchar_len, 1, sel);
+}
+
+int kb_textobj_find_char_back(Buffer *buf, int line, int col,
+                              TextSelection *sel) {
+    if (!findchar_read())
+        return 0;
+    return textobj_to_char(buf, line, col, findchar_seq, findchar_len, 0, sel);
+}
+
 /* Apply a text-object motion to the active window's cursor. Used by
  * the modeless keymap plugins (emacs, vscode) so they don't have to
  * touch cursor.x/cursor.y directly. */

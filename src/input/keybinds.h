@@ -203,6 +203,11 @@ int keybind_get_and_clear_pending_count(void);
  * explicit count of 1 (1G = line 1) apart from no count (G = EOF). */
 int keybind_has_pending_count(void);
 
+/* Iteration of the current count-repeat burst (3f x → 0,1,2; 0 when
+ * not repeating). Argument-reading motions (f/F) reuse their first
+ * read on iterations > 0 instead of prompting per repetition. */
+int keybind_motion_repeat_index(void);
+
 /* Text Object System */
 
 /* Forward declarations */

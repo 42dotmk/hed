@@ -79,6 +79,48 @@ void test_textobj_to_word_utf8_WORD(void) {
     totc(textobj_to_WORD_start, "salut [$lum^ă] x");
 }
 
+/* Vim f/F core: forward inclusive, backward exclusive, line-local,
+ * multibyte targets supported. */
+void test_textobj_to_char(void) {
+    Buffer *buf = create_test_buffer("abc xbyc\nfără x");
+    TEST_ASSERT_NOT_NULL_MESSAGE(buf, "could not create buffer");
+    TextSelection sel;
+
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 0, "x", 1, 1, &sel),
+                             "f x not found");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.start.col == 0 &&
+                                 sel.end.col == 5,
+                             "f x: cursor on target, inclusive end");
+
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 0, 7, "x", 1, 0, &sel),
+                             "F x not found");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.start.col == 4 &&
+                                 sel.end.col == 7,
+                             "F x: cursor on target, exclusive end");
+
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 0, "z", 1, 1, &sel),
+                             "absent char must fail");
+    /* f on the char under the cursor must skip it (search starts after) */
+    TEST_ASSERT_TRUE_MESSAGE(!textobj_to_char(buf, 0, 4, "x", 1, 1, &sel),
+                             "f must not match the cursor char");
+
+    /* multibyte target: fără — ă at bytes 1 and 4 */
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 0, "\xc4\x83", 2, 1, &sel),
+                             "f ă not found");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 1 && sel.end.col == 3,
+                             "f ă: lands on first ă, inclusive end");
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 1, "\xc4\x83", 2, 1, &sel),
+                             "f ă #2");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4,
+                             "f ă from first ă finds the second");
+    TEST_ASSERT_TRUE_MESSAGE(textobj_to_char(buf, 1, 7, "\xc4\x83", 2, 0, &sel),
+                             "F ă");
+    TEST_ASSERT_TRUE_MESSAGE(sel.cursor.col == 4 && sel.end.col == 7,
+                             "F ă: back to nearest ă, exclusive end");
+
+    free_test_buffer(buf);
+}
+
 /* j/k carry the render column, not the byte offset: from 'a' after a
  * tab (byte 1, render col TAB_STOP=4) moving down must land on byte 4
  * of the plain row below, and moving back up must return to byte 1. */
@@ -156,6 +198,7 @@ int main(void) {
     RUN_TEST(test_textobj_to_word_start);
     RUN_TEST(test_textobj_to_word_utf8_WORD);
     RUN_TEST(test_textobj_line_updown_tabs);
+    RUN_TEST(test_textobj_to_char);
     RUN_TEST(test_textobj_char_at_cursor);
     RUN_TEST(test_textobj_line);
     RUN_TEST(test_textobj_line_with_newline);

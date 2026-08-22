@@ -15,6 +15,7 @@ default `src/config.c`, so this is what you get on a fresh install.
 | `h` `j` `k` `l` | Left / down / up / right |
 | Arrow keys | Same as `hjkl` |
 | `w` `b` `e` | Word forward / backward / end |
+| `f{char}` `F{char}` | To next / previous occurrence of `{char}` on the line (counts work: `2fx`; usable after operators: `dfx`, `cF(`) |
 | `0` `^` `$` | Line start / first non-blank / line end |
 | `gg` `G` | Buffer top / bottom |
 | `{` `}` | Previous / next paragraph |

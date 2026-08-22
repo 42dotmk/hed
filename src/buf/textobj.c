@@ -723,6 +723,49 @@ int textobj_line(Buffer *buf, int line, int col, TextSelection *sel) {
     return ok;
 }
 
+/* Vim f/F: find the next (forward=1) or previous occurrence of the
+ * codepoint `seq` (seqlen bytes) on the cursor's line. Forward is
+ * inclusive (df x eats through the target), backward exclusive (dF x
+ * stops before the cursor char); the motion cursor lands on the
+ * occurrence. Line-local like Vim; returns 0 when absent. */
+int textobj_to_char(Buffer *buf, int line, int col, const char *seq, int seqlen,
+                    int forward, TextSelection *sel) {
+    if (!seq || seqlen <= 0)
+        return 0;
+    int y = clamp_line(buf, line);
+    if (y < 0)
+        return 0;
+    Row *row = &buf->rows[y];
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int x = clamp_col(row, col);
+    x = utf8_cp_start(s, len, x);
+
+    if (forward) {
+        int i = utf8_next_cp(s, len, x);
+        while (i + seqlen <= len) {
+            if (memcmp(s + i, seq, (size_t)seqlen) == 0) {
+                TextPos cursor = {y, i};
+                return set_selection(sel, (TextPos){y, x},
+                                     (TextPos){y, utf8_next_cp(s, len, i)},
+                                     cursor);
+            }
+            i = utf8_next_cp(s, len, i);
+        }
+        return 0;
+    }
+
+    int i = utf8_prev_cp(s, len, x);
+    while (i >= 0) {
+        if (i + seqlen <= len && memcmp(s + i, seq, (size_t)seqlen) == 0) {
+            TextPos cursor = {y, i};
+            return set_selection(sel, (TextPos){y, i}, (TextPos){y, x}, cursor);
+        }
+        i = utf8_prev_cp(s, len, i);
+    }
+    return 0;
+}
+
 int textobj_brackets(Buffer *buf, int line, int col, TextSelection *sel) {
     int y = clamp_line(buf, line);
     if (y < 0)

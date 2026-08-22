@@ -347,9 +347,7 @@ int keybind_get_at_ext(int index, const char **sequence, const char **desc,
 
 /* Get and consume the pending numeric count (for commands that read additional
  * keys) */
-int keybind_has_pending_count(void) {
-    return have_count;
-}
+int keybind_has_pending_count(void) { return have_count; }
 
 int keybind_get_and_clear_pending_count(void) {
     int count = have_count ? pending_count : 1;
@@ -585,6 +583,13 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
     }
 }
 
+/* Which iteration of a count-repeat burst (3j → 0,1,2) the current
+ * fallback motion is running in. Motions that read an argument key
+ * (f/F) use this to reuse the first read instead of prompting again
+ * on every repetition. */
+static int motion_repeat_idx = 0;
+int keybind_motion_repeat_index(void) { return motion_repeat_idx; }
+
 /* Legacy single-call dispatch: feed + invoke on exact match, with
  * the NORMAL-mode single-key textobj fallback. Scans all given modes
  * in one combined pass so a multi-key prefix pending in any of them
@@ -607,8 +612,11 @@ bool keybind_process_modes(int key, const int *modes, int nmodes) {
          * this textobj fallback, so this is where 3j repeats. */
         int repeat = r.has_count ? r.count : 1;
         keybind_clear_buffer();
-        for (int i = 0; i < repeat; i++)
+        for (int i = 0; i < repeat; i++) {
+            motion_repeat_idx = i;
             kb_operator_move(fallback_key);
+        }
+        motion_repeat_idx = 0;
         handled = true;
     } else {
         keybind_clear_buffer();

@@ -16,6 +16,8 @@ static void register_text_objects(void) {
     /* Single-char motions */
     textobj_register("w", textobj_to_word_end, "word forward");
     textobj_register("b", textobj_to_word_start, "word backward");
+    textobj_register("f", kb_textobj_find_char_fwd, "to char");
+    textobj_register("F", kb_textobj_find_char_back, "to char backward");
     textobj_register("e", textobj_to_word_end, "word end");
     textobj_register("W", textobj_to_WORD_end, "WORD forward");
     textobj_register("B", textobj_to_WORD_start, "WORD backward");
