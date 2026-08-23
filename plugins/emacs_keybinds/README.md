@@ -29,7 +29,7 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 | `M-w` | Copy region (no kill) |
 | `C-w` | Kill region |
 | `C-y` | Yank (paste from kill ring / register) |
-| `C-/` `C-_` | Undo |
+| `C-x u` | Undo |
 
 ## Selection
 
@@ -38,7 +38,6 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 | `S-Up/Down/Left/Right` | Extend selection |
 | `C-S-Left` `C-S-Right` | Extend by word |
 | `S-Home` `S-End` | Extend to beginning / end of line |
-| `C-Space` | Set mark (start visual selection) |
 
 ## C-x cluster (file & buffer ops)
 
@@ -57,7 +56,8 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 
 ## Command palette
 
-`M-x` — opens hed's command picker (same as `:c`).
+`M-x` — opens the `:` prompt (`:prompt`); Tab-complete, Tab again for
+the fzf command picker.
 
 ## Notes
 
@@ -67,3 +67,7 @@ that would normally drop you into NORMAL mode keeps you in INSERT.
 If you want a hybrid (Emacs keys but mode-aware), don't set modeless:
 edit `src/config.c` to call `ed_set_modeless(0)` after the plugin
 loads.
+
+Every key is a `cmap` onto a `:command` (`:goto left`, `:extend w`,
+`:delete_word_right`, ...) — `:keybinds` shows the full table, and
+each action is callable from the prompt.

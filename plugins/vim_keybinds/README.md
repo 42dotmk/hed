@@ -23,7 +23,8 @@ default `src/config.c`, so this is what you get on a fresh install.
 | `gg` `G` | Buffer top / bottom |
 | `{` `}` | Previous / next paragraph |
 | `<C-u>` `<C-d>` | Half-page up / down |
-| `<C-b>` `<C-f>` | Page up / down |
+| `<C-b>` `<C-f>` | Full page up / down |
+| `S-arrows`, `C-S-Left/Right`, `S-Home/End` | Extend a selection (shared modeless basics — same as the emacs/vscode keymaps) |
 | `%` | Match bracket |
 | `n` `N` | Next / previous search match |
 | `*` `<C-*>` | Search word under cursor (visual: search selection, exits visual) |
@@ -44,8 +45,13 @@ d$       delete to end of line
 y2j      yank current + 2 lines below
 ```
 
-Text objects: `iw` `aw` `iW` `aW` `i(` `a(` `i[` `a[` `i{` `a{` `i"`
-`a"` `i'` `a'` `` i` `` `` a` ``.
+Text objects: `iw` `aw` `iW` `aW` `ip` `ap` `il` `al` (line)
+`ie`/`ae` (entire buffer — `vae` selects all, `dae`/`yae` work too)
+`i(` `a(` `i[` `a[` `i{` `a{` `i"` `a"` `i'` `a'` `` i` `` `` a` ``.
+
+Motions also have word-name aliases (`left` `right` `up` `down`
+`pageup` `pagedown`) so command bindings read naturally:
+`:goto pagedown`, `:extend left`.
 
 Word objects follow Vim semantics: a run of whitespace counts as a
 word, so `iw` on a blank selects the blank run; `aw` selects the word
@@ -116,3 +122,7 @@ Space is the leader. The full default leader map lives in
 - `:keybinds` lists every binding currently registered for the
   active mode — useful to see what your config and plugins have done
   to the table.
+- Nearly every key is a `cmap` onto a `:command` (`:delete`, `:goto`,
+  `:extend`, ...), so whichkey and `:keybinds` show what each key
+  runs, and everything is callable from the `:` prompt. The plugin is
+  a binding table, not an implementation.

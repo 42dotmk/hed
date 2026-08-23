@@ -121,6 +121,8 @@ static int vim_keybinds_init(void) {
     cmapn("<Tab>", "jump_forward", "jump forward");
     cmapn("<C-o>", "jump_back", "jump back");
     cmapn("<C-u>", "scrollup", "scroll up");
+    cmapn("<C-b>", "goto pageup", "page up");
+    cmapn("<C-f>", "goto pagedown", "page down");
     cmapn(">>", "indent", "indent");
     cmapn("<Right>", "wgrowwidth", "grow window width");
     cmapn("<Left>", "wshrinkwidth", "shrink window width");

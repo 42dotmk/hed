@@ -91,7 +91,8 @@ sync on (`Ctrl+K Ctrl+S`) — that's the multicursor plugin's model.
 
 ## Command palette
 
-`F1` or `Alt+P` — opens hed's command picker (same as `:c`).
+`F1` or `Alt+P` — opens the `:` prompt (`:prompt`); Tab-complete, Tab
+again for the fzf command picker.
 
 > Why not `Ctrl+Shift+P`? Most terminals can't deliver the
 > Ctrl+Shift+letter combination — that's an xterm-protocol
@@ -103,6 +104,11 @@ sync on (`Ctrl+K Ctrl+S`) — that's the multicursor plugin's model.
 
 The plugin sets `ed_set_modeless(1)` on init so every `:` command
 that would normally drop you into NORMAL keeps you in INSERT.
+
+The plugin is a pure binding table: every key is a `cmap` onto a
+`:command` (`:delete_forward`, `:goto pageup`, `:extend gg`,
+`:select ae`, ...), so whichkey and `:keybinds` show what each key
+runs and everything is callable from the prompt.
 
 `Ctrl+Backspace` is bound to `Ctrl+H` because that's the byte
 terminals send for it. If your terminal sends `Ctrl+H` for plain

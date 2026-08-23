@@ -59,6 +59,11 @@ make
   over SSH, no `pbcopy`/`xclip` shelling out.
 - **Last-write-wins keybinds.** Plugin defaults are overridable from
   config; later registrations replace earlier ones for the same key.
+- **Everything is a command; every motion is a text object.** The
+  keymap plugins are pure `cmap` tables onto `:commands`
+  (`:delete_forward`, `:goto pageup`, `:extend w`), so `:keybinds` and
+  whichkey show what each key runs and every action is scriptable
+  from the `:` prompt.
 
 ---
 
@@ -295,11 +300,22 @@ See `plugins/vscode_keybinds/README.md`.
 :bn / :bp / :ls      buffer next / prev / list
 :split / :vsplit     window splits
 :goto <line>         jump to line N
-:goto <motion> [n]   apply text-object motion N times
+:goto <motion> [n]   plain motion: apply a text object N times (drops
+                     any active selection); word-name aliases exist —
+                     left/right/up/down/pageup/pagedown
+:extend <motion> [n] grow the selection (Shift+motion as a command):
+                     enter visual anchored at the cursor, then move
 :delete/change/yank/select [textobj]
                      operators; act on the visual selection if one is
                      active, else the arg (":delete iw") or read keys
+:select ae           select all (ae/ie = entire-buffer text object)
+:select_line         select current line; repeat extends line-wise
+:delete_forward / :delete_word_left / :delete_word_right
+                     Del / Ctrl+Backspace / Ctrl+Del semantics (join
+                     lines at the edges)
 :put [reg] / :put!   paste after / before (over selection if active)
+:prompt [prefill]    open the : prompt pre-filled — bind "prompt
+                     ready for X" without a C trampoline
 :rg / :ssearch / :rgword
 :fzf / :recent / :c  fzf pickers
 :tag <name>          ctags lookup
@@ -359,8 +375,17 @@ directory opens without core knowing about it.
 
 ### Keybind dispatch
 
+- **Actions are `:commands`, motions are text objects.** The keymap
+  plugins are almost pure `cmap*` tables: plain motions bind
+  `"goto <motion>"`, selection-extending motions bind
+  `"extend <motion>"`, edits bind the `cmd_edit.c` commands. C
+  callbacks remain only where a command can't express the behavior
+  (count-aware `gg`/`G`, insert basics, visual-selection internals).
+  `keybind_register_modeless_basics()` registers the Esc/CR/Tab/BS +
+  arrow/Shift-arrow cluster shared by all three keymaps.
 - Per-mode registration. `mapn`, `mapi`, `mapv`, `mapvb`, `mapvl`,
-  `cmapn`, `cmapv`, `cmapi` macros in `src/hed.h`.
+  `cmapn`, `cmapv`, `cmapi` macros in `src/hed.h`. Filetype-scoped
+  commands mirror filetype keybinds: `cmd_ft(ft, name, cb, desc)`.
 - Multi-key sequences (`dd`, `<C-x><C-s>`).
 - Numeric prefix: `42G` consumes the count via
   `keybind_get_and_clear_pending_count()`.
@@ -424,9 +449,10 @@ src/
 │                           #   macros, registers, prompt, command_mode,
 │                           #   picker
 ├── commands/               # Full command system:
-│                           #   registry.{c,h} + cmd_misc / cmd_util /
-│                           #   commands_buffer / commands_ui /
-│                           #   cmd_builtins.h
+│                           #   registry.{c,h} + cmd_edit (keymap-
+│                           #   facing edit/motion commands) + cmd_misc
+│                           #   / cmd_util / commands_buffer /
+│                           #   commands_ui / cmd_builtins.h
 ├── buf/                    # Buffer + Row + textobj + attrspan +
 │                           # virtual_text + helpers
 ├── ui/                     # Window, layout tree, modal windows, abuf,
@@ -435,17 +461,28 @@ src/
 ├── utils/                  # Editor-domain helpers (own state, depend
 │                           # on Buffer/Window/E):
 │                           #   undo, history, recent_files, jump_list,
-│                           #   quickfix, fzf, yank, term_cmd, fold,
-│                           #   fold_methods (registry only)
+│                           #   quickfix, yank, term_cmd (incl. the
+│                           #   bidirectional term_cmd_filter), fold,
+│                           #   fold_methods (registry only),
+│                           #   buf_special (plugin display buffers:
+│                           #   find/create, clear, addf, show in
+│                           #   window/split/modal, close)
 └── lib/                    # Stateless leaves (no editor state, no
                             # singletons; drop-in reusable):
-                            #   ansi, cursor, errors, log, path_limits,
+                            #   ansi, args (:command arg parsing —
+                            #   tokens, on|off|toggle, verb tables),
+                            #   cursor, errors, log, path_limits,
+                            #   proc (async child spawn on pipes),
                             #   safe_string, sizedstr, stb_ds, strutil,
                             #   theme, vector
 
 plugins/                    # Stock set; add dirs with EXTRA_PLUGIN_DIRS,
                             # replace with PLUGINS_DIR
 ├── core/                   # Default :commands + minimal hooks
+├── jsonrpc/                # Shared JSON-RPC plumbing (not a plugin):
+│                           # Content-Length framing reader, envelope
+│                           # builders, reliable jrpc_send — used by
+│                           # lsp, copilot, mcp_server
 ├── vim_keybinds/           # Default Vim keymap
 ├── emacs_keybinds/         # Emacs keymap (modeless)
 ├── vscode_keybinds/        # VSCode keymap (modeless)
@@ -507,6 +544,16 @@ belong in the core runtime spine (top-level `src/`) instead.
 - **Status**: `ed_set_status_message(fmt, ...)` for user feedback.
 - **Memory**: manual `malloc`/`free`, null-check allocations.
 - **No external dependencies** beyond `libtree-sitter` and `libdl`.
+- **Shared plugin helpers — use these instead of hand-rolling:**
+  `lib/args.h` for `:command` argument parsing (`args_next_token`,
+  `args_tristate` for on|off|toggle, `args_dispatch` verb tables);
+  `utils/buf_special.h` for plugin-owned display buffers
+  (find-or-create, clear, `addf`, show in window/split/modal, close);
+  `lib/proc.h` (`proc_spawn`) for async children on pipes;
+  `term_cmd_capture`/`term_cmd_filter` for blocking capture and
+  pipe-through; `jsonrpc/jsonrpc.h` for JSON-RPC framing/envelopes;
+  `fs_temp_path`/`fs_temp_dir` for temp files. New actions should be
+  `:commands` (bound via `cmap*`), new motions text objects.
 
 ---
 
