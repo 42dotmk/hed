@@ -321,10 +321,8 @@ void mail_set_mbsync_profile(const char *profile) {
 }
 
 void mail_sync(void) {
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd), "hml recv %s", mbsync_profile);
-    ed_set_status_message("mail: running hml %s ...", mbsync_profile);
-    int rc = term_cmd_system(cmd);
+    ed_set_status_message("mail: running hml recv...");
+    int rc = term_cmd_system("hml recv");
     if (rc != 0) {
         ed_set_status_message("mail: hml exited with status %d", rc);
         return;
@@ -1191,11 +1189,11 @@ void mail_open_mailboxes(void) {
      * mail_plugin_init, filtered on filetype). */
 
     clear_buffer(buf);
+    int active_row = 0;
     if (mailbox_entry_count == 0) {
         const char *msg = "(no mailboxes found — check mail_set_dir)";
         buf_row_insert_in(buf, 0, msg, strlen(msg));
     } else {
-        int active_row = 0;
         for (int i = 0; i < mailbox_entry_count; i++) {
             const MailboxEntry *e = &mailbox_entries[i];
             buf_row_insert_in(buf, buf->num_rows, e->display,
@@ -1205,12 +1203,12 @@ void mail_open_mailboxes(void) {
             else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
                 active_row = i;
         }
-        Window *win = window_cur();
-        if (win) {
-            win_attach_buf(win, buf);
-            win->cursor.x = 0;
-            win->cursor.y = active_row;
-        }
+    }
+    Window *win = window_cur();
+    if (win) {
+        win_attach_buf(win, buf);
+        win->cursor.x = 0;
+        win->cursor.y = active_row;
     }
     buf->dirty = 0;
     E.current_buffer = idx;
@@ -1262,7 +1260,8 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     if (dest_dir) {
         snprintf(path, sizeof(path), "%s/%s", dest_dir, safe);
     } else {
-        snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%s", a->part_id, safe);
+        snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%d-%s", (int)getpid(),
+                 a->part_id, safe);
     }
 
     char idq[300];
@@ -1299,10 +1298,16 @@ void mail_open_html(void) {
         return;
     }
 
+    /* One live file per editor instance: drop the previous one before
+     * writing the next, so repeated invocations don't pile up in /tmp. */
     static int html_seq = 0;
+    static char last_path[256];
+    if (last_path[0])
+        fs_unlink(last_path);
     char path[256];
     snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%d.html", (int)getpid(),
              ++html_seq);
+    snprintf(last_path, sizeof(last_path), "%s", path);
 
     FILE *f = fopen(path, "w");
     if (!f) {
