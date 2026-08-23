@@ -277,7 +277,8 @@ static int tmux_pane_alive(TmuxPaneSlot *slot) {
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux list-panes -a -F '#{pane_id}'", &lines, &count)) {
+    if (!term_cmd_capture("tmux list-panes -a -F '#{pane_id}'", &lines,
+                          &count)) {
         return 0;
     }
 
@@ -311,7 +312,7 @@ static int tmux_pane_create(TmuxPaneSlot *slot) {
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run(split_cmd, &lines, &count)) {
+    if (!term_cmd_capture(split_cmd, &lines, &count)) {
         ed_set_status_message("tmux: failed to create %s pane", slot->name);
         return 0;
     }
@@ -351,8 +352,8 @@ static int tmux_get_current_window_id(char *out, size_t outsz) {
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux display-message -p '#{window_id}'", &lines,
-                      &count)) {
+    if (!term_cmd_capture("tmux display-message -p '#{window_id}'", &lines,
+                          &count)) {
         return 0;
     }
     if (count <= 0 || !lines[0] || !lines[0][0]) {
@@ -373,8 +374,8 @@ static int tmux_get_pane_window_id(const char *pane_id, char *out,
 
     char **lines = NULL;
     int count = 0;
-    if (!term_cmd_run("tmux list-panes -a -F '#{pane_id} #{window_id}'", &lines,
-                      &count)) {
+    if (!term_cmd_capture("tmux list-panes -a -F '#{pane_id} #{window_id}'",
+                          &lines, &count)) {
         return 0;
     }
 

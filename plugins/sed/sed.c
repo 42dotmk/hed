@@ -50,7 +50,7 @@ EdError sed_apply_to_buffer(Buffer *buf, const char *sed_expr) {
     /* 4. Execute sed and capture output */
     char **output_lines = NULL;
     int output_count = 0;
-    int success = term_cmd_run(cmd_str, &output_lines, &output_count);
+    int success = term_cmd_capture(cmd_str, &output_lines, &output_count);
 
     free(cmd_str);
 
