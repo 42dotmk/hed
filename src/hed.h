@@ -19,6 +19,7 @@
 #include "lib/args.h"
 #include "lib/errors.h"
 #include "lib/log.h"
+#include "lib/proc.h"
 #include "lib/safe_string.h"
 #include "lib/strbuf.h"
 #include "lib/strutil.h"

@@ -266,50 +266,20 @@ static void cmd_translate(const char *args) {
     }
     free(in_text);
 
-    int pipefd[2];
-    if (pipe(pipefd) != 0) {
+    /* stdin /dev/null, stdout on a nonblocking pipe, stderr to the
+     * editor log — all proc_spawn defaults. */
+    const char *argv[] = {"trans", "-b",      "-no-warn", "-s",       j->source,
+                          "-t",    j->target, "-i",       j->in_path, NULL};
+    Proc pr;
+    if (proc_spawn(argv, 0, &pr) != 0) {
         fs_unlink(j->in_path);
         job_free(j);
-        ed_set_status_message("translate: pipe() failed");
+        ed_set_status_message("translate: failed to spawn trans");
         return;
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(pipefd[0]);
-        close(pipefd[1]);
-        fs_unlink(j->in_path);
-        job_free(j);
-        ed_set_status_message("translate: fork() failed");
-        return;
-    }
-
-    if (pid == 0) {
-        /* Child: stdin from /dev/null, stdout to pipe, stderr to log. */
-        int devnull = open("/dev/null", O_RDONLY);
-        if (devnull >= 0) {
-            dup2(devnull, STDIN_FILENO);
-            close(devnull);
-        }
-        dup2(pipefd[1], STDOUT_FILENO);
-        int log_fd = log_fileno();
-        if (log_fd >= 0)
-            dup2(log_fd, STDERR_FILENO);
-        close(pipefd[0]);
-        close(pipefd[1]);
-        execlp("trans", "trans", "-b", "-no-warn", "-s", j->source, "-t",
-               j->target, "-i", j->in_path, (char *)NULL);
-        _exit(127);
-    }
-
-    /* Parent. */
-    close(pipefd[1]);
-    int flags = fcntl(pipefd[0], F_GETFL, 0);
-    if (flags >= 0)
-        fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
-
-    j->pid = pid;
-    j->from_fd = pipefd[0];
+    j->pid = pr.pid;
+    j->from_fd = pr.from_fd;
     ed_loop_register("translate", j->from_fd, on_readable, j);
 
     job_active = j;

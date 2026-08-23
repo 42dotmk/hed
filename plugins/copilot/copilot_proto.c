@@ -148,70 +148,27 @@ int cp_proto_spawn(void) {
         return -1;
     }
 
-    int in_pipe[2];  /* parent -> child stdin  */
-    int out_pipe[2]; /* child stdout -> parent */
-    if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0) {
-        ed_set_status_message("copilot: pipe() failed: %s", strerror(errno));
+    /* stderr goes to the editor log (proc_spawn's default) so node/
+     * copilot noise (deprecation warnings, telemetry complaints, ...)
+     * doesn't repaint over the renderer. */
+    const char *argv[4];
+    int argc = 0;
+    argv[argc++] = inv.argv0;
+    if (inv.script)
+        argv[argc++] = inv.script; /* node <script> --stdio */
+    argv[argc++] = "--stdio";
+    argv[argc] = NULL;
+
+    Proc pr;
+    if (proc_spawn(argv, PROC_STDIN, &pr) != 0) {
+        ed_set_status_message("copilot: failed to spawn %s", inv.argv0);
         cp_invocation_free(&inv);
         return -1;
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        ed_set_status_message("copilot: fork() failed: %s", strerror(errno));
-        close(in_pipe[0]);
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        cp_invocation_free(&inv);
-        return -1;
-    }
-
-    if (pid == 0) {
-        /* Child: hook up stdin/stdout. Send stderr to the editor log
-         * so node/copilot's noise (deprecation warnings, telemetry
-         * complaints, etc.) doesn't repaint over the renderer. */
-        dup2(in_pipe[0], STDIN_FILENO);
-        dup2(out_pipe[1], STDOUT_FILENO);
-        int log_fd = log_fileno();
-        if (log_fd >= 0)
-            dup2(log_fd, STDERR_FILENO);
-        close(in_pipe[0]);
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-
-        if (inv.script) {
-            /* node <script> --stdio */
-            execlp(inv.argv0, inv.argv0, inv.script, "--stdio", (char *)NULL);
-        } else {
-            /* <argv0> --stdio (binary in PATH) */
-            execlp(inv.argv0, inv.argv0, "--stdio", (char *)NULL);
-        }
-        /* If exec returns, write the error directly to the log fd
-         * (parent's stderr is the user's terminal — we don't want to
-         * paint there). */
-        char err[256];
-        int n = snprintf(err, sizeof(err), "copilot: execlp(%s) failed: %s\n",
-                         inv.argv0, strerror(errno));
-        if (n > 0 && log_fd >= 0)
-            (void)write(log_fd, err, (size_t)n);
-        _exit(127);
-    }
-
-    /* Parent: keep the write end of stdin and read end of stdout. */
-    close(in_pipe[0]);
-    close(out_pipe[1]);
-
-    int to_fd = in_pipe[1];
-    int from_fd = out_pipe[0];
-    int flags = fcntl(from_fd, F_GETFL, 0);
-    if (flags >= 0)
-        fcntl(from_fd, F_SETFL, flags | O_NONBLOCK);
-
-    CP.pid = pid;
-    CP.to_fd = to_fd;
-    CP.from_fd = from_fd;
+    CP.pid = pr.pid;
+    CP.to_fd = pr.to_fd;
+    CP.from_fd = pr.from_fd;
     CP.spawned = 1;
     CP.initialized = 0;
     CP.next_id = 1;
@@ -220,11 +177,11 @@ int cp_proto_spawn(void) {
     CP.msg_body = NULL;
     CP.msg_body_len = 0;
 
-    ed_loop_register("copilot", from_fd, cp_on_readable, NULL);
+    ed_loop_register("copilot", CP.from_fd, cp_on_readable, NULL);
 
     log_msg("copilot: spawned %s%s%s pid=%d (in=%d out=%d)", inv.argv0,
-            inv.script ? " " : "", inv.script ? inv.script : "", pid, to_fd,
-            from_fd);
+            inv.script ? " " : "", inv.script ? inv.script : "", (int)CP.pid,
+            CP.to_fd, CP.from_fd);
     cp_invocation_free(&inv);
     return 0;
 }

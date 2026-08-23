@@ -75,48 +75,25 @@ static void viewmd_push(Buffer *buf) {
 
 /* Spawn viewmd with no initial file (we push content immediately after). */
 static int viewmd_launch(void) {
-    int pipefd[2];
-    if (pipe(pipefd) != 0)
+    const char *argv[] = {"viewmd", "--socket", NULL};
+    Proc pr;
+    if (proc_spawn(argv, PROC_STDERR_NULL | PROC_BLOCK_READ, &pr) != 0)
         return 0;
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(pipefd[0]);
-        close(pipefd[1]);
-        return 0;
-    }
-
-    if (pid == 0) {
-        /* child: redirect stdout to pipe, stderr to /dev/null, exec viewmd */
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
-        execlp("viewmd", "viewmd", "--socket", NULL);
-        _exit(1);
-    }
-
-    /* parent */
-    close(pipefd[1]);
-    viewmd_pid = pid;
+    viewmd_pid = pr.pid;
 
     /* Read the first line: "VIEWMD_SOCKET=/tmp/viewmd-<pid>.sock" */
     char line[512] = {0};
     int n = 0;
     char c;
     while (n < (int)sizeof(line) - 1) {
-        ssize_t r = read(pipefd[0], &c, 1);
+        ssize_t r = read(pr.from_fd, &c, 1);
         if (r <= 0)
             break;
         if (c == '\n')
             break;
         line[n++] = c;
     }
-    close(pipefd[0]);
+    close(pr.from_fd);
 
     const char *prefix = "VIEWMD_SOCKET=";
     size_t plen = strlen(prefix);
@@ -126,8 +103,8 @@ static int viewmd_launch(void) {
     }
 
     /* viewmd didn't print the expected line */
-    kill(pid, SIGTERM);
-    waitpid(pid, NULL, 0);
+    kill(pr.pid, SIGTERM);
+    waitpid(pr.pid, NULL, 0);
     viewmd_pid = -1;
     return 0;
 }

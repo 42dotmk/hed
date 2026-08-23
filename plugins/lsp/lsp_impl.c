@@ -1292,85 +1292,16 @@ static int lsp_connect_tcp(LspServer *srv, const char *host, int port) {
 
 /* Spawn the server as a child process, wiring its stdio to two pipes. */
 static int lsp_spawn_process(LspServer *srv, const char *const *argv) {
-    int in_pipe[2];  /* editor → child stdin  */
-    int out_pipe[2]; /* child  → editor stdout */
-    if (pipe(in_pipe) < 0)
-        return -1;
-    if (pipe(out_pipe) < 0) {
-        close(in_pipe[0]);
-        close(in_pipe[1]);
+    Proc pr;
+    if (proc_spawn(argv, PROC_STDIN, &pr) != 0) {
+        log_msg("LSP[%s]: spawn '%s' failed — binary missing from $PATH? "
+                "see the editor log",
+                srv->lang, argv[0]);
         return -1;
     }
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(in_pipe[0]);
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        return -1;
-    }
-
-    if (pid == 0) {
-        /* child */
-        if (dup2(in_pipe[0], STDIN_FILENO) < 0)
-            _exit(127);
-        if (dup2(out_pipe[1], STDOUT_FILENO) < 0)
-            _exit(127);
-        /* Redirect stderr to the editor log so server diagnostics (and
-         * any "command not found"-style execvp fallout) are captured
-         * instead of bleeding onto the editor's TTY. */
-        int errfd = log_fileno();
-        if (errfd >= 0) {
-            dup2(errfd, STDERR_FILENO);
-        } else {
-            int devnull = open("/dev/null", O_WRONLY);
-            if (devnull >= 0) {
-                dup2(devnull, STDERR_FILENO);
-                close(devnull);
-            }
-        }
-        close(in_pipe[0]);
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        execvp(argv[0], (char *const *)argv);
-        /* execvp returned → not on $PATH or otherwise unrunnable. */
-        const char *m1 = "[hed] execvp failed for ";
-        write(STDERR_FILENO, m1, strlen(m1));
-        write(STDERR_FILENO, argv[0], strlen(argv[0]));
-        write(STDERR_FILENO, "\n", 1);
-        _exit(127);
-    }
-
-    /* parent */
-    close(in_pipe[0]);  /* child's stdin read end  */
-    close(out_pipe[1]); /* child's stdout write end */
-
-    /* Detect immediate child death (e.g., execvp couldn't find the binary)
-     * before we register the fd with the select loop. Short sleep then
-     * non-blocking waitpid. */
-    struct timespec ts = {0, 50 * 1000 * 1000}; /* 50 ms */
-    nanosleep(&ts, NULL);
-    int wstatus = 0;
-    pid_t r = waitpid(pid, &wstatus, WNOHANG);
-    if (r == pid) {
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        log_msg("LSP[%s]: child '%s' exited immediately (status=%d) — "
-                "binary missing from $PATH? see .hedlog",
-                srv->lang, argv[0], wstatus);
-        return -1;
-    }
-
-    srv->pid = pid;
-    srv->to_fd = in_pipe[1];
-    srv->from_fd = out_pipe[0];
-
-    int fl = fcntl(srv->from_fd, F_GETFL, 0);
-    fcntl(srv->from_fd, F_SETFL, fl | O_NONBLOCK);
-
-    log_msg("LSP[%s]: spawned %s (pid %d)", srv->lang, argv[0], (int)pid);
+    srv->pid = pr.pid;
+    srv->to_fd = pr.to_fd;
+    srv->from_fd = pr.from_fd;
     return 0;
 }
 
