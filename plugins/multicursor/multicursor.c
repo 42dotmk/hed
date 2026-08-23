@@ -434,7 +434,8 @@ static void mc_activate_match(Buffer *buf, Window *win, int my, int mx) {
  * (NORMAL) or the active visual selection (VISUAL, single-line only).
  * Skipped during replay — adding a cursor is a global action, not a
  * per-cursor edit, so we want exactly one new cursor per keypress. */
-static void kb_mc_add_next_match(void) {
+static void cmd_mc_next_match(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -474,10 +475,11 @@ static void kb_mc_add_next_match(void) {
     mc_activate_match(buf, win, my, mx + off);
 }
 
-/* Mirror of kb_mc_add_next_match walking backward — leaves a cursor at
+/* Mirror of cmd_mc_next_match walking backward — leaves a cursor at
  * the current occurrence and advances the active cursor to the previous
  * match. */
-static void kb_mc_add_prev_match(void) {
+static void cmd_mc_prev_match(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -491,7 +493,7 @@ static void kb_mc_add_prev_match(void) {
         return;
     (void)ex;
 
-    /* Same relative-position rule as kb_mc_add_next_match. */
+    /* Same relative-position rule as cmd_mc_next_match. */
     int off = win->cursor.x - sx;
     if (off < 0)
         off = 0;
@@ -518,7 +520,8 @@ static void kb_mc_add_prev_match(void) {
  * exactly one cursor per match, the active one on the occurrence the
  * query came from. Matches are non-overlapping, scanned left to
  * right. */
-static void kb_mc_match_all(void) {
+static void cmd_mc_match_all(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -532,7 +535,7 @@ static void kb_mc_match_all(void) {
         return;
     (void)ex;
 
-    /* Same relative-position rule as kb_mc_add_next_match — every
+    /* Same relative-position rule as cmd_mc_next_match — every
      * cursor sits at this offset inside its match, so the active one
      * stays put and synced edits line up. */
     int off = win->cursor.x - sx;
@@ -620,7 +623,8 @@ static void kb_mc_match_all(void) {
 
 /* Q: drop the active cursor; activate the next in cyclic (y,x) order.
  * Skipped during replay — Q is a "cursor list" operation, not an edit. */
-static void kb_mc_skip(void) {
+static void cmd_mc_skip(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -755,7 +759,8 @@ static void mc_add_and_advance(int dy) {
 /* Plant a cursor at the current position and make the new one the
  * active cursor — the previous active stays parked here as a marker
  * to come back to with :mc_jump_next/_prev. */
-static void mc_add_here(void) {
+static void cmd_mc_add_here(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -786,7 +791,8 @@ static void mc_add_here(void) {
  * active cursor already sits here, remove it; otherwise plant one
  * (mc_add_here semantics — the new cursor becomes active, the previous
  * active stays parked here as the marker). */
-static void mc_toggle_here(void) {
+static void cmd_mc_toggle_here(const char *args) {
+    (void)args;
     if (in_replay)
         return;
     BUFWIN(buf, win)
@@ -824,16 +830,6 @@ static void cmd_mc_add_above(const char *args) {
     mc_add_and_advance(-1);
 }
 
-static void cmd_mc_add_here(const char *args) {
-    (void)args;
-    mc_add_here();
-}
-
-static void cmd_mc_toggle_here(const char *args) {
-    (void)args;
-    mc_toggle_here();
-}
-
 static void cmd_mc_clear(const char *args) {
     (void)args;
     BUF(buf)
@@ -853,26 +849,6 @@ static void cmd_mc_count(const char *args) {
                     c == buf->cursor ? " <- active" : "");
         }
     }
-}
-
-static void cmd_mc_next_match(const char *args) {
-    (void)args;
-    kb_mc_add_next_match();
-}
-
-static void cmd_mc_prev_match(const char *args) {
-    (void)args;
-    kb_mc_add_prev_match();
-}
-
-static void cmd_mc_match_all(const char *args) {
-    (void)args;
-    kb_mc_match_all();
-}
-
-static void cmd_mc_skip(const char *args) {
-    (void)args;
-    kb_mc_skip();
 }
 
 static void cmd_mc_jump_next(const char *args) {
