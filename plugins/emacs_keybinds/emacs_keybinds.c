@@ -19,6 +19,30 @@ static int emacs_keybinds_init(void) {
     cmapi("<C-k>", "delete_eol", "kill to end of line");
     cmapi("<C-y>", "put", "yank (paste)");
 
+    /* Scrolling / view */
+    cmapi("<C-v>", "goto pagedown", "scroll page down");
+    cmapi("<M-v>", "goto pageup", "scroll page up");
+    cmapi("<C-l>", "center", "recenter");
+
+    /* Sentences / paragraphs */
+    cmapi("<M-a>", "goto (", "beginning of sentence");
+    cmapi("<M-e>", "goto )", "end of sentence");
+    cmapi("<M-{>", "goto {", "backward paragraph");
+    cmapi("<M-}>", "goto }", "forward paragraph");
+
+    /* Editing extras */
+    cmapi("<M-BS>", "delete_word_left", "backward kill word");
+    cmapi("<C-_>", "undo", "undo (C-/ sends the same byte)");
+    cmapi("<M-u>", "upcase_word", "upcase word");
+    cmapi("<M-l>", "downcase_word", "downcase word");
+    cmapi("<M-c>", "capitalize_word", "capitalize word");
+    cmapi("<C-t>", "transpose_chars", "transpose chars");
+    cmapi("<M-t>", "transpose_words", "transpose words");
+    cmapi("<M-;>", "toggle_comment", "comment dwim");
+    cmapi("<M-g>g", "prompt goto", "goto line");
+    cmapi("<M-%>", "prompt sed", "query replace (sed)");
+    cmapi("<M-!>", "prompt shell", "shell command");
+
     /* Search / cancel */
     cmapi("<C-s>", "search", "isearch forward");
     cmapi("<C-r>", "search_prev", "previous search match");
@@ -36,6 +60,15 @@ static int emacs_keybinds_init(void) {
     cmapi("<C-x>o", "wfocus", "other window");
     cmapi("<C-x>u", "undo", "undo");
     cmapi("<C-x>s", "wa", "save all buffers");
+    cmapi("<C-x><C-w>", "prompt w", "write file (save as)");
+    cmapi("<C-x><C-b>", "ls", "list buffers");
+    cmapi("<C-x>1", "wonly", "delete other windows");
+    cmapi("<C-x>h", "select ae", "mark whole buffer");
+    cmapi("<C-x>d", "e .", "dired");
+    cmapi("<C-x><C-x>", "swap_anchor", "exchange point and mark");
+    cmapi("<C-x>(", "record", "start keyboard macro");
+    cmapi("<C-x>)", "record", "stop keyboard macro");
+    cmapi("<C-x>e", "play", "run keyboard macro");
 
     /* Meta bindings (real M-keys via input layer) */
     cmapi("<M-x>", "prompt", "M-x (command mode)");

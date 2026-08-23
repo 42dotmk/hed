@@ -36,7 +36,7 @@ unavailable.
 
 ## Windows
 
-`:split` `:vsplit` `:wfocus` `:wclose` `:new`
+`:split` `:vsplit` `:wfocus` `:wclose` `:wonly` `:new`
 `:wh` `:wj` `:wk` `:wl` (focus left/down/up/right)
 `:modal` `:unmodal` (convert current window to/from a floating modal)
 
@@ -79,6 +79,9 @@ active visual selection when one exists.
 | `:join` `:indent` `:unindent` | Join with next line / (un)indent |
 | `:move_line_up` `:move_line_down` `:duplicate_line` | Line shuffling |
 | `:toggle_case` `:toggle_comment` `:replace_char [c]` | In-place edits |
+| `:upcase_word` `:downcase_word` `:capitalize_word` | Emacs-style word casing (cursor to word end) |
+| `:transpose_chars` `:transpose_words` | Swap chars around the cursor / drag a word right |
+| `:swap_anchor` | Exchange selection anchor and cursor (vim visual `o`, emacs `C-x C-x`) |
 | `:insert` `:append` `:insert_bol` `:append_eol` | Enter insert mode |
 | `:visual` `:visual_line` `:visual_block` | Toggle visual modes |
 | `:put [reg]` `:put!` | Paste after / before (over the selection if active) |

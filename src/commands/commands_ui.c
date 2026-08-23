@@ -47,6 +47,39 @@ void cmd_wclose(const char *args) {
     windows_close_current();
 }
 
+/* :wonly — close every other window (emacs C-x 1 / vim C-w o). */
+void cmd_wonly(const char *args) {
+    (void)args;
+    Window *cur = window_cur();
+    if (!cur)
+        return;
+    int keep_id = cur->id;
+    for (;;) {
+        int victim = -1;
+        for (int i = 0; i < (int)arrlen(E.windows); i++) {
+            Window *w = &E.windows[i];
+            if (w->visible && !w->is_modal && w->id != keep_id) {
+                victim = i;
+                break;
+            }
+        }
+        if (victim < 0)
+            break;
+        E.windows[E.current_window].focus = 0;
+        E.current_window = victim;
+        E.windows[victim].focus = 1;
+        windows_close_current();
+    }
+    Window *kept = window_find_by_id(keep_id);
+    if (kept) {
+        for (int i = 0; i < (int)arrlen(E.windows); i++)
+            E.windows[i].focus = 0;
+        E.current_window = (int)(kept - E.windows);
+        kept->focus = 1;
+        E.current_buffer = kept->buffer_index;
+    }
+}
+
 void cmd_wleft(const char *args) {
     (void)args;
     windows_focus_left();

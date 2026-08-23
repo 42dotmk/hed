@@ -377,6 +377,7 @@ static void register_commands(void) {
     cmd("vsplit", cmd_vsplit, "vertical split");
     cmd("wfocus", cmd_wfocus, "focus next window");
     cmd("wclose", cmd_wclose, "close window");
+    cmd("wonly", cmd_wonly, "close every other window");
     cmd("new", cmd_new, "new split with empty buffer");
     cmd("wh", cmd_wleft, "focus window left");
     cmd("wj", cmd_wdown, "focus window down");
@@ -433,6 +434,14 @@ static void register_commands(void) {
     cmd("prompt", cmd_prompt, "open : prompt, optionally prefilled");
     cmd("toggle_case", cmd_toggle_case, "toggle case of char under cursor");
     cmd("toggle_comment", cmd_toggle_comment, "toggle line comment");
+    cmd("upcase_word", cmd_upcase_word, "upcase to end of word (M-u)");
+    cmd("downcase_word", cmd_downcase_word, "downcase to end of word (M-l)");
+    cmd("capitalize_word", cmd_capitalize_word,
+        "capitalize to end of word (M-c)");
+    cmd("transpose_chars", cmd_transpose_chars, "swap chars around cursor");
+    cmd("transpose_words", cmd_transpose_words, "drag word over the next");
+    cmd("swap_anchor", cmd_swap_anchor,
+        "swap selection anchor and cursor (visual o)");
     cmd("replace_char", cmd_replace_char,
         "replace char(s) under cursor/selection");
     cmd("center", cmd_center, "center current line on screen");

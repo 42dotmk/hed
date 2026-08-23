@@ -31,6 +31,7 @@ void cmd_split(const char *args);
 void cmd_vsplit(const char *args);
 void cmd_wfocus(const char *args);
 void cmd_wclose(const char *args);
+void cmd_wonly(const char *args);
 void cmd_new(const char *args);
 void cmd_wleft(const char *args);
 void cmd_wright(const char *args);

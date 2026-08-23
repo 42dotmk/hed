@@ -1,13 +1,9 @@
 #include "vscode_keybinds.h"
 #include "hed.h"
 
-/* Pure registration: every action is a :command (cmd_edit.c and
- * friends), so the whole keymap is cmap glue plus the shared modeless
- * basics. */
-
 static int vscode_keybinds_init(void) {
-    /* Esc/CR/Tab/BS + arrow drop/extend selection (shared with the
-     * emacs keymap). */
+    /* Esc/CR/Tab/BS + arrow drop/extend selection (shared with the * emacs
+     * keymap). */
     keybind_register_modeless_basics();
 
     cmapi("<Del>", "delete_forward", "delete forward");

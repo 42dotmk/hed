@@ -25,6 +25,12 @@ void cmd_duplicate_line(const char *args);
 void cmd_toggle_case(const char *args);
 void cmd_toggle_comment(const char *args);
 void cmd_replace_char(const char *args);
+void cmd_upcase_word(const char *args);
+void cmd_downcase_word(const char *args);
+void cmd_capitalize_word(const char *args);
+void cmd_transpose_chars(const char *args);
+void cmd_transpose_words(const char *args);
+void cmd_swap_anchor(const char *args);
 
 /* View */
 void cmd_center(const char *args);

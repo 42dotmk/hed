@@ -33,6 +33,11 @@ int textobj_WORD(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_WORD_around(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_line(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_entire(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_to_sentence_start(Buffer *buf, int line, int col,
+                              TextSelection *sel);
+int textobj_to_sentence_end(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_sentence(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_sentence_around(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_page_up(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_page_down(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_char_forward(Buffer *buf, int line, int col, TextSelection *sel);

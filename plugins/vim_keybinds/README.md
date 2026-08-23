@@ -22,6 +22,7 @@ default `src/config.c`, so this is what you get on a fresh install.
 | `0` `^` `$` | Line start / first non-blank / line end |
 | `gg` `G` | Buffer top / bottom |
 | `{` `}` | Previous / next paragraph |
+| `(` `)` | Previous / next sentence |
 | `<C-u>` `<C-d>` | Half-page up / down |
 | `<C-b>` `<C-f>` | Full page up / down |
 | `<C-e>` `<C-y>` | Scroll the view one line down / up |
@@ -46,7 +47,8 @@ d$       delete to end of line
 y2j      yank current + 2 lines below
 ```
 
-Text objects: `iw` `aw` `iW` `aW` `ip` `ap` `il` `al` (line)
+Text objects: `iw` `aw` `iW` `aW` `ip` `ap` `is` `as` (sentence)
+`il` `al` (line)
 `ie`/`ae` (entire buffer — `vae` selects all, `dae`/`yae` work too)
 `i(` `a(` `i[` `a[` `i{` `a{` `i"` `a"` `i'` `a'` `` i` `` `` a` ``.
 
@@ -68,6 +70,7 @@ cursor is on whitespace — the blanks plus the following word.
 | `v` | VISUAL |
 | `V` | VISUAL_LINE |
 | `<C-v>` | VISUAL_BLOCK |
+| `o` (in visual) | Jump to the other end of the selection |
 | `:` | COMMAND |
 | `/` `?` | Search forward / backward |
 | `<Esc>` | Back to NORMAL |

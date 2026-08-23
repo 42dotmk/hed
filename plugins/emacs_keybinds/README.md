@@ -16,6 +16,11 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 | `C-n` `C-p` | Next / previous line |
 | `M-b` `M-f` | Backward / forward word |
 | `M-<` `M->` | Buffer top / bottom |
+| `M-a` `M-e` | Beginning / end of sentence |
+| `M-{` `M-}` | Backward / forward paragraph |
+| `C-v` `M-v` | Scroll page down / up |
+| `C-l` | Recenter |
+| `M-g g` | Goto line (prompt) |
 | Arrow keys | Cursor motion (works everywhere) |
 
 ## Editing
@@ -26,11 +31,25 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 | `<BS>` | Delete char backward |
 | `C-k` | Kill to end of line |
 | `M-d` | Kill word forward |
+| `M-Backspace` | Kill word backward |
+| `C-_` (`C-/`) | Undo |
+| `M-u` `M-l` `M-c` | Upcase / downcase / capitalize word |
+| `C-t` `M-t` | Transpose chars / words |
+| `M-;` | Toggle comment |
+| `M-%` | Query replace (prompt prefilled `:sed `) |
+| `M-!` | Shell command (prompt prefilled `:shell `) |
 | `M-w` | Copy region (no kill) |
 | `C-w` | Kill region |
 | `C-y` | Yank (paste from kill ring / register) |
 | `C-x u` | Undo |
 | `C-x s` | Save all buffers (`:wa`) |
+| `C-x C-w` | Write file / save as (prompt prefilled `:w `) |
+| `C-x C-b` | List buffers |
+| `C-x 1` | Delete other windows (`:wonly`) |
+| `C-x h` | Mark whole buffer (`:select ae`) |
+| `C-x d` | Dired |
+| `C-x C-x` | Exchange point and mark (`:swap_anchor`) |
+| `C-x (` `C-x )` `C-x e` | Start / stop / run keyboard macro |
 
 ## Selection
 

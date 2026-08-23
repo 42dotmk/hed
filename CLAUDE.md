@@ -259,6 +259,7 @@ Defined in `src/config.h` (defaults) and extendable from
 <space>tq       toggle quickfix
 <space>tk       keymap-toggle
 <space>ws/wv    split / vsplit
+<space>wo       close other windows
 <space>ww/h/j/k/l   focus next / left / down / up / right
 <space>jb/jf    jump back / forward
 <space>fh/fj    history / jump-list fzf

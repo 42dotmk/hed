@@ -15,6 +15,7 @@
 #include "lib/strutil.h"
 #include "terminal.h"
 #include "utils/yank.h"
+#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -257,6 +258,170 @@ void cmd_replace_char(const char *args) {
         kb_visual_replace_char_apply(c);
     else
         kb_replace_char_apply(c);
+}
+
+/* Emacs word casing (M-u / M-l / M-c): transform [cursor, word end)
+ * and land there. mode: 'u' upcase, 'l' downcase, 'c' capitalize. */
+static void case_word(int mode) {
+    ASSERT_EDIT(buf, win);
+    TextSelection sel;
+    if (!textobj_to_word_end(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+    int y = win->cursor.y, x = win->cursor.x;
+    int ty = sel.cursor.line, tx = sel.cursor.col;
+    /* to_word_end lands ON the last char (vim 'e' semantics); emacs
+     * transforms through it and stands just past it. */
+    Row *lrow = &buf->rows[ty];
+    if (tx < (int)lrow->chars.len) {
+        tx++;
+        while (tx < (int)lrow->chars.len &&
+               ((unsigned char)lrow->chars.data[tx] & 0xC0) == 0x80)
+            tx++;
+    }
+    undo_begin(buf, "case_word");
+    int recorded_y = -1, first_alpha = 1;
+    while (y < ty || (y == ty && x < tx)) {
+        Row *row = &buf->rows[y];
+        if (x >= (int)row->chars.len) {
+            y++;
+            x = 0;
+            continue;
+        }
+        unsigned char c = (unsigned char)row->chars.data[x];
+        if (isalpha(c)) {
+            if (recorded_y != y) {
+                undo_record_replace(buf, y);
+                recorded_y = y;
+            }
+            int up = mode == 'u' || (mode == 'c' && first_alpha);
+            row->chars.data[x] = (char)(up ? toupper(c) : tolower(c));
+            first_alpha = 0;
+            buf_row_update(row);
+            buf->dirty++;
+        }
+        x++;
+    }
+    undo_end(buf);
+    win->cursor.y = ty;
+    win->cursor.x = tx;
+}
+
+void cmd_upcase_word(const char *args) {
+    (void)args;
+    case_word('u');
+}
+
+void cmd_downcase_word(const char *args) {
+    (void)args;
+    case_word('l');
+}
+
+void cmd_capitalize_word(const char *args) {
+    (void)args;
+    case_word('c');
+}
+
+/* Emacs C-t: swap the codepoint before the cursor with the one under
+ * it, then step past both. At EOL, swap the last two. */
+void cmd_transpose_chars(const char *args) {
+    (void)args;
+    ASSERT_EDIT(buf, win);
+    Row *row = &buf->rows[win->cursor.y];
+    char *d = row->chars.data;
+    int len = (int)row->chars.len;
+    if (len < 2)
+        return;
+    int x = win->cursor.x;
+    if (x >= len)
+        x = len - 1;
+    /* snap to the start of the codepoint under the cursor */
+    while (x > 0 && ((unsigned char)d[x] & 0xC0) == 0x80)
+        x--;
+    if (x == 0)
+        return;
+    int b_end = x + 1;
+    while (b_end < len && ((unsigned char)d[b_end] & 0xC0) == 0x80)
+        b_end++;
+    int a_start = x - 1;
+    while (a_start > 0 && ((unsigned char)d[a_start] & 0xC0) == 0x80)
+        a_start--;
+    int alen = x - a_start, blen = b_end - x;
+    undo_begin(buf, "transpose");
+    undo_record_replace(buf, win->cursor.y);
+    char tmp[8];
+    memcpy(tmp, d + a_start, (size_t)alen);
+    memmove(d + a_start, d + x, (size_t)blen);
+    memcpy(d + a_start + blen, tmp, (size_t)alen);
+    buf_row_update(row);
+    buf->dirty++;
+    undo_end(buf);
+    win->cursor.x = b_end < len ? b_end : len;
+}
+
+/* Emacs M-t: drag the word before the cursor over the next word
+ * (single line). Cursor lands after the dragged word. */
+void cmd_transpose_words(const char *args) {
+    (void)args;
+    ASSERT_EDIT(buf, win);
+    Row *row = &buf->rows[win->cursor.y];
+    char *d = row->chars.data;
+    int len = (int)row->chars.len;
+    int x = win->cursor.x;
+    /* word A: at/before the cursor */
+    int ae = x;
+    while (ae > 0 && !textobj_is_word_byte((unsigned char)d[ae - 1]))
+        ae--;
+    int as_ = ae;
+    while (as_ > 0 && textobj_is_word_byte((unsigned char)d[as_ - 1]))
+        as_--;
+    if (ae == as_)
+        return;
+    /* word B: the next word after A */
+    int bs = ae;
+    while (bs < len && !textobj_is_word_byte((unsigned char)d[bs]))
+        bs++;
+    int be = bs;
+    while (be < len && textobj_is_word_byte((unsigned char)d[be]))
+        be++;
+    if (bs == be)
+        return;
+    undo_begin(buf, "transpose_words");
+    undo_record_replace(buf, win->cursor.y);
+    int alen = ae - as_, mlen = bs - ae, blen = be - bs;
+    char *tmp = malloc((size_t)(be - as_));
+    if (!tmp) {
+        undo_end(buf);
+        return;
+    }
+    memcpy(tmp, d + bs, (size_t)blen);                /* B  */
+    memcpy(tmp + blen, d + ae, (size_t)mlen);         /* sep */
+    memcpy(tmp + blen + mlen, d + as_, (size_t)alen); /* A */
+    memcpy(d + as_, tmp, (size_t)(be - as_));
+    free(tmp);
+    buf_row_update(row);
+    buf->dirty++;
+    undo_end(buf);
+    win->cursor.x = be;
+}
+
+/* Swap the visual selection's anchor with the cursor (vim visual o,
+ * emacs C-x C-x): jump to the other end to grow the selection there. */
+void cmd_swap_anchor(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || win->sel.type == SEL_NONE || buf->num_rows == 0)
+        return;
+    int ay = win->sel.anchor_y, ax = win->sel.anchor_x;
+    win->sel.anchor_y = win->cursor.y;
+    win->sel.anchor_x = win->cursor.x;
+    win->sel.anchor_rx =
+        buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
+    if (ay >= buf->num_rows)
+        ay = buf->num_rows - 1;
+    int len = (int)buf->rows[ay].chars.len;
+    win->cursor.y = ay;
+    win->cursor.x = ax > len ? len : ax;
 }
 
 /*** View ***/

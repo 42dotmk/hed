@@ -135,6 +135,7 @@ static void config_load_defaults(void) {
     cmapn(" tl", "ln", "toggle line numbers");
     cmapn(" wd", "wclose", "close window");
     cmapn(" ws", "split", "split horizontal");
+    cmapn(" wo", "wonly", "close other windows");
     cmapn(" wv", "vsplit", "split vertical");
     cmapn(" ww", "wfocus", "cycle window focus");
     cmapn(" wh", "wh", "focus left");

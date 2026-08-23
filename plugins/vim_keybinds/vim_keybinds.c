@@ -29,6 +29,8 @@ static void register_text_objects(void) {
     textobj_register("B", textobj_to_WORD_start, "WORD backward");
     textobj_register("}", textobj_to_paragraph_end, "next paragraph");
     textobj_register("{", textobj_to_paragraph_start, "prev paragraph");
+    textobj_register("(", textobj_to_sentence_start, "prev sentence");
+    textobj_register(")", textobj_to_sentence_end, "next sentence");
     textobj_register("$", textobj_to_line_end, "end of line");
     textobj_register("0", textobj_to_line_start, "beginning of line");
     textobj_register("G", textobj_to_file_end, "end of file");
@@ -46,6 +48,8 @@ static void register_text_objects(void) {
     textobj_register("aw", textobj_word_around, "around word");
     textobj_register("aW", textobj_WORD_around, "around WORD");
     textobj_register("ap", textobj_paragraph, "around paragraph");
+    textobj_register("is", textobj_sentence, "inner sentence");
+    textobj_register("as", textobj_sentence_around, "around sentence");
     textobj_register("il", textobj_line, "inner line");
     textobj_register("al", textobj_line_with_newline, "around line");
     textobj_register("ie", textobj_entire, "entire buffer");
@@ -99,6 +103,7 @@ static int vim_keybinds_init(void) {
     cmapv("r", "replace_char", "replace selection chars");
     cmapv("p", "put", "paste over selection");
     cmapv("P", "put!", "paste over selection");
+    cmapv("o", "swap_anchor", "other end of selection");
     cmapv("v", "visual", "exit visual");
     cmapv("<C-v>", "visual_block", "block mode");
     cmapv("<Esc>", "visual", "exit visual");
@@ -123,8 +128,6 @@ static int vim_keybinds_init(void) {
     cmapn("<C-u>", "scrollup", "scroll up");
     cmapn("<C-b>", "goto pageup", "page up");
     cmapn("<C-f>", "goto pagedown", "page down");
-    cmapn("<C-e>", "scroll_line_down", "scroll view down one line");
-    cmapn("<C-y>", "scroll_line_up", "scroll view up one line");
     cmapn(">>", "indent", "indent");
     cmapn("<Right>", "wgrowwidth", "grow window width");
     cmapn("<Left>", "wshrinkwidth", "shrink window width");
@@ -150,7 +153,6 @@ static int vim_keybinds_init(void) {
     cmapn("gF", "searchpath", "search file");
     cmapn("i", "insert", "insert");
     cmapn("n", "search_next", "next match");
-    cmapn("N", "search_prev", "previous match");
     cmapn("p", "put", "paste after");
     cmapn("P", "put!", "paste before");
     cmapn("r", "replace_char", "replace char");

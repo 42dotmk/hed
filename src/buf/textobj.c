@@ -1338,6 +1338,198 @@ int textobj_page_down(Buffer *buf, int line, int col, TextSelection *sel) {
     return page_motion(buf, line, col, +1, sel);
 }
 
+/* --- sentences ------------------------------------------------------
+ * A sentence ends at '.', '!' or '?' followed by whitespace or end of
+ * line, or at a blank line. The end position is one past the
+ * punctuation (emacs M-e); a sentence starts at the first non-blank
+ * after the previous end (emacs M-a). ASCII rules, prose-oriented. */
+
+static int sent_punct(char c) { return c == '.' || c == '!' || c == '?'; }
+
+/* Char at (y,x); the end-of-row position reads as '\n'. */
+static char pos_char(Buffer *buf, int y, int x) {
+    Row *r = &buf->rows[y];
+    return x >= (int)r->chars.len ? '\n' : r->chars.data[x];
+}
+
+/* Step one position forward/backward across rows (row end counts as
+ * one position). Returns 0 at the buffer edge. */
+static int pos_next(Buffer *buf, int *y, int *x) {
+    if (*x < (int)buf->rows[*y].chars.len) {
+        (*x)++;
+        return 1;
+    }
+    if (*y + 1 >= buf->num_rows)
+        return 0;
+    (*y)++;
+    *x = 0;
+    return 1;
+}
+
+static int pos_prev(Buffer *buf, int *y, int *x) {
+    if (*x > 0) {
+        (*x)--;
+        return 1;
+    }
+    if (*y == 0)
+        return 0;
+    (*y)--;
+    *x = (int)buf->rows[*y].chars.len;
+    return 1;
+}
+
+static int pos_le(int ay, int ax, int by, int bx) {
+    return ay < by || (ay == by && ax <= bx);
+}
+
+/* End of the sentence containing/following (line,col): one past the
+ * punctuation, or one past the last char before a blank line, or the
+ * end of the buffer. With `strict`, the result must lie strictly
+ * after the start position (motion semantics). */
+static int sent_find_end(Buffer *buf, int line, int col, int strict, int *ey,
+                         int *ex) {
+    int y = line, x = col;
+    for (;;) {
+        char c = pos_char(buf, y, x);
+        int cy = y, cx = x;
+        int have = 0, ry = 0, rx = 0;
+        if (sent_punct(c)) {
+            int ny = cy, nx = cx;
+            int more = pos_next(buf, &ny, &nx);
+            if (!more || pos_char(buf, ny, nx) == ' ' ||
+                pos_char(buf, ny, nx) == '\t' ||
+                nx >= (int)buf->rows[ny].chars.len || cx + 1 > 0) {
+                /* only count it when followed by space / EOL */
+                char n = more ? pos_char(buf, ny, nx) : '\n';
+                if (n == ' ' || n == '\t' || n == '\n') {
+                    have = 1;
+                    ry = cy;
+                    rx = cx + 1;
+                }
+            }
+        } else if (c == '\n' && cy + 1 < buf->num_rows &&
+                   buf->rows[cy + 1].chars.len == 0) {
+            /* blank line: sentence ends at this row's end */
+            have = 1;
+            ry = cy;
+            rx = (int)buf->rows[cy].chars.len;
+        }
+        if (have && (!strict || !pos_le(ry, rx, line, col))) {
+            *ey = ry;
+            *ex = rx;
+            return 1;
+        }
+        if (!pos_next(buf, &y, &x)) {
+            *ey = buf->num_rows - 1;
+            *ex = (int)buf->rows[*ey].chars.len;
+            return !strict || !pos_le(*ey, *ex, line, col);
+        }
+    }
+}
+
+/* Start of the sentence containing (line,col): first non-blank after
+ * the previous sentence end / blank line / buffer start. With
+ * `strict`, the result must lie strictly before the start (M-a keeps
+ * moving from a sentence's first char to the previous sentence). */
+static int sent_find_start(Buffer *buf, int line, int col, int strict, int *sy,
+                           int *sx) {
+    int y = line, x = col;
+    /* Walk backward; `cand` tracks the earliest non-blank char seen. */
+    int cy = -1, cx = -1;
+    for (;;) {
+        if (!pos_prev(buf, &y, &x)) {
+            if (cy < 0) {
+                cy = 0;
+                cx = 0;
+            }
+            break;
+        }
+        char c = pos_char(buf, y, x);
+        if (c == ' ' || c == '\t')
+            continue;
+        if (c == '\n') {
+            if (buf->rows[y].chars.len == 0 && cy >= 0)
+                break; /* blank line above the sentence */
+            continue;
+        }
+        if (sent_punct(c) && cy >= 0) {
+            /* punctuation followed (eventually) by our candidate:
+             * confirm it ends a sentence (next char is blank/EOL). */
+            int ny = y, nx = x;
+            pos_next(buf, &ny, &nx);
+            char n = pos_char(buf, ny, nx);
+            if (n == ' ' || n == '\t' || n == '\n')
+                break;
+        }
+        cy = y;
+        cx = x;
+        if (strict && !pos_le(line, col, cy, cx)) {
+            /* keep extending backward until a boundary */
+        }
+    }
+    if (cy < 0) {
+        cy = line;
+        cx = col;
+    }
+    if (strict && pos_le(line, col, cy, cx) && (cy != 0 || cx != 0))
+        return 0; /* nothing before us */
+    *sy = cy;
+    *sx = cx;
+    return 1;
+}
+
+/* ")" / emacs M-e: motion to the end of the sentence. */
+int textobj_to_sentence_end(Buffer *buf, int line, int col,
+                            TextSelection *sel) {
+    if (!buf || buf->num_rows == 0 || line < 0 || line >= buf->num_rows)
+        return 0;
+    int ey, ex;
+    if (!sent_find_end(buf, line, col, 1, &ey, &ex))
+        return 0;
+    TextPos cursor = {ey, ex};
+    return set_selection(sel, (TextPos){line, col}, cursor, cursor);
+}
+
+/* "(" / emacs M-a: motion to the start of the sentence. */
+int textobj_to_sentence_start(Buffer *buf, int line, int col,
+                              TextSelection *sel) {
+    if (!buf || buf->num_rows == 0 || line < 0 || line >= buf->num_rows)
+        return 0;
+    int sy, sx;
+    if (!sent_find_start(buf, line, col, 1, &sy, &sx))
+        return 0;
+    TextPos cursor = {sy, sx};
+    return set_selection(sel, (TextPos){line, col}, cursor, cursor);
+}
+
+/* "is": the sentence under the cursor, punctuation included. */
+int textobj_sentence(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || buf->num_rows == 0 || line < 0 || line >= buf->num_rows)
+        return 0;
+    int sy, sx, ey, ex;
+    if (!sent_find_start(buf, line, col, 0, &sy, &sx))
+        return 0;
+    if (!sent_find_end(buf, line, col, 0, &ey, &ex))
+        return 0;
+    TextPos cursor = {sy, sx};
+    return set_selection(sel, (TextPos){sy, sx}, (TextPos){ey, ex}, cursor);
+}
+
+/* "as": the sentence plus its trailing whitespace. */
+int textobj_sentence_around(Buffer *buf, int line, int col,
+                            TextSelection *sel) {
+    if (!textobj_sentence(buf, line, col, sel))
+        return 0;
+    int y = sel->end.line, x = sel->end.col;
+    while (x < (int)buf->rows[y].chars.len &&
+           (buf->rows[y].chars.data[x] == ' ' ||
+            buf->rows[y].chars.data[x] == '\t'))
+        x++;
+    sel->end.line = y;
+    sel->end.col = x;
+    return 1;
+}
+
 /* Entire buffer: {0,0} .. one past the last char of the last row.
  * Backs the "ae"/"ie" text objects (:select ae = select all). */
 int textobj_entire(Buffer *buf, int line, int col, TextSelection *sel) {
