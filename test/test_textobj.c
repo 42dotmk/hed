@@ -198,7 +198,11 @@ void test_textobj_file_boundaries(void) {
 // }
 
 void test_textobj_brackets_cases(void) {
-    totc(textobj_brackets, "call([^$foo bar])", "array([foo bar^$])");
+    totc(textobj_brackets, "call([^$foo bar])", "array([foo bar^$])",
+         "multi([^$foo\nbar])",      // pair spanning lines
+         "pair ([a b^$]) x",         // cursor on the closing bracket
+         "say \"[^$hi there]\" end", // symmetric quote pair
+         "he \"[a \\\" ^$b]\" x");   // escaped quote is not a delimiter
     totc(textobj_curly_inner, "{[bar ^$baz]}");
     totc(textobj_curly_outer, "[{foo ^$bar}]");
 }

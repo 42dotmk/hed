@@ -6,6 +6,7 @@
 #include "lib/strbuf.h"
 #include "lib/strutil.h"
 #include "utils/term_cmd.h"
+#include "utils/under_cursor.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

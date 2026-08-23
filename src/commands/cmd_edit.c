@@ -4,6 +4,7 @@
 
 #include "commands/cmd_edit.h"
 #include "buf/buf_helpers.h"
+#include "commands/cmd_lineops.h"
 #include "editor.h"
 #include "fs/fs.h"
 #include "input/command_mode.h"
@@ -14,6 +15,8 @@
 #include "lib/safe_string.h"
 #include "lib/strutil.h"
 #include "terminal.h"
+#include "ui/view.h"
+#include "utils/under_cursor.h"
 #include "utils/yank.h"
 #include <ctype.h>
 #include <limits.h>

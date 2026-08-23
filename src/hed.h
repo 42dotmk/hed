@@ -47,6 +47,9 @@
 #include "buf/row.h"
 #include "buf/textobj.h"
 #include "buf/virtual_text.h"
+#include "commands/cmd_lineops.h"
+#include "ui/view.h"
+#include "utils/under_cursor.h"
 
 /* Utilities */
 #include "ui/bottom_ui.h"

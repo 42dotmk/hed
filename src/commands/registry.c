@@ -2,6 +2,7 @@
 #include "buf/buf_helpers.h"
 #include "buf/buffer.h"
 #include "stb_ds.h"
+#include "utils/under_cursor.h"
 #include <stdlib.h>
 #include <string.h>
 

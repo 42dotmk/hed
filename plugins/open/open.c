@@ -10,6 +10,7 @@
 #include "buf/buf_helpers.h"
 #include "hed.h"
 #include "lib/strbuf.h"
+#include "utils/under_cursor.h"
 
 #include <ctype.h>
 #include <stdlib.h>

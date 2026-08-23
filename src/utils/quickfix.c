@@ -4,6 +4,7 @@
 #include "hooks.h"
 #include "lib/safe_string.h"
 #include "lib/vector.h"
+#include "ui/view.h"
 #include "utils/buf_special.h"
 #include <stdio.h>
 #include <stdlib.h>
