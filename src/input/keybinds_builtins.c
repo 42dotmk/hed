@@ -314,8 +314,6 @@ void kb_visual_paste(void) {
 
 /*** Default keybinding callbacks ***/
 
-void kb_enter_command_mode(void) { cmd_prompt_open(); }
-
 void kb_yank_line(void) {
     BUFWIN(buf, win)
     buf_yank_line_in(buf);

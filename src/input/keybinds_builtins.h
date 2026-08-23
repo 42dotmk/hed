@@ -15,7 +15,6 @@
 #include "buf/textobj.h"
 #include "ui/window.h"
 
-void kb_enter_command_mode(void);
 void kb_yank_line(void);
 /* Yank operator (reads a text object); wraps the :yank command so
  * plugins (clipboard) can compose with it. */

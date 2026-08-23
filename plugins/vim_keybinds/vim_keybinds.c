@@ -112,8 +112,8 @@ static int vim_keybinds_init(void) {
     /* Leave win->sel intact across the : prompt so commands like
      * :shell foo >%v can act on it. ed_set_mode defers the visual
      * clear until MODE_COMMAND itself exits. */
-    mapv(":", kb_enter_command_mode, "command");
-    mapn(":", kb_enter_command_mode, "command");
+    cmapv(":", "prompt", "command");
+    cmapn(":", "prompt", "command");
     cmapn("V", "visual_line", "visual line");
     cmapv("V", "visual_line", "switch to / exit visual line");
     cmapn("<<", "unindent", "unindent");
