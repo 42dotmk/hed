@@ -108,8 +108,8 @@ static int vim_keybinds_init(void) {
     mapn("<<", buf_unindent_line, "unindent");
     mapn("<C-d>", buf_scroll_half_page_down, "scroll down");
     mapn("<C-v>", kb_visual_block_toggle, "visual block");
-    mapn("}", kb_para_next, "next paragraph");
-    mapn("{", kb_para_prev, "prev paragraph");
+    cmapn("}", "goto }", "next paragraph");
+    cmapn("{", "goto {", "prev paragraph");
     mapn(" jf", kb_jump_forward, "jump forward");
     mapn(" jb", kb_jump_backward, "jump back");
     mapn("<Tab>", kb_jump_forward, "jump forward");

@@ -241,9 +241,9 @@ static int tmux_plugin_init(void) {
     cmd("tmux_focus", cmd_tmux_focus, "tmux focus pane by name");
     cmd("tmux_panes", cmd_tmux_panes, "tmux fzf-pick a registered pane");
     cmd("tmux_attach", cmd_tmux_attach, "tmux bind a live pane to a name");
-    mapn(" ts", kb_tmux_send_line, "send paragraph to last focused tmux pane");
-    mapv(" t", kb_tmux_send_selection,
-         "send selection to last focused tmux pane");
+    cmapn(" ts", "tmux_send_line", "send paragraph to last focused tmux pane");
+    cmapv(" t", "tmux_send_selection",
+          "send selection to last focused tmux pane");
 
     cmd_prompt_history_register(tmux_send_history_hook, NULL);
     return 0;

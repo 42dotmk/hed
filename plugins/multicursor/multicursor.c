@@ -714,9 +714,6 @@ static void mc_jump(int dir) {
     ed_set_status_message("multicursor: cursor %d/%d", target + 1, n);
 }
 
-static void kb_mc_jump_next(void) { mc_jump(+1); }
-static void kb_mc_jump_prev(void) { mc_jump(-1); }
-
 /* --- Commands --- */
 
 /* Plant a stationary cursor at the current position and advance the
@@ -924,13 +921,6 @@ static void cmd_mc_debug(const char *args) {
     ed_set_status_message("multicursor: debug %s", mc_debug ? "on" : "off");
 }
 
-/* --- Keybind wrappers (mapn callbacks take void) --- */
-
-static void kb_mc_add_below(void) { cmd_mc_add_below(NULL); }
-static void kb_mc_add_above(void) { cmd_mc_add_above(NULL); }
-static void kb_mc_clear(void) { cmd_mc_clear(NULL); }
-static void kb_mc_sync_toggle(void) { cmd_mc_sync(NULL); }
-
 /* --- lifecycle --- */
 
 static int multicursor_init(void) {
@@ -958,39 +948,39 @@ static int multicursor_init(void) {
     /* ' cluster — same letters as <space>m. Bare ' must stay unbound:
      * keybind_process fires an exact match immediately, so binding it
      * would make every two-key 'x sequence unreachable. */
-    mapn("''", mc_toggle_here, "multicursor: toggle cursor here");
-    mapn("'a", mc_add_here, "multicursor: add cursor here");
-    mapn("'d", kb_mc_add_below, "multicursor: add cursor below");
-    mapn("'u", kb_mc_add_above, "multicursor: add cursor above");
-    mapn("'c", kb_mc_clear, "multicursor: clear extras");
-    mapn("'j", kb_mc_jump_next, "multicursor: jump to next cursor");
-    mapn("'k", kb_mc_jump_prev, "multicursor: jump to previous cursor");
-    mapn("'s", kb_mc_sync_toggle, "multicursor: toggle synced edits");
-    mapn("'n", kb_mc_add_next_match, "multicursor: cursor at next match");
-    mapn("'p", kb_mc_add_prev_match, "multicursor: cursor at previous match");
-    mapn("'*", kb_mc_match_all, "multicursor: cursor at every match");
+    cmapn("''", "mc_toggle_here", "multicursor: toggle cursor here");
+    cmapn("'a", "mc_add_here", "multicursor: add cursor here");
+    cmapn("'d", "mc_add_below", "multicursor: add cursor below");
+    cmapn("'u", "mc_add_above", "multicursor: add cursor above");
+    cmapn("'c", "mc_clear", "multicursor: clear extras");
+    cmapn("'j", "mc_jump_next", "multicursor: jump to next cursor");
+    cmapn("'k", "mc_jump_prev", "multicursor: jump to previous cursor");
+    cmapn("'s", "mc_sync", "multicursor: toggle synced edits");
+    cmapn("'n", "mc_next_match", "multicursor: cursor at next match");
+    cmapn("'p", "mc_prev_match", "multicursor: cursor at previous match");
+    cmapn("'*", "mc_match_all", "multicursor: cursor at every match");
 
-    mapn("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
-    mapn("<C-Up>", kb_mc_add_above, "multicursor: add cursor above");
-    mapi("<C-Down>", kb_mc_add_below, "multicursor: add cursor below");
-    mapi("<C-Up>", kb_mc_add_above, "multicursor: add cursor above");
+    cmapn("<C-Down>", "mc_add_below", "multicursor: add cursor below");
+    cmapn("<C-Up>", "mc_add_above", "multicursor: add cursor above");
+    cmapi("<C-Down>", "mc_add_below", "multicursor: add cursor below");
+    cmapi("<C-Up>", "mc_add_above", "multicursor: add cursor above");
 
-    mapn("<C-n>", kb_mc_add_next_match, "multicursor: cursor at next match");
-    mapn("<M-n>", kb_mc_match_all, "multicursor: cursor at every match");
+    cmapn("<C-n>", "mc_next_match", "multicursor: cursor at next match");
+    cmapn("<M-n>", "mc_match_all", "multicursor: cursor at every match");
 
     /* In VISUAL these match the selected text and drop back to NORMAL. */
-    mapv("<C-n>", kb_mc_add_next_match,
-         "multicursor: cursor at next match of selection");
-    mapv("<M-n>", kb_mc_match_all,
-         "multicursor: cursor at every match of selection");
-    mapv("'n", kb_mc_add_next_match,
-         "multicursor: cursor at next match of selection");
-    mapv("'p", kb_mc_add_prev_match,
-         "multicursor: cursor at previous match of selection");
-    mapv("'*", kb_mc_match_all,
-         "multicursor: cursor at every match of selection");
+    cmapv("<C-n>", "mc_next_match",
+          "multicursor: cursor at next match of selection");
+    cmapv("<M-n>", "mc_match_all",
+          "multicursor: cursor at every match of selection");
+    cmapv("'n", "mc_next_match",
+          "multicursor: cursor at next match of selection");
+    cmapv("'p", "mc_prev_match",
+          "multicursor: cursor at previous match of selection");
+    cmapv("'*", "mc_match_all",
+          "multicursor: cursor at every match of selection");
 
-    mapn("Q", kb_mc_skip, "multicursor: skip cursor / cycle to next");
+    cmapn("Q", "mc_skip", "multicursor: skip cursor / cycle to next");
 
     /* Single keypress hook handles every mode and every key — the
      * dispatch is replayed at each cursor with restored state. */

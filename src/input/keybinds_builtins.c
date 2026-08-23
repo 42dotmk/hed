@@ -1,6 +1,5 @@
 #include "input/keybinds_builtins.h"
 #include "buf/buf_helpers.h"
-#include "commands/cmd_misc.h"
 #include "commands/commands_ui.h"
 #include "editor.h"
 #include "fs/fs.h"
@@ -368,16 +367,6 @@ void kb_append_mode(void) {
 }
 
 void kb_enter_command_mode(void) { cmd_prompt_open(); }
-
-void kb_visual_toggle(void) {
-    BUFWIN(buf, win)
-    if (E.mode == MODE_VISUAL && win->sel.type == SEL_VISUAL) {
-        visual_clear(win);
-        ed_set_mode(MODE_NORMAL);
-        return;
-    }
-    visual_begin(0);
-}
 
 void kb_visual_block_toggle(void) {
     BUFWIN(buf, win)
@@ -898,8 +887,6 @@ void kb_goto_file_end(void) {
 }
 void kb_goto_word_start(void) { kb_apply_motion(textobj_to_word_start); }
 void kb_goto_word_end(void) { kb_apply_motion(textobj_to_word_end); }
-void kb_goto_para_start(void) { kb_apply_motion(textobj_to_paragraph_start); }
-void kb_goto_para_end(void) { kb_apply_motion(textobj_to_paragraph_end); }
 
 /* Selection-aware motion helpers (VSCode / modern Emacs semantics):
  *   kb_drop_*   — drop any active selection, then move.
@@ -1117,12 +1104,6 @@ void kb_open_file_under_cursor(void) {
         }
     }
 }
-void kb_line_number_toggle(void) { cmd_ln(NULL); }
-/* Undo/Redo */
-void kb_undo(void) { ed_set_status_message("Undo disabled"); }
-
-void kb_redo(void) { ed_set_status_message("Redo disabled"); }
-
 /* Helper: perform jump in specified direction */
 static void kb_jump(int direction) {
     int cursor_x = 0, cursor_y = 0;
@@ -1165,19 +1146,6 @@ static void kb_jump(int direction) {
 void kb_jump_backward(void) { kb_jump(-1); }
 
 void kb_jump_forward(void) { kb_jump(1); }
-
-static void kb_para_jump(const char *key) {
-    BUFWIN(buf, win)
-    TextSelection sel;
-    if (textobj_lookup(key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        jump_save_current();
-        win->cursor.y = sel.cursor.line;
-        win->cursor.x = sel.cursor.col;
-    }
-}
-
-void kb_para_next(void) { kb_para_jump("}"); }
-void kb_para_prev(void) { kb_para_jump("{"); }
 
 /* gg / G semantics: with no count → file start/end. With a count >= 1
  * → jump to that line (matches vim's `42G` / `42gg`). Consumes the

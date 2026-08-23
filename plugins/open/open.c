@@ -168,10 +168,6 @@ static void cmd_open_dir(const char *args) {
     strbuf_free(&dir);
 }
 
-/* --- keybind --- */
-
-static void kb_open_under_cursor(void) { cmd_open(NULL); }
-
 /* --- lifecycle --- */
 
 static int open_init(void) {
@@ -179,7 +175,7 @@ static int open_init(void) {
     cmd("open_file", cmd_open_file, "open current buffer's file via " OPEN_CMD);
     cmd("open_dir", cmd_open_dir,
         "open directory of current buffer via " OPEN_CMD);
-    mapn("gx", kb_open_under_cursor, "open path/URL under cursor");
+    cmapn("gx", "open", "open path/URL under cursor");
     return 0;
 }
 

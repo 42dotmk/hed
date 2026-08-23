@@ -13,7 +13,6 @@
 #include "buf/textobj.h"
 #include "ui/window.h"
 
-void kb_line_number_toggle(void);
 void kb_enter_insert_mode(void);
 void kb_append_mode(void);
 void kb_enter_command_mode(void);
@@ -35,15 +34,9 @@ void kb_find_under_cursor(void);
 void kb_find_selection(void); /* Visual `*`: search the selection */
 void kb_search_file_under_cursor(void);
 void kb_open_file_under_cursor(void);
-void kb_undo(void);
-void kb_redo(void);
-void kb_fzf(void);
-void kb_quit_all(void);
 void kb_jump_backward(void);   /* Ctrl-O - jump to previous buffer */
 void kb_jump_forward(void);    /* Ctrl-I - jump to next buffer */
 void kb_goto_file_start(void); /* gg - go to first line */
-void kb_para_next(void);       /* }  - next paragraph  */
-void kb_para_prev(void);       /* {  - prev paragraph  */
 void kb_move_left(void);
 void kb_move_right(void);
 void kb_move_up(void);
@@ -57,8 +50,6 @@ void kb_goto_file_start(void);
 void kb_goto_file_end(void);
 void kb_goto_word_start(void);
 void kb_goto_word_end(void);
-void kb_goto_para_start(void);
-void kb_goto_para_end(void);
 
 /* Selection-aware variants used by modeless keymaps. `kb_drop_*` exits
  * any active visual selection and then moves; `kb_extend_*` enters
@@ -109,7 +100,6 @@ void kb_visual_enter_insert_mode(void);
 void kb_visual_enter_append_mode(void);
 void kb_visual_enter_command_mode(void);
 void kb_search_prompt(void);
-void kb_visual_toggle(void);       /* Enter/exit visual mode */
 void kb_visual_block_toggle(void); /* Enter/exit visual block mode */
 void kb_visual_line_toggle(void);  /* Enter/exit visual line mode */
 void kb_visual_clear(Window *win);
@@ -122,8 +112,6 @@ int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
 int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
                          TextSelection *out);
 
-/* Note: kb_change_word removed - now handled by operator + text object system
- */
 void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
 void kb_replace_char(
     void); /* Replace char under cursor with next typed char (r) */

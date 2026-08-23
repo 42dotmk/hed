@@ -820,10 +820,9 @@ static void cmd_task_capture(const char *args) {
     if (bi >= 0) {
         Buffer *tb = &E.buffers[bi];
         for (int r = 0; r < tb->num_rows && !lvl; r++)
-            lvl = heading_level_line(tb->rows[r].chars.data
-                                         ? tb->rows[r].chars.data
-                                         : "",
-                                     tb->rows[r].chars.len);
+            lvl = heading_level_line(
+                tb->rows[r].chars.data ? tb->rows[r].chars.data : "",
+                tb->rows[r].chars.len);
     } else {
         size_t i = 0;
         while (i < disk_len && !lvl) {
@@ -1271,9 +1270,6 @@ static void cmd_task_archive_open(const char *args) {
 
 /* --- keybinds --------------------------------------------------------- */
 
-static void kb_task_cycle(void) { cmd_task_cycle(NULL); }
-static void kb_task_agenda(void) { cmd_task_agenda(NULL); }
-
 /* Open the ":" prompt pre-filled with `cmdline` (with a trailing space)
  * so commands that take an argument are one keystroke from typing it.
  * Enter runs whatever default the command applies to an empty arg. */
@@ -1291,8 +1287,6 @@ static void kb_task_capture(void) { prompt_prefilled("task_capture "); }
 static void kb_task_deadline(void) { prompt_prefilled("task_deadline "); }
 static void kb_task_schedule(void) { prompt_prefilled("task_schedule "); }
 static void kb_task_prio(void) { prompt_prefilled("task_prio "); }
-static void kb_task_archive(void) { cmd_task_archive(NULL); }
-static void kb_task_archive_done(void) { cmd_task_archive_done(NULL); }
 
 /* --- highlight (HOOK_RENDER_PRE) -------------------------------------- */
 
@@ -1373,16 +1367,16 @@ static int tasks_init(void) {
     /* Markdown-only: filetype-scoped exact matches beat the global
      * <space>m multicursor cluster inside markdown buffers, and stay
      * invisible everywhere else. */
-    mapn_ft("markdown", " mc", kb_task_cycle, "task: cycle status");
-    mapn_ft("markdown", " ma", kb_task_agenda, "task: agenda");
+    cmapn_ft("markdown", " mc", "task_cycle", "task: cycle status");
+    cmapn_ft("markdown", " ma", "task_agenda", "task: agenda");
     mapn_ft("markdown", " mn", kb_task_note, "task: add dated note");
     mapn_ft("markdown", " md", kb_task_deadline, "task: set deadline");
     mapn_ft("markdown", " ms", kb_task_schedule, "task: set schedule");
     mapn_ft("markdown", " mp", kb_task_prio, "task: set priority");
-    mapn_ft("markdown", " mx", kb_task_archive,
-            "task: archive task under cursor");
-    mapn_ft("markdown", " mX", kb_task_archive_done,
-            "task: archive all done tasks");
+    cmapn_ft("markdown", " mx", "task_archive",
+             "task: archive task under cursor");
+    cmapn_ft("markdown", " mX", "task_archive_done",
+             "task: archive all done tasks");
 
     /* Global on purpose: capture happens from whatever buffer you're
      * in — source file, mail thread, anything with a filename. */

@@ -15,6 +15,15 @@
  *
  * Motions are looked up via textobj_lookup, so anything registered with
  * textobj_register works (h/j/k/l, w/b/e, $/0, gg/G, {/}, ...). */
+/* Save the pre-move position to the jump list when a :goto lands 5+
+ * lines away — same convention as the unmapped-key motion fallback
+ * (kb_operator_move), so cmap'd motions like { / } stay jumpable. */
+static void goto_jump_save(Buffer *buf, Window *win, int target_y) {
+    if (buf->filename && abs(target_y - win->cursor.y) >= 5)
+        jump_list_add(&E.jump_list, buf->filename, win->cursor.x,
+                      win->cursor.y);
+}
+
 static void cmd_goto(const char *args) {
     if (!args || !*args) {
         ed_set_status_message("Usage: :goto <line> | <motion> [count]");
@@ -38,6 +47,7 @@ static void cmd_goto(const char *args) {
         if (end != args && *trail == '\0' && n >= 1) {
             if (n > buf->num_rows)
                 n = buf->num_rows;
+            goto_jump_save(buf, win, (int)n - 1);
             win->cursor.y = (int)n - 1;
             win->cursor.x = 0;
             return;
@@ -67,15 +77,19 @@ static void cmd_goto(const char *args) {
             count = (int)c;
     }
 
+    int ty = win->cursor.y, tx = win->cursor.x;
     for (int i = 0; i < count; i++) {
         TextSelection sel;
-        if (!textobj_lookup(motion, buf, win->cursor.y, win->cursor.x, &sel)) {
+        if (!textobj_lookup(motion, buf, ty, tx, &sel)) {
             ed_set_status_message(":goto: unknown motion '%s'", motion);
             return;
         }
-        win->cursor.y = sel.cursor.line;
-        win->cursor.x = sel.cursor.col;
+        ty = sel.cursor.line;
+        tx = sel.cursor.col;
     }
+    goto_jump_save(buf, win, ty);
+    win->cursor.y = ty;
+    win->cursor.x = tx;
 }
 
 /* :pos — move the cursor to an absolute offset in the buffer (0-based,
