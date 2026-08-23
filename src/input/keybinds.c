@@ -507,7 +507,7 @@ void keybind_invoke(const KeybindMatchView *m, int repeat) {
     HookKeybindInvokeEvent ev = {.match = m, .repeat = repeat};
     hook_fire_keybind_invoke(HOOK_KEYBIND_INVOKE, &ev);
 
-    /* Count-aware callbacks (gg/G via goto_line_or) consume the pending
+    /* Count-aware handlers (gg/G via :goto) consume the pending
      * count themselves via keybind_get_and_clear_pending_count — when
      * that happens, one call was the whole job; repeating it would
      * re-run the no-count fallback (e.g. 25G → line 25, then EOF). */

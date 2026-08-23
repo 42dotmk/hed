@@ -69,12 +69,34 @@ static void cmd_goto(const char *args) {
         ed_set_status_message(":goto: empty motion");
         return;
     }
-    int count = 1;
+    int count = 1, has_count = 0;
     if (*args) {
         char *end;
         long c = strtol(args, &end, 10);
-        if (end != args && c >= 1)
+        if (end != args && c >= 1) {
             count = (int)c;
+            has_count = 1;
+        }
+    }
+    /* gg / G: vim semantics. A count means an absolute line — either
+     * an explicit argument (":goto G 42") or a pending keybind prefix
+     * (42G; consuming it also stops keybind_invoke's repeat loop).
+     * Without a count: first / last line, column 0. */
+    if (strcmp(motion, "gg") == 0 || strcmp(motion, "G") == 0) {
+        if (!has_count && keybind_has_pending_count()) {
+            count = keybind_get_and_clear_pending_count();
+            has_count = 1;
+        }
+        int target =
+            has_count ? count - 1 : (motion[0] == 'G' ? buf->num_rows - 1 : 0);
+        if (target > buf->num_rows - 1)
+            target = buf->num_rows - 1;
+        if (target < 0)
+            target = 0;
+        goto_jump_save(buf, win, target);
+        win->cursor.y = target;
+        win->cursor.x = 0;
+        return;
     }
 
     int ty = win->cursor.y, tx = win->cursor.x;
@@ -466,6 +488,11 @@ static void register_commands(void) {
     cmd("visual", cmd_visual, "toggle visual mode");
     cmd("visual_line", cmd_visual_line, "toggle visual line mode");
     cmd("visual_block", cmd_visual_block, "toggle visual block mode");
+    cmd("newline", cmd_newline, "insert newline at cursor");
+    cmd("insert_tab", cmd_insert_tab, "insert tab (honors expandtab)");
+    cmd("backspace", cmd_backspace, "delete char before cursor");
+    cmd("stopinsert", cmd_stopinsert, "leave insert mode");
+    cmd("stopvisual", cmd_stopvisual, "exit any visual mode");
     cmd("plugins", cmd_plugins, "list loaded plugins");
     cmd("goto", cmd_goto, "goto <line> | <motion> [count]");
     cmd("pos", cmd_pos,

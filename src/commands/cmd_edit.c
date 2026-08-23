@@ -404,6 +404,37 @@ void cmd_transpose_words(const char *args) {
     win->cursor.x = be;
 }
 
+/* The insert-mode primitives as commands, so macros, cmaps and the
+ * MCP server can express every edit. The kb_* forms remain exported
+ * as C API for composites (vscode Del, copilot Tab). */
+void cmd_newline(const char *args) {
+    (void)args;
+    kb_insert_newline();
+}
+
+void cmd_insert_tab(const char *args) {
+    (void)args;
+    kb_insert_tab();
+}
+
+void cmd_backspace(const char *args) {
+    (void)args;
+    kb_insert_backspace();
+}
+
+/* vim's :stopinsert — leave insert mode (no-op while modeless). */
+void cmd_stopinsert(const char *args) {
+    (void)args;
+    kb_insert_escape();
+}
+
+/* Exit any visual mode (unlike :visual, which from VISUAL_LINE would
+ * toggle to charwise instead of exiting). */
+void cmd_stopvisual(const char *args) {
+    (void)args;
+    kb_visual_escape();
+}
+
 /* Swap the visual selection's anchor with the cursor (vim visual o,
  * emacs C-x C-x): jump to the other end to grow the selection there. */
 void cmd_swap_anchor(const char *args) {

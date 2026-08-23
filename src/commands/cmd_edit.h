@@ -59,6 +59,11 @@ void cmd_append_eol(const char *args);
 void cmd_visual(const char *args);
 void cmd_visual_line(const char *args);
 void cmd_visual_block(const char *args);
+void cmd_newline(const char *args);
+void cmd_insert_tab(const char *args);
+void cmd_backspace(const char *args);
+void cmd_stopinsert(const char *args);
+void cmd_stopvisual(const char *args);
 
 /* Operators: act on the visual selection if one is active, on the
  * text object named in args (":delete iw"), or read a 1-2 key text

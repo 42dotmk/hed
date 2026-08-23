@@ -23,8 +23,6 @@ void kb_operator_yank(void);
 void kb_operator_move(int key); /* Move cursor via text object (fallback) */
 /* Save the current position to the jump list (within-file jumps). */
 void kb_jump_save_current(void);
-void kb_goto_file_start(void); /* gg - go to first line (or line N) */
-void kb_goto_file_end(void);   /* G  - end of file (or line N) */
 /* End-of-line motion used by :select_line. */
 void kb_goto_line_end(void);
 

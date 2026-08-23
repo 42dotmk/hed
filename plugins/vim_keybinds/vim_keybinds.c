@@ -72,7 +72,7 @@ static int vim_keybinds_init(void) {
      * and vscode keymaps. Core drops unbound control keys in insert
      * mode, so these bindings are what make Enter/Backspace work. */
     keybind_register_modeless_basics();
-    mapi("<C-h>", kb_insert_backspace, "backspace");
+    cmapi("<C-h>", "backspace", "backspace");
     cmapn("/", "search", "search");
 
     cmapn("O", "new_line_above", "new line above");
@@ -146,8 +146,8 @@ static int vim_keybinds_init(void) {
     cmapn("y", "yank", "yank operator");
     cmapn("v", "select", "visual select with motion");
     cmapn("dd", "delete_line", "del line");
-    mapn("gg", kb_goto_file_start, "start of file (or line N with count)");
-    mapn("G", kb_goto_file_end, "end of file (or line N with count)");
+    cmapn("gg", "goto gg", "start of file (or line N with count)");
+    cmapn("G", "goto G", "end of file (or line N with count)");
     cmapn("gc", "toggle_comment", "toggle comment");
     cmapn("gf", "openpath", "open file");
     cmapn("gF", "searchpath", "search file");

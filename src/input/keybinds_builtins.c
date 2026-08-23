@@ -535,17 +535,7 @@ static void kb_apply_motion(TextObjMotion fn) {
     win->cursor.x = sel.cursor.col;
 }
 
-/* Implementation below — count-aware line jump used by gg/G. */
-static void goto_line_or(int fallback_y);
-
 void kb_goto_line_end(void) { kb_apply_motion(textobj_to_line_end); }
-/* kb_goto_file_end: with no count → end of file, with count → that line. */
-void kb_goto_file_end(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-    goto_line_or(buf->num_rows - 1);
-}
 /* Selection-aware motion helpers (VSCode / modern Emacs semantics):
  *   kb_extend_* — enter visual if not already, then move (extending
  * the selection). Used by modeless keymaps (vscode_keybinds,
@@ -563,11 +553,11 @@ int kb_in_visual(void) {
  * wise, Shift+Home/End extend to bol/eol. Keymap plugins call this
  * once, then add their own flavor on top (last-write-wins). */
 void keybind_register_modeless_basics(void) {
-    mapi("<Esc>", kb_insert_escape, "exit insert (no-op when modeless)");
-    mapi("<CR>", kb_insert_newline, "newline");
-    mapi("<Tab>", kb_insert_tab, "insert tab");
-    mapi("<BS>", kb_insert_backspace, "backspace");
-    mapv("<Esc>", kb_visual_escape, "exit visual");
+    cmapi("<Esc>", "stopinsert", "exit insert (no-op when modeless)");
+    cmapi("<CR>", "newline", "newline");
+    cmapi("<Tab>", "insert_tab", "insert tab");
+    cmapi("<BS>", "backspace", "backspace");
+    cmapv("<Esc>", "stopvisual", "exit visual");
 
     /* Plain motion: :goto drops any active selection first. */
     cmapi("<Up>", "goto up", "up");
@@ -597,37 +587,6 @@ void keybind_register_modeless_basics(void) {
     cmapv("<S-Home>", "extend 0", "extend to bol");
     cmapv("<S-End>", "extend $", "extend to eol");
 }
-/* kb_goto_file_start is defined further below (jump-list aware version
- * used by vim's gg). Both keymap plugins reach it through this header. */
-
-/* gg / G semantics: with no count → file start/end. With a count >= 1
- * → jump to that line (matches vim's `42G` / `42gg`). Consumes the
- * count via keybind_get_and_clear_pending_count so the dispatch loop's
- * repeat-on-count breaks after one call. */
-static void goto_line_or(int fallback_y) {
-    BUFWIN(buf, win)
-    int had_count = keybind_has_pending_count();
-    int count = keybind_get_and_clear_pending_count();
-    int target;
-    if (had_count) {
-        target = count - 1;
-    } else {
-        target = fallback_y;
-    }
-    if (target < 0)
-        target = 0;
-    if (target >= buf->num_rows)
-        target = buf->num_rows - 1;
-    if (abs(target - win->cursor.y) >= 5)
-        kb_jump_save_current();
-    win->cursor.y = target;
-    win->cursor.x = 0;
-    buf->cursor->y = target;
-    buf->cursor->x = 0;
-}
-
-void kb_goto_file_start(void) { goto_line_or(0); }
-
 /* Replace char under cursor with c (stay in normal mode). The
  * interactive read lives in cmd_replace_char (:replace_char). */
 void kb_replace_char_apply(int c) {
