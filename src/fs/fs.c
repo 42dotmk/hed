@@ -693,6 +693,29 @@ EdError fs_temp_path(const char *prefix, char *out, size_t out_sz) {
     return ED_OK;
 }
 
+EdError fs_temp_dir(const char *prefix, char *out, size_t out_sz) {
+    if (!out || out_sz == 0)
+        return ED_ERR_INVALID_ARG;
+    out[0] = '\0';
+    if (!prefix || !*prefix)
+        prefix = "hed";
+
+    const char *tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !*tmpdir)
+        tmpdir = "/tmp";
+
+    int n = snprintf(out, out_sz, "%s/%s.XXXXXX", tmpdir, prefix);
+    if (n <= 0 || (size_t)n >= out_sz)
+        return ED_ERR_INVALID_ARG;
+
+    if (!mkdtemp(out)) {
+        int e = errno;
+        out[0] = '\0';
+        return errno_to_ed(e, ED_ERR_FILE_OPEN);
+    }
+    return ED_OK;
+}
+
 /* =====================================================================
  * Cache-file helper (depends on the rest of the module above).
  * ===================================================================== */

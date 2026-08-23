@@ -1209,8 +1209,12 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     if (dest_dir) {
         snprintf(path, sizeof(path), "%s/%s", dest_dir, safe);
     } else {
-        snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%d-%s", (int)getpid(),
-                 a->part_id, safe);
+        /* Private temp dir so the real filename (whose extension picks
+         * the opener) survives without colliding across instances. */
+        char tdir[512];
+        if (fs_temp_dir("hed-mail", tdir, sizeof(tdir)) != ED_OK)
+            return -1;
+        snprintf(path, sizeof(path), "%s/%s", tdir, safe);
     }
 
     char idq[300];
@@ -1250,12 +1254,17 @@ void mail_open_html(void) {
     /* One live file per editor instance: drop the previous one before
      * writing the next, so repeated invocations don't pile up in /tmp. */
     static int html_seq = 0;
-    static char last_path[256];
+    static char last_path[512];
+    static char html_dir[256];
+    if (!html_dir[0] &&
+        fs_temp_dir("hed-mail-html", html_dir, sizeof(html_dir)) != ED_OK) {
+        ed_set_status_message("mail-open-html: temp dir failed");
+        return;
+    }
     if (last_path[0])
         fs_unlink(last_path);
-    char path[256];
-    snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%d.html", (int)getpid(),
-             ++html_seq);
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%d.html", html_dir, ++html_seq);
     snprintf(last_path, sizeof(last_path), "%s", path);
 
     FILE *f = fopen(path, "w");
@@ -1287,12 +1296,8 @@ int mail_extract_attachments_to_tmp(char ***out_paths) {
     if (attach_count == 0)
         return 0;
 
-    static int fwd_seq = 0;
-    fwd_seq++;
     char dir[256];
-    snprintf(dir, sizeof(dir), "/tmp/hed-mail-fwd-%d-%ld-%d", (int)getpid(),
-             (long)time(NULL), fwd_seq);
-    if (fs_mkdir_p(dir) != ED_OK)
+    if (fs_temp_dir("hed-mail-fwd", dir, sizeof(dir)) != ED_OK)
         return 0;
 
     char **paths = calloc((size_t)attach_count, sizeof(char *));

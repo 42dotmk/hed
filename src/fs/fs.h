@@ -209,4 +209,9 @@ EdError fs_chdir(const char *path);
  * the file from this point on (open it for writing, then fs_unlink). */
 EdError fs_temp_path(const char *prefix, char *out, size_t out_sz);
 
+/* Like fs_temp_path, but creates a unique private directory (mkdtemp,
+ * 0700) — for callers that need meaningful filenames inside (e.g.
+ * attachment names whose extension picks the opener). */
+EdError fs_temp_dir(const char *prefix, char *out, size_t out_sz);
+
 #endif /* HED_FS_H */
