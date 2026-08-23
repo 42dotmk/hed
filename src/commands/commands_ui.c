@@ -13,9 +13,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Defined in keybinds_builtins.c — guards against modal/single-window
- * cases, then dispatches to wlayout_resize_dir on the focused leaf. */
-extern void win_resize_cells(WSplitDir dir, int delta);
+/* Guards against modal/single-window cases, then dispatches to
+ * wlayout_resize_dir on the focused leaf. */
+static void win_resize_cells(WSplitDir dir, int delta) {
+    if (!E.wlayout_root || arrlen(E.windows) <= 1)
+        return;
+    if (E.modal_window && E.modal_window->visible)
+        return;
+    wlayout_resize_dir(E.wlayout_root, E.current_window, dir, delta);
+}
 
 /* ============================================
  * WINDOW MANAGEMENT COMMANDS

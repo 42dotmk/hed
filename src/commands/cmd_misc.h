@@ -7,6 +7,7 @@ void cmd_echo(const char *args);
 void cmd_history(const char *args);
 void cmd_registers(const char *args);
 void cmd_put(const char *args);
+void cmd_put_before(const char *args);
 void cmd_undo(const char *args);
 void cmd_redo(const char *args);
 void cmd_macro_record(const char *args);
@@ -25,6 +26,11 @@ void cmd_fold_rm(const char *args);
 void cmd_fold_toggle(const char *args);
 void cmd_foldmethod(const char *args);
 void cmd_foldupdate(const char *args);
+void cmd_fold_open(const char *args);
+void cmd_fold_close(const char *args);
+void cmd_fold_open_all(const char *args);
+void cmd_fold_close_all(const char *args);
+void cmd_fold_cycle(const char *args);
 void cmd_buf_refresh(const char *args);
 
 #endif /* CMD_MISC_H */

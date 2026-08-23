@@ -2,7 +2,9 @@
  *
  * All bindings registered here can be overridden later in config_init()
  * (src/config.c) — registrations use last-write-wins, see remove_duplicate
- * in src/keybinds.c. */
+ * in src/keybinds.c. Most bindings cmap onto :commands (cmd_edit.c),
+ * so :keybinds shows what each key runs and every action is callable
+ * from the : prompt. */
 
 #include "hed.h"
 
@@ -59,7 +61,7 @@ static int vim_keybinds_init(void) {
     mapi("<Down>", kb_move_down, "move down");
     mapi("<Left>", kb_move_left, "move left");
     mapi("<Right>", kb_move_right, "move right");
-    mapn("/", kb_search_prompt, "search");
+    cmapn("/", "search", "search");
 
     cmapn("O", "new_line_above", "new line above");
     cmapn("o", "new_line", "new line below");
@@ -70,11 +72,11 @@ static int vim_keybinds_init(void) {
     cmapn("@", "play", "play macro");
     cmapn("ZQ", "q!", "quit (force)");
     cmapn("ZZ", "wq", "save and quit");
-    mapn("%", buf_find_matching_bracket, "match bracket");
-    mapv("%", buf_find_matching_bracket, "match bracket");
-    mapn("*", kb_find_under_cursor, "find word");
-    mapv("*", kb_find_selection, "find selection (exits visual)");
-    mapn("<C-*>", kb_find_under_cursor, "find word");
+    cmapn("%", "match_bracket", "match bracket");
+    cmapv("%", "match_bracket", "match bracket");
+    cmapn("*", "search_word", "find word");
+    cmapv("*", "search_selection", "find selection (exits visual)");
+    cmapn("<C-*>", "search_word", "find word");
 
     /* --- Visual mode --- */
     mapv("h", kb_move_left, "left");
@@ -85,76 +87,77 @@ static int vim_keybinds_init(void) {
     mapv("<Down>", kb_move_down, "down");
     mapv("<Up>", kb_move_up, "up");
     mapv("<Right>", kb_move_right, "right");
-    mapv("y", kb_visual_yank_selection, "yank");
-    mapv("d", kb_visual_delete_selection, "delete");
-    mapv("x", kb_visual_delete_selection, "delete selection");
-    mapvl("x", kb_visual_delete_selection, "delete selection");
-    mapvb("x", kb_visual_delete_selection, "delete selection");
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
-     * mapv covers all three visual modes. */
-    mapv("r", kb_visual_replace_char, "replace selection chars");
-    mapv("p", kb_visual_paste, "paste over selection");
-    mapv("P", kb_visual_paste, "paste over selection");
-    mapv("v", kb_visual_escape, "exit visual");
-    mapv("<C-v>", kb_visual_toggle_block_mode, "block mode");
-    mapv("<Esc>", kb_visual_escape, "exit visual");
-    mapv("i", kb_visual_enter_insert_mode, "insert");
-    mapv("a", kb_visual_enter_append_mode, "append");
-    mapv(":", kb_visual_enter_command_mode, "command");
+     * cmapv covers all three visual modes. */
+    cmapv("y", "yank", "yank");
+    cmapv("d", "delete", "delete");
+    cmapv("x", "delete", "delete selection");
+    cmapv("r", "replace_char", "replace selection chars");
+    cmapv("p", "put", "paste over selection");
+    cmapv("P", "put!", "paste over selection");
+    cmapv("v", "visual", "exit visual");
+    cmapv("<C-v>", "visual_block", "block mode");
+    cmapv("<Esc>", "visual", "exit visual");
+    cmapv("i", "insert", "insert");
+    cmapv("a", "append", "append");
+    /* Leave win->sel intact across the : prompt so commands like
+     * :shell foo >%v can act on it. ed_set_mode defers the visual
+     * clear until MODE_COMMAND itself exits. */
+    mapv(":", kb_enter_command_mode, "command");
     mapn(":", kb_enter_command_mode, "command");
-    mapn("V", kb_visual_line_toggle, "visual line");
-    mapv("V", kb_visual_line_toggle, "switch to visual line");
-    mapvl("V", kb_visual_escape, "exit visual line");
-    mapn("<<", buf_unindent_line, "unindent");
-    mapn("<C-d>", buf_scroll_half_page_down, "scroll down");
-    mapn("<C-v>", kb_visual_block_toggle, "visual block");
+    cmapn("V", "visual_line", "visual line");
+    cmapv("V", "visual_line", "switch to / exit visual line");
+    cmapn("<<", "unindent", "unindent");
+    cmapn("<C-d>", "scrolldown", "scroll down");
+    cmapn("<C-v>", "visual_block", "visual block");
     cmapn("}", "goto }", "next paragraph");
     cmapn("{", "goto {", "prev paragraph");
-    mapn(" jf", kb_jump_forward, "jump forward");
-    mapn(" jb", kb_jump_backward, "jump back");
-    mapn("<Tab>", kb_jump_forward, "jump forward");
-    mapn("<C-o>", kb_jump_backward, "jump back");
-    mapn("<C-u>", buf_scroll_half_page_up, "scroll up");
-    mapn(">>", buf_indent_line, "indent");
-    mapn("<Right>", kb_win_grow_width, "grow window width");
-    mapn("<Left>", kb_win_shrink_width, "shrink window width");
-    mapn("<Down>", kb_win_grow_height, "grow window height");
-    mapn("<Up>", kb_win_shrink_height, "shrink window height");
-    mapn("A", kb_end_append, "append eol");
-    mapn("I", kb_start_insert, "insert bol");
-    mapn("J", buf_join_lines, "join lines");
-    mapn("a", kb_append_mode, "append");
+    cmapn(" jf", "jump_forward", "jump forward");
+    cmapn(" jb", "jump_back", "jump back");
+    cmapn("<Tab>", "jump_forward", "jump forward");
+    cmapn("<C-o>", "jump_back", "jump back");
+    cmapn("<C-u>", "scrollup", "scroll up");
+    cmapn(">>", "indent", "indent");
+    cmapn("<Right>", "wgrowwidth", "grow window width");
+    cmapn("<Left>", "wshrinkwidth", "shrink window width");
+    cmapn("<Down>", "wgrowheight", "grow window height");
+    cmapn("<Up>", "wshrinkheight", "shrink window height");
+    cmapn("A", "append_eol", "append eol");
+    cmapn("I", "insert_bol", "insert bol");
+    cmapn("J", "join", "join lines");
+    cmapn("a", "append", "append");
     cmapn("<C-r>", "redo", "redo");
 
-    /* Operator keybindings - wait for text object input */
-    mapn("d", kb_operator_delete, "delete operator");
-    mapn("c", kb_operator_change, "change operator");
-    mapn("y", kb_operator_yank, "yank operator");
-    mapn("v", kb_operator_select, "visual select with motion");
-    mapn("dd", kb_delete_line, "del line");
+    /* Operator keybindings - read a text object, or take it as an
+     * argument from the : prompt (":delete iw"). */
+    cmapn("d", "delete", "delete operator");
+    cmapn("c", "change", "change operator");
+    cmapn("y", "yank", "yank operator");
+    cmapn("v", "select", "visual select with motion");
+    cmapn("dd", "delete_line", "del line");
     mapn("gg", kb_goto_file_start, "start of file (or line N with count)");
     mapn("G", kb_goto_file_end, "end of file (or line N with count)");
-    mapn("gc", buf_toggle_comment, "toggle comment");
-    mapn("gf", kb_open_file_under_cursor, "open file");
-    mapn("gF", kb_search_file_under_cursor, "search file");
-    mapn("i", kb_enter_insert_mode, "insert");
-    mapn("n", kb_search_next, "next match");
-    mapn("p", kb_paste, "paste after");
-    mapn("P", kb_paste_before, "paste before");
-    mapn("r", kb_replace_char, "replace char");
-    mapn("x", kb_delete_char, "del char");
-    mapn("yy", kb_yank_line, "yank line");
-    mapn("za", kb_fold_toggle, "fold toggle");
-    mapn("zc", kb_fold_close, "fold close");
-    mapn("zM", kb_fold_close_all, "close all folds");
-    mapn("zo", kb_fold_open, "fold open");
-    mapn("zR", kb_fold_open_all, "open all folds");
-    mapn("<S-Tab>", kb_fold_cycle_level, "cycle fold level 1/2/all/none");
-    mapn("zz", buf_center_screen, "center screen");
-    mapn("~", kb_toggle_case, "toggle case");
-    mapn("D", kb_delete_to_line_end, "del to line end");
-    mapn("C", buf_change_to_line_end, "change to line end");
-    mapn("S", buf_change_line, "change line");
+    cmapn("gc", "toggle_comment", "toggle comment");
+    cmapn("gf", "openpath", "open file");
+    cmapn("gF", "searchpath", "search file");
+    cmapn("i", "insert", "insert");
+    cmapn("n", "search_next", "next match");
+    cmapn("p", "put", "paste after");
+    cmapn("P", "put!", "paste before");
+    cmapn("r", "replace_char", "replace char");
+    cmapn("x", "delete_char", "del char");
+    cmapn("yy", "yank_line", "yank line");
+    cmapn("za", "foldtoggle", "fold toggle");
+    cmapn("zc", "foldclose", "fold close");
+    cmapn("zM", "foldcloseall", "close all folds");
+    cmapn("zo", "foldopen", "fold open");
+    cmapn("zR", "foldopenall", "open all folds");
+    cmapn("<S-Tab>", "foldcycle", "cycle fold level 1/2/all/none");
+    cmapn("zz", "center", "center screen");
+    cmapn("~", "toggle_case", "toggle case");
+    cmapn("D", "delete_eol", "del to line end");
+    cmapn("C", "change_eol", "change to line end");
+    cmapn("S", "change_line", "change line");
     return 0;
 }
 

@@ -50,13 +50,13 @@ static int emacs_keybinds_init(void) {
     mapv("<S-End>", kb_extend_eol, "extend to eol");
 
     /* Editing */
-    mapi("<C-d>", kb_delete_char, "delete char forward");
-    mapi("<C-k>", kb_delete_to_line_end, "kill to end of line");
-    mapi("<C-y>", kb_paste, "yank (paste)");
+    cmapi("<C-d>", "delete_char", "delete char forward");
+    cmapi("<C-k>", "delete_eol", "kill to end of line");
+    cmapi("<C-y>", "put", "yank (paste)");
 
     /* Search / cancel */
-    mapi("<C-s>", kb_search_prompt, "isearch forward");
-    mapi("<C-r>", kb_search_prompt, "isearch backward (TODO)");
+    cmapi("<C-s>", "search", "isearch forward");
+    cmapi("<C-r>", "search", "isearch backward (TODO)");
     mapv("<C-g>", kb_visual_escape, "cancel selection");
 
     /* C-x prefix cluster */
@@ -77,7 +77,7 @@ static int emacs_keybinds_init(void) {
     mapi("<M-b>", kb_drop_word_l, "backward word");
     mapi("<M-<>", kb_goto_file_start, "beginning of buffer");
     mapi("<M->>", kb_goto_file_end, "end of buffer");
-    mapi("<M-d>", kb_delete_to_line_end, "kill word forward (approx)");
+    cmapi("<M-d>", "delete_eol", "kill word forward (approx)");
     mapi("<M-w>", kb_visual_yank_selection, "copy region");
 
     mapv("<C-w>", kb_visual_delete_selection, "kill region (cut)");

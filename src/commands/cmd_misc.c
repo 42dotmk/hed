@@ -3,6 +3,7 @@
 #include "commands/registry.h"
 #include "editor.h"
 #include "input/keybinds.h"
+#include "input/keybinds_builtins.h"
 #include "input/macros.h"
 #include "input/picker.h"
 #include "input/registers.h"
@@ -186,7 +187,15 @@ void cmd_registers(const char *args) {
     ed_set_status_message("%s", out);
 }
 
-void cmd_put(const char *args) {
+/* Shared by :put and :put! — resolve the optional register arg,
+ * then paste after (or before) the cursor. With an active visual
+ * selection, replace the selection instead (vim's visual p/P). */
+static void put_common(const char *args, bool after) {
+    Window *win = window_cur();
+    if (win && win->sel.type != SEL_NONE) {
+        kb_visual_paste();
+        return;
+    }
     char reg = '"';
     if (args && *args) {
         while (*args == ' ')
@@ -205,8 +214,12 @@ void cmd_put(const char *args) {
     if (!buf)
         return;
     /* Paste from the specified register */
-    paste_from_register(buf, reg, true);
+    paste_from_register(buf, reg, after);
 }
+
+void cmd_put(const char *args) { put_common(args, true); }
+
+void cmd_put_before(const char *args) { put_common(args, false); }
 
 void cmd_undo(const char *args) {
     (void)args;
@@ -605,4 +618,99 @@ void cmd_foldupdate(const char *args) {
     fold_apply_method(buf, buf->fold_method);
     ed_set_status_message("Folds updated using %s method",
                           buf->fold_method ? buf->fold_method : "(none)");
+}
+
+void cmd_fold_open(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+    if (fold_expand_at_line(&buf->folds, win->cursor.y)) {
+        ed_set_status_message("Fold opened");
+    } else {
+        ed_set_status_message("No fold at cursor");
+    }
+}
+
+void cmd_fold_close(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+    if (fold_collapse_at_line(&buf->folds, win->cursor.y)) {
+        ed_set_status_message("Fold closed");
+    } else {
+        ed_set_status_message("No fold at cursor");
+    }
+}
+
+void cmd_fold_open_all(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+
+    int count = 0;
+    for (int i = 0; i < buf->folds.count; i++) {
+        if (buf->folds.regions[i].is_collapsed) {
+            buf->folds.regions[i].is_collapsed = false;
+            count++;
+        }
+    }
+    ed_set_status_message("Opened %d fold%s", count, count == 1 ? "" : "s");
+}
+
+void cmd_fold_close_all(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+
+    int count = 0;
+    for (int i = 0; i < buf->folds.count; i++) {
+        if (!buf->folds.regions[i].is_collapsed) {
+            buf->folds.regions[i].is_collapsed = true;
+            count++;
+        }
+    }
+    ed_set_status_message("Closed %d fold%s", count, count == 1 ? "" : "s");
+}
+
+/* Cycle the buffer's global fold level: 1 → 2 → 3 → 100 → 0 → 1.
+ * Levels follow vim foldlevel semantics (see fold_apply_level): 1 shows
+ * top-level sections, 2 shows two levels, 100 opens everything, 0
+ * collapses all to summaries. */
+static int fold_level_next(int cur) {
+    switch (cur) {
+    case 1:
+        return 2;
+    case 2:
+        return 3;
+    case 3:
+        return 100;
+    case 100:
+        return 0;
+    case 0:
+        return 1;
+    default:
+        return 1; /* first press, or any out-of-cycle value */
+    }
+}
+
+void cmd_fold_cycle(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+    int next = fold_level_next(buf->fold_level);
+    buf->fold_level = next;
+    fold_apply_level(&buf->folds, next);
+    if (next == 0)
+        ed_set_status_message("foldlevel=0 (all closed)");
+    else if (next >= 100)
+        ed_set_status_message("foldlevel=%d (all open)", next);
+    else
+        ed_set_status_message("foldlevel=%d", next);
 }

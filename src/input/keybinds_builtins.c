@@ -1,31 +1,21 @@
 #include "input/keybinds_builtins.h"
 #include "buf/buf_helpers.h"
+#include "commands/cmd_edit.h"
 #include "commands/commands_ui.h"
 #include "editor.h"
-#include "fs/fs.h"
 #include "hooks.h"
 #include "input/command_mode.h"
 #include "input/keybinds.h"
-#include "input/picker.h"
 #include "input/registers.h"
 #include "lib/errors.h"
 #include "lib/safe_string.h"
 #include "lib/strutil.h"
 #include "terminal.h"
 #include "ui/wlayout.h"
-#include "utils/fold.h"
 #include "utils/undo.h"
 #include "utils/yank.h"
-#include <assert.h>
-#include <ctype.h>
-#include <limits.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-
-/* Internal buffer row helpers (non-public, defined in buffer.c) */
-void buf_row_del_in(Buffer *buf, int at);
 
 /* Visual selection helpers (local to keybinding implementations) */
 static void visual_clear(Window *win) {
@@ -256,7 +246,7 @@ void kb_visual_escape(void) {
 void kb_visual_paste(void) {
     BUFWIN(buf, win)
     if (win->sel.type == SEL_NONE) {
-        kb_paste();
+        paste_from_register(buf, '"', true);
         return;
     }
     if (buf->readonly) {
@@ -322,98 +312,9 @@ void kb_visual_paste(void) {
     free(pdata);
 }
 
-void kb_visual_toggle_block_mode(void) {
-    if (E.mode == MODE_VISUAL_BLOCK) {
-        kb_visual_escape();
-    } else {
-        kb_visual_begin(1);
-    }
-}
-
-void kb_visual_enter_insert_mode(void) {
-    BUFWIN(buf, win)
-    kb_visual_clear(win);
-    kb_enter_insert_mode();
-}
-
-void kb_visual_enter_append_mode(void) {
-    BUFWIN(buf, win)
-    kb_visual_clear(win);
-    kb_append_mode();
-}
-
-void kb_visual_enter_command_mode(void) {
-    BUFWIN(buf, win)
-    (void)win;
-    /* Leave win->sel intact across the : prompt so commands like
-     * :shell foo >%v can act on it. ed_set_mode defers the visual
-     * clear until MODE_COMMAND itself exits. */
-    kb_enter_command_mode();
-}
-
 /*** Default keybinding callbacks ***/
 
-/* Normal mode - mode switching */
-void kb_enter_insert_mode(void) { ed_set_mode(MODE_INSERT); }
-
-void kb_append_mode(void) {
-    BUFWIN(buf, win)
-    ed_set_mode(MODE_INSERT);
-    if (win->cursor.y < buf->num_rows) {
-        Row *row = &buf->rows[win->cursor.y];
-        if (win->cursor.x < (int)row->chars.len)
-            win->cursor.x++;
-    }
-}
-
 void kb_enter_command_mode(void) { cmd_prompt_open(); }
-
-void kb_visual_block_toggle(void) {
-    BUFWIN(buf, win)
-    if (E.mode == MODE_VISUAL_BLOCK && win->sel.type == SEL_VISUAL_BLOCK) {
-        visual_clear(win);
-        ed_set_mode(MODE_NORMAL);
-        return;
-    }
-    visual_begin(1);
-}
-
-void kb_visual_line_toggle(void) {
-    BUFWIN(buf, win)
-    if (E.mode == MODE_VISUAL_LINE && win->sel.type == SEL_VISUAL_LINE) {
-        visual_clear(win);
-        ed_set_mode(MODE_NORMAL);
-        return;
-    }
-    win->sel.type = SEL_VISUAL_LINE;
-    win->sel.anchor_y = win->cursor.y;
-    win->sel.anchor_x = win->cursor.x;
-    win->sel.anchor_rx =
-        buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-    ed_set_mode(MODE_VISUAL_LINE);
-}
-
-/* Normal mode - text operations */
-void kb_delete_line(void) {
-    ASSERT_EDIT(buf, win);
-
-    TextSelection sel;
-    if (!textobj_line_with_newline(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_delete_selection(&sel);
-}
-
-void kb_delete_to_line_end(void) {
-    ASSERT_EDIT(buf, win);
-
-    TextSelection sel;
-    if (!textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_delete_selection(&sel);
-    win->cursor.x = sel.start.col > 0 ? sel.start.col - 1 : 0;
-}
 
 void kb_yank_line(void) {
     BUFWIN(buf, win)
@@ -421,162 +322,12 @@ void kb_yank_line(void) {
     ed_set_status_message("Yanked");
 }
 
-void kb_paste(void) {
-    BUFWIN(buf, win)
-    paste_from_register(buf, '"', true);
-}
+/* Yank operator, kept as a C callback so plugins (clipboard) can wrap
+ * it; the implementation is the :yank command. */
+void kb_operator_yank(void) { cmd_yank(NULL); }
 
-void kb_paste_before(void) {
-    BUFWIN(buf, win)
-    paste_from_register(buf, '"', false);
-}
-
-/* ========================================================================
- * Operator Functions (blocking text object composition)
- * ======================================================================== */
-
-/* Helper: build text object key sequence from one or two keys */
-static void build_textobj_key(char *buf, size_t size, int key1, int key2) {
-    if (key2 == 0) {
-        snprintf(buf, size, "%c", key1);
-    } else {
-        snprintf(buf, size, "%c%c", key1, key2);
-    }
-}
-
-/* Delete operator - waits for text object input */
-void kb_operator_delete(void) {
-    BUFWIN(buf, win)
-
-    ed_set_status_message("-- DELETE --");
-    ed_render_frame();
-
-    int key = ed_read_key();
-
-    /* Cancel on escape */
-    if (key == CTRL_KEY('[') || key == '\x1b') {
-        ed_set_status_message("");
-        return;
-    }
-
-    /* Special case: dd (delete line) */
-    if (key == 'd') {
-        kb_delete_line();
-        ed_set_status_message("Deleted line");
-        return;
-    }
-
-    /* Try single-key text object first */
-    char textobj_key[16];
-    TextSelection sel;
-
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        buf_delete_selection(&sel);
-        ed_set_status_message("Deleted");
-        return;
-    }
-
-    /* Try two-key text object (e.g., 'i' + 'w' = "iw") */
-    int key2 = ed_read_key();
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        buf_delete_selection(&sel);
-        ed_set_status_message("Deleted");
-        return;
-    }
-
-    ed_set_status_message("Unknown text object");
-}
-
-/* Change operator - waits for text object input */
-void kb_operator_change(void) {
-    BUFWIN(buf, win)
-
-    ed_set_status_message("-- CHANGE --");
-    ed_render_frame();
-
-    int key = ed_read_key();
-
-    if (key == CTRL_KEY('[') || key == '\x1b') {
-        ed_set_status_message("");
-        return;
-    }
-
-    /* Special case: cc (change line) */
-    if (key == 'c') {
-        buf_change_line();
-        ed_set_status_message("");
-        return;
-    }
-
-    char textobj_key[16];
-    TextSelection sel;
-
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        buf_change_selection(&sel);
-        ed_set_status_message("");
-        return;
-    }
-
-    int key2 = ed_read_key();
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        buf_change_selection(&sel);
-        ed_set_status_message("");
-        return;
-    }
-
-    ed_set_status_message("Unknown text object");
-}
-
-/* Yank operator - waits for text object input */
-void kb_operator_yank(void) {
-    BUFWIN(buf, win)
-
-    ed_set_status_message("-- YANK --");
-    ed_render_frame();
-
-    int key = ed_read_key();
-
-    if (key == CTRL_KEY('[') || key == '\x1b') {
-        ed_set_status_message("");
-        return;
-    }
-
-    /* Special case: yy (yank line) */
-    if (key == 'y') {
-        kb_yank_line();
-        ed_set_status_message("Yanked line");
-        return;
-    }
-
-    char textobj_key[16];
-    TextSelection sel;
-
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        yank_selection(&sel);
-        ed_set_status_message("Yanked");
-        return;
-    }
-
-    int key2 = ed_read_key();
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
-    if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
-        yank_selection(&sel);
-        ed_set_status_message("Yanked");
-        return;
-    }
-
-    ed_set_status_message("Unknown text object");
-}
-
-/* Move operator - moves cursor to text object position (fallback for unmapped
- * keys) */
 /* Save current position to the jump list (for within-file jumps). */
-static void jump_save_current(void) {
+void kb_jump_save_current(void) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (!buf || !buf->filename)
@@ -586,104 +337,22 @@ static void jump_save_current(void) {
     jump_list_add(&E.jump_list, buf->filename, cx, cy);
 }
 
+/* Move operator - moves cursor to text object position (fallback for
+ * unmapped keys) */
 void kb_operator_move(int key) {
     BUFWIN(buf, win)
 
-    char textobj_key[16];
+    char textobj_key[2] = {(char)key, '\0'};
     TextSelection sel;
 
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
     if (textobj_lookup(textobj_key, buf, win->cursor.y, win->cursor.x, &sel)) {
         /* Save jump if the movement crosses 5+ lines */
         if (abs(sel.cursor.line - win->cursor.y) >= 5)
-            jump_save_current();
+            kb_jump_save_current();
         win->cursor.y = sel.cursor.line;
         win->cursor.x = sel.cursor.col;
         return;
     }
-}
-
-/* Apply a matched textobj to the visual selection anchored at the
- * origin: a motion (sel.cursor != origin) extends the selection to its
- * target — backward ones (gg, b, {) put the target in sel.cursor while
- * sel.end stays at the origin side, so sel.end must not be used here.
- * An object (iw, ip, i( — sel.cursor == origin) covers start..end. */
-static void visual_apply_textobj(Buffer *buf, Window *win,
-                                 const TextSelection *sel, int oy, int ox) {
-    if (sel->cursor.line != oy || sel->cursor.col != ox) {
-        win->cursor.y = sel->cursor.line;
-        win->cursor.x = sel->cursor.col;
-        return;
-    }
-    win->sel.anchor_y = sel->start.line;
-    win->sel.anchor_x = sel->start.col;
-    win->sel.anchor_rx =
-        buf_row_cx_to_rx(&buf->rows[sel->start.line], sel->start.col);
-    win->cursor.y = sel->end.line;
-    /* sel->end is exclusive; the visual cursor is inclusive, so land
-     * on the object's last character. */
-    win->cursor.x = sel->end.col > 0 ? sel->end.col - 1 : 0;
-}
-
-/* Select operator - creates visual selection via text object (v + motion) */
-void kb_operator_select(void) {
-    BUFWIN(buf, win)
-
-    /* Enter visual mode and set anchor */
-    win->sel.type = SEL_VISUAL;
-    win->sel.anchor_y = win->cursor.y;
-    win->sel.anchor_x = win->cursor.x;
-    win->sel.anchor_rx =
-        buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-    ed_set_mode(MODE_VISUAL);
-
-    ed_set_status_message("-- VISUAL --");
-    ed_render_frame();
-
-    int oy = win->cursor.y, ox = win->cursor.x;
-    int key = ed_read_key();
-
-    if (key == CTRL_KEY('[') || key == '\x1b') {
-        /* Cancel visual mode */
-        win->sel.type = SEL_NONE;
-        ed_set_mode(MODE_NORMAL);
-        ed_set_status_message("");
-        return;
-    }
-
-    /* Try single-key text object */
-    char textobj_key[16];
-    TextSelection sel;
-
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, 0);
-    if (textobj_lookup(textobj_key, buf, oy, ox, &sel)) {
-        visual_apply_textobj(buf, win, &sel, oy, ox);
-        ed_set_status_message("-- VISUAL --");
-        return;
-    }
-
-    /* Try two-key text object */
-    int key2 = ed_read_key();
-    build_textobj_key(textobj_key, sizeof(textobj_key), key, key2);
-    if (textobj_lookup(textobj_key, buf, oy, ox, &sel)) {
-        visual_apply_textobj(buf, win, &sel, oy, ox);
-        ed_set_status_message("-- VISUAL --");
-        return;
-    }
-
-    /* Unknown text object - cancel visual mode */
-    win->sel.type = SEL_NONE;
-    ed_set_mode(MODE_NORMAL);
-    ed_set_status_message("Unknown text object");
-}
-
-void kb_delete_char(void) {
-    ASSERT_EDIT(buf, win);
-    TextSelection sel;
-    if (!textobj_char_at_cursor(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-
-    buf_delete_selection(&sel);
 }
 
 void kb_insert_newline(void) {
@@ -721,8 +390,6 @@ void kb_insert_escape(void) {
     if (buf && win && win->cursor.x > 0)
         win->cursor.x--;
 }
-
-void kb_search_prompt(void) { ed_search_prompt(); }
 
 /* Normal mode - cursor movement */
 void kb_move_left(void) { buf_move_cursor_key(KEY_ARROW_LEFT); }
@@ -932,221 +599,6 @@ EXTEND_THEN(eol, kb_goto_line_end())
 /* kb_goto_file_start is defined further below (jump-list aware version
  * used by vim's gg). Both keymap plugins reach it through this header. */
 
-/* Normal mode - search */
-void kb_search_next(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-    jump_save_current();
-    buf_find_in(buf);
-}
-
-void kb_find_under_cursor(void) {
-    StrView w;
-    if (!buf_word_view_under_cursor(&w)) {
-        return;
-    }
-    strbuf_free(&E.search_query);
-    E.search_query = strbuf_from_view(w);
-    ed_set_status_message("* %.*s", (int)(w.len > 40 ? 40 : w.len), w.data);
-    jump_save_current();
-    buf_find_in(buf_cur());
-}
-/* Visual-mode `*`: search for the selected text (single-line only,
- * literal match). Exits visual mode before jumping so the search
- * motion doesn't extend the selection. */
-void kb_find_selection(void) {
-    BUFWIN(buf, win)
-    if (buf->num_rows == 0)
-        return;
-
-    int sy, sx, ey, ex;
-    if (!visual_char_range(buf, win, &sy, &sx, &ey, &ex))
-        return;
-    if (sy != ey) {
-        ed_set_status_message("*: multi-line selection not supported");
-        return;
-    }
-    Row *row = &buf->rows[sy];
-    if (ex > (int)row->chars.len)
-        ex = (int)row->chars.len;
-    if (ex <= sx) {
-        ed_set_status_message("*: empty selection");
-        return;
-    }
-
-    strbuf_free(&E.search_query);
-    E.search_query = strbuf_from(row->chars.data + sx, (size_t)(ex - sx));
-    E.search_is_regex = 0;
-
-    kb_visual_escape();
-    ed_set_status_message(
-        "* %.*s", (int)(E.search_query.len > 40 ? 40 : E.search_query.len),
-        E.search_query.data);
-    jump_save_current();
-    buf_find_in(buf);
-}
-
-void kb_search_file_under_cursor(void) {
-    StrBuf path = strbuf_new();
-    if (!buf_get_path_under_cursor(&path, NULL, NULL) || !path.data ||
-        path.len == 0) {
-        strbuf_free(&path);
-        ed_set_status_message("gF: no path under cursor");
-        return;
-    }
-
-    char query[PATH_MAX];
-    size_t copy_len = path.len;
-    if (copy_len >= sizeof(query))
-        copy_len = sizeof(query) - 1;
-    memcpy(query, path.data, copy_len);
-    query[copy_len] = '\0';
-    strbuf_free(&path);
-
-    if (!picker_invoke("files", query))
-        ed_set_status_message("gF: no files picker installed");
-}
-void kb_open_file_under_cursor(void) {
-    StrBuf path = strbuf_new();
-    int line = 0, col = 0;
-    if (!buf_get_path_under_cursor(&path, &line, &col) || !path.data ||
-        path.len == 0) {
-        strbuf_free(&path);
-        ed_set_status_message("gf: no path under cursor");
-        return;
-    }
-
-    if (path.len >= PATH_MAX) {
-        strbuf_free(&path);
-        ed_set_status_message("gf: path too long");
-        return;
-    }
-
-    /* URI-shaped target (mail://thread:…): hand it to the open pipeline
-     * verbatim — a plugin's BUFFER_OPEN_PRE hook claims its scheme. */
-    if (strstr(path.data, "://")) {
-        char uri[PATH_MAX];
-        safe_strcpy(uri, path.data, sizeof(uri));
-        strbuf_free(&path);
-        buf_open_or_switch(uri, true);
-        return;
-    }
-
-    char expanded[PATH_MAX];
-    str_expand_tilde(path.data, expanded, sizeof(expanded));
-
-    char base[PATH_MAX];
-    base[0] = '\0';
-    fs_path_dirname_buf(buf_cur()->filename, base, sizeof(base));
-    if (base[0] == '\0') {
-        if (E.cwd[0]) {
-            safe_strcpy(base, E.cwd, sizeof(base));
-        } else {
-            char cwd[PATH_MAX];
-            if (fs_getcwd(cwd, sizeof(cwd))) {
-                safe_strcpy(base, cwd, sizeof(base));
-            }
-        }
-    }
-
-    char resolved[PATH_MAX];
-    const char *target = expanded;
-    if (!fs_path_is_absolute(expanded) && base[0]) {
-        if (!fs_path_join(resolved, sizeof(resolved), base, expanded)) {
-            strbuf_free(&path);
-            ed_set_status_message("gf: path too long");
-            return;
-        }
-        target = resolved;
-    }
-
-    strbuf_free(&path);
-    bool found = fs_is_file(target);
-    if (!found && !fs_path_is_absolute(expanded)) {
-        /* Fall back to CWD for relative paths */
-        char cwd_resolved[PATH_MAX];
-        const char *cwd = E.cwd[0] ? E.cwd : NULL;
-        char tmp_cwd[PATH_MAX];
-        if (!cwd && fs_getcwd(tmp_cwd, sizeof(tmp_cwd)))
-            cwd = tmp_cwd;
-        if (cwd &&
-            fs_path_join(cwd_resolved, sizeof(cwd_resolved), cwd, expanded) &&
-            fs_is_file(cwd_resolved)) {
-            target = cwd_resolved;
-            found = true;
-        }
-        if (!found) {
-            ed_set_status_message("gf: file does not exist: %s", expanded);
-            return;
-        }
-    } else if (!found) {
-        ed_set_status_message("gf: file does not exist: %s", target);
-        return;
-    }
-    buf_open_or_switch(target, true);
-
-    if (line > 0 || col > 0) {
-        Buffer *buf = buf_cur();
-        Window *win = window_cur();
-        if (buf && win) {
-            if (line > 0)
-                buf_goto_line(line);
-            if (col > 0 && win->cursor.y < buf->num_rows) {
-                int max = buf->rows[win->cursor.y].chars.len;
-                int cx = col - 1;
-                if (cx < 0)
-                    cx = 0;
-                if (cx > max)
-                    cx = max;
-                win->cursor.x = cx;
-            }
-        }
-    }
-}
-/* Helper: perform jump in specified direction */
-static void kb_jump(int direction) {
-    int cursor_x = 0, cursor_y = 0;
-    char *filename = NULL;
-    int success;
-
-    if (direction < 0)
-        success =
-            jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
-    else
-        success =
-            jump_list_forward(&E.jump_list, &filename, &cursor_x, &cursor_y);
-
-    if (!success || !filename || !filename[0]) {
-        free(filename);
-        ed_set_status_message(direction < 0 ? "Already at oldest jump"
-                                            : "Already at newest jump");
-        return;
-    }
-
-    buf_open_or_switch(filename, false);
-    free(filename);
-
-    /* Restore cursor position */
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (buf) {
-        int row = (cursor_y < buf->num_rows) ? cursor_y : buf->num_rows - 1;
-        if (row < 0)
-            row = 0;
-        buf->cursor->y = row;
-        buf->cursor->x = cursor_x;
-        if (win) {
-            win->cursor.y = row;
-            win->cursor.x = cursor_x;
-        }
-    }
-}
-
-void kb_jump_backward(void) { kb_jump(-1); }
-
-void kb_jump_forward(void) { kb_jump(1); }
-
 /* gg / G semantics: with no count → file start/end. With a count >= 1
  * → jump to that line (matches vim's `42G` / `42gg`). Consumes the
  * count via keybind_get_and_clear_pending_count so the dispatch loop's
@@ -1166,7 +618,7 @@ static void goto_line_or(int fallback_y) {
     if (target >= buf->num_rows)
         target = buf->num_rows - 1;
     if (abs(target - win->cursor.y) >= 5)
-        jump_save_current();
+        kb_jump_save_current();
     win->cursor.y = target;
     win->cursor.x = 0;
     buf->cursor->y = target;
@@ -1175,60 +627,15 @@ static void goto_line_or(int fallback_y) {
 
 void kb_goto_file_start(void) { goto_line_or(0); }
 
-/* Toggle case of character under cursor and move right */
-void kb_toggle_case(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win)
-        return;
-    if (buf->readonly) {
-        ed_set_status_message("Buffer is read-only");
-        return;
-    }
-    if (win->cursor.y >= buf->num_rows)
-        return;
-
-    Row *row = &buf->rows[win->cursor.y];
-    if (win->cursor.x >= (int)row->chars.len)
-        return;
-
-    char old_char = row->chars.data[win->cursor.x];
-    char new_char = char_toggle_case(old_char);
-
-    if (new_char != old_char) {
-        row->chars.data[win->cursor.x] = new_char;
-        buf_row_update(row);
-        buf->dirty++;
-    }
-
-    /* Move cursor right (Vim behavior) */
-    if (win->cursor.x < (int)row->chars.len - 1)
-        win->cursor.x++;
-}
-
-/* Replace character under cursor with next typed char (stay in normal mode) */
-void kb_replace_char(void) {
+/* Replace char under cursor with c (stay in normal mode). The
+ * interactive read lives in cmd_replace_char (:replace_char). */
+void kb_replace_char_apply(int c) {
     ASSERT_EDIT(buf, win)
     if (buf->num_rows == 0)
         return;
     Row *row = &buf->rows[win->cursor.y];
     if (win->cursor.x >= (int)row->chars.len)
         return;
-
-    ed_set_status_message("r: char?");
-    int c = ed_read_key();
-
-    /* Cancel on ESC */
-    if (c == '\x1b') {
-        ed_set_status_message("");
-        return;
-    }
-
-    /* Don't allow newline replacement */
-    if (c == '\r' || c == '\n') {
-        ed_set_status_message("Cannot replace with newline");
-        return;
-    }
 
     row->chars.data[win->cursor.x] = (char)c;
     buf_row_update(row);
@@ -1271,25 +678,14 @@ static void replace_row_span(Buffer *buf, int y, int xs, int xe, char rc) {
     buf->dirty++;
 }
 
-/* Visual-mode r: replace every character of the selection with the next
- * typed char (char-wise, line-wise and block-wise). Line breaks are
- * preserved; the cursor lands on the start of the selection. */
-void kb_visual_replace_char(void) {
+/* Visual-mode r: replace every character of the selection with c
+ * (char-wise, line-wise and block-wise). Line breaks are preserved;
+ * the cursor lands on the start of the selection. */
+void kb_visual_replace_char_apply(int c) {
     ASSERT_EDIT(buf, win)
     if (buf->num_rows == 0)
         return;
 
-    ed_set_status_message("r: char?");
-    int c = ed_read_key();
-
-    if (c == '\x1b') {
-        ed_set_status_message("");
-        return;
-    }
-    if (c == '\r' || c == '\n') {
-        ed_set_status_message("Cannot replace with newline");
-        return;
-    }
     if (c != '\t' && (c < 32 || c > 126)) {
         ed_set_status_message("r: not a printable character");
         return;
@@ -1338,137 +734,11 @@ void kb_visual_replace_char(void) {
     ed_set_status_message("");
 }
 
-/* Fold keybindings */
-
-/* za - Toggle fold at cursor */
-void kb_fold_toggle(void) {
-    BUFWIN(buf, win)
-    int line = win->cursor.y;
-    if (fold_toggle_at_line(&buf->folds, line)) {
-        int idx = fold_find_at_line(&buf->folds, line);
-        if (idx >= 0) {
-            bool collapsed = buf->folds.regions[idx].is_collapsed;
-            ed_set_status_message("Fold %s", collapsed ? "closed" : "opened");
-        }
-    } else {
-        ed_set_status_message("No fold at cursor");
-    }
-}
-
-void kb_fold_open(void) {
-    BUFWIN(buf, win);
-
-    int line = win->cursor.y;
-    if (fold_expand_at_line(&buf->folds, line)) {
-        ed_set_status_message("Fold opened");
-    } else {
-        ed_set_status_message("No fold at cursor");
-    }
-}
-
-void kb_fold_close(void) {
-    BUFWIN(buf, win);
-    int line = win->cursor.y;
-    if (fold_collapse_at_line(&buf->folds, line)) {
-        ed_set_status_message("Fold closed");
-    } else {
-        ed_set_status_message("No fold at cursor");
-    }
-}
-
-void kb_fold_open_all(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-
-    int count = 0;
-    for (int i = 0; i < buf->folds.count; i++) {
-        if (buf->folds.regions[i].is_collapsed) {
-            buf->folds.regions[i].is_collapsed = false;
-            count++;
-        }
-    }
-    ed_set_status_message("Opened %d fold%s", count, count == 1 ? "" : "s");
-}
-
-void kb_fold_close_all(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-
-    int count = 0;
-    for (int i = 0; i < buf->folds.count; i++) {
-        if (!buf->folds.regions[i].is_collapsed) {
-            buf->folds.regions[i].is_collapsed = true;
-            count++;
-        }
-    }
-    ed_set_status_message("Closed %d fold%s", count, count == 1 ? "" : "s");
-}
-
-/* <S-Tab> - cycle the buffer's global fold level: 1 → 2 → 100 → 0 → 1.
- * Levels follow vim foldlevel semantics (see fold_apply_level): 1 shows
- * top-level sections, 2 shows two levels, 100 opens everything, 0
- * collapses all to summaries. */
-static int fold_level_next(int cur) {
-    switch (cur) {
-    case 1:
-        return 2;
-    case 2:
-        return 3;
-    case 3:
-        return 100;
-    case 100:
-        return 0;
-    case 0:
-        return 1;
-    default:
-        return 1; /* first press, or any out-of-cycle value */
-    }
-}
-
-void kb_fold_cycle_level(void) {
-    Buffer *buf = buf_cur();
-    if (!buf)
-        return;
-    int next = fold_level_next(buf->fold_level);
-    buf->fold_level = next;
-    fold_apply_level(&buf->folds, next);
-    if (next == 0)
-        ed_set_status_message("foldlevel=0 (all closed)");
-    else if (next >= 100)
-        ed_set_status_message("foldlevel=%d (all open)", next);
-    else
-        ed_set_status_message("foldlevel=%d", next);
-}
-
 void kb_del_win(char direction);
 void kb_del_up(void) { kb_del_win('k'); }
 void kb_del_down(void) { kb_del_win('j'); }
 void kb_del_left(void) { kb_del_win('h'); }
 void kb_del_right(void) { kb_del_win('l'); }
-
-void kb_end_append(void) {
-    /* Move to end of line using text object, then enter append mode */
-    BUFWIN(buf, win)
-    TextSelection sel;
-    if (textobj_to_line_end(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.end.line;
-        win->cursor.x = sel.end.col;
-    }
-    kb_append_mode();
-}
-
-void kb_start_insert(void) {
-    /* Move to start of line using text object, then enter insert mode */
-    BUFWIN(buf, win)
-    TextSelection sel;
-    if (textobj_to_line_start(buf, win->cursor.y, win->cursor.x, &sel)) {
-        win->cursor.y = sel.start.line;
-        win->cursor.x = sel.start.col;
-    }
-    kb_enter_insert_mode();
-}
 
 void kb_del_win(char direction) {
     switch (direction) {
@@ -1486,29 +756,4 @@ void kb_del_win(char direction) {
         break;
     }
     cmd_wclose(NULL);
-}
-
-/* Default cell delta for keybind-driven window resizing. Commands take
- * an explicit count argument; keybinds use this fixed step. */
-#define WIN_RESIZE_STEP 5
-
-void win_resize_cells(WSplitDir dir, int delta) {
-    if (!E.wlayout_root || arrlen(E.windows) <= 1)
-        return;
-    if (E.modal_window && E.modal_window->visible)
-        return;
-    wlayout_resize_dir(E.wlayout_root, E.current_window, dir, delta);
-}
-
-void kb_win_grow_width(void) {
-    win_resize_cells(WL_VERTICAL, +WIN_RESIZE_STEP);
-}
-void kb_win_shrink_width(void) {
-    win_resize_cells(WL_VERTICAL, -WIN_RESIZE_STEP);
-}
-void kb_win_grow_height(void) {
-    win_resize_cells(WL_HORIZONTAL, +WIN_RESIZE_STEP);
-}
-void kb_win_shrink_height(void) {
-    win_resize_cells(WL_HORIZONTAL, -WIN_RESIZE_STEP);
 }

@@ -126,7 +126,7 @@ static void vsc_delete_forward(void) {
         win->cursor.x = 0;
         kb_insert_backspace(); /* join with the line we came from */
     } else {
-        kb_delete_char();
+        cmd_delete_char(NULL);
     }
 }
 
@@ -203,7 +203,7 @@ static void vsc_delete_word_right(void) {
     int ndel = e - x;
     while (ndel > 0) {
         int before = (int)row->chars.len;
-        kb_delete_char();
+        cmd_delete_char(NULL);
         int removed = before - (int)row->chars.len;
         if (removed <= 0)
             break; /* read-only buffer etc. */
@@ -310,23 +310,23 @@ static int vscode_keybinds_init(void) {
     /* Undo / redo / clipboard. */
     cmapi("<C-z>", "undo", "undo");
     cmapi("<C-y>", "redo", "redo");
-    mapi("<C-v>", kb_paste, "paste");
-    /* No selection: line-wise copy/cut (VSCode semantics). The mapn
+    cmapi("<C-v>", "put", "paste");
+    /* No selection: line-wise copy/cut (VSCode semantics). The cmapn
      * duplicates keep these working if modeless is toggled off. */
-    mapi("<C-c>", kb_yank_line, "copy line");
-    mapi("<C-x>", kb_delete_line, "cut line");
-    mapn("<C-c>", kb_yank_line, "copy line");
-    mapn("<C-x>", kb_delete_line, "cut line");
+    cmapi("<C-c>", "yank_line", "copy line");
+    cmapi("<C-x>", "delete_line", "cut line");
+    cmapn("<C-c>", "yank_line", "copy line");
+    cmapn("<C-x>", "delete_line", "cut line");
     mapv("<C-c>", kb_visual_yank_selection, "copy selection");
     mapv("<C-x>", kb_visual_delete_selection, "cut selection");
 
     /* Find & navigate. */
-    mapi("<C-f>", kb_search_prompt, "find in file");
+    cmapi("<C-f>", "search", "find in file");
     cmapi("<C-S-f>", "rg", "search in workspace");
-    mapi("<F3>", kb_search_next, "find next");
+    cmapi("<F3>", "search_next", "find next");
     mapi("<C-g>", vsc_goto_line_prompt, "go to line");
-    mapi("<M-Left>", kb_jump_backward, "navigate back");
-    mapi("<M-Right>", kb_jump_forward, "navigate forward");
+    cmapi("<M-Left>", "jump_back", "navigate back");
+    cmapi("<M-Right>", "jump_forward", "navigate forward");
     cmapi("<F12>", "tag", "go to definition (ctags)");
     cmapi("<C-t>", "tag", "go to symbol (ctags)");
 
@@ -354,9 +354,9 @@ static int vscode_keybinds_init(void) {
 
     /* Folding (VSCode Ctrl+K chords; Ctrl+0 isn't deliverable, so the
      * fold-all chord is Ctrl+K then plain 0). */
-    mapi("<C-k><C-l>", kb_fold_toggle, "toggle fold");
-    mapi("<C-k><C-j>", kb_fold_open_all, "unfold all");
-    mapi("<C-k>0", kb_fold_close_all, "fold all");
+    cmapi("<C-k><C-l>", "foldtoggle", "toggle fold");
+    cmapi("<C-k><C-j>", "foldopenall", "unfold all");
+    cmapi("<C-k>0", "foldcloseall", "fold all");
 
     /* Word motion. */
     mapi("<Home>", kb_drop_bol, "beginning of line");

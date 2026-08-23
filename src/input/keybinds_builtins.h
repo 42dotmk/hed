@@ -5,38 +5,25 @@
  * BUILT-IN KEYBIND CALLBACKS
  * ==========================
  *
- * Convenience header that exposes the default keybinding actions.
- * Include this alongside keybinds.h when you need to bind or call
- * the built-in behaviors (e.g., config and editor modules).
+ * The shared C-callback surface behind the default keymaps. Most
+ * former callbacks here are now :commands (see commands/cmd_edit.h);
+ * what remains is either bound directly (movement, insert-mode keys,
+ * selection helpers) or used as plugin API (visual selection access,
+ * clipboard's yank wrappers).
  */
 
 #include "buf/textobj.h"
 #include "ui/window.h"
 
-void kb_enter_insert_mode(void);
-void kb_append_mode(void);
 void kb_enter_command_mode(void);
-void kb_delete_line(void);
-void kb_delete_to_line_end(void);
 void kb_yank_line(void);
-void kb_paste(void);
-void kb_paste_before(void);
-void kb_delete_char(void);
-/* Operator functions (wait for text object input) */
-void kb_operator_delete(void);
-void kb_operator_change(void);
+/* Yank operator (reads a text object); wraps the :yank command so
+ * plugins (clipboard) can compose with it. */
 void kb_operator_yank(void);
 void kb_operator_move(int key); /* Move cursor via text object (fallback) */
-void kb_operator_select(void);  /* Visual select via text object (v + motion) */
-/* Note: cursor movements now handled by text object system */
-void kb_search_next(void);
-void kb_find_under_cursor(void);
-void kb_find_selection(void); /* Visual `*`: search the selection */
-void kb_search_file_under_cursor(void);
-void kb_open_file_under_cursor(void);
-void kb_jump_backward(void);   /* Ctrl-O - jump to previous buffer */
-void kb_jump_forward(void);    /* Ctrl-I - jump to next buffer */
-void kb_goto_file_start(void); /* gg - go to first line */
+/* Save the current position to the jump list (within-file jumps). */
+void kb_jump_save_current(void);
+void kb_goto_file_start(void); /* gg - go to first line (or line N) */
 void kb_move_left(void);
 void kb_move_right(void);
 void kb_move_up(void);
@@ -46,7 +33,6 @@ void kb_move_down(void);
  * by modeless keymap plugins. */
 void kb_goto_line_start(void);
 void kb_goto_line_end(void);
-void kb_goto_file_start(void);
 void kb_goto_file_end(void);
 void kb_goto_word_start(void);
 void kb_goto_word_end(void);
@@ -95,13 +81,6 @@ int kb_textobj_find_repeat_rev(Buffer *buf, int line, int col,
                                TextSelection *sel);
 void kb_visual_delete_selection(void);
 void kb_visual_escape(void);
-void kb_visual_toggle_block_mode(void);
-void kb_visual_enter_insert_mode(void);
-void kb_visual_enter_append_mode(void);
-void kb_visual_enter_command_mode(void);
-void kb_search_prompt(void);
-void kb_visual_block_toggle(void); /* Enter/exit visual block mode */
-void kb_visual_line_toggle(void);  /* Enter/exit visual line mode */
 void kb_visual_clear(Window *win);
 void kb_visual_begin(int block_mode);
 int kb_visual_yank(Buffer *buf, Window *win, int block_mode);
@@ -112,35 +91,15 @@ int kb_visual_delete(Buffer *buf, Window *win, int block_mode);
 int kb_visual_to_textsel(Buffer *buf, Window *win, int block_mode,
                          TextSelection *out);
 
-void kb_toggle_case(void); /* Toggle case of char under cursor (~) */
-void kb_replace_char(
-    void); /* Replace char under cursor with next typed char (r) */
-void kb_visual_replace_char(
-    void); /* Replace every char of the selection (visual r) */
-
-/* Fold operations */
-void kb_fold_toggle(void);      /* za - Toggle fold at cursor */
-void kb_fold_open(void);        /* zo - Open fold at cursor */
-void kb_fold_close(void);       /* zc - Close fold at cursor */
-void kb_fold_open_all(void);    /* zR - Open all folds */
-void kb_fold_close_all(void);   /* zM - Close all folds */
-void kb_fold_cycle_level(void); /* <S-Tab> - cycle fold level 1/2/100/0 */
+/* Replace char under cursor / every char of the selection with c.
+ * The interactive read lives in :replace_char (cmd_edit.c). */
+void kb_replace_char_apply(int c);
+void kb_visual_replace_char_apply(int c);
 
 void kb_del_win(char direction);
 void kb_del_up(void);
 void kb_del_down(void);
 void kb_del_left(void);
 void kb_del_right(void);
-
-/* Resize the focused window inside its enclosing split.
- * Width: target the nearest left/right (vertical) ancestor split.
- * Height: target the nearest top/bottom (horizontal) ancestor split. */
-void kb_win_grow_width(void);
-void kb_win_shrink_width(void);
-void kb_win_grow_height(void);
-void kb_win_shrink_height(void);
-
-void kb_start_insert(void);
-void kb_end_append(void);
 
 #endif /* KEYBINDS_BUILTINS_H */

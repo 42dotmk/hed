@@ -1,6 +1,7 @@
 #ifndef CMD_BUILTINS_H
 #define CMD_BUILTINS_H
 
+#include "commands/cmd_edit.h"
 #include "commands/cmd_misc.h"
 #include "commands/commands_buffer.h"
 #include "commands/commands_ui.h"

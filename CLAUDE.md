@@ -296,6 +296,10 @@ See `plugins/vscode_keybinds/README.md`.
 :split / :vsplit     window splits
 :goto <line>         jump to line N
 :goto <motion> [n]   apply text-object motion N times
+:delete/change/yank/select [textobj]
+                     operators; act on the visual selection if one is
+                     active, else the arg (":delete iw") or read keys
+:put [reg] / :put!   paste after / before (over selection if active)
 :rg / :ssearch / :rgword
 :fzf / :recent / :c  fzf pickers
 :tag <name>          ctags lookup

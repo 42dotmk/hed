@@ -353,7 +353,8 @@ static void register_commands(void) {
     cmd("log", cmd_log, "open the editor log file");
     cmd("logs", cmd_logs, "pick a log file from the cache dir");
     cmd("reg", cmd_registers, "registers");
-    cmd("put", cmd_put, "put reg");
+    cmd("put", cmd_put, "put reg after cursor (selection-aware)");
+    cmd("put!", cmd_put_before, "put reg before cursor (selection-aware)");
     cmd("undo", cmd_undo, "undo");
     cmd("redo", cmd_redo, "redo");
     cmd("record", cmd_macro_record, "record macro");
@@ -395,8 +396,52 @@ static void register_commands(void) {
     cmd("foldnew", cmd_fold_new, "create fold region");
     cmd("foldrm", cmd_fold_rm, "remove fold at line");
     cmd("foldtoggle", cmd_fold_toggle, "toggle fold at line");
+    cmd("foldopen", cmd_fold_open, "open fold at cursor");
+    cmd("foldclose", cmd_fold_close, "close fold at cursor");
+    cmd("foldopenall", cmd_fold_open_all, "open all folds");
+    cmd("foldcloseall", cmd_fold_close_all, "close all folds");
+    cmd("foldcycle", cmd_fold_cycle, "cycle fold level 1/2/3/all/none");
     cmd("foldmethod", cmd_foldmethod, "set fold method");
     cmd("foldupdate", cmd_foldupdate, "update folds");
+
+    /* Editing / motion / mode commands (cmd_edit.c) — the actions
+     * behind the default keymaps, cmap'd in the keymap plugins. */
+    cmd("delete", cmd_delete, "delete <textobj> (selection if active)");
+    cmd("change", cmd_change, "change <textobj>");
+    cmd("yank", cmd_yank, "yank <textobj> (selection if active)");
+    cmd("select", cmd_select, "visually select <textobj>");
+    cmd("delete_line", cmd_delete_line, "delete current line");
+    cmd("delete_char", cmd_delete_char, "delete char under cursor");
+    cmd("delete_eol", cmd_delete_eol, "delete to end of line");
+    cmd("change_line", cmd_change_line, "change current line");
+    cmd("change_eol", cmd_change_eol, "change to end of line");
+    cmd("yank_line", cmd_yank_line, "yank current line");
+    cmd("join", cmd_join, "join line with next");
+    cmd("indent", cmd_indent, "indent current line");
+    cmd("unindent", cmd_unindent, "unindent current line");
+    cmd("toggle_case", cmd_toggle_case, "toggle case of char under cursor");
+    cmd("toggle_comment", cmd_toggle_comment, "toggle line comment");
+    cmd("replace_char", cmd_replace_char,
+        "replace char(s) under cursor/selection");
+    cmd("center", cmd_center, "center current line on screen");
+    cmd("scrollup", cmd_scrollup, "scroll up half a page");
+    cmd("scrolldown", cmd_scrolldown, "scroll down half a page");
+    cmd("search", cmd_search, "open search prompt");
+    cmd("search_next", cmd_search_next, "jump to next search match");
+    cmd("search_word", cmd_search_word, "search word under cursor");
+    cmd("search_selection", cmd_search_selection, "search visual selection");
+    cmd("match_bracket", cmd_match_bracket, "jump to matching bracket");
+    cmd("jump_back", cmd_jump_back, "jump-list back");
+    cmd("jump_forward", cmd_jump_forward, "jump-list forward");
+    cmd("openpath", cmd_openpath, "open file path under cursor");
+    cmd("searchpath", cmd_searchpath, "file picker seeded from cursor path");
+    cmd("insert", cmd_insert, "enter insert mode");
+    cmd("append", cmd_append, "enter insert mode after cursor");
+    cmd("insert_bol", cmd_insert_bol, "insert at line start");
+    cmd("append_eol", cmd_append_eol, "append at line end");
+    cmd("visual", cmd_visual, "toggle visual mode");
+    cmd("visual_line", cmd_visual_line, "toggle visual line mode");
+    cmd("visual_block", cmd_visual_block, "toggle visual block mode");
     cmd("plugins", cmd_plugins, "list loaded plugins");
     cmd("goto", cmd_goto, "goto <line> | <motion> [count]");
     cmd("pos", cmd_pos,
