@@ -6,8 +6,8 @@
  * Combines cmd_buffer.c and cmd_file.c.
  */
 
-#include "buf/buffer.h"
 #include "commands/commands_buffer.h"
+#include "buf/buffer.h"
 #include "editor.h"
 #include "fs/fs.h"
 #include "hooks.h"
@@ -129,17 +129,6 @@ void cmd_buffer_delete_force(const char *args) {
     } else {
         ed_set_status_message("Buffer closed (forced)");
     }
-}
-
-void cmd_buffers(const char *args) {
-    if (arrlen(E.buffers) <= 0) {
-        ed_set_status_message("no buffers");
-        return;
-    }
-    if (picker_invoke("buffers", args))
-        return;
-    ed_set_status_message("buffers: %td open (no picker installed)",
-                          arrlen(E.buffers));
 }
 
 /* ============================================
