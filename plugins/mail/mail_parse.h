@@ -18,6 +18,11 @@ typedef struct {
     MailAttachInfo *attaches;
     int attach_count;
     int attach_cap;
+
+    /* Raw text/html source of the newest message that carries one.
+     * malloc'd, NUL-terminated; NULL when no message has an HTML part. */
+    char *html;
+    size_t html_len;
 } MailRender;
 
 void mail_render_init(MailRender *r);

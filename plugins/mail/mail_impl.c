@@ -30,6 +30,11 @@ typedef struct {
 static MailAttach attachments[MAIL_ATTACH_MAX];
 static int attach_count = 0;
 
+/* Raw text/html of the viewed thread's newest HTML-bearing message,
+ * cached at open like the attachments above. NULL when none. */
+static char *view_html = NULL;
+static size_t view_html_len = 0;
+
 /* ------------------------------------------------------------------ */
 /* State                                                               */
 /* ------------------------------------------------------------------ */
@@ -751,6 +756,14 @@ static void open_thread_tid(const char *tid, const char *title) {
         snprintf(a->filename, sizeof(a->filename), "%s",
                  mr.attaches[i].filename);
     }
+
+    /* Cache the raw HTML for :mail-open-html, stealing it from the
+     * render so mail_render_free doesn't drop it. */
+    free(view_html);
+    view_html = mr.html;
+    view_html_len = mr.html_len;
+    mr.html = NULL;
+
     mail_render_free(&mr);
 
     tbuf->dirty = 0;
@@ -1271,6 +1284,38 @@ static int extract_attachment(const MailAttach *a, const char *dest_dir) {
     if (!dest_dir)
         open_path(path);
     return 0;
+}
+
+/* Write the cached HTML body of the viewed message to /tmp and hand it
+ * to the system opener (browser). */
+void mail_open_html(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0) {
+        ed_set_status_message("mail-open-html: open a message first");
+        return;
+    }
+    if (!view_html || view_html_len == 0) {
+        ed_set_status_message("mail-open-html: message has no HTML part");
+        return;
+    }
+
+    static int html_seq = 0;
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/hed-mail-%d-%d.html", (int)getpid(),
+             ++html_seq);
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        ed_set_status_message("mail-open-html: cannot write %s", path);
+        return;
+    }
+    size_t wrote = fwrite(view_html, 1, view_html_len, f);
+    fclose(f);
+    if (wrote != view_html_len) {
+        ed_set_status_message("mail-open-html: short write to %s", path);
+        return;
+    }
+    open_path(path);
 }
 
 /* Extract every cached attachment into a fresh /tmp dir; used by

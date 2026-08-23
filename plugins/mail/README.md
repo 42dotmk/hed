@@ -45,6 +45,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-send` | Send the current compose/reply/forward buffer |
 | `:mail-reply` / `:mail-reply-all` | Reply to the message being viewed |
 | `:mail-forward` | Forward the message being viewed |
+| `:mail-open-html` | Open the viewed message's HTML body in the system browser |
 | `:mail-attach [id]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all) |
 | `:mail-attach save [id] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 | `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
@@ -76,6 +77,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `f` | Forward |
 | `a` | Open attachment(s) — auto if one, fzf multi-pick if many |
 | `A` | Save attachment(s) to `~/Downloads` (fzf multi-pick if many) |
+| `o` | Open the message's HTML body in the system browser |
 | `q` | Close the message |
 
 ### In the mailbox sidebar (`mail-mailboxes` filetype)
@@ -117,8 +119,10 @@ Attachments:  [2] notes.pdf  [3] chart.png
   a horizontal-rule divider between them.
 - The body always prefers `text/plain` if present. When only HTML is
   available, it is piped through `w3m -dump -T text/html` (or `lynx`
-  if w3m is missing). With neither available, a placeholder line is
-  shown.
+  if w3m is missing) with link numbering on — anchors render as
+  `[1]`, `[2]`, … with the URL list appended under `References:`.
+  With neither available, a placeholder line is shown. Either way,
+  `o` / `:mail-open-html` opens the real HTML in the system browser.
 - `\fmessage{`, `\fheader{`, `\fpart{` and other notmuch framing
   markers never reach the buffer.
 

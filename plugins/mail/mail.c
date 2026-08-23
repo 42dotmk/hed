@@ -87,20 +87,14 @@ static void cmd_mail_mailboxes(const char *args) {
     ed_render_frame();
 }
 
+/* Callback keybinds — only where no command expresses the behavior:
+ * positional actions and composites (everything else is a cmap*_ft
+ * straight onto the command). */
 static void kb_enter(void) { mail_handle_enter(); }
-static void kb_filter(void) { mail_filter_prompt(); }
-static void kb_refresh(void) {
-    mail_set_filter("");
-    mail_open_list();
-}
-static void kb_sync(void) { mail_sync(); }
 static void kb_mark_read(void) {
     mail_apply_tags("-unread");
     kb_move_down();
 }
-static void kb_mark_read_all(void) { mail_apply_tags_query("-unread"); }
-static void kb_delete(void) { mail_apply_tags("+deleted -unread -inbox"); }
-static void kb_mailboxes(void) { mail_open_mailboxes(); }
 static void kb_mbox_enter(void) { mail_handle_mailbox_enter(); }
 
 static void cmd_mail_delete(const char *args) {
@@ -119,6 +113,10 @@ static void cmd_mail_reply_all(const char *args) {
 static void cmd_mail_forward(const char *args) {
     (void)args;
     mail_forward();
+}
+static void cmd_mail_open_html(const char *args) {
+    (void)args;
+    mail_open_html();
 }
 
 static void cmd_mail_attach(const char *args) {
@@ -168,13 +166,6 @@ static void cmd_mail_attach_add(const char *args) {
     mail_attach_add(*p ? p : NULL);
 }
 
-static void kb_reply(void) { mail_reply(0); }
-static void kb_reply_all(void) { mail_reply(1); }
-static void kb_forward(void) { mail_forward(); }
-static void kb_send(void) { mail_send_current(); }
-static void kb_attach_add(void) { mail_attach_add(NULL); }
-static void kb_attach(void) { mail_attach_action(-1, NULL); }
-static void kb_attach_save(void) { mail_attach_action(-1, "~/Downloads"); }
 static void kb_next_msg(void) { mail_next_message(); }
 static void kb_prev_msg(void) { mail_prev_message(); }
 
@@ -221,6 +212,8 @@ static int mail_plugin_init(void) {
     cmd("mail-reply-all", cmd_mail_reply_all,
         "reply-all to the message being viewed");
     cmd("mail-forward", cmd_mail_forward, "forward the message being viewed");
+    cmd("mail-open-html", cmd_mail_open_html,
+        "open the viewed message's HTML body in the system browser");
     cmd("mail-attach", cmd_mail_attach,
         "open/save attachment(s) (no args: open, fzf multi-pick if >1; [id]; "
         "'save [id] [dir]')");
@@ -229,32 +222,35 @@ static int mail_plugin_init(void) {
         "multi-pick)");
 
     mapn_ft("mail", "<CR>", kb_enter, "open selected thread");
-    mapn_ft("mail", "/", kb_filter, "open filter prompt");
-    mapn_ft("mail", "r", kb_refresh, "refresh (clear filter)");
-    mapn_ft("mail", "R", kb_sync, "sync mbsync + notmuch");
+    cmapn_ft("mail", "/", "mail-filter", "open filter prompt");
+    cmapn_ft("mail", "r", "mail-refresh", "refresh (clear filter)");
+    cmapn_ft("mail", "R", "mail-sync", "sync mbsync + notmuch");
     mapn_ft("mail", "<C-r>", kb_mark_read, "mark thread under cursor as read");
     mapv_ft("mail", "<C-r>", kb_mark_read, "mark selected threads as read");
     keybind_register_ft(MODE_VISUAL_LINE, "<C-r>", "mail", kb_mark_read,
                         "mark selected threads as read");
-    mapn_ft("mail", "<C-S-r>", kb_mark_read_all,
-            "mark all threads in current query as read");
+    cmapn_ft("mail", "<C-S-r>", "mail-tag-all -unread",
+             "mark all threads in current query as read");
 
-    mapn_ft("mail", "b", kb_mailboxes, "open mailbox sidebar");
-    mapn_ft("mail", "C", mail_compose, "start a new compose buffer");
-    mapn_ft("mail", "D", kb_delete, "mark thread under cursor as deleted");
-    mapv_ft("mail", "D", kb_delete, "mark selected threads as deleted");
-    keybind_register_ft(MODE_VISUAL_LINE, "D", "mail", kb_delete,
-                        "mark selected threads as deleted");
+    cmapn_ft("mail", "b", "mail-mailboxes", "open mailbox sidebar");
+    cmapn_ft("mail", "C", "mail-compose", "start a new compose buffer");
+    cmapn_ft("mail", "D", "mail-delete", "mark thread under cursor as deleted");
+    cmapv_ft("mail", "D", "mail-delete", "mark selected threads as deleted");
+    keybind_register_command_ft(MODE_VISUAL_LINE, "D", "mail", "mail-delete",
+                                "mark selected threads as deleted");
 
     mapn_ft("mail-mailboxes", "<CR>", kb_mbox_enter, "select this mailbox");
 
-    mapn_ft("mail-message", "r", kb_reply, "reply to this message");
-    mapn_ft("mail-message", "R", kb_reply_all, "reply-all to this message");
-    mapn_ft("mail-message", "f", kb_forward, "forward this message");
-    mapn_ft("mail-message", "a", kb_attach,
-            "open attachment (1: direct; many: fzf multi-pick)");
-    mapn_ft("mail-message", "A", kb_attach_save,
-            "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
+    cmapn_ft("mail-message", "r", "mail-reply", "reply to this message");
+    cmapn_ft("mail-message", "R", "mail-reply-all",
+             "reply-all to this message");
+    cmapn_ft("mail-message", "f", "mail-forward", "forward this message");
+    cmapn_ft("mail-message", "o", "mail-open-html",
+             "open HTML body in system browser");
+    cmapn_ft("mail-message", "a", "mail-attach",
+             "open attachment (1: direct; many: fzf multi-pick)");
+    cmapn_ft("mail-message", "A", "mail-attach save",
+             "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
     mapn_ft("mail-message", "<C-p>", kb_prev_msg,
             "open previous message in list");
@@ -262,12 +258,12 @@ static int mail_plugin_init(void) {
     /* Compose buffer: C-c C-c sends (mutt / Emacs message-mode
      * convention), C-c C-a attaches. Registered for both normal and
      * insert mode since compose lands the user in insert. */
-    mapn_ft("mail-compose", "<C-c><C-c>", kb_send, "send this message");
-    mapi_ft("mail-compose", "<C-c><C-c>", kb_send, "send this message");
-    mapn_ft("mail-compose", "<C-c><C-a>", kb_attach_add,
-            "attach file(s) via fzf");
-    mapi_ft("mail-compose", "<C-c><C-a>", kb_attach_add,
-            "attach file(s) via fzf");
+    cmapn_ft("mail-compose", "<C-c><C-c>", "mail-send", "send this message");
+    cmapi_ft("mail-compose", "<C-c><C-c>", "mail-send", "send this message");
+    cmapn_ft("mail-compose", "<C-c><C-a>", "mail-attach-add",
+             "attach file(s) via fzf");
+    cmapi_ft("mail-compose", "<C-c><C-a>", "mail-attach-add",
+             "attach file(s) via fzf");
 
     /* Mode wildcard (-1): :e runs while still in command mode, and the
      * interception must work from gf (normal) and :e alike. */

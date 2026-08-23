@@ -133,6 +133,10 @@ void mail_reply(int reply_all);
  * being viewed (raw original inlined after a separator). */
 void mail_forward(void);
 
+/* Open the viewed message's HTML body in the system browser (written
+ * to /tmp, handed to open_path). Status note when there is none. */
+void mail_open_html(void);
+
 /* Act on attachments of the current mail-message buffer.
  *   dest_dir == NULL → extract to /tmp and open with `open_path`.
  *   dest_dir != NULL → extract into dest_dir (created if missing).

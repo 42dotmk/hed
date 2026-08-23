@@ -52,6 +52,7 @@ void mail_render_free(MailRender *r) {
         free(r->lines[i]);
     free(r->lines);
     free(r->attaches);
+    free(r->html);
     memset(r, 0, sizeof(*r));
 }
 
@@ -103,8 +104,8 @@ static int header_match(const char *line, const char *name,
  * On total failure, emits a single placeholder line. */
 static void render_html(const char *html, size_t len, MailRender *out) {
     const char *cmds[] = {
-        "w3m -dump -T text/html -o display_link_number=false 2>/dev/null",
-        "lynx -dump -stdin -nolist 2>/dev/null", NULL};
+        "w3m -dump -T text/html -o display_link_number=true 2>/dev/null",
+        "lynx -dump -stdin 2>/dev/null", NULL};
     for (int i = 0; cmds[i]; i++) {
         int in_pipe[2], out_pipe[2];
         if (pipe(in_pipe) != 0)
@@ -421,8 +422,10 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
             if (strncasecmp(ct, "text/plain", 10) == 0) {
                 mode = 1;
                 msg.have_plain = 1;
-            } else if (strncasecmp(ct, "text/html", 9) == 0 &&
-                       !msg.have_plain) {
+            } else if (strncasecmp(ct, "text/html", 9) == 0) {
+                /* Captured even when a plain part exists: the display
+                 * prefers plain, but the raw HTML is kept on the render
+                 * for opening in an external browser. */
                 mode = 2;
             }
             if (pstack_depth < PART_DEPTH_MAX)
@@ -510,6 +513,11 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
      * buffer — what the reader actually wants to see. */
     for (int i = saved_n - 1; i >= 0; i--) {
         emit_msg(r, &saved[i], i == saved_n - 1);
+        if (!r->html && saved[i].html.len > 0) {
+            r->html = saved[i].html.data;
+            r->html_len = saved[i].html.len;
+            saved[i].html = strbuf_new();
+        }
         msg_state_reset(&saved[i]);
     }
     free(saved);
