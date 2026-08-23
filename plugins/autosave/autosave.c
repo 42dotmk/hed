@@ -335,30 +335,11 @@ static void on_buffer_open(HookBufferEvent *e) {
 /* ---------- :autosave subcommands ---------- */
 
 static void cmd_autosave(const char *args) {
-    while (args && *args == ' ')
-        args++;
+    args = args_skip_ws(args);
     if (!args || !*args || strcmp(args, "status") == 0) {
         ed_set_status_message("autosave: %s, idle=%dms, cap=%dMB",
                               g_enabled ? "on" : "off", AUTOSAVE_IDLE_MS,
                               AUTOSAVE_MAX_BYTES / (1024 * 1024));
-        return;
-    }
-    if (strcmp(args, "on") == 0) {
-        g_enabled = 1;
-        ed_set_status_message("autosave: on");
-        return;
-    }
-    if (strcmp(args, "off") == 0) {
-        g_enabled = 0;
-        ed_loop_timer_cancel("autosave:idle");
-        ed_set_status_message("autosave: off");
-        return;
-    }
-    if (strcmp(args, "toggle") == 0) {
-        g_enabled = !g_enabled;
-        if (!g_enabled)
-            ed_loop_timer_cancel("autosave:idle");
-        ed_set_status_message("autosave: %s", g_enabled ? "on" : "off");
         return;
     }
     if (strcmp(args, "restore") == 0) {
@@ -385,7 +366,15 @@ static void cmd_autosave(const char *args) {
         ed_set_status_message("autosave: flushed");
         return;
     }
-    ed_set_status_message("autosave: unknown subcommand '%s'", args);
+    int v = args_tristate(args, g_enabled);
+    if (v < 0) {
+        ed_set_status_message("autosave: unknown subcommand '%s'", args);
+        return;
+    }
+    g_enabled = v;
+    if (!g_enabled)
+        ed_loop_timer_cancel("autosave:idle");
+    ed_set_status_message("autosave: %s", g_enabled ? "on" : "off");
 }
 
 /* ---------- plugin lifecycle ---------- */

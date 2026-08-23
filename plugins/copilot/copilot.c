@@ -732,110 +732,120 @@ static void kb_accept(void) {
 
 /* ----- commands ----- */
 
+static void cp_sub_status(const char *rest) {
+    (void)rest;
+    if (!CP.spawned) {
+        ed_set_status_message("copilot: not running");
+        return;
+    }
+    if (!CP.initialized) {
+        ed_set_status_message("copilot: initializing...");
+        return;
+    }
+    if (!CP.signed_in) {
+        ed_set_status_message("copilot: not signed in");
+        return;
+    }
+    ed_set_status_message("copilot: signed in as %s, %s", CP.user_login,
+                          g_enabled ? "enabled" : "disabled");
+    cp_proto_request("checkStatus", cJSON_CreateObject(), CP_REQ_CHECK_STATUS);
+}
+
+static void cp_sub_enable(const char *rest) {
+    (void)rest;
+    g_enabled = 1;
+    ed_set_status_message("copilot: enabled");
+}
+
+static void cp_sub_disable(const char *rest) {
+    (void)rest;
+    g_enabled = 0;
+    cp_dismiss();
+    ed_set_status_message("copilot: disabled");
+}
+
+static void cp_sub_logout(const char *rest) {
+    (void)rest;
+    cp_proto_request("signOut", cJSON_CreateObject(), CP_REQ_SIGN_OUT);
+}
+
+static void cp_sub_login(const char *rest) {
+    if (*rest) {
+        /* :copilot login <userCode>  -> confirm */
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "userCode", rest);
+        cp_proto_request("signInConfirm", params, CP_REQ_SIGN_IN_CONFIRM);
+    } else {
+        /* :copilot login          -> initiate device flow */
+        cp_proto_request("signInInitiate", cJSON_CreateObject(),
+                         CP_REQ_SIGN_IN_INITIATE);
+    }
+}
+
+static void cp_sub_restart(const char *rest) {
+    (void)rest;
+    cp_proto_shutdown();
+    if (cp_proto_spawn() == 0)
+        cp_send_initialize();
+}
+
+static void cp_sub_pane(const char *rest) {
+    (void)rest;
+    int buf_idx = cp_pane_get_or_create_buf();
+    if (buf_idx < 0) {
+        ed_set_status_message("copilot: pane create failed");
+        return;
+    }
+    int win_idx = cp_pane_window_idx(buf_idx);
+    if (win_idx >= 0) {
+        if (win_idx != E.current_window) {
+            E.windows[E.current_window].focus = 0;
+            E.windows[win_idx].focus = 1;
+            E.current_window = win_idx;
+            E.current_buffer = buf_idx;
+        }
+    } else {
+        windows_split_horizontal();
+        Window *w = window_cur();
+        if (w)
+            win_attach_buf(w, &E.buffers[buf_idx]);
+        E.buffers[buf_idx].dirty = 0;
+    }
+    cp_pane_refresh();
+}
+
+static void cp_cycle_alt(int dir) {
+    if (CP.alts_count == 0) {
+        ed_set_status_message("copilot: no suggestions");
+        return;
+    }
+    CP.alts_active = (CP.alts_active + dir + CP.alts_count) % CP.alts_count;
+    cp_show_active(CP.suggestion_line, CP.suggestion_col);
+    cp_pane_refresh();
+}
+
+static void cp_sub_next(const char *rest) {
+    (void)rest;
+    cp_cycle_alt(+1);
+}
+
+static void cp_sub_prev(const char *rest) {
+    (void)rest;
+    cp_cycle_alt(-1);
+}
+
+static const ArgVerb cp_verbs[] = {
+    {"", cp_sub_status},         {"status", cp_sub_status},
+    {"enable", cp_sub_enable},   {"disable", cp_sub_disable},
+    {"logout", cp_sub_logout},   {"login", cp_sub_login},
+    {"restart", cp_sub_restart}, {"pane", cp_sub_pane},
+    {"next", cp_sub_next},       {"prev", cp_sub_prev},
+};
+
 static void cmd_copilot(const char *args) {
-    while (args && *args == ' ')
-        args++;
-    if (!args || !*args || strcmp(args, "status") == 0) {
-        if (!CP.spawned) {
-            ed_set_status_message("copilot: not running");
-            return;
-        }
-        if (!CP.initialized) {
-            ed_set_status_message("copilot: initializing...");
-            return;
-        }
-        if (!CP.signed_in) {
-            ed_set_status_message("copilot: not signed in");
-            return;
-        }
-        ed_set_status_message("copilot: signed in as %s, %s", CP.user_login,
-                              g_enabled ? "enabled" : "disabled");
-        cp_proto_request("checkStatus", cJSON_CreateObject(),
-                         CP_REQ_CHECK_STATUS);
-        return;
-    }
-    if (strcmp(args, "enable") == 0) {
-        g_enabled = 1;
-        ed_set_status_message("copilot: enabled");
-        return;
-    }
-    if (strcmp(args, "disable") == 0) {
-        g_enabled = 0;
-        cp_dismiss();
-        ed_set_status_message("copilot: disabled");
-        return;
-    }
-    if (strcmp(args, "logout") == 0) {
-        cp_proto_request("signOut", cJSON_CreateObject(), CP_REQ_SIGN_OUT);
-        return;
-    }
-    if (strncmp(args, "login", 5) == 0 && (args[5] == '\0' || args[5] == ' ')) {
-        const char *p = args + 5;
-        while (*p == ' ')
-            p++;
-        if (*p) {
-            /* :copilot login <userCode>  -> confirm */
-            cJSON *params = cJSON_CreateObject();
-            cJSON_AddStringToObject(params, "userCode", p);
-            cp_proto_request("signInConfirm", params, CP_REQ_SIGN_IN_CONFIRM);
-        } else {
-            /* :copilot login          -> initiate device flow */
-            cp_proto_request("signInInitiate", cJSON_CreateObject(),
-                             CP_REQ_SIGN_IN_INITIATE);
-        }
-        return;
-    }
-    if (strcmp(args, "restart") == 0) {
-        cp_proto_shutdown();
-        if (cp_proto_spawn() == 0)
-            cp_send_initialize();
-        return;
-    }
-    if (strcmp(args, "pane") == 0) {
-        int buf_idx = cp_pane_get_or_create_buf();
-        if (buf_idx < 0) {
-            ed_set_status_message("copilot: pane create failed");
-            return;
-        }
-        int win_idx = cp_pane_window_idx(buf_idx);
-        if (win_idx >= 0) {
-            if (win_idx != E.current_window) {
-                E.windows[E.current_window].focus = 0;
-                E.windows[win_idx].focus = 1;
-                E.current_window = win_idx;
-                E.current_buffer = buf_idx;
-            }
-        } else {
-            windows_split_horizontal();
-            Window *w = window_cur();
-            if (w)
-                win_attach_buf(w, &E.buffers[buf_idx]);
-            E.buffers[buf_idx].dirty = 0;
-        }
-        cp_pane_refresh();
-        return;
-    }
-    if (strcmp(args, "next") == 0) {
-        if (CP.alts_count == 0) {
-            ed_set_status_message("copilot: no suggestions");
-            return;
-        }
-        CP.alts_active = (CP.alts_active + 1) % CP.alts_count;
-        cp_show_active(CP.suggestion_line, CP.suggestion_col);
-        cp_pane_refresh();
-        return;
-    }
-    if (strcmp(args, "prev") == 0) {
-        if (CP.alts_count == 0) {
-            ed_set_status_message("copilot: no suggestions");
-            return;
-        }
-        CP.alts_active = (CP.alts_active - 1 + CP.alts_count) % CP.alts_count;
-        cp_show_active(CP.suggestion_line, CP.suggestion_col);
-        cp_pane_refresh();
-        return;
-    }
-    ed_set_status_message("copilot: unknown subcommand '%s'", args);
+    if (!args_dispatch(args, cp_verbs,
+                       (int)(sizeof(cp_verbs) / sizeof(*cp_verbs))))
+        ed_set_status_message("copilot: unknown subcommand '%s'", args);
 }
 
 /* ----- plugin lifecycle ----- */

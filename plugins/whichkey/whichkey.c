@@ -397,22 +397,19 @@ static void on_invoke(const HookKeybindInvokeEvent *e) {
 
 /* :whichkey [on|off|toggle|delay <ms>] */
 static void cmd_whichkey(const char *args) {
-    while (args && (*args == ' ' || *args == '\t'))
-        args++;
+    char verb[16];
+    const char *rest = args_skip_ws(args_next_token(args, verb, sizeof(verb)));
 
-    if (args && strncmp(args, "delay", 5) == 0 &&
-        (args[5] == ' ' || args[5] == '\t' || args[5] == '\0')) {
-        const char *p = args + 5;
-        while (*p == ' ' || *p == '\t')
-            p++;
-        if (!*p) {
+    if (strcmp(verb, "delay") == 0) {
+        if (!*rest) {
             ed_set_status_message("whichkey: delay = %d ms", wk_delay_ms);
             return;
         }
         char *end = NULL;
-        long v = strtol(p, &end, 10);
-        if (end == p || v < 0 || v > 60000) {
-            ed_set_status_message("whichkey: bad delay '%s' (0..60000 ms)", p);
+        long v = strtol(rest, &end, 10);
+        if (end == rest || v < 0 || v > 60000) {
+            ed_set_status_message("whichkey: bad delay '%s' (0..60000 ms)",
+                                  rest);
             return;
         }
         wk_delay_ms = (int)v;
@@ -420,14 +417,8 @@ static void cmd_whichkey(const char *args) {
         return;
     }
 
-    int want;
-    if (!args || !*args || strcmp(args, "toggle") == 0) {
-        want = !wk_enabled;
-    } else if (strcmp(args, "on") == 0) {
-        want = 1;
-    } else if (strcmp(args, "off") == 0) {
-        want = 0;
-    } else {
+    int want = args_tristate(args, wk_enabled);
+    if (want < 0) {
         ed_set_status_message(
             "whichkey: unknown arg '%s' (use on|off|toggle|delay <ms>)", args);
         return;

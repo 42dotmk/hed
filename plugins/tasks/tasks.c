@@ -525,15 +525,9 @@ static void cmd_task_field(const char *args) {
         return;
     }
     char key[64];
-    const char *p = args;
-    while (*p == ' ')
-        p++;
-    int ki = 0;
-    while (*p && *p != ' ' && ki < (int)sizeof(key) - 1)
-        key[ki++] = *p++;
-    key[ki] = '\0';
-    while (*p == ' ')
-        p++; /* p now at value (possibly empty) */
+    const char *p = args_skip_ws(args_next_token(args, key, sizeof(key)));
+    int ki = (int)strlen(key);
+    /* p now at value (possibly empty) */
 
     Buffer *buf;
     int hy = cursor_heading(&buf);

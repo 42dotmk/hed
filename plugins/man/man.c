@@ -176,17 +176,9 @@ static void cmd_man(const char *args) {
         return;
     }
 
-    while (*args == ' ')
-        args++;
-
     /* Pull the first whitespace-separated word. */
     char first[64];
-    size_t fi = 0;
-    while (*args && *args != ' ' && *args != '\t' && fi + 1 < sizeof(first))
-        first[fi++] = *args++;
-    first[fi] = '\0';
-    while (*args == ' ' || *args == '\t')
-        args++;
+    args = args_skip_ws(args_next_token(args, first, sizeof(first)));
 
     if (*args && first[0] && isdigit((unsigned char)first[0])) {
         /* ":man <section> <topic>" */

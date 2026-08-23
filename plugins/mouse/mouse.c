@@ -208,14 +208,8 @@ static void on_mouse(const MouseEvent *ev) {
 }
 
 static void cmd_mouse(const char *args) {
-    int on;
-    if (!args || !*args || strcmp(args, "toggle") == 0)
-        on = !term_mouse_get();
-    else if (strcmp(args, "on") == 0)
-        on = 1;
-    else if (strcmp(args, "off") == 0)
-        on = 0;
-    else {
+    int on = args_tristate(args, term_mouse_get());
+    if (on < 0) {
         ed_set_status_message("usage: mouse [on|off|toggle]");
         return;
     }

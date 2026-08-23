@@ -892,16 +892,12 @@ static void cmd_mc_sync(const char *args) {
      * (an even cursor count would toggle it back to where it was). */
     if (in_replay)
         return;
-    if (!args || !*args || strcmp(args, "toggle") == 0) {
-        mc_sync = !mc_sync;
-    } else if (strcmp(args, "on") == 0) {
-        mc_sync = 1;
-    } else if (strcmp(args, "off") == 0) {
-        mc_sync = 0;
-    } else {
+    int v = args_tristate(args, mc_sync);
+    if (v < 0) {
         ed_set_status_message("usage: mc_sync [on|off|toggle]");
         return;
     }
+    mc_sync = v;
     ed_set_status_message("multicursor: sync %s%s", mc_sync ? "on" : "off",
                           mc_sync ? " (edits replay at every cursor)" : "");
 }
@@ -909,15 +905,8 @@ static void cmd_mc_sync(const char *args) {
 static void cmd_mc_debug(const char *args) {
     if (in_replay)
         return; /* global switch — same replay hazard as mc_sync */
-    if (!args || !*args) {
-        mc_debug = !mc_debug;
-    } else if (strcmp(args, "on") == 0) {
-        mc_debug = 1;
-    } else if (strcmp(args, "off") == 0) {
-        mc_debug = 0;
-    } else {
-        mc_debug = !mc_debug;
-    }
+    int v = args_tristate(args, mc_debug);
+    mc_debug = v < 0 ? !mc_debug : v;
     ed_set_status_message("multicursor: debug %s", mc_debug ? "on" : "off");
 }
 

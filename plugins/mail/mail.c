@@ -131,29 +131,20 @@ static void cmd_mail_attach(const char *args) {
     const char *dest = NULL;
     int saving = 0;
 
-    const char *p = args ? args : "";
-    while (*p == ' ')
-        p++;
+    char verb[16];
+    const char *p = args_skip_ws(args_next_token(args, verb, sizeof(verb)));
 
-    if (strncmp(p, "save", 4) == 0 && (p[4] == '\0' || p[4] == ' ')) {
+    if (strcmp(verb, "save") == 0) {
         saving = 1;
-        p += 4;
-        while (*p == ' ')
-            p++;
         /* Optional id (digits) then optional dir. */
         if (*p >= '0' && *p <= '9') {
-            id = atoi(p);
-            while (*p >= '0' && *p <= '9')
-                p++;
-            while (*p == ' ')
-                p++;
+            char num[16];
+            p = args_skip_ws(args_next_token(p, num, sizeof(num)));
+            id = atoi(num);
         }
-        if (*p)
-            dest = p;
-        else
-            dest = "~/Downloads";
-    } else if (*p) {
-        id = atoi(p);
+        dest = *p ? p : "~/Downloads";
+    } else if (verb[0]) {
+        id = atoi(verb);
     }
 
     mail_attach_action(id, saving ? dest : NULL);

@@ -56,19 +56,11 @@ static void cmd_goto(const char *args) {
 
     /* Otherwise: motion symbol, optionally followed by a count. */
     char motion[32];
-    int mi = 0;
-    while (*args && *args != ' ' && *args != '\t' &&
-           mi < (int)sizeof(motion) - 1) {
-        motion[mi++] = *args++;
-    }
-    motion[mi] = '\0';
-    if (mi == 0) {
+    args = args_skip_ws(args_next_token(args, motion, sizeof(motion)));
+    if (!motion[0]) {
         ed_set_status_message(":goto: empty motion");
         return;
     }
-
-    while (*args == ' ' || *args == '\t')
-        args++;
     int count = 1;
     if (*args) {
         char *end;
@@ -266,14 +258,8 @@ static void cmd_vt_demo_block(const char *args) {
 /* :modeless on|off|toggle — toggle the global "always-insert" redirect.
  * When on, NORMAL mode is unreachable. */
 static void cmd_modeless(const char *args) {
-    int target;
-    if (!args || !*args || strcmp(args, "toggle") == 0) {
-        target = !ed_is_modeless();
-    } else if (strcmp(args, "on") == 0 || strcmp(args, "1") == 0) {
-        target = 1;
-    } else if (strcmp(args, "off") == 0 || strcmp(args, "0") == 0) {
-        target = 0;
-    } else {
+    int target = args_tristate(args, ed_is_modeless());
+    if (target < 0) {
         ed_set_status_message("modeless: usage on|off|toggle");
         return;
     }
