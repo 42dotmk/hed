@@ -64,15 +64,11 @@ static int vim_keybinds_init(void) {
     register_text_objects();
 
     /* --- Insert mode --- */
-    mapi("<Esc>", kb_insert_escape, "exit insert");
-    mapi("<CR>", kb_insert_newline, "new line");
-    mapi("<Tab>", kb_insert_tab, "insert tab");
-    mapi("<BS>", kb_insert_backspace, "backspace");
+    /* Esc/CR/Tab/BS + arrow motion/selection, shared with the emacs
+     * and vscode keymaps. Core drops unbound control keys in insert
+     * mode, so these bindings are what make Enter/Backspace work. */
+    keybind_register_modeless_basics();
     mapi("<C-h>", kb_insert_backspace, "backspace");
-    cmapi("<Up>", "goto up", "move up");
-    cmapi("<Down>", "goto down", "move down");
-    cmapi("<Left>", "goto left", "move left");
-    cmapi("<Right>", "goto right", "move right");
     cmapn("/", "search", "search");
 
     cmapn("O", "new_line_above", "new line above");
@@ -95,10 +91,6 @@ static int vim_keybinds_init(void) {
     cmapv("j", "extend down", "down");
     cmapv("k", "extend up", "up");
     cmapv("l", "extend right", "right");
-    cmapv("<Left>", "extend left", "left");
-    cmapv("<Down>", "extend down", "down");
-    cmapv("<Up>", "extend up", "up");
-    cmapv("<Right>", "extend right", "right");
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
      * cmapv covers all three visual modes. */
     cmapv("y", "yank", "yank");
