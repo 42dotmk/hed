@@ -28,18 +28,6 @@
 #define HED_MAN_DIR ""
 #endif
 
-static int find_man_buffer(const char *title) {
-    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
-        Buffer *b = &E.buffers[i];
-        if (!b || !b->title || !b->filetype)
-            continue;
-        if (strcmp(b->filetype, MAN_FILETYPE) == 0 &&
-            strcmp(b->title, title) == 0)
-            return i;
-    }
-    return -1;
-}
-
 static void open_man_page(const char *topic, const char *section) {
     if (!topic || !*topic) {
         ed_set_status_message("man: missing topic");
@@ -52,7 +40,7 @@ static void open_man_page(const char *topic, const char *section) {
     else
         snprintf(title, sizeof(title), "[man %s]", topic);
 
-    int existing = find_man_buffer(title);
+    int existing = buf_special_find(title);
     if (existing >= 0) {
         buf_switch(existing);
         ed_set_status_message("man: %s", title);
@@ -96,15 +84,15 @@ static void open_man_page(const char *topic, const char *section) {
         return;
     }
 
-    int idx = -1;
-    if (buf_open_readonly(title, MAN_FILETYPE, NULL, 0, &idx) != ED_OK) {
+    BufSpecial spec = {.name = title, .filetype = MAN_FILETYPE, .readonly = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
         term_cmd_free(lines, lcnt);
         ed_set_status_message("man: failed to create buffer");
         return;
     }
     Buffer *buf = &E.buffers[idx];
-    for (int i = 0; i < lcnt; i++)
-        buf_row_insert_in(buf, buf->num_rows, lines[i], strlen(lines[i]));
+    buf_special_add_lines(buf, lines, lcnt);
     term_cmd_free(lines, lcnt);
     buf->dirty = 0;
 

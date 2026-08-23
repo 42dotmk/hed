@@ -28,23 +28,11 @@ static void sl_repopulate(void) {
     if (!sl.active)
         return;
     Buffer *buf = &E.buffers[sl.buf_idx];
-    while (buf->num_rows > 0)
-        buf_row_del_in(buf, 0);
-    for (int i = 0; i < sl.count; i++) {
-        const char *prefix = (i == sl.selected) ? "> " : "  ";
-        size_t plen = 2;
-        size_t ilen = strlen(sl.items[i]);
-        char *line = malloc(plen + ilen + 1);
-        if (!line)
-            continue;
-        memcpy(line, prefix, plen);
-        memcpy(line + plen, sl.items[i], ilen);
-        line[plen + ilen] = '\0';
-        buf_row_insert_in(buf, i, line, plen + ilen);
-        free(line);
-    }
+    buf_special_clear(buf);
+    for (int i = 0; i < sl.count; i++)
+        buf_special_addf(buf, "%s%s", (i == sl.selected) ? "> " : "  ",
+                         sl.items[i]);
     buf->dirty = 0;
-    buf->readonly = 1;
 
     if (sl.modal) {
         if (sl.selected < sl.modal->row_offset)
@@ -66,14 +54,10 @@ static void sl_close(void) {
     memset(&sl, 0, sizeof(sl));
     sl.buf_idx = -1;
 
-    if (modal) {
-        winmodal_hide(modal);
+    if (buf_idx >= 0)
+        buf_special_close(buf_idx); /* tears down the modal showing it */
+    else if (modal)
         winmodal_destroy(modal);
-    }
-    if (buf_idx >= 0 && buf_idx < (int)arrlen(E.buffers)) {
-        E.buffers[buf_idx].dirty = 0;
-        buf_close(buf_idx);
-    }
     for (int i = 0; i < count; i++)
         free(items[i]);
     free(items);
@@ -133,12 +117,12 @@ static void sl_keypress(HookKeyEvent *event) {
 
 static int sl_attach(Window *modal, const char *const *items, int count,
                      SelectListCallback cb, void *user) {
-    int buf_idx = -1;
-    if (buf_new_scratch("select", &buf_idx) != ED_OK) {
+    BufSpecial spec = {.title = "select", .readonly = 1};
+    int buf_idx = buf_special_get(&spec, NULL);
+    if (buf_idx < 0) {
         winmodal_destroy(modal);
         return -1;
     }
-    Buffer *buf = &E.buffers[buf_idx];
 
     modal->buffer_index = buf_idx;
 
@@ -153,8 +137,7 @@ static int sl_attach(Window *modal, const char *const *items, int count,
     if (!sl.items) {
         memset(&sl, 0, sizeof(sl));
         sl.buf_idx = -1;
-        buf->dirty = 0;
-        buf_close(buf_idx);
+        buf_special_close(buf_idx);
         winmodal_destroy(modal);
         return -1;
     }
@@ -225,16 +208,8 @@ static void cmd_selectlist_demo(const char *args) {
     }
     Window *cur = &E.windows[E.current_window];
 
-    int anchor_y = (cur->cursor.y - cur->row_offset) + cur->top;
-    int anchor_x = cur->left;
-    Buffer *buf =
-        (cur->buffer_index >= 0 && cur->buffer_index < (int)arrlen(E.buffers))
-            ? &E.buffers[cur->buffer_index]
-            : NULL;
-    if (buf && cur->cursor.y < buf->num_rows) {
-        int rx = buf_row_cx_to_rx(&buf->rows[cur->cursor.y], cur->cursor.x);
-        anchor_x = (rx - cur->col_offset) + cur->left;
-    }
+    int anchor_x, anchor_y;
+    win_cursor_screen_pos(cur, &anchor_x, &anchor_y);
 
     selectlist_open_anchored(anchor_x, anchor_y, 24, demo, n, WMODAL_AUTO,
                              on_demo_pick, NULL);

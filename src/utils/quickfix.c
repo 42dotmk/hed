@@ -4,6 +4,7 @@
 #include "hooks.h"
 #include "lib/safe_string.h"
 #include "lib/vector.h"
+#include "utils/buf_special.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,27 +47,15 @@ Buffer *qf_get_or_create_buffer(Qf *qf) {
     if (buf)
         return buf;
 
-    int idx = -1;
-    if (buf_new(NULL, &idx) != ED_OK) {
+    BufSpecial spec = {.title = QF_BUFFER_TITLE,
+                       .filetype = QF_BUFFER_FILETYPE,
+                       .readonly = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
         ed_set_status_message("Quickfix: failed to create buffer");
         return NULL;
     }
-    if (!BOUNDS_CHECK(idx, arrlen(E.buffers)))
-        return NULL;
-    buf = &E.buffers[idx];
-
-    if (buf->title)
-        free(buf->title);
-    buf->title = strdup(QF_BUFFER_TITLE);
-    if (!buf->title)
-        buf->title = strdup("[No Name]");
-
-    if (buf->filetype)
-        free(buf->filetype);
-    buf->filetype = strdup(QF_BUFFER_FILETYPE);
-
-    buf->readonly = 1;
-    return buf;
+    return &E.buffers[idx];
 }
 
 /* Keep the quickfix window's cursor/scroll aligned with qf->sel and
@@ -130,33 +119,6 @@ static void qf_update_window_view(Qf *qf) {
  * window/markers after updating E.qf.sel. */
 void qf_update_view(Qf *qf) { qf_update_window_view(qf); }
 
-/* Local helper to insert a row into a buffer (mirrors buf_row_insert_in). */
-static void qf_buf_row_insert(Buffer *buf, int at, const char *s, size_t len) {
-    if (!buf)
-        return;
-    if (at < 0 || at > buf->num_rows)
-        return;
-
-    Row *new_rows = realloc(buf->rows, sizeof(Row) * (buf->num_rows + 1));
-    if (!new_rows) {
-        ed_set_status_message("Quickfix: out of memory");
-        return;
-    }
-    buf->rows = new_rows;
-    memmove(&buf->rows[at + 1], &buf->rows[at],
-            sizeof(Row) * (buf->num_rows - at));
-
-    buf->rows[at].chars = strbuf_from(s, len);
-    buf->rows[at].render = strbuf_new();
-    buf_row_update(&buf->rows[at]);
-
-    buf->num_rows++;
-    buf->dirty++;
-
-    HookLineEvent event = {buf, at, s, len};
-    hook_fire_line(HOOK_LINE_INSERT, &event);
-}
-
 /* Rebuild the quickfix buffer contents from the Qf items. */
 static void qf_sync_buffer(Qf *qf) {
     if (!qf)
@@ -165,34 +127,19 @@ static void qf_sync_buffer(Qf *qf) {
     if (!buf)
         return;
 
-    /* Clear existing rows */
-    for (int i = 0; i < buf->num_rows; i++) {
-        row_free(&buf->rows[i]);
-    }
-    free(buf->rows);
-    buf->rows = NULL;
-    buf->num_rows = 0;
+    buf_special_clear(buf);
 
     /* Rebuild from items */
     int sel = (qf->sel >= 0 && qf->sel < (int)arrlen(qf->items)) ? qf->sel : -1;
     for (int i = 0; i < (int)arrlen(qf->items); i++) {
         const QfItem *it = &qf->items[i];
-        char line[512];
-        int l;
-        if (it->filename && it->filename[0]) {
-            l = snprintf(line, sizeof(line), "%c %s:%d:%d: %s",
-                         (i == sel) ? '*' : ' ', it->filename, it->line,
-                         it->col, it->text ? it->text : "");
-        } else {
-            l = snprintf(line, sizeof(line), "%c %d:%d: %s",
-                         (i == sel) ? '*' : ' ', it->line, it->col,
-                         it->text ? it->text : "");
-        }
-        if (l < 0)
-            l = 0;
-        if (l > (int)sizeof(line))
-            l = (int)sizeof(line);
-        qf_buf_row_insert(buf, buf->num_rows, line, (size_t)l);
+        if (it->filename && it->filename[0])
+            buf_special_addf(buf, "%c %s:%d:%d: %s", (i == sel) ? '*' : ' ',
+                             it->filename, it->line, it->col,
+                             it->text ? it->text : "");
+        else
+            buf_special_addf(buf, "%c %d:%d: %s", (i == sel) ? '*' : ' ',
+                             it->line, it->col, it->text ? it->text : "");
     }
 
     /* Quickfix buffer is virtual; don't mark it dirty. */

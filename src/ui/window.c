@@ -80,6 +80,26 @@ void win_attach_buf(Window *win, Buffer *buf) {
     }
 }
 
+void win_cursor_screen_pos(const Window *win, int *out_x, int *out_y) {
+    int x = 1, y = 1;
+    if (win) {
+        y = (win->cursor.y - win->row_offset) + win->top;
+        x = win->left;
+        Buffer *b = (win->buffer_index >= 0 &&
+                     win->buffer_index < (int)arrlen(E.buffers))
+                        ? &E.buffers[win->buffer_index]
+                        : NULL;
+        if (b && win->cursor.y < b->num_rows) {
+            int rx = buf_row_cx_to_rx(&b->rows[win->cursor.y], win->cursor.x);
+            x = (rx - win->col_offset) + win->left;
+        }
+    }
+    if (out_x)
+        *out_x = x;
+    if (out_y)
+        *out_y = y;
+}
+
 void windows_split_vertical(void) {
     WIN(win)
     int prev_idx = E.current_window;

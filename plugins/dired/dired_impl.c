@@ -79,19 +79,6 @@ static void dired_state_remove(Buffer *buf) {
     arrdel(dired_states, idx);
 }
 
-static void dired_clear_buffer(Buffer *buf) {
-    if (!buf)
-        return;
-    for (int i = 0; i < buf->num_rows; i++) {
-        row_free(&buf->rows[i]);
-    }
-    free(buf->rows);
-    buf->rows = NULL;
-    buf->num_rows = 0;
-    buf->cursor->x = 0;
-    buf->cursor->y = 0;
-}
-
 typedef struct {
     char name[PATH_MAX];
     int is_dir;
@@ -250,7 +237,7 @@ static int dired_list_dir(DiredState *st, const char *dir) {
         qsort(entries, count, sizeof(DiredEntry), dired_entry_cmp);
 
     Buffer *buf = st->buf;
-    dired_clear_buffer(buf);
+    buf_special_clear(buf);
 
     /* Reset snapshot for the new listing */
     arr_reset(st->snapshot);
@@ -308,20 +295,18 @@ void dired_open(const char *path) {
         return;
     }
 
-    int idx = -1;
-    if (buf_new(resolved, &idx) != ED_OK) {
+    /* Editable (readonly = 0): the user adds/removes/renames lines,
+     * then :w commits the plan. */
+    BufSpecial spec = {.name = resolved,
+                       .title = "dired",
+                       .filetype = "dired",
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
         ed_set_status_message("dired: failed to open buffer");
         return;
     }
-
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);
-    buf->title = strdup("dired");
-    free(buf->filetype);
-    buf->filetype = strdup("dired");
-    /* Editable: user adds/removes/renames lines, then :w to commit */
-    buf->readonly = 0;
-    buf->dirty = 0;
 
     DiredState *st = dired_state_create(buf, resolved);
     if (!st) {
@@ -331,10 +316,7 @@ void dired_open(const char *path) {
     if (!dired_list_dir(st, resolved))
         return;
 
-    Window *win = window_cur();
-    if (win)
-        win_attach_buf(win, buf);
-    E.current_buffer = idx;
+    buf_special_show(idx);
 }
 
 /* Extract the displayed name (after the optional ID prefix), with trailing
@@ -736,7 +718,7 @@ static struct {
 } dired_pending;
 
 static void dired_render_plan(Buffer *buf, const char *cwd,
-                              const DiredOpVec *ops, int *out_max_w) {
+                              const DiredOpVec *ops) {
     int n_create = 0, n_rename = 0, n_delete = 0;
     for (ptrdiff_t i = 0; i < arrlen(*ops); i++) {
         switch ((*ops)[i].kind) {
@@ -752,19 +734,7 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
         }
     }
 
-    char line[PATH_MAX * 2];
-    int max_w = 0;
-
-#define APPEND(...)                                                            \
-    do {                                                                       \
-        int __n = snprintf(line, sizeof(line), __VA_ARGS__);                   \
-        if (__n < 0)                                                           \
-            __n = 0;                                                           \
-        if (__n > max_w)                                                       \
-            max_w = __n;                                                       \
-        buf_row_insert_in(buf, buf->num_rows, line,                            \
-                          (size_t)strnlen(line, sizeof(line)));                \
-    } while (0)
+#define APPEND(...) buf_special_addf(buf, __VA_ARGS__)
 
     APPEND("dired: confirm changes");
     APPEND("in: %s", cwd);
@@ -804,54 +774,28 @@ static void dired_render_plan(Buffer *buf, const char *cwd,
     APPEND("y: apply   n / q / <Esc>: cancel   j / k: scroll");
 
 #undef APPEND
-
-    if (out_max_w)
-        *out_max_w = max_w;
 }
 
 static int dired_show_confirm_modal(DiredState *st, DiredOpVec ops) {
     int dired_idx = (int)(st->buf - E.buffers);
 
-    int buf_idx = -1;
-    if (buf_new(NULL, &buf_idx) != ED_OK) {
-        ed_set_status_message("dired: confirm modal: buf_new failed");
+    BufSpecial spec = {
+        .title = "dired confirm", .filetype = "dired_confirm", .readonly = 1};
+    int buf_idx = buf_special_get(&spec, NULL);
+    if (buf_idx < 0) {
+        ed_set_status_message("dired: confirm modal: buffer create failed");
         arrfree(ops);
         return 0;
     }
     Buffer *cb = &E.buffers[buf_idx];
-    free(cb->filename);
-    cb->filename = NULL;
-    free(cb->title);
-    cb->title = strdup("dired confirm");
-    free(cb->filetype);
-    cb->filetype = strdup("dired_confirm");
+    dired_render_plan(cb, st->cwd, &ops);
 
-    int max_w = 0;
-    dired_render_plan(cb, st->cwd, &ops, &max_w);
-    cb->dirty = 0;
-    cb->readonly = 1;
-
-    int width = max_w + 2;
-    if (width < 32)
-        width = 32;
-    if (width > E.screen_cols - 6)
-        width = E.screen_cols - 6;
-    int height = cb->num_rows;
-    if (height < 5)
-        height = 5;
-    if (height > E.screen_rows - 6)
-        height = E.screen_rows - 6;
-
-    Window *modal = winmodal_create(-1, -1, width, height);
+    Window *modal = buf_special_show_modal(buf_idx, -1, -1);
     if (!modal) {
-        cb->dirty = 0;
-        buf_close(buf_idx);
         arrfree(ops);
         ed_set_status_message("dired: confirm modal: winmodal_create failed");
         return 0;
     }
-    modal->buffer_index = buf_idx;
-    winmodal_show(modal);
 
     dired_pending.active = 1;
     dired_pending.dired_buf_idx = dired_idx;
@@ -877,17 +821,15 @@ static void dired_dismiss_pending(int do_apply) {
     dired_pending.dired_buf_idx = -1;
     dired_pending.confirm_buf_idx = -1;
 
-    if (modal) {
-        winmodal_hide(modal);
-        winmodal_destroy(modal);
-    }
-
-    /* Closing the confirm buffer shifts higher indices down by one. */
+    /* Closing the confirm buffer shifts higher indices down by one;
+     * buf_special_close also tears down the modal showing it. */
     if (confirm_idx >= 0 && confirm_idx < (int)arrlen(E.buffers)) {
-        E.buffers[confirm_idx].dirty = 0;
-        buf_close(confirm_idx);
+        buf_special_close(confirm_idx);
         if (dired_idx > confirm_idx)
             dired_idx--;
+    } else if (modal) {
+        winmodal_hide(modal);
+        winmodal_destroy(modal);
     }
 
     Buffer *dbuf = NULL;

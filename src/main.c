@@ -1,3 +1,4 @@
+#include "buf/buf_helpers.h"
 #include "buf/buffer.h"
 #include "commands/registry.h"
 #include "editor.h"
@@ -9,6 +10,7 @@
 #include "stb_ds.h"
 #include "terminal.h"
 #include "ui/window.h"
+#include "utils/buf_special.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -255,38 +257,16 @@ static void open_pipe_buffer(void) {
     if (!g_pipe_buf)
         return;
 
-    int idx = -1;
-    if (buf_new(NULL, &idx) != ED_OK) {
+    BufSpecial spec = {.title = "[stdin]", .readonly = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
         free(g_pipe_buf);
         g_pipe_buf = NULL;
         g_pipe_len = 0;
         return;
     }
-    Buffer *b = &E.buffers[idx];
-    free(b->filename);
-    b->filename = NULL;
-    free(b->title);
-    b->title = strdup("[stdin]");
-
-    /* Split on '\n', tolerant of an optional trailing '\r'. */
-    size_t start = 0;
-    for (size_t i = 0; i <= g_pipe_len; i++) {
-        if (i == g_pipe_len || g_pipe_buf[i] == '\n') {
-            size_t llen = i - start;
-            if (llen > 0 && g_pipe_buf[start + llen - 1] == '\r')
-                llen--;
-            buf_row_insert_in(b, b->num_rows, g_pipe_buf + start, llen);
-            start = i + 1;
-        }
-    }
-
-    b->dirty = 0;
-    b->readonly = 1;
-
-    E.current_buffer = idx;
-    Window *win = window_cur();
-    if (win)
-        win->buffer_index = idx;
+    buf_append_text_lines(&E.buffers[idx], g_pipe_buf, g_pipe_len);
+    buf_special_show(idx);
 
     free(g_pipe_buf);
     g_pipe_buf = NULL;

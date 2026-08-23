@@ -321,10 +321,9 @@ static void lsp_show_popup(const char *title, const char *text) {
     }
     log_msg("LSP popup [%s]: %s", title, text);
 
-    /* First pass: split lines, skip bare file paths, measure dimensions.
+    /* First pass: split lines, skip bare file paths, count content lines.
      * A "bare path" is a line whose first non-space char is '/' and contains
      * no spaces — clangd appends these after the actual hover content. */
-    int max_width = 0;
     int nlines = 0;
     char src_label[256] = {0}; /* basename of the last skipped path line */
     const char *p = text;
@@ -357,8 +356,6 @@ static void lsp_show_popup(const char *title, const char *text) {
             memcpy(src_label, slash, (size_t)blen);
             src_label[blen] = '\0';
         } else {
-            if (w > max_width)
-                max_width = w;
             nlines++;
         }
         p += len + (p[len] == '\n' ? 1 : 0);
@@ -369,25 +366,12 @@ static void lsp_show_popup(const char *title, const char *text) {
         return;
     }
 
-    /* Cap dimensions to screen, leave room for border (drawn outside rect) */
-    int width = max_width;
-    int height = nlines;
-    if (width < 20)
-        width = 20;
-    if (width > E.screen_cols - 6)
-        width = E.screen_cols - 6;
-    if (height > E.screen_rows - 6)
-        height = E.screen_rows - 6;
-
-    /* Create scratch buffer — no filename (no top title), title = src label */
-    int buf_idx = -1;
-    if (buf_new(NULL, &buf_idx) != ED_OK)
+    /* Scratch buffer — no filename (no top title), title = src label */
+    BufSpecial spec = {.title = src_label[0] ? src_label : NULL, .readonly = 1};
+    int buf_idx = buf_special_get(&spec, NULL);
+    if (buf_idx < 0)
         return;
     Buffer *buf = &E.buffers[buf_idx];
-    free(buf->filename);
-    buf->filename = NULL;
-    free(buf->title);
-    buf->title = src_label[0] ? strdup(src_label) : NULL;
 
     /* Second pass: insert non-path lines into the buffer */
     p = text;
@@ -423,18 +407,10 @@ static void lsp_show_popup(const char *title, const char *text) {
         free(line);
         p += len + (p[len] == '\n' ? 1 : 0);
     }
-    buf->dirty = 0; /* reset so buf_close won't block */
-    buf->readonly = 1;
-
-    /* Create and show centered modal */
-    Window *modal = winmodal_create(-1, -1, width, height);
-    if (!modal) {
-        buf->dirty = 0;
-        buf_close(buf_idx);
+    /* Show as a centered modal sized from the content. */
+    Window *modal = buf_special_show_modal(buf_idx, -1, -1);
+    if (!modal)
         return;
-    }
-    modal->buffer_index = buf_idx;
-    winmodal_show(modal);
     lsp_popup_track(modal);
     ed_set_status_message("q/<Esc> close  j/k scroll");
 }
@@ -579,20 +555,8 @@ static void lsp_handle_completion_result(LspServer *srv, const LspPending *pop,
     ctx->n = kept;
 
     /* Anchor at the buffer's current cursor (in screen cells). */
-    Window *cur = arrlen(E.windows) > 0 ? &E.windows[E.current_window] : NULL;
-    int anchor_x = 1, anchor_y = 1;
-    if (cur) {
-        anchor_y = (cur->cursor.y - cur->row_offset) + cur->top;
-        anchor_x = cur->left;
-        Buffer *cb = (cur->buffer_index >= 0 &&
-                      cur->buffer_index < (int)arrlen(E.buffers))
-                         ? &E.buffers[cur->buffer_index]
-                         : NULL;
-        if (cb && cur->cursor.y < cb->num_rows) {
-            int rx = buf_row_cx_to_rx(&cb->rows[cur->cursor.y], cur->cursor.x);
-            anchor_x = (rx - cur->col_offset) + cur->left;
-        }
-    }
+    int anchor_x, anchor_y;
+    win_cursor_screen_pos(window_cur(), &anchor_x, &anchor_y);
 
     int rc = selectlist_open_anchored(anchor_x, anchor_y, 40,
                                       (const char *const *)labels, kept,

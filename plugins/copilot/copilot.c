@@ -53,36 +53,16 @@ static int cp_cursor_at_eol(Buffer *buf) {
 #define COPILOT_PANE_TITLE "[copilot]"
 
 static int cp_pane_buf_idx(void) {
-    for (int i = 0; i < (int)arrlen(E.buffers); i++) {
-        const char *t = E.buffers[i].title;
-        if (t && strcmp(t, COPILOT_PANE_TITLE) == 0)
-            return i;
-    }
-    return -1;
+    return buf_special_find(COPILOT_PANE_TITLE);
 }
 
 static int cp_is_pane_buf(const Buffer *b) {
     return b && b->title && strcmp(b->title, COPILOT_PANE_TITLE) == 0;
 }
 
-static int cp_pane_window_idx(int buf_idx) {
-    for (int i = 0; i < (int)arrlen(E.windows); i++) {
-        Window *w = &E.windows[i];
-        if (w->visible && !w->is_modal && w->buffer_index == buf_idx)
-            return i;
-    }
-    return -1;
-}
-
 static int cp_pane_get_or_create_buf(void) {
-    int idx = cp_pane_buf_idx();
-    if (idx >= 0)
-        return idx;
-    int new_idx = -1;
-    if (buf_new_scratch(COPILOT_PANE_TITLE, &new_idx) != ED_OK)
-        return -1;
-    E.buffers[new_idx].readonly = 1;
-    return new_idx;
+    BufSpecial spec = {.name = COPILOT_PANE_TITLE, .readonly = 1};
+    return buf_special_get(&spec, NULL);
 }
 
 static void cp_pane_refresh(void) {
@@ -90,21 +70,10 @@ static void cp_pane_refresh(void) {
     if (idx < 0)
         return; /* pane not open — nothing to draw */
     Buffer *b = &E.buffers[idx];
-
-    /* Clear existing rows. */
-    for (int i = 0; i < b->num_rows; i++)
-        row_free(&b->rows[i]);
-    free(b->rows);
-    b->rows = NULL;
-    b->num_rows = 0;
-    if (b->cursor) {
-        b->cursor->x = 0;
-        b->cursor->y = 0;
-    }
+    buf_special_clear(b);
 
     if (CP.alts_count == 0) {
-        const char *msg = "(no suggestions)";
-        buf_row_insert_in(b, 0, msg, strlen(msg));
+        buf_special_addf(b, "(no suggestions)");
         b->dirty = 0;
         return;
     }
@@ -796,21 +765,7 @@ static void cp_sub_pane(const char *rest) {
         ed_set_status_message("copilot: pane create failed");
         return;
     }
-    int win_idx = cp_pane_window_idx(buf_idx);
-    if (win_idx >= 0) {
-        if (win_idx != E.current_window) {
-            E.windows[E.current_window].focus = 0;
-            E.windows[win_idx].focus = 1;
-            E.current_window = win_idx;
-            E.current_buffer = buf_idx;
-        }
-    } else {
-        windows_split_horizontal();
-        Window *w = window_cur();
-        if (w)
-            win_attach_buf(w, &E.buffers[buf_idx]);
-        E.buffers[buf_idx].dirty = 0;
-    }
+    buf_special_show_split(buf_idx, 0);
     cp_pane_refresh();
 }
 

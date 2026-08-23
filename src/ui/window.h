@@ -56,6 +56,11 @@ Window *window_cur(void);
 Window *window_find_by_id(int id);
 void win_attach_buf(Window *win, Buffer *buf);
 
+/* Screen cell of `win`'s cursor (accounting for scroll offsets and
+ * render column) — where anchored popups attach. NULL-safe: falls
+ * back to 1,1. */
+void win_cursor_screen_pos(const Window *win, int *out_x, int *out_y);
+
 /* Simple 2-way splits */
 void windows_split_vertical(void);   /* side-by-side */
 void windows_split_horizontal(void); /* stacked */
