@@ -191,6 +191,53 @@ static void ts_default_base(char *out, size_t out_sz) {
     snprintf(out, out_sz, "ts-langs");
 }
 
+/* List the installed grammar names (the *.so basenames in the grammar
+ * dir), sorted. *out_names is a malloc'd array of malloc'd strings;
+ * caller frees both. Returns the count (0 when none / no dir). */
+int ts_list_langs(char ***out_names) {
+    *out_names = NULL;
+    char base[PATH_MAX];
+    ts_default_base(base, sizeof(base));
+    if (!base[0])
+        snprintf(base, sizeof(base), "ts");
+
+    FsDir *d = NULL;
+    if (fs_dir_open(&d, base) != ED_OK)
+        return 0;
+
+    char **names = NULL;
+    int n = 0, cap = 0;
+    FsDirEntry de;
+    while (fs_dir_next(d, &de)) {
+        size_t len = strlen(de.name);
+        if (de.is_dir || len <= 3 || strcmp(de.name + len - 3, ".so") != 0)
+            continue;
+        if (n == cap) {
+            cap = cap ? cap * 2 : 16;
+            char **nn = realloc(names, (size_t)cap * sizeof(*nn));
+            if (!nn)
+                break;
+            names = nn;
+        }
+        char *name = malloc(len - 2);
+        if (!name)
+            continue;
+        memcpy(name, de.name, len - 3);
+        name[len - 3] = '\0';
+        names[n++] = name;
+    }
+    fs_dir_close(d);
+
+    for (int i = 1; i < n; i++) /* insertion sort: n is tiny */
+        for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
+            char *t = names[j];
+            names[j] = names[j - 1];
+            names[j - 1] = t;
+        }
+    *out_names = names;
+    return n;
+}
+
 /* Load a tree-sitter language .so and return its TSLanguage* and dl handle. */
 static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
                         void **out_handle) {

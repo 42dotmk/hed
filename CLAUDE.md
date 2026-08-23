@@ -252,6 +252,7 @@ Defined in `src/config.h` (defaults) and extendable from
 <space>ff       fzf
 <space>fr       recent files
 <space>fc/c     command picker
+<space>ft       tree-sitter language picker (:tslang)
 <space>sd/sa/ss rg / rgword / ssearch in file
 <space>ts       send paragraph to tmux
 <space>tt/tT    tmux toggle / kill

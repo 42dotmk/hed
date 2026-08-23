@@ -42,9 +42,29 @@ static void cmd_ts(const char *args) {
 }
 
 static void cmd_tslang(const char *args) {
+    char picked[64];
     if (!args || !*args) {
-        ed_set_status_message("tslang: <name>");
-        return;
+        /* No arg -> pick from the installed grammars. */
+        char **names = NULL;
+        int n = ts_list_langs(&names);
+        if (n == 0) {
+            ed_set_status_message(
+                "tslang: no grammars installed (:tsi <lang>)");
+            return;
+        }
+        char **sel = NULL;
+        int cnt = 0;
+        int ok = picker_list((const char **)names, n, 0, &sel, &cnt) &&
+                 cnt > 0 && sel[0] && sel[0][0];
+        if (ok)
+            snprintf(picked, sizeof(picked), "%s", sel[0]);
+        picker_list_free(sel, cnt);
+        for (int i = 0; i < n; i++)
+            free(names[i]);
+        free(names);
+        if (!ok)
+            return;
+        args = picked;
     }
     Buffer *b = buf_cur();
     if (!b)
@@ -109,7 +129,8 @@ static void cmd_theme(const char *args) {
 static int treesitter_init(void) {
     ts_seed_default_theme();
     cmd("ts", cmd_ts, "ts on|off|auto");
-    cmd("tslang", cmd_tslang, "tslang <name>");
+    cmd("tslang", cmd_tslang,
+        "set ts language: tslang [name] (no arg: picker)");
     cmd("tsi", cmd_tsi, "install ts lang");
     cmd("theme", cmd_theme, "theme [name]");
     /* Phase-1 renderer abstraction: tree-sitter is the first

@@ -117,6 +117,7 @@ static void config_load_defaults(void) {
     cmapn(" fs", "w", "save file");
     cmapn(" fc", "c", "find commands");
     cmapn(" fm", "keybinds", "find keybinds");
+    cmapn(" ft", "tslang", "pick tree-sitter language");
     cmapn(" hm", "man", "man pages");
     cmapn(" cf", "fmt", "format code");
     cmapn(" qq", "q!", "quit (force)");

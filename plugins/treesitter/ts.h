@@ -8,6 +8,10 @@
 void ts_set_enabled(int on);
 int ts_is_enabled(void);
 
+/* List installed grammar names (sorted *.so basenames from the
+ * grammar dir). Caller frees each name and the array. Returns count. */
+int ts_list_langs(char ***out_names);
+
 /* Seed the highlight registry (see highlight.h) with the bundled
  * theme.h palette. Idempotent: re-seeding restores defaults for any
  * roles a plugin may have overridden. */

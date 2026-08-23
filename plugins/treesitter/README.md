@@ -9,7 +9,7 @@ particular language; you pick what you want.
 | Command | Action |
 |---|---|
 | `:ts on` `:ts off` `:ts auto` | Enable / disable / auto-detect highlighting per buffer |
-| `:tslang <name>` | Force a language for the current buffer |
+| `:tslang [name]` | Force a language for the current buffer; with no arg, pick from the installed grammars (bound to `<space>ft`) |
 | `:tsi <name>` | Install a tree-sitter grammar |
 
 Auto-detection uses the buffer's filetype (file extension or
