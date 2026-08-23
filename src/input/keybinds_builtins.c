@@ -579,18 +579,13 @@ int kb_in_visual(void) {
         body;                                                                  \
     }
 
+/* Only the arrow family keeps drop wrappers — every other plain
+ * motion is a cmap onto :goto / :pageup / :pagedown, which drop the
+ * selection themselves. */
 DROP_THEN(left, kb_move_left())
 DROP_THEN(right, kb_move_right())
 DROP_THEN(up, kb_move_up())
 DROP_THEN(down, kb_move_down())
-DROP_THEN(word_l, kb_goto_word_start())
-DROP_THEN(word_r, kb_goto_word_end())
-DROP_THEN(bol, kb_goto_line_start())
-DROP_THEN(eol, kb_goto_line_end())
-DROP_THEN(file_start, kb_goto_file_start())
-DROP_THEN(file_end, kb_goto_file_end())
-DROP_THEN(page_up, buf_scroll_page_up())
-DROP_THEN(page_down, buf_scroll_page_down())
 
 EXTEND_THEN(left, kb_move_left())
 EXTEND_THEN(right, kb_move_right())

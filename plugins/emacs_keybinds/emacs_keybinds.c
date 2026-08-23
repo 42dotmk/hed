@@ -7,8 +7,8 @@ static int emacs_keybinds_init(void) {
     keybind_register_modeless_basics();
 
     /* Emacs motion (also drops selection). */
-    mapi("<C-a>", kb_drop_bol, "beginning of line");
-    mapi("<C-e>", kb_drop_eol, "end of line");
+    cmapi("<C-a>", "goto 0", "beginning of line");
+    cmapi("<C-e>", "goto $", "end of line");
     mapi("<C-b>", kb_drop_left, "backward char");
     mapi("<C-f>", kb_drop_right, "forward char");
     mapi("<C-n>", kb_drop_down, "next line");
@@ -37,13 +37,13 @@ static int emacs_keybinds_init(void) {
     cmapi("<C-x>u", "undo", "undo");
 
     /* Meta bindings (real M-keys via input layer) */
-    mapi("<M-x>", kb_enter_command_mode, "M-x (command mode)");
-    mapi("<M-f>", kb_drop_word_r, "forward word");
-    mapi("<M-b>", kb_drop_word_l, "backward word");
+    cmapi("<M-x>", "prompt", "M-x (command mode)");
+    cmapi("<M-f>", "goto w", "forward word");
+    cmapi("<M-b>", "goto b", "backward word");
     cmapi("<M-<>", "goto gg", "beginning of buffer");
     cmapi("<M->>", "goto G", "end of buffer");
     cmapi("<M-d>", "delete_eol", "kill word forward (approx)");
-    mapi("<M-w>", kb_visual_yank_selection, "copy region");
+    cmapv("<M-w>", "yank", "copy region");
 
     cmapv("<C-w>", "delete", "kill region (cut)");
 

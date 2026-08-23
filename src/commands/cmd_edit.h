@@ -19,6 +19,8 @@ void cmd_unindent(const char *args);
 void cmd_move_line_up(const char *args);
 void cmd_move_line_down(const char *args);
 void cmd_duplicate_line(const char *args);
+void cmd_page_up(const char *args);
+void cmd_page_down(const char *args);
 void cmd_toggle_case(const char *args);
 void cmd_toggle_comment(const char *args);
 void cmd_replace_char(const char *args);

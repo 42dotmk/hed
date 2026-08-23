@@ -159,20 +159,20 @@ static int vscode_keybinds_init(void) {
     mapv("<C-l>", vsc_select_line, "extend selection by a line");
 
     /* File-edge motion (Ctrl+Home/End) and selection (+Shift). */
-    mapi("<C-Home>", kb_drop_file_start, "start of file");
-    mapi("<C-End>", kb_drop_file_end, "end of file");
-    mapv("<C-Home>", kb_drop_file_start, "start of file");
-    mapv("<C-End>", kb_drop_file_end, "end of file");
+    cmapi("<C-Home>", "goto gg", "start of file");
+    cmapi("<C-End>", "goto G", "end of file");
+    cmapv("<C-Home>", "goto gg", "start of file");
+    cmapv("<C-End>", "goto G", "end of file");
     mapi("<C-S-Home>", kb_extend_file_start, "select to start of file");
     mapi("<C-S-End>", kb_extend_file_end, "select to end of file");
     mapv("<C-S-Home>", kb_extend_file_start, "extend to start of file");
     mapv("<C-S-End>", kb_extend_file_end, "extend to end of file");
 
     /* Paging. */
-    mapi("<PageUp>", kb_drop_page_up, "page up");
-    mapi("<PageDown>", kb_drop_page_down, "page down");
-    mapv("<PageUp>", kb_drop_page_up, "page up");
-    mapv("<PageDown>", kb_drop_page_down, "page down");
+    cmapi("<PageUp>", "pageup", "page up");
+    cmapi("<PageDown>", "pagedown", "page down");
+    cmapv("<PageUp>", "pageup", "page up");
+    cmapv("<PageDown>", "pagedown", "page down");
     mapi("<S-PageUp>", kb_extend_page_up, "select page up");
     mapi("<S-PageDown>", kb_extend_page_down, "select page down");
     mapv("<S-PageUp>", kb_extend_page_up, "extend page up");
@@ -250,12 +250,12 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-k>0", "foldcloseall", "fold all");
 
     /* Word motion. */
-    mapi("<Home>", kb_drop_bol, "beginning of line");
-    mapi("<End>", kb_drop_eol, "end of line");
-    mapi("<C-Left>", kb_drop_word_l, "previous word");
-    mapi("<C-Right>", kb_drop_word_r, "next word");
-    mapv("<C-Left>", kb_drop_word_l, "previous word");
-    mapv("<C-Right>", kb_drop_word_r, "next word");
+    cmapi("<Home>", "goto 0", "beginning of line");
+    cmapi("<End>", "goto $", "end of line");
+    cmapi("<C-Left>", "goto b", "previous word");
+    cmapi("<C-Right>", "goto w", "next word");
+    cmapv("<C-Left>", "goto b", "previous word");
+    cmapv("<C-Right>", "goto w", "next word");
 
     ed_set_modeless(1);
     return 0;

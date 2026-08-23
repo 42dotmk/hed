@@ -35,6 +35,13 @@ static void cmd_goto(const char *args) {
     if (!buf || !win)
         return;
 
+    /* An explicit motion is a plain motion: drop any active selection
+     * first (VSCode / modern-emacs modeless semantics, same as the
+     * kb_drop_* family). Extending is the shifted variant's job;
+     * nothing binds :goto in visual mode expecting extend. */
+    if (kb_in_visual())
+        kb_visual_escape();
+
     while (*args == ' ' || *args == '\t')
         args++;
 
@@ -417,6 +424,8 @@ static void register_commands(void) {
     cmd("center", cmd_center, "center current line on screen");
     cmd("scrollup", cmd_scrollup, "scroll up half a page");
     cmd("scrolldown", cmd_scrolldown, "scroll down half a page");
+    cmd("pageup", cmd_page_up, "page up (drops selection)");
+    cmd("pagedown", cmd_page_down, "page down (drops selection)");
     cmd("search", cmd_search, "open search prompt");
     cmd("search_next", cmd_search_next, "jump to next search match");
     cmd("search_word", cmd_search_word, "search word under cursor");

@@ -94,6 +94,22 @@ void cmd_duplicate_line(const char *args) {
     buf_duplicate_line();
 }
 
+/* Full-page motion. Like :goto, an explicit plain motion drops any
+ * active selection (the shifted variants extend instead). */
+void cmd_page_up(const char *args) {
+    (void)args;
+    if (kb_in_visual())
+        kb_visual_escape();
+    buf_scroll_page_up();
+}
+
+void cmd_page_down(const char *args) {
+    (void)args;
+    if (kb_in_visual())
+        kb_visual_escape();
+    buf_scroll_page_down();
+}
+
 void cmd_unindent(const char *args) {
     (void)args;
     buf_unindent_line();
