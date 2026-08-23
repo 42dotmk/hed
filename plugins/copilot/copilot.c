@@ -808,7 +808,7 @@ static void cmd_copilot(const char *args) {
 static int copilot_init(void) {
     memset(&CP, 0, sizeof(CP));
     CP.to_fd = CP.from_fd = -1;
-    CP.content_length = -1;
+    jrpc_reader_init(&CP.reader);
 
     CP.vt_ns = vtext_ns_create("copilot");
     if (CP.vt_ns >= 0)

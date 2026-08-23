@@ -22,6 +22,7 @@
 
 #include "mcp_server.h"
 #include "hed.h"
+#include "jsonrpc/jsonrpc.h"
 #include "lsp/cjson/cJSON.h"
 #include "select_loop.h"
 
@@ -77,31 +78,6 @@ static void send_message(int fd, cJSON *msg) {
     (void)!write(fd, s, n);
     (void)!write(fd, "\n", 1);
     free(s);
-}
-
-static cJSON *make_response(cJSON *id, cJSON *result) {
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddStringToObject(r, "jsonrpc", "2.0");
-    if (id)
-        cJSON_AddItemReferenceToObject(r, "id", id);
-    else
-        cJSON_AddNullToObject(r, "id");
-    cJSON_AddItemToObject(r, "result", result ? result : cJSON_CreateObject());
-    return r;
-}
-
-static cJSON *make_error(cJSON *id, int code, const char *message) {
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddStringToObject(r, "jsonrpc", "2.0");
-    if (id)
-        cJSON_AddItemReferenceToObject(r, "id", id);
-    else
-        cJSON_AddNullToObject(r, "id");
-    cJSON *err = cJSON_CreateObject();
-    cJSON_AddNumberToObject(err, "code", code);
-    cJSON_AddStringToObject(err, "message", message ? message : "error");
-    cJSON_AddItemToObject(r, "error", err);
-    return r;
 }
 
 /* ---- tool descriptors ---- */
@@ -306,20 +282,20 @@ static cJSON *handle_initialize(cJSON *id) {
     cJSON_AddStringToObject(info, "name", "hed");
     cJSON_AddStringToObject(info, "version", "0.1");
     cJSON_AddItemToObject(result, "serverInfo", info);
-    return make_response(id, result);
+    return jrpc_response(id, result);
 }
 
 static cJSON *handle_tools_list(cJSON *id) {
     cJSON *result = cJSON_CreateObject();
     cJSON_AddItemToObject(result, "tools", tool_descriptors());
-    return make_response(id, result);
+    return jrpc_response(id, result);
 }
 
 static cJSON *handle_tools_call(cJSON *id, cJSON *params) {
     cJSON *jname = cJSON_GetObjectItem(params, "name");
     cJSON *jargs = cJSON_GetObjectItem(params, "arguments");
     if (!cJSON_IsString(jname))
-        return make_error(id, -32602, "tools/call: missing name");
+        return jrpc_error(id, -32602, "tools/call: missing name");
     const char *name = jname->valuestring;
     cJSON *result;
     if (strcmp(name, "read_current_buffer") == 0)
@@ -331,15 +307,15 @@ static cJSON *handle_tools_call(cJSON *id, cJSON *params) {
     else {
         char err[128];
         snprintf(err, sizeof(err), "unknown tool: %s", name);
-        return make_error(id, -32601, err);
+        return jrpc_error(id, -32601, err);
     }
-    return make_response(id, result);
+    return jrpc_response(id, result);
 }
 
 static void dispatch_message(int fd, const char *json, size_t len) {
     cJSON *msg = cJSON_ParseWithLength(json, len);
     if (!msg) {
-        cJSON *err = make_error(NULL, -32700, "parse error");
+        cJSON *err = jrpc_error(NULL, -32700, "parse error");
         send_message(fd, err);
         cJSON_Delete(err);
         return;
@@ -352,7 +328,7 @@ static void dispatch_message(int fd, const char *json, size_t len) {
 
     if (!cJSON_IsString(jmethod)) {
         if (!is_notification) {
-            cJSON *err = make_error(jid, -32600, "method must be string");
+            cJSON *err = jrpc_error(jid, -32600, "method must be string");
             send_message(fd, err);
             cJSON_Delete(err);
         }
@@ -372,11 +348,11 @@ static void dispatch_message(int fd, const char *json, size_t len) {
     } else if (strcmp(method, "tools/call") == 0) {
         resp = handle_tools_call(jid, jparams);
     } else if (strcmp(method, "ping") == 0) {
-        resp = make_response(jid, cJSON_CreateObject());
+        resp = jrpc_response(jid, cJSON_CreateObject());
     } else if (!is_notification) {
         char err[128];
         snprintf(err, sizeof(err), "method not found: %s", method);
-        resp = make_error(jid, -32601, err);
+        resp = jrpc_error(jid, -32601, err);
     }
 
     if (resp) {

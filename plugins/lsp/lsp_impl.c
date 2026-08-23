@@ -1,5 +1,6 @@
 #include "hed.h"
 #include "json_helpers.h"
+#include "jsonrpc/jsonrpc.h"
 #include "lsp.h"
 #include "lsp_hooks.h"
 #include "lsp_servers.h"
@@ -17,7 +18,6 @@
 #include <time.h>
 
 #define LSP_MAX_SERVERS 8
-#define LSP_READ_BUF_SIZE 65536
 #define LSP_PENDING_MAX 32
 
 typedef enum {
@@ -51,11 +51,7 @@ struct LspServer {
     int next_id;
 
     /* Incoming message framing */
-    char read_buf[LSP_READ_BUF_SIZE];
-    int read_buf_len;
-    int content_length; /* -1 = waiting for header */
-    char *msg_body;
-    int msg_body_len;
+    JrpcReader reader;
 
     LspPending pending[LSP_PENDING_MAX];
 };
@@ -153,74 +149,27 @@ static LspPending lsp_pending_pop(LspServer *srv, int id) {
 
 /* ------------------------------------------------------- send primitives */
 
-/* Write the whole buffer, surviving EINTR and short writes. The TCP
- * transport shares one O_NONBLOCK fd for both directions, so EAGAIN is
- * a real path there — wait for writability and continue. */
-static int lsp_write_all(int fd, const char *buf, size_t len) {
-    while (len > 0) {
-        ssize_t n = write(fd, buf, len);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                struct pollfd p = {.fd = fd, .events = POLLOUT};
-                poll(&p, 1, 1000);
-                continue;
-            }
-            return -1;
-        }
-        buf += n;
-        len -= (size_t)n;
-    }
-    return 0;
-}
-
-static void lsp_send_raw(LspServer *srv, const char *json_str) {
-    if (!srv || srv->to_fd < 0)
-        return;
-    char header[64];
-    int clen = (int)strlen(json_str);
-    int hlen =
-        snprintf(header, sizeof(header), "Content-Length: %d\r\n\r\n", clen);
-    if (lsp_write_all(srv->to_fd, header, (size_t)hlen) < 0 ||
-        lsp_write_all(srv->to_fd, json_str, (size_t)clen) < 0)
-        log_msg("LSP[%s]: write failed: %s", srv->lang, strerror(errno));
-}
-
 static void lsp_send_request(LspServer *srv, const char *method, cJSON *params,
                              int req_id) {
-    if (!srv || srv->to_fd < 0)
+    if (!srv || srv->to_fd < 0) {
+        if (params)
+            cJSON_Delete(params);
         return;
-    cJSON *req = cJSON_CreateObject();
-    cJSON_AddStringToObject(req, "jsonrpc", "2.0");
-    cJSON_AddNumberToObject(req, "id", req_id);
-    cJSON_AddStringToObject(req, "method", method);
-    if (params)
-        cJSON_AddItemToObject(req, "params", params);
-    char *s = cJSON_PrintUnformatted(req);
-    if (s) {
-        lsp_send_raw(srv, s);
-        free(s);
     }
-    cJSON_Delete(req);
+    if (jrpc_send(srv->to_fd, jrpc_request(method, params, req_id)) < 0)
+        log_msg("LSP[%s]: write failed: %s", srv->lang, strerror(errno));
     log_msg("LSP[%s]: → %s id=%d", srv->lang, method, req_id);
 }
 
 static void lsp_send_notification(LspServer *srv, const char *method,
                                   cJSON *params) {
-    if (!srv || srv->to_fd < 0)
+    if (!srv || srv->to_fd < 0) {
+        if (params)
+            cJSON_Delete(params);
         return;
-    cJSON *notif = cJSON_CreateObject();
-    cJSON_AddStringToObject(notif, "jsonrpc", "2.0");
-    cJSON_AddStringToObject(notif, "method", method);
-    if (params)
-        cJSON_AddItemToObject(notif, "params", params);
-    char *s = cJSON_PrintUnformatted(notif);
-    if (s) {
-        lsp_send_raw(srv, s);
-        free(s);
     }
-    cJSON_Delete(notif);
+    if (jrpc_send(srv->to_fd, jrpc_notification(method, params)) < 0)
+        log_msg("LSP[%s]: write failed: %s", srv->lang, strerror(errno));
     log_msg("LSP[%s]: → %s (notification)", srv->lang, method);
 }
 
@@ -883,7 +832,7 @@ void lsp_shutdown(void) {
         lsp_close_fds(srv);
         free(srv->lang);
         free(srv->root_uri);
-        free(srv->msg_body);
+        jrpc_reader_free(&srv->reader);
         free(srv);
         g_servers[i] = NULL;
     }
@@ -895,14 +844,8 @@ static void lsp_on_readable(int fd, void *ud) {
     if (!srv || srv->from_fd != fd)
         return;
 
-    int space = LSP_READ_BUF_SIZE - srv->read_buf_len;
-    if (space <= 0) {
-        srv->read_buf_len = 0;
-        return;
-    }
-
-    ssize_t n =
-        read(srv->from_fd, srv->read_buf + srv->read_buf_len, (size_t)space);
+    char tmp[65536];
+    ssize_t n = read(srv->from_fd, tmp, sizeof(tmp));
     if (n <= 0) {
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
             return;
@@ -925,61 +868,20 @@ static void lsp_on_readable(int fd, void *ud) {
             }
             free(srv->lang);
             free(srv->root_uri);
-            free(srv->msg_body);
+            jrpc_reader_free(&srv->reader);
             free(srv);
         }
         ed_set_status_message("LSP[%s]: disconnected", lang_copy);
         return;
     }
-    srv->read_buf_len += (int)n;
+    jrpc_reader_feed(&srv->reader, tmp, (size_t)n);
 
     /* Parse and dispatch complete messages */
-    while (srv->read_buf_len > 0) {
-        if (srv->content_length < 0) {
-            char *hend = strstr(srv->read_buf, "\r\n\r\n");
-            if (!hend)
-                break;
-            char *cl = strstr(srv->read_buf, "Content-Length:");
-            if (!cl || cl > hend) {
-                srv->read_buf_len = 0;
-                break;
-            }
-            srv->content_length = atoi(cl + 15);
-            int hlen = (int)(hend - srv->read_buf) + 4;
-            memmove(srv->read_buf, hend + 4,
-                    (size_t)(srv->read_buf_len - hlen));
-            srv->read_buf_len -= hlen;
-            free(srv->msg_body);
-            srv->msg_body = malloc((size_t)srv->content_length + 1);
-            srv->msg_body_len = 0;
-        }
-
-        if (srv->content_length >= 0 && srv->msg_body) {
-            int need = srv->content_length - srv->msg_body_len;
-            int avail = srv->read_buf_len;
-            int copy = need < avail ? need : avail;
-            memcpy(srv->msg_body + srv->msg_body_len, srv->read_buf,
-                   (size_t)copy);
-            srv->msg_body_len += copy;
-            memmove(srv->read_buf, srv->read_buf + copy,
-                    (size_t)(srv->read_buf_len - copy));
-            srv->read_buf_len -= copy;
-
-            if (srv->msg_body_len >= srv->content_length) {
-                srv->msg_body[srv->content_length] = '\0';
-                lsp_handle_message(srv, srv->msg_body, srv->content_length);
-                free(srv->msg_body);
-                srv->msg_body = NULL;
-                srv->msg_body_len = 0;
-                srv->content_length = -1;
-            }
-        }
-
-        if (srv->content_length < 0 && srv->read_buf_len == 0)
-            break;
-        /* If we didn't make progress, stop to avoid infinite loop */
-        if (srv->content_length >= 0 && srv->read_buf_len == 0)
-            break;
+    char *body;
+    size_t blen;
+    while ((body = jrpc_reader_next(&srv->reader, &blen))) {
+        lsp_handle_message(srv, body, (int)blen);
+        free(body);
     }
 }
 
@@ -1213,7 +1115,7 @@ static LspServer *lsp_server_alloc(const char *lang, const char *root_uri) {
     srv->from_fd = -1;
     srv->initialized = 0;
     srv->next_id = 1;
-    srv->content_length = -1;
+    jrpc_reader_init(&srv->reader);
     for (int i = 0; i < LSP_MAX_SERVERS; i++) {
         if (!g_servers[i]) {
             g_servers[i] = srv;
@@ -1481,7 +1383,7 @@ int lsp_cmd_disconnect(const char *lang) {
     lsp_close_fds(srv);
     free(srv->lang);
     free(srv->root_uri);
-    free(srv->msg_body);
+    jrpc_reader_free(&srv->reader);
     free(srv);
     for (int i = 0; i < LSP_MAX_SERVERS; i++) {
         if (g_servers[i] == srv) {

@@ -172,10 +172,7 @@ int cp_proto_spawn(void) {
     CP.spawned = 1;
     CP.initialized = 0;
     CP.next_id = 1;
-    CP.read_buf_len = 0;
-    CP.content_length = -1;
-    CP.msg_body = NULL;
-    CP.msg_body_len = 0;
+    jrpc_reader_init(&CP.reader);
 
     ed_loop_register("copilot", CP.from_fd, cp_on_readable, NULL);
 
@@ -207,11 +204,7 @@ void cp_proto_shutdown(void) {
         CP.pid = 0;
     }
 
-    free(CP.msg_body);
-    CP.msg_body = NULL;
-    CP.msg_body_len = 0;
-    CP.content_length = -1;
-    CP.read_buf_len = 0;
+    jrpc_reader_free(&CP.reader);
     CP.spawned = 0;
     CP.initialized = 0;
 
@@ -245,39 +238,6 @@ CpReqKind cp_proto_pending_pop(int id) {
 
 /* --- send ---------------------------------------------------------- */
 
-/* Write the whole buffer, surviving EINTR and short writes (mirrors
- * lsp_write_all in plugins/lsp/lsp_impl.c). */
-static int cp_write_all(int fd, const char *buf, size_t len) {
-    while (len > 0) {
-        ssize_t n = write(fd, buf, len);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                struct pollfd p = {.fd = fd, .events = POLLOUT};
-                poll(&p, 1, 1000);
-                continue;
-            }
-            return -1;
-        }
-        buf += n;
-        len -= (size_t)n;
-    }
-    return 0;
-}
-
-static void cp_send_raw(const char *body) {
-    if (!CP.spawned || CP.to_fd < 0)
-        return;
-    char header[64];
-    int clen = (int)strlen(body);
-    int hlen =
-        snprintf(header, sizeof(header), "Content-Length: %d\r\n\r\n", clen);
-    if (cp_write_all(CP.to_fd, header, (size_t)hlen) < 0 ||
-        cp_write_all(CP.to_fd, body, (size_t)clen) < 0)
-        log_msg("copilot: write failed: %s", strerror(errno));
-}
-
 int cp_proto_request(const char *method, cJSON *params, CpReqKind kind) {
     if (!CP.spawned) {
         if (params)
@@ -285,20 +245,8 @@ int cp_proto_request(const char *method, cJSON *params, CpReqKind kind) {
         return -1;
     }
     int id = CP.next_id++;
-
-    cJSON *req = cJSON_CreateObject();
-    cJSON_AddStringToObject(req, "jsonrpc", "2.0");
-    cJSON_AddNumberToObject(req, "id", id);
-    cJSON_AddStringToObject(req, "method", method);
-    if (params)
-        cJSON_AddItemToObject(req, "params", params);
-    char *s = cJSON_PrintUnformatted(req);
-    if (s) {
-        cp_send_raw(s);
-        free(s);
-    }
-    cJSON_Delete(req);
-
+    if (jrpc_send(CP.to_fd, jrpc_request(method, params, id)) < 0)
+        log_msg("copilot: write failed: %s", strerror(errno));
     cp_pending_add(id, kind);
     log_msg("copilot: -> %s id=%d", method, id);
     return id;
@@ -310,17 +258,8 @@ void cp_proto_notify(const char *method, cJSON *params) {
             cJSON_Delete(params);
         return;
     }
-    cJSON *notif = cJSON_CreateObject();
-    cJSON_AddStringToObject(notif, "jsonrpc", "2.0");
-    cJSON_AddStringToObject(notif, "method", method);
-    if (params)
-        cJSON_AddItemToObject(notif, "params", params);
-    char *s = cJSON_PrintUnformatted(notif);
-    if (s) {
-        cp_send_raw(s);
-        free(s);
-    }
-    cJSON_Delete(notif);
+    if (jrpc_send(CP.to_fd, jrpc_notification(method, params)) < 0)
+        log_msg("copilot: write failed: %s", strerror(errno));
     log_msg("copilot: -> %s (notification)", method);
 }
 
@@ -331,13 +270,8 @@ static void cp_on_readable(int fd, void *ud) {
     if (fd != CP.from_fd)
         return;
 
-    int space = CP_READ_BUF_SIZE - CP.read_buf_len;
-    if (space <= 0) {
-        CP.read_buf_len = 0;
-        return;
-    }
-
-    ssize_t n = read(CP.from_fd, CP.read_buf + CP.read_buf_len, (size_t)space);
+    char tmp[65536];
+    ssize_t n = read(CP.from_fd, tmp, sizeof(tmp));
     if (n <= 0) {
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
             return;
@@ -346,50 +280,12 @@ static void cp_on_readable(int fd, void *ud) {
         cp_proto_shutdown();
         return;
     }
-    CP.read_buf_len += (int)n;
+    jrpc_reader_feed(&CP.reader, tmp, (size_t)n);
 
-    while (CP.read_buf_len > 0) {
-        if (CP.content_length < 0) {
-            char *hend = strstr(CP.read_buf, "\r\n\r\n");
-            if (!hend)
-                break;
-            char *cl = strstr(CP.read_buf, "Content-Length:");
-            if (!cl || cl > hend) {
-                CP.read_buf_len = 0;
-                break;
-            }
-            CP.content_length = atoi(cl + 15);
-            int hlen = (int)(hend - CP.read_buf) + 4;
-            memmove(CP.read_buf, hend + 4, (size_t)(CP.read_buf_len - hlen));
-            CP.read_buf_len -= hlen;
-            free(CP.msg_body);
-            CP.msg_body = malloc((size_t)CP.content_length + 1);
-            CP.msg_body_len = 0;
-        }
-
-        if (CP.content_length >= 0 && CP.msg_body) {
-            int need = CP.content_length - CP.msg_body_len;
-            int avail = CP.read_buf_len;
-            int copy = need < avail ? need : avail;
-            memcpy(CP.msg_body + CP.msg_body_len, CP.read_buf, (size_t)copy);
-            CP.msg_body_len += copy;
-            memmove(CP.read_buf, CP.read_buf + copy,
-                    (size_t)(CP.read_buf_len - copy));
-            CP.read_buf_len -= copy;
-
-            if (CP.msg_body_len >= CP.content_length) {
-                CP.msg_body[CP.content_length] = '\0';
-                cp_handle_message(CP.msg_body, CP.content_length);
-                free(CP.msg_body);
-                CP.msg_body = NULL;
-                CP.msg_body_len = 0;
-                CP.content_length = -1;
-            }
-        }
-
-        if (CP.content_length < 0 && CP.read_buf_len == 0)
-            break;
-        if (CP.content_length >= 0 && CP.read_buf_len == 0)
-            break;
+    char *body;
+    size_t blen;
+    while ((body = jrpc_reader_next(&CP.reader, &blen))) {
+        cp_handle_message(body, (int)blen);
+        free(body);
     }
 }

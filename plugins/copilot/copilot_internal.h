@@ -4,9 +4,9 @@
 #ifndef HED_PLUGIN_COPILOT_INTERNAL_H
 #define HED_PLUGIN_COPILOT_INTERNAL_H
 
+#include "jsonrpc/jsonrpc.h"
 #include "lsp/cjson/cJSON.h"
 
-#define CP_READ_BUF_SIZE 65536
 #define CP_PENDING_MAX 32
 #define CP_DEBOUNCE_MS 250
 
@@ -37,11 +37,7 @@ typedef struct {
     int next_id;
 
     /* Receive framing */
-    char read_buf[CP_READ_BUF_SIZE];
-    int read_buf_len;
-    int content_length; /* -1 while waiting for header */
-    char *msg_body;
-    int msg_body_len;
+    JrpcReader reader;
 
     /* Pending request -> kind table */
     CpPending pending[CP_PENDING_MAX];
