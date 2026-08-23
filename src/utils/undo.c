@@ -4,6 +4,8 @@
 #include "editor.h"
 #include "hooks.h"
 #include "lib/log.h"
+#include "stb_ds.h"
+#include "ui/window.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -265,6 +267,33 @@ static void apply_rec(struct Buffer *buf, UndoRec *r, int dir) {
     }
 }
 
+/* Undo/redo reshape rows underneath whatever cursors point at them;
+ * clamp every window showing `buf` so a stale position can't violate
+ * the dispatch invariants (e.g. typing right after an undo that
+ * shortened the row under the cursor). */
+static void clamp_windows(struct Buffer *buf) {
+    int idx = (int)(buf - E.buffers);
+    for (int i = 0; i < (int)arrlen(E.windows); i++) {
+        Window *w = &E.windows[i];
+        if (w->buffer_index != idx)
+            continue;
+        if (buf->num_rows == 0) {
+            w->cursor.y = 0;
+            w->cursor.x = 0;
+            continue;
+        }
+        if (w->cursor.y >= buf->num_rows)
+            w->cursor.y = buf->num_rows - 1;
+        if (w->cursor.y < 0)
+            w->cursor.y = 0;
+        int len = (int)buf->rows[w->cursor.y].chars.len;
+        if (w->cursor.x > len)
+            w->cursor.x = len;
+        if (w->cursor.x < 0)
+            w->cursor.x = 0;
+    }
+}
+
 int undo_apply(struct Buffer *buf) {
     if (!buf)
         return 0;
@@ -281,6 +310,7 @@ int undo_apply(struct Buffer *buf) {
         apply_rec(buf, &g->recs[i], -1);
     u->applying = 0;
     stack_push(&u->redo, &u->redo_len, &u->redo_cap, g);
+    clamp_windows(buf);
     return 1;
 }
 
@@ -335,5 +365,6 @@ int redo_apply(struct Buffer *buf) {
      * which would clear the rest of the redo stack). */
     stack_push(&u->undo, &u->undo_len, &u->undo_cap, g);
     enforce_depth(u);
+    clamp_windows(buf);
     return 1;
 }
