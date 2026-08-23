@@ -1,13 +1,12 @@
 #include "mail_parse.h"
 #include "lib/strbuf.h"
 #include "lib/strutil.h"
+#include "utils/term_cmd.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #define PART_DEPTH_MAX 8
 
@@ -107,75 +106,10 @@ static void render_html(const char *html, size_t len, MailRender *out) {
         "w3m -dump -T text/html -o display_link_number=true 2>/dev/null",
         "lynx -dump -stdin 2>/dev/null", NULL};
     for (int i = 0; cmds[i]; i++) {
-        int in_pipe[2], out_pipe[2];
-        if (pipe(in_pipe) != 0)
-            continue;
-        if (pipe(out_pipe) != 0) {
-            close(in_pipe[0]);
-            close(in_pipe[1]);
-            continue;
-        }
-
-        pid_t pid = fork();
-        if (pid < 0) {
-            close(in_pipe[0]);
-            close(in_pipe[1]);
-            close(out_pipe[0]);
-            close(out_pipe[1]);
-            continue;
-        }
-        if (pid == 0) {
-            dup2(in_pipe[0], 0);
-            dup2(out_pipe[1], 1);
-            close(in_pipe[0]);
-            close(in_pipe[1]);
-            close(out_pipe[0]);
-            close(out_pipe[1]);
-            execl("/bin/sh", "sh", "-c", cmds[i], (char *)NULL);
-            _exit(127);
-        }
-        close(in_pipe[0]);
-        close(out_pipe[1]);
-
-        /* Feed html on stdin. Ignore SIGPIPE-on-short-read by checking write.
-         */
-        size_t off = 0;
-        while (off < len) {
-            ssize_t n = write(in_pipe[1], html + off, len - off);
-            if (n <= 0)
-                break;
-            off += (size_t)n;
-        }
-        close(in_pipe[1]);
-
-        /* Slurp output. */
         char *buf = NULL;
-        size_t bcap = 0, blen = 0;
-        char tmp[4096];
-        for (;;) {
-            ssize_t n = read(out_pipe[0], tmp, sizeof(tmp));
-            if (n <= 0)
-                break;
-            if (blen + (size_t)n + 1 > bcap) {
-                size_t ncap = bcap ? bcap * 2 : 8192;
-                while (ncap < blen + (size_t)n + 1)
-                    ncap *= 2;
-                char *nb = realloc(buf, ncap);
-                if (!nb)
-                    break;
-                buf = nb;
-                bcap = ncap;
-            }
-            memcpy(buf + blen, tmp, (size_t)n);
-            blen += (size_t)n;
-        }
-        close(out_pipe[0]);
-
-        int status = 0;
-        waitpid(pid, &status, 0);
-
-        if (buf && blen > 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-            buf[blen] = '\0';
+        size_t blen = 0;
+        int rc = term_cmd_filter(cmds[i], html, len, &buf, &blen);
+        if (rc == 0 && buf && blen > 0) {
             size_t a = 0;
             for (size_t b = 0; b <= blen; b++) {
                 if (b == blen || buf[b] == '\n') {

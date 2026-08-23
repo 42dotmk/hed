@@ -1,6 +1,7 @@
 #ifndef TERM_CMD_H
 #define TERM_CMD_H
 #include <stdbool.h>
+#include <stddef.h>
 
 /*
  * TERMINAL COMMAND EXECUTION UTILITY
@@ -61,6 +62,18 @@ int term_cmd_system(const char *cmd);
  *   term_cmd_run_interactive("make");
  */
 int term_cmd_run_interactive(const char *cmd, bool acknowledge);
+
+/*
+ * Pipe `in` (in_len bytes; may be NULL) through `cmd` (run via
+ * /bin/sh -c) and capture its whole stdout into *out (heap, NUL-
+ * terminated; *out_len optional). stdin and stdout are pumped
+ * together, so large payloads can't deadlock. No raw-mode toggle.
+ *
+ * Returns the child's exit status, or -1 on spawn failure / signal
+ * death. *out is set (possibly to "") whenever the child ran.
+ */
+int term_cmd_filter(const char *cmd, const char *in, size_t in_len, char **out,
+                    size_t *out_len);
 
 /*
  * Free memory allocated by term_cmd_run().
