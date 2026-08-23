@@ -36,47 +36,42 @@ void mail_set_from(const char *from) {
 
 const char *mail_get_from(void) { return from_addr; }
 
-static void insert_line(Buffer *buf, const char *s) {
-    buf_row_insert_in(buf, buf->num_rows, s, strlen(s));
+/* Fresh compose buffer (never reused): mail://compose-N. Highlighting
+ * via mail_msg_render_hook (registered for filetypes mail-message and
+ * mail-compose). */
+static int compose_new_buf(const char *title) {
+    char bufname[64];
+    snprintf(bufname, sizeof(bufname), "mail://compose-%d", ++compose_seq);
+    BufSpecial spec = {.name = bufname,
+                       .title = title,
+                       .filetype = "mail-compose",
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0)
+        ed_set_status_message("mail: failed to open compose buffer");
+    return idx;
 }
 
 void mail_compose(void) {
-    char bufname[64];
-    snprintf(bufname, sizeof(bufname), "mail://compose-%d", ++compose_seq);
-
-    int idx = -1;
-    if (buf_new(bufname, &idx) != ED_OK) {
-        ed_set_status_message("mail: failed to open compose buffer");
+    int idx = compose_new_buf("Compose");
+    if (idx < 0)
         return;
-    }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);
-    buf->title = strdup("Compose");
-    free(buf->filetype);
-    buf->filetype = strdup("mail-compose");
-    buf->readonly = 0;
-    /* Highlighting via mail_msg_render_hook (registered for filetypes
-     * mail-message and mail-compose). */
-
-    char from_line[320];
-    snprintf(from_line, sizeof(from_line), "From: %s", from_addr);
-    insert_line(buf, from_line);
-    insert_line(buf, "To: ");
-    insert_line(buf, "Cc: ");
-    insert_line(buf, "Subject: ");
-    insert_line(buf, "");
-    insert_line(buf, "");
-    buf->dirty = 0;
+    buf_special_addf(buf, "From: %s", from_addr);
+    buf_special_addf(buf, "To: ");
+    buf_special_addf(buf, "Cc: ");
+    buf_special_addf(buf, "Subject: ");
+    buf_special_add(buf, "", 0);
+    buf_special_add(buf, "", 0);
+    buf_special_show(idx);
 
     Window *win = window_cur();
     if (win) {
-        win_attach_buf(win, buf);
         /* Land on the To: line, after the prefix. */
         win->cursor.y = 1;
         win->cursor.x = 4;
     }
-    E.current_buffer = idx;
 
     ed_set_mode(MODE_INSERT);
     ed_set_status_message(
@@ -501,42 +496,27 @@ static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
 /* Create a fresh compose buffer, fill from lines, attach to the
  * current window, set insert mode at body. */
 static void compose_from_lines(const char *title, char **lines, int count) {
-    char bufname[64];
-    snprintf(bufname, sizeof(bufname), "mail://compose-%d", ++compose_seq);
-
-    int idx = -1;
-    if (buf_new(bufname, &idx) != ED_OK) {
-        ed_set_status_message("mail: failed to open compose buffer");
+    int idx = compose_new_buf(title);
+    if (idx < 0)
         return;
-    }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);
-    buf->title = strdup(title);
-    free(buf->filetype);
-    buf->filetype = strdup("mail-compose");
-    buf->readonly = 0;
-    /* Highlighting via mail_msg_render_hook (registered for filetypes
-     * mail-message and mail-compose). */
-
     int body_row = -1;
     for (int i = 0; i < count; i++) {
         const char *s = lines[i] ? lines[i] : "";
-        buf_row_insert_in(buf, buf->num_rows, s, strlen(s));
+        buf_special_add(buf, s, strlen(s));
         if (body_row < 0 && s[0] == '\0')
             body_row = i + 1;
     }
     if (body_row < 0)
         body_row = buf->num_rows;
-    buf->dirty = 0;
+    buf_special_show(idx);
 
     Window *win = window_cur();
     if (win) {
-        win_attach_buf(win, buf);
         win->cursor.y = body_row;
         win->cursor.x = 0;
     }
-    E.current_buffer = idx;
     ed_set_mode(MODE_INSERT);
 }
 

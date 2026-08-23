@@ -333,18 +333,6 @@ void mail_sync(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Buffer helper                                                       */
-/* ------------------------------------------------------------------ */
-
-static void clear_buffer(Buffer *buf) {
-    for (int i = 0; i < buf->num_rows; i++)
-        row_free(&buf->rows[i]);
-    free(buf->rows);
-    buf->rows = NULL;
-    buf->num_rows = 0;
-}
-
-/* ------------------------------------------------------------------ */
 /* Highlighting                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -572,48 +560,31 @@ static void mail_run_query(void) {
 void mail_open_list(void) {
     mail_run_query();
 
-    int idx = -1;
-    int existing = buf_find_by_filename(MAIL_LIST_BUF);
-    if (existing >= 0) {
-        buf_switch(existing);
-        idx = existing;
-    } else {
-        if (buf_new(MAIL_LIST_BUF, &idx) != ED_OK) {
-            ed_set_status_message("mail: failed to open buffer");
-            return;
-        }
+    /* Highlighting comes from mail_list_render_hook registered in
+     * mail_plugin_init; the filetype is the dispatch filter. */
+    BufSpecial spec = {.name = MAIL_LIST_BUF,
+                       .title = "Mail",
+                       .filetype = "mail",
+                       .readonly = 1,
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
+        ed_set_status_message("mail: failed to open buffer");
+        return;
     }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);
-    buf->title = strdup("Mail");
-    free(buf->filetype);
-    buf->filetype = strdup("mail");
-    buf->readonly = 1;
-    /* Highlighting comes from mail_list_render_hook registered in
-     * mail_plugin_init; the filetype is the dispatch filter. */
-
-    clear_buffer(buf);
+    buf_special_clear(buf);
 
     if (mail_entry_count == 0) {
-        buf_row_insert_in(buf, 0, "(no messages)", 13);
+        buf_special_addf(buf, "(no messages)");
     } else {
-        char line[520];
-        for (int i = 0; i < mail_entry_count; i++) {
-            const char *flag = mail_entries[i].is_unread ? "U " : "  ";
-            snprintf(line, sizeof(line), "%s%s", flag, mail_entries[i].display);
-            buf_row_insert_in(buf, buf->num_rows, line, strlen(line));
-        }
+        for (int i = 0; i < mail_entry_count; i++)
+            buf_special_addf(buf, "%s%s",
+                             mail_entries[i].is_unread ? "U " : "  ",
+                             mail_entries[i].display);
     }
-    buf->dirty = 0;
-
-    Window *win = window_cur();
-    if (win) {
-        win_attach_buf(win, buf);
-        win->cursor.x = 0;
-        win->cursor.y = 0;
-    }
-    E.current_buffer = idx;
+    buf_special_show(idx);
 
     int unread = 0;
     for (int i = 0; i < mail_entry_count; i++)
@@ -697,18 +668,18 @@ static void open_thread_tid(const char *tid, const char *title) {
         return;
     }
 
-    int idx = -1;
-    if (buf_new(bufname, &idx) != ED_OK) {
+    /* Highlighting via mail_msg_render_hook (registered in
+     * mail_plugin_init, filtered on filetype). */
+    BufSpecial spec = {.name = bufname,
+                       .filetype = "mail-message",
+                       .readonly = 1,
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
         ed_set_status_message("mail: failed to open thread buffer");
         return;
     }
-
     Buffer *tbuf = &E.buffers[idx];
-    free(tbuf->filetype);
-    tbuf->filetype = strdup("mail-message");
-    tbuf->readonly = 1;
-    /* Highlighting via mail_msg_render_hook (registered in
-     * mail_plugin_init, filtered on filetype). */
 
     char tidq[512];
     shell_escape_single(tid, tidq, sizeof(tidq));
@@ -726,11 +697,8 @@ static void open_thread_tid(const char *tid, const char *title) {
     mail_render_notmuch_text(&mr, lines, count);
     term_cmd_free(lines, count);
 
-    clear_buffer(tbuf);
-    for (int i = 0; i < mr.line_count; i++) {
-        const char *l = mr.lines[i] ? mr.lines[i] : "";
-        buf_row_insert_in(tbuf, tbuf->num_rows, l, strlen(l));
-    }
+    buf_special_clear(tbuf);
+    buf_special_add_lines(tbuf, mr.lines, mr.line_count);
 
     if (!title) {
         for (int i = 0; i < mr.line_count && i < 20; i++) {
@@ -764,15 +732,7 @@ static void open_thread_tid(const char *tid, const char *title) {
 
     mail_render_free(&mr);
 
-    tbuf->dirty = 0;
-
-    Window *cur_win = window_cur();
-    if (cur_win) {
-        win_attach_buf(cur_win, tbuf);
-        cur_win->cursor.x = 0;
-        cur_win->cursor.y = 0;
-    }
-    E.current_buffer = idx;
+    buf_special_show(idx);
 
     ed_set_status_message("%s", tbuf->title);
 }
@@ -1169,49 +1129,38 @@ static void mailbox_render_hook(const HookRenderEvent *ev) {
 void mail_open_mailboxes(void) {
     mailboxes_scan();
 
-    int idx = buf_find_by_filename(MAIL_MBOX_BUF);
+    /* Highlighting via mailbox_render_hook (registered in
+     * mail_plugin_init, filtered on filetype). */
+    BufSpecial spec = {.name = MAIL_MBOX_BUF,
+                       .title = "Mailboxes",
+                       .filetype = "mail-mailboxes",
+                       .readonly = 1,
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
     if (idx < 0) {
-        if (buf_new(MAIL_MBOX_BUF, &idx) != ED_OK) {
-            ed_set_status_message("mail: failed to open mailbox buffer");
-            return;
-        }
-    } else {
-        buf_switch(idx);
+        ed_set_status_message("mail: failed to open mailbox buffer");
+        return;
     }
 
     Buffer *buf = &E.buffers[idx];
-    free(buf->title);
-    buf->title = strdup("Mailboxes");
-    free(buf->filetype);
-    buf->filetype = strdup("mail-mailboxes");
-    buf->readonly = 1;
-    /* Highlighting via mailbox_render_hook (registered in
-     * mail_plugin_init, filtered on filetype). */
-
-    clear_buffer(buf);
+    buf_special_clear(buf);
     int active_row = 0;
     if (mailbox_entry_count == 0) {
-        const char *msg = "(no mailboxes found — check mail_set_dir)";
-        buf_row_insert_in(buf, 0, msg, strlen(msg));
+        buf_special_addf(buf, "(no mailboxes found — check mail_set_dir)");
     } else {
         for (int i = 0; i < mailbox_entry_count; i++) {
             const MailboxEntry *e = &mailbox_entries[i];
-            buf_row_insert_in(buf, buf->num_rows, e->display,
-                              strlen(e->display));
+            buf_special_addf(buf, "%s", e->display);
             if (e->kind == MBE_MAILBOX && strcmp(e->query, mailbox_query) == 0)
                 active_row = i;
             else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
                 active_row = i;
         }
     }
+    buf_special_show(idx);
     Window *win = window_cur();
-    if (win) {
-        win_attach_buf(win, buf);
-        win->cursor.x = 0;
+    if (win)
         win->cursor.y = active_row;
-    }
-    buf->dirty = 0;
-    E.current_buffer = idx;
 
     ed_set_status_message("mailboxes: %d entries  (root: %s)",
                           mailbox_entry_count, resolve_mail_dir());
