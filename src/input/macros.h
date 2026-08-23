@@ -91,6 +91,10 @@ void macro_record_key(int key);
  * parses back (also used by the dot-repeat recorder). */
 void macro_key_to_string(int key, char *buf, size_t bufsize);
 
+/* Canonical <...> token name for a base keycode (Esc, CR, Up, Del, …)
+ * or NULL if the key has none. Shared by the serializers. */
+const char *macro_named_key(int base);
+
 /**
  * Play a macro from a named register
  *

@@ -2,7 +2,6 @@
 #include "buf/buffer.h"
 #include "buf/virtual_text.h"
 #include "editor.h"
-#include "fs/fs.h"
 #include "hooks.h"
 #include "input/prompt.h"
 #include "lib/ansi.h"
@@ -124,42 +123,6 @@ int get_window_size(int *rows, int *cols) {
         *rows = ws.ws_row;
         return 0;
     }
-}
-
-/*** File I/O ***/
-
-EdError buf_save_in(Buffer *buf) {
-    if (!PTR_VALID(buf))
-        return ED_ERR_INVALID_ARG;
-
-    if (buf->filename == NULL) {
-        ed_set_status_message("No filename");
-        return ED_ERR_FILE_NOT_FOUND;
-    }
-
-    size_t len = 0;
-    char *buffer = buf_to_text(buf, &len);
-    if (!buffer)
-        return ED_ERR_NOMEM;
-
-    EdError werr = fs_file_write(buf->filename, buffer, len);
-    free(buffer);
-    if (werr != ED_OK) {
-        ed_set_status_message("Error writing %s: %s", buf->filename,
-                              ed_error_string(werr));
-        return werr;
-    }
-    buf->dirty = 0;
-
-    /* Track in recent files */
-    recent_files_add(&E.recent_files, buf->filename);
-
-    /* Fire hook */
-    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
-    hook_fire_buffer(HOOK_BUFFER_SAVE, &event);
-
-    ed_set_status_message("%zu bytes written to %s", len, buf->filename);
-    return ED_OK;
 }
 
 /*** Output ***/
@@ -524,7 +487,7 @@ static int visual_row_span(const Buffer *buf, const Window *win, int cur_rx,
                                                    : win->cursor.y;
         if (row < sy || row > ey)
             return 0;
-        int anchor_rx = win->sel.block_start_rx;
+        int anchor_rx = win->sel.anchor_rx;
         int start = anchor_rx < cur_rx ? anchor_rx : cur_rx;
         int end = anchor_rx > cur_rx ? anchor_rx : cur_rx;
         int rcols = render_cols_ss(&buf->rows[row].render);

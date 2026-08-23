@@ -563,21 +563,6 @@ void buf_goto_line(int line_num) {
     win->cursor.x = 0;
 }
 
-int buf_get_line_under_cursor(StrBuf *out) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win) || !PTR_VALID(out))
-        return 0;
-    TextSelection sel;
-    if (!textobj_line(buf, win->cursor.y, win->cursor.x, &sel))
-        return 0;
-    Row *row = &buf->rows[sel.start.line];
-    strbuf_free(out);
-    *out = strbuf_from(row->chars.data + sel.start.col,
-                       (size_t)(sel.end.col - sel.start.col));
-    return 1;
-}
-
 /* Borrow the word under the cursor as a view into the row's own buffer —
  * no allocation. The view is valid only until that buffer is next edited,
  * so consume it before mutating. Callers that need to keep the bytes
@@ -806,21 +791,6 @@ int buf_get_word_range(int *start_x, int *end_x) {
     return 1;
 }
 
-int buf_get_paragraph_range(int *start_y, int *end_y) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return 0;
-    TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-        return 0;
-    if (start_y)
-        *start_y = sel.start.line;
-    if (end_y)
-        *end_y = sel.end.line;
-    return 1;
-}
-
 static void buf_delete_range(int sy, int sx, int ey, int ex) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
@@ -1045,10 +1015,17 @@ void buf_change_selection(TextSelection *sel) {
      * alone; Esc closes it. */
     if (buf)
         undo_begin(buf, "change");
+    buf_delete_selection_keep_spacing(sel);
+    ed_set_mode(MODE_INSERT);
+}
+
+/* Deletion that skips the double-space cleanup: for change (ciw…) and
+ * paste-over-selection, where new text lands between the two spaces
+ * the cleanup would otherwise collapse. */
+void buf_delete_selection_keep_spacing(TextSelection *sel) {
     suppress_space_cleanup = 1;
     buf_delete_selection(sel);
     suppress_space_cleanup = 0;
-    ed_set_mode(MODE_INSERT);
 }
 
 /*
@@ -1083,6 +1060,37 @@ void buf_change_to_line_end(void) {
     win->cursor.x = sel.start.col;
 }
 
+/* Usable content columns of a soft-wrapped window: width minus the
+ * gutter (fixed, or sized to the largest line number it must show).
+ * Mirrors the renderer's gutter sizing. */
+static int wrap_content_cols(const Buffer *buf, const Window *win) {
+    int gutter = 0;
+    if (win->gutter_mode == 2) {
+        gutter = win->gutter_fixed_width;
+        if (gutter < 0)
+            gutter = 0;
+    } else if (!(win->gutter_mode == 0 && !E.show_line_numbers)) {
+        int maxline = buf->num_rows;
+        if (E.relative_line_numbers) {
+            int maxrel = win->height;
+            if (maxrel < 1)
+                maxrel = 1;
+            maxline = maxrel;
+        }
+        gutter = 0;
+        int tmp = maxline;
+        while (tmp > 0) {
+            gutter++;
+            tmp /= 10;
+        }
+        if (gutter < 2)
+            gutter = 2;
+    }
+    int margin = gutter ? (gutter + 1) : 0;
+    int content_cols = win->width - margin;
+    return content_cols > 0 ? content_cols : 1;
+}
+
 void buf_move_cursor_key(int key) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
@@ -1109,32 +1117,7 @@ void buf_move_cursor_key(int key) {
     case KEY_ARROW_DOWN:
     case 'j':
         if (win->wrap) {
-            int gutter = 0;
-            if (win->gutter_mode == 2) {
-                gutter = win->gutter_fixed_width;
-                if (gutter < 0)
-                    gutter = 0;
-            } else if (!(win->gutter_mode == 0 && !E.show_line_numbers)) {
-                int maxline = buf->num_rows;
-                if (E.relative_line_numbers) {
-                    int maxrel = win->height;
-                    if (maxrel < 1)
-                        maxrel = 1;
-                    maxline = maxrel;
-                }
-                gutter = 0;
-                int tmp = maxline;
-                while (tmp > 0) {
-                    gutter++;
-                    tmp /= 10;
-                }
-                if (gutter < 2)
-                    gutter = 2;
-            }
-            int margin = gutter ? (gutter + 1) : 0;
-            int content_cols = win->width - margin;
-            if (content_cols <= 0)
-                content_cols = 1;
+            int content_cols = wrap_content_cols(buf, win);
             int vis_col = 0;
             int cur_vis =
                 cursor_visual_position(buf, win, content_cols, &vis_col);
@@ -1159,32 +1142,7 @@ void buf_move_cursor_key(int key) {
     case KEY_ARROW_UP:
     case 'k':
         if (win->wrap) {
-            int gutter = 0;
-            if (win->gutter_mode == 2) {
-                gutter = win->gutter_fixed_width;
-                if (gutter < 0)
-                    gutter = 0;
-            } else if (!(win->gutter_mode == 0 && !E.show_line_numbers)) {
-                int maxline = buf->num_rows;
-                if (E.relative_line_numbers) {
-                    int maxrel = win->height;
-                    if (maxrel < 1)
-                        maxrel = 1;
-                    maxline = maxrel;
-                }
-                gutter = 0;
-                int tmp = maxline;
-                while (tmp > 0) {
-                    gutter++;
-                    tmp /= 10;
-                }
-                if (gutter < 2)
-                    gutter = 2;
-            }
-            int margin = gutter ? (gutter + 1) : 0;
-            int content_cols = win->width - margin;
-            if (content_cols <= 0)
-                content_cols = 1;
+            int content_cols = wrap_content_cols(buf, win);
             int vis_col = 0;
             int cur_vis =
                 cursor_visual_position(buf, win, content_cols, &vis_col);
@@ -1316,53 +1274,6 @@ void buf_find_matching_bracket(void) {
     /* No match found */
     ed_set_status_message("No matching bracket found");
     cur_sync_to_window(buf, win);
-}
-
-/*** Selection helpers ***/
-
-void buf_select_word(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    int sx = 0, ex = 0;
-    if (!buf_get_word_range(&sx, &ex))
-        return;
-    win->cursor.x = ex;
-}
-
-void buf_select_line(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    if (!BOUNDS_CHECK(win->cursor.y, buf->num_rows))
-        return;
-    win->cursor.x = buf->rows[win->cursor.y].chars.len;
-}
-
-void buf_select_all(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    win->cursor.y = buf->num_rows - 1;
-    if (win->cursor.y < 0)
-        win->cursor.y = 0;
-    if (win->cursor.y < buf->num_rows)
-        win->cursor.x = buf->rows[win->cursor.y].chars.len;
-}
-
-void buf_select_paragraph(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!PTR_VALID(buf) || !PTR_VALID(win))
-        return;
-    TextSelection sel;
-    if (!textobj_paragraph(buf, win->cursor.y, win->cursor.x, &sel))
-        return;
-    win->cursor.y = sel.end.line;
-    win->cursor.x = sel.end.col;
 }
 
 /* Yank data insertion */

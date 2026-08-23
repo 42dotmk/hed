@@ -1,8 +1,6 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-#include "buf/buffer.h"
-#include "lib/errors.h"
 #include "ui/window.h"
 #include <termios.h>
 
@@ -26,8 +24,6 @@ int get_window_size(int *rows, int *cols);
  * normal terminal back. */
 void term_mouse_set(int on);
 int term_mouse_get(void);
-
-EdError buf_save_in(Buffer *buf);
 
 /* Output / Rendering */
 /* Scroll the active window to keep cursor visible */

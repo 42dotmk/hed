@@ -4,6 +4,7 @@
 #include "editor.h"
 #include "hooks.h"
 #include "input/keybinds_builtins.h"
+#include "input/macros.h"
 #include "input/registers.h"
 #include "lib/log.h"
 #include "lib/safe_string.h"
@@ -37,7 +38,13 @@ static int key_buffer_len = 0;
 static struct timespec last_key_time;
 static int pending_count = 0; /* numeric prefix */
 static int have_count = 0;
-/* Helper: convert key code to string representation */
+
+/* Serialize a key into the sequence notation binding strings use.
+ * Shares the canonical <...> name table with the macro serializer
+ * (macro_named_key) but differs deliberately: '<' stays a raw char
+ * (binding sequences aren't macro strings, "<<" must match), and
+ * modified combos only name base keys above the byte range so e.g.
+ * Meta+Enter keeps its historical "<M-m>" spelling. */
 static void key_to_string(int key, char *buf, size_t bufsize) {
     if (KEY_IS_META(key) || KEY_IS_CTRL(key) || KEY_IS_SHIFT(key)) {
         int base = KEY_BASE(key);
@@ -58,36 +65,7 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         }
         prefix[p] = '\0';
 
-        const char *named = NULL;
-        switch (base) {
-        case KEY_ARROW_UP:
-            named = "Up";
-            break;
-        case KEY_ARROW_DOWN:
-            named = "Down";
-            break;
-        case KEY_ARROW_LEFT:
-            named = "Left";
-            break;
-        case KEY_ARROW_RIGHT:
-            named = "Right";
-            break;
-        case KEY_HOME:
-            named = "Home";
-            break;
-        case KEY_END:
-            named = "End";
-            break;
-        case KEY_PAGE_UP:
-            named = "PageUp";
-            break;
-        case KEY_PAGE_DOWN:
-            named = "PageDown";
-            break;
-        case KEY_DELETE:
-            named = "Del";
-            break;
-        }
+        const char *named = (base > 0xff) ? macro_named_key(base) : NULL;
         if (named) {
             snprintf(buf, bufsize, "%s%s>", prefix, named);
         } else if (base >= KEY_F1 && base <= KEY_F12) {
@@ -101,37 +79,14 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         }
         return;
     }
+    const char *named;
     if (key >= 32 && key < 127) {
         /* Printable ASCII */
         snprintf(buf, bufsize, "%c", key);
-    } else if (key == 127) {
-        snprintf(buf, bufsize, "<BS>");
-    } else if (key == '\r') {
-        snprintf(buf, bufsize, "<CR>");
-    } else if (key == '\n') {
-        snprintf(buf, bufsize, "<NL>");
-    } else if (key == '\t') {
-        snprintf(buf, bufsize, "<Tab>");
     } else if (key == KEY_BTAB) {
         snprintf(buf, bufsize, "<S-Tab>");
-    } else if (key == '\x1b') {
-        snprintf(buf, bufsize, "<Esc>");
-    } else if (key == KEY_ARROW_UP) {
-        snprintf(buf, bufsize, "<Up>");
-    } else if (key == KEY_ARROW_DOWN) {
-        snprintf(buf, bufsize, "<Down>");
-    } else if (key == KEY_ARROW_LEFT) {
-        snprintf(buf, bufsize, "<Left>");
-    } else if (key == KEY_ARROW_RIGHT) {
-        snprintf(buf, bufsize, "<Right>");
-    } else if (key == KEY_HOME) {
-        snprintf(buf, bufsize, "<Home>");
-    } else if (key == KEY_END) {
-        snprintf(buf, bufsize, "<End>");
-    } else if (key == KEY_PAGE_UP) {
-        snprintf(buf, bufsize, "<PageUp>");
-    } else if (key == KEY_PAGE_DOWN) {
-        snprintf(buf, bufsize, "<PageDown>");
+    } else if ((named = macro_named_key(key)) != NULL) {
+        snprintf(buf, bufsize, "<%s>", named);
     } else if (key >= KEY_F1 && key <= KEY_F12) {
         snprintf(buf, bufsize, "<F%d>", key - KEY_F1 + 1);
     } else if (key >= 1 && key <= 26) {
@@ -141,8 +96,6 @@ static void key_to_string(int key, char *buf, size_t bufsize) {
         /* Ctrl+punctuation control bytes: FS GS RS US. Note most
          * terminals send Ctrl+/ as 0x1F, i.e. <C-_>. */
         snprintf(buf, bufsize, "<C-%c>", "\\]^_"[key - 28]);
-    } else if (key == KEY_DELETE) {
-        snprintf(buf, bufsize, "<Del>");
     } else {
         /* Unknown key */
         snprintf(buf, bufsize, "<%d>", key);

@@ -37,8 +37,10 @@ int macro_queue_has_keys(void) {
     return E.macro_queue.position < E.macro_queue.length;
 }
 
-/* Map a base keycode to its canonical name used in <...> tokens. */
-static const char *macro_named_key(int base) {
+/* Map a base keycode to its canonical name used in <...> tokens.
+ * Shared with the keybind sequence serializer (keybinds.c), so
+ * binding strings and macro/dot-repeat notation stay in sync. */
+const char *macro_named_key(int base) {
     switch (base) {
     case '\x1b':
         return "Esc";

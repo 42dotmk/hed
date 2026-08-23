@@ -180,7 +180,6 @@ void ed_process_keypress(void);
  * after HOOK_KEYPRESS). Plugins use this to replay a key at multiple
  * cursors without firing HOOK_KEYPRESS again. */
 void ed_dispatch_key(int c);
-void ed_move_cursor(int key);
 
 void ed_set_mode(EditorMode new_mode);
 

@@ -35,40 +35,6 @@ static void visual_clear(Window *win) {
     win->sel.type = SEL_NONE;
 }
 
-Selection kb_make_selection(Window *win, Buffer *buf,
-                            SelectionType forced_type) {
-    Selection s = (Selection){.type = SEL_NONE};
-    if (!win || !buf)
-        return s;
-    if (forced_type != SEL_NONE) {
-        s.type = forced_type;
-    } else if (win->sel.type != SEL_NONE) {
-        s = win->sel;
-    }
-    if (s.type == SEL_VISUAL) {
-        s.anchor_y = win->sel.anchor_y;
-        s.anchor_x = win->sel.anchor_x;
-        s.cursor_y = win->cursor.y;
-        s.cursor_x = win->cursor.x;
-    } else if (s.type == SEL_VISUAL_BLOCK) {
-        s.anchor_y = win->sel.anchor_y;
-        s.cursor_y = win->cursor.y;
-        s.anchor_rx = win->sel.anchor_rx;
-        s.block_start_rx = win->sel.anchor_rx;
-        s.block_end_rx =
-            buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-        if (s.block_start_rx > s.block_end_rx) {
-            int t = s.block_start_rx;
-            s.block_start_rx = s.block_end_rx;
-            s.block_end_rx = t;
-        }
-    } else if (s.type == SEL_VISUAL_LINE) {
-        s.anchor_y = win->cursor.y;
-        s.cursor_y = win->cursor.y;
-    }
-    return s;
-}
-
 static void visual_begin(int block) {
     BUFWIN(buf, win)
     win->sel.type = block ? SEL_VISUAL_BLOCK : SEL_VISUAL;
@@ -76,8 +42,6 @@ static void visual_begin(int block) {
     win->sel.anchor_x = win->cursor.x;
     win->sel.anchor_rx =
         buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-    win->sel.block_start_rx = win->sel.anchor_rx;
-    win->sel.block_end_rx = win->sel.anchor_rx;
     ed_set_mode(block ? MODE_VISUAL_BLOCK : MODE_VISUAL);
 }
 
@@ -334,7 +298,7 @@ void kb_visual_paste(void) {
                     (sel.start.line == 0 && sel.end.line == buf->num_rows - 1);
             }
             int sy = sel.start.line;
-            buf_delete_selection(&sel);
+            buf_delete_selection_keep_spacing(&sel);
             if (sel.type == SEL_VISUAL_LINE && sy >= buf->num_rows)
                 after = true;
         }
@@ -437,8 +401,6 @@ void kb_visual_line_toggle(void) {
     win->sel.anchor_x = win->cursor.x;
     win->sel.anchor_rx =
         buf_row_cx_to_rx(&buf->rows[win->cursor.y], win->cursor.x);
-    win->sel.block_start_rx = win->sel.anchor_rx;
-    win->sel.block_end_rx = win->sel.anchor_rx;
     ed_set_mode(MODE_VISUAL_LINE);
 }
 

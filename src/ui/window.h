@@ -11,13 +11,13 @@ typedef enum {
     SEL_VISUAL_BLOCK /* Block/column-wise (visual block mode) */
 } SelectionType;
 
+/* Interactive selection state: the anchor set when visual mode was
+ * entered. The other end is always the window cursor; resolved ranges
+ * (TextSelection) are derived from the pair on demand. */
 typedef struct {
     SelectionType type;
     int anchor_y, anchor_x;
-    int cursor_y, cursor_x;
-    int anchor_rx; /* render column for block anchor */
-    int block_start_rx,
-        block_end_rx; /* for SEL_BLOCK: render columns, end exclusive */
+    int anchor_rx; /* render column of the anchor (block selections) */
 } Selection;
 
 typedef struct Window {

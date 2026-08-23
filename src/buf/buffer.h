@@ -1,11 +1,6 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
-#define CURSOR_STYLE_NONE "\x1b[0 q"
-#define CURSOR_STYLE_BLOCK "\x1b[1 q"
-#define CURSOR_STYLE_UNDERLINE "\x1b[3 q"
-#define CURSOR_STYLE_BEAM "\x1b[5 q"
-
 #include "buf/attrspan.h"
 #include "buf/row.h"
 #include "buf/virtual_text.h"
@@ -89,6 +84,8 @@ EdError buf_open_readonly(const char *title, const char *filetype,
 EdError buf_close(int index);
 EdError buf_switch(int index);
 EdError buf_open_file(const char *filename, Buffer **out);
+/* Write buf to its filename, clear dirty, fire HOOK_BUFFER_SAVE */
+EdError buf_save_in(Buffer *buf);
 
 int buf_find_by_filename(
     const char

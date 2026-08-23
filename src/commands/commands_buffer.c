@@ -6,13 +6,13 @@
  * Combines cmd_buffer.c and cmd_file.c.
  */
 
+#include "buf/buffer.h"
 #include "commands/commands_buffer.h"
 #include "editor.h"
 #include "fs/fs.h"
 #include "hooks.h"
 #include "input/picker.h"
 #include "lib/strutil.h"
-#include "terminal.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>

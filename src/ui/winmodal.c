@@ -51,11 +51,7 @@ Window *winmodal_create(int x, int y, int width, int height) {
     modal->sel.type = SEL_NONE;
     modal->sel.anchor_y = 0;
     modal->sel.anchor_x = 0;
-    modal->sel.cursor_y = 0;
-    modal->sel.cursor_x = 0;
     modal->sel.anchor_rx = 0;
-    modal->sel.block_start_rx = 0;
-    modal->sel.block_end_rx = 0;
 
     return modal;
 }

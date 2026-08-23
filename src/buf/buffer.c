@@ -154,6 +154,40 @@ EdError buf_open_file(const char *filename, Buffer **out) {
     return ED_OK;
 }
 
+EdError buf_save_in(Buffer *buf) {
+    if (!PTR_VALID(buf))
+        return ED_ERR_INVALID_ARG;
+
+    if (buf->filename == NULL) {
+        ed_set_status_message("No filename");
+        return ED_ERR_FILE_NOT_FOUND;
+    }
+
+    size_t len = 0;
+    char *buffer = buf_to_text(buf, &len);
+    if (!buffer)
+        return ED_ERR_NOMEM;
+
+    EdError werr = fs_file_write(buf->filename, buffer, len);
+    free(buffer);
+    if (werr != ED_OK) {
+        ed_set_status_message("Error writing %s: %s", buf->filename,
+                              ed_error_string(werr));
+        return werr;
+    }
+    buf->dirty = 0;
+
+    /* Track in recent files */
+    recent_files_add(&E.recent_files, buf->filename);
+
+    /* Fire hook */
+    HookBufferEvent event = {.buf = buf, .filename = buf->filename};
+    hook_fire_buffer(HOOK_BUFFER_SAVE, &event);
+
+    ed_set_status_message("%zu bytes written to %s", len, buf->filename);
+    return ED_OK;
+}
+
 void buf_open_or_switch(const char *filename, bool add_to_jumplist) {
     if (!filename || !*filename) {
         ed_set_status_message("No filename provided");
