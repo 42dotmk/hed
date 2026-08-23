@@ -53,7 +53,8 @@ extern const Plugin plugin_myplugin;
 that get swapped to at runtime via `:keymap`.
 
 `init()` returns `0` on success. Inside it, register your commands
-with `cmd(...)`, your keybinds with `mapn(...)`/`mapi(...)`/etc., and
+with `cmd(...)`, your keybinds with `cmapn(...)`/`cmapi(...)`/etc.
+(binding keys onto commands — the house style), and
 your hooks with `hook_register_*(...)`. All of those macros are in
 `hed.h`, which is the only include a plugin should normally need.
 

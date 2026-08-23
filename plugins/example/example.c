@@ -4,7 +4,7 @@
  * What this shows:
  *   - the minimum surface (init function, Plugin descriptor)
  *   - how to register a command
- *   - how to register a normal-mode keybind
+ *   - how to bind a key onto it (cmap — the house style)
  *   - how to register a hook
  *
  * See README.md for the step-by-step recipe. */
@@ -21,10 +21,6 @@ static void cmd_example(const char *args) {
     }
 }
 
-/* --- a keybind callback --- */
-
-static void kb_example(void) { ed_set_status_message("example keybind fired"); }
-
 /* --- a hook (logs every mode change to .hedlog) --- */
 
 static void on_mode_change(const HookModeEvent *e) {
@@ -37,7 +33,9 @@ static void on_mode_change(const HookModeEvent *e) {
 
 static int example_init(void) {
     cmd("hello", cmd_example, "say hello (example plugin)");
-    mapn(" eh", kb_example, "example: hello"); /* leader: <space>eh */
+    /* Keys bind commands (cmap*): discoverable in :keybinds/whichkey
+     * and callable from the : prompt. */
+    cmapn(" eh", "hello", "example: hello"); /* leader: <space>eh */
     hook_register_mode(HOOK_MODE_CHANGE, on_mode_change);
     return 0;
 }
