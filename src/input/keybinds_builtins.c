@@ -320,10 +320,6 @@ void kb_yank_line(void) {
     ed_set_status_message("Yanked");
 }
 
-/* Yank operator, kept as a C callback so plugins (clipboard) can wrap
- * it; the implementation is the :yank command. */
-void kb_operator_yank(void) { cmd_yank(NULL); }
-
 /* Save current position to the jump list (for within-file jumps). */
 void kb_jump_save_current(void) {
     Buffer *buf = buf_cur();

@@ -60,6 +60,12 @@ typedef enum {
      * plugins (see plugins/mouse/). */
     HOOK_MOUSE,
 
+    /* Fires after any yank stores text in the registers (the y family;
+     * deletes don't fire it). Payload-free: handlers read the unnamed
+     * register themselves (regs_get('"')). The clipboard plugin uses
+     * this to mirror yanks over OSC 52. */
+    HOOK_YANK,
+
     /* Fires once, after ed_init + cli file opens + startup -c command,
      * just before the main loop begins. No event payload. Use this to
      * run plugin-side post-init logic that needs the editor fully set

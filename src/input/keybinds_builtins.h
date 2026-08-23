@@ -16,9 +16,6 @@
 #include "ui/window.h"
 
 void kb_yank_line(void);
-/* Yank operator (reads a text object); wraps the :yank command so
- * plugins (clipboard) can compose with it. */
-void kb_operator_yank(void);
 void kb_operator_move(int key); /* Move cursor via text object (fallback) */
 /* Save the current position to the jump list (within-file jumps). */
 void kb_jump_save_current(void);

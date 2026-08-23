@@ -1,4 +1,5 @@
 #include "commands/registry.h"
+#include "buf/buf_helpers.h"
 #include "buf/buffer.h"
 #include "stb_ds.h"
 #include <stdlib.h>
@@ -89,6 +90,34 @@ int command_execute_line(const char *line) {
     name[ni] = '\0';
     while (*line == ' ' || *line == '\t')
         line++;
+
+    /* Token expansion in the args: %w -> the word under the cursor,
+     * %% -> a literal %. Lets bindings pass editor context to any
+     * command ("man %w", "rg %w") without a C trampoline. */
+    if (strchr(line, '%')) {
+        char ex[1024];
+        size_t o = 0;
+        for (const char *p = line; *p && o + 1 < sizeof(ex); p++) {
+            if (p[0] == '%' && p[1] == 'w') {
+                StrView w;
+                if (buf_word_view_under_cursor(&w)) {
+                    size_t n = w.len;
+                    if (n > sizeof(ex) - 1 - o)
+                        n = sizeof(ex) - 1 - o;
+                    memcpy(ex + o, w.data, n);
+                    o += n;
+                }
+                p++;
+            } else if (p[0] == '%' && p[1] == '%') {
+                ex[o++] = '%';
+                p++;
+            } else {
+                ex[o++] = *p;
+            }
+        }
+        ex[o] = '\0';
+        return command_execute(name, o ? ex : NULL);
+    }
 
     return command_execute(name, *line ? line : NULL);
 }

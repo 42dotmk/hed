@@ -364,7 +364,9 @@ link errors.
 
 ### Hook system
 
-Events: char/line insert/delete, buffer open/close/switch/save,
+Events: char/line insert/delete, yank (fires after text lands in the
+registers — the clipboard plugin's OSC 52 mirror hangs off this),
+buffer open/close/switch/save,
 buffer pre-open and pre-save (intercept hooks), mode change, cursor
 movement, keypress, raw keypress (`HOOK_KEY_RAW` — every real key,
 including ones read inside command callbacks; never replayed keys),
@@ -388,6 +390,10 @@ directory opens without core knowing about it.
 - Per-mode registration. `mapn`, `mapi`, `mapv`, `mapvb`, `mapvl`,
   `cmapn`, `cmapv`, `cmapi` macros in `src/hed.h`. Filetype-scoped
   commands mirror filetype keybinds: `cmd_ft(ft, name, cb, desc)`.
+- Command lines expand context tokens: `%w` becomes the word under
+  the cursor (`cmapn_ft("man", "gd", "man %w", ...)`), `%%` a literal
+  `%`. Works from bindings, the `:` prompt, and the MCP server —
+  they all route through `command_execute_line`.
 - Multi-key sequences (`dd`, `<C-x><C-s>`).
 - Numeric prefix: `42G` consumes the count via
   `keybind_get_and_clear_pending_count()`.

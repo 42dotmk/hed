@@ -176,23 +176,10 @@ static void cmd_man(const char *args) {
     }
 }
 
-static void kb_man_word_under_cursor(void) {
-    StrView w;
-    if (!buf_word_view_under_cursor(&w) || w.len == 0) {
-        ed_set_status_message("man: no word under cursor");
-        return;
-    }
-    char topic[128];
-    size_t n = w.len < sizeof(topic) - 1 ? w.len : sizeof(topic) - 1;
-    memcpy(topic, w.data, n);
-    topic[n] = '\0';
-    open_man_page(topic, NULL);
-}
-
 static int man_init(void) {
     cmd("man", cmd_man, "view man page (no args = fzf apropos)");
-    mapn_ft(MAN_FILETYPE, "gd", kb_man_word_under_cursor,
-            "man: open page for word under cursor");
+    cmapn_ft(MAN_FILETYPE, "gd", "man %w",
+             "open man page for word under cursor");
     return 0;
 }
 

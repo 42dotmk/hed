@@ -5,16 +5,14 @@ escape sequence that ships clipboard data over your existing TTY.
 Works over plain SSH with no `xclip`, `pbcopy`, or `wl-copy`
 shelling out.
 
-## What it overrides
+## How it hooks in
 
-| Keybind | Mode | Action |
-|---|---|---|
-| `y` | NORMAL | Yank operator (operator + text object) — also copies to system clipboard |
-| `yy` | NORMAL | Yank line — also copies to system clipboard |
-| `y` | VISUAL | Yank selection — also copies to system clipboard |
+No keybinds: the plugin registers for `HOOK_YANK`, which core fires
+after any yank lands in the registers (`y`, `yy`, visual `y`,
+`:yank`, `:yank_line`, ...). Deletes don't fire it. On each yank the
+unnamed register is mirrored to the system clipboard.
 
-These shadow the default vim_keybinds yanks. Local registers are still
-populated as normal; the plugin just additionally pushes a base64-
+Local registers are still populated as normal; the plugin just additionally pushes a base64-
 encoded OSC 52 sequence to the terminal.
 
 ## Terminal support

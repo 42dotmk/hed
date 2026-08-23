@@ -2,6 +2,7 @@
 #include "buf/buf_helpers.h"
 #include "buf/row.h"
 #include "editor.h"
+#include "hooks.h"
 #include "input/registers.h"
 #include "ui/window.h"
 #include <stdlib.h>
@@ -195,7 +196,10 @@ static EdError selection_to_registers(const TextSelection *sel,
 }
 
 EdError yank_selection(const TextSelection *sel) {
-    return selection_to_registers(sel, false);
+    EdError e = selection_to_registers(sel, false);
+    if (e == ED_OK)
+        hook_fire_simple(HOOK_YANK);
+    return e;
 }
 
 EdError yank_selection_as_delete(const TextSelection *sel) {
@@ -242,7 +246,10 @@ static EdError block_to_registers(Buffer *buf, int sy, int ey, int start_rx,
 }
 
 EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
-    return block_to_registers(buf, sy, ey, start_rx, end_rx_excl, false);
+    EdError e = block_to_registers(buf, sy, ey, start_rx, end_rx_excl, false);
+    if (e == ED_OK)
+        hook_fire_simple(HOOK_YANK);
+    return e;
 }
 
 EdError yank_block_as_delete(Buffer *buf, int sy, int ey, int start_rx,

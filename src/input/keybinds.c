@@ -197,26 +197,10 @@ void keybind_register_ft(int mode, const char *sequence, const char *filetype,
     arrput(keybinds, kb);
 }
 
+/* One shared path with the colon prompt and the MCP server — token
+ * expansion (%w, %%) included. */
 static void kb_run_command(const char *cmdline) {
-    if (!cmdline)
-        return;
-    while (*cmdline == ' ' || *cmdline == '\t' || *cmdline == ':')
-        cmdline++;
-    const char *p = cmdline;
-    while (*p && *p != ' ' && *p != '\t')
-        p++;
-    if (p == cmdline)
-        return;
-    char name[64];
-    size_t n = (size_t)(p - cmdline);
-    if (n >= sizeof(name))
-        n = sizeof(name) - 1;
-    memcpy(name, cmdline, n);
-    name[n] = '\0';
-    while (*p == ' ' || *p == '\t')
-        p++;
-    const char *args = (*p ? p : NULL);
-    command_invoke(name, args);
+    command_execute_line(cmdline);
 }
 
 void keybind_register_command(int mode, const char *sequence,

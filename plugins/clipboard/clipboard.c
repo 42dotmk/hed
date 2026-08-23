@@ -36,31 +36,17 @@ static void osc52_copy(const char *data, size_t len) {
     free(enc);
 }
 
+/* HOOK_YANK fires after any yank lands in the registers — mirror the
+ * unnamed register to the system clipboard. No keybinds: the keymaps
+ * own y/yy, this plugin only observes. */
 static void sync_unnamed(void) {
     const StrBuf *r = regs_get('"');
     if (r && r->data && r->len > 0)
         osc52_copy(r->data, r->len);
 }
 
-static void kb_yank_line_clip(void) {
-    kb_yank_line();
-    sync_unnamed();
-}
-
-static void kb_operator_yank_clip(void) {
-    kb_operator_yank();
-    sync_unnamed();
-}
-
-static void kb_visual_yank_selection_clip(void) {
-    kb_visual_yank_selection();
-    sync_unnamed();
-}
-
 static int clipboard_init(void) {
-    mapv("y", kb_visual_yank_selection_clip, "yank (+clipboard)");
-    mapn("y", kb_operator_yank_clip, "yank operator (+clipboard)");
-    mapn("yy", kb_yank_line_clip, "yank line (+clipboard)");
+    hook_register_simple(HOOK_YANK, sync_unnamed);
     return 0;
 }
 

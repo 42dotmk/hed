@@ -537,7 +537,11 @@ void shell_open_prompt(const char *text, int len) {
 
 /* --- visual-mode <C-s>: open the `!` prompt with the selection --- */
 
-static void shell_kb_visual_to_prompt(void) {
+/* :shell_selection — seed the ! prompt with the visual selection as
+ * the command line (multi-row selections joined with " \\<newline>"
+ * so /bin/sh reads them as continuations). */
+static void cmd_shell_selection(const char *args) {
+    (void)args;
     BUFWIN(buf, win);
     int block_mode = (E.mode == MODE_VISUAL_BLOCK);
     TextSelection sel;
@@ -601,9 +605,10 @@ void cmd_shell(const char *args) {
 
 static int shell_init(void) {
     cmd("shell", cmd_shell, "run shell cmd");
-    mapv("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
-    mapvl("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
-    mapvb("<C-s>", shell_kb_visual_to_prompt, "shell: selection -> ! prompt");
+    cmd("shell_selection", cmd_shell_selection,
+        "seed the ! prompt with the selection as the command");
+    /* VL/VB fall through to the VISUAL binding. */
+    cmapv("<C-s>", "shell_selection", "shell: selection -> ! prompt");
     return 0;
 }
 
