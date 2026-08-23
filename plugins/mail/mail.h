@@ -5,6 +5,10 @@
 
 extern const Plugin plugin_mail;
 
+/* Public configuration API — call from config_init /
+ * config_user_init. The plugin's own cross-file plumbing lives in
+ * mail_internal.h. */
+
 /* Set the base notmuch query (default: "tag:inbox"). */
 void mail_set_query(const char *q);
 const char *mail_get_query(void);
@@ -28,58 +32,11 @@ const char *mail_get_mailbox(void);
  * ones. Pass NULL/empty `query` to remove. */
 void mail_add_view(const char *name, const char *query);
 
-/* Open/refresh the mailbox sidebar (accounts + folders discovered under
- * mail_get_dir()). */
-void mail_open_mailboxes(void);
+/* Set the shell command :mail-sync runs before `notmuch new`
+ * (default: "hml recv"; e.g. "mbsync -a" to use mbsync instead). */
+void mail_set_sync_cmd(const char *cmd);
 
-/* Register HOOK_RENDER_PRE handlers for the three mail filetypes.
- * Called once from mail_plugin_init. */
-void mail_register_render_hooks(void);
-
-/* Called by <CR> while in the mailbox sidebar. */
-void mail_handle_mailbox_enter(void);
-
-/* Open a filter input prompt. */
-void mail_filter_prompt(void);
-
-/* Open/refresh the mail list buffer. */
-void mail_open_list(void);
-
-/* Called by <CR> keybind while in a mail list buffer. */
-void mail_handle_enter(void);
-
-/* Open a thread by id — "thread:…" or a full "mail://thread:…" URL (the
- * form used as thread buffer filenames and in captured markdown links).
- * Works whether or not the thread is in the current listing; when it
- * is, it's also marked read. */
-void mail_open_thread(const char *tid);
-
-/* Open the next/previous thread in the current listing while viewing a
- * mail-message buffer. No-op (with status message) if not viewing one
- * or if already at the end/beginning. */
-void mail_next_message(void);
-void mail_prev_message(void);
-
-/* Apply notmuch tags to the thread(s) under the cursor or visual selection.
- * `args` is a whitespace-separated list of tags; tokens without a leading
- * +/- get a + prefix. */
-void mail_apply_tags(const char *args);
-
-/* Apply notmuch tags to every thread matching the current base + filter
- * query (i.e. everything currently listed). */
-void mail_apply_tags_query(const char *args);
-
-/* Set the mbsync profile argument (default: "-a" for all channels). */
-void mail_set_mbsync_profile(const char *profile);
-
-/* Run mbsync + notmuch new, then refresh the list. */
-void mail_sync(void);
-
-/* ------------------------------------------------------------------ */
-/* Sending                                                             */
-/* ------------------------------------------------------------------ */
-
-/* Set the outgoing-mail command. Default: "msmtp -t -a default".
+/* Set the outgoing-mail command. Default: "msmtp -t".
  * The command must read an RFC 822 message on stdin and route it
  * based on the To/Cc/Bcc headers (the `-t` flag for msmtp/sendmail). */
 void mail_set_send_cmd(const char *cmd);
@@ -94,64 +51,12 @@ void mail_set_from(const char *from);
  * next mail_set_from call. */
 const char *mail_get_from(void);
 
-/* Open a new editable buffer pre-filled with a compose template. */
-void mail_compose(void);
-
-/* Send the current buffer as an email through the configured send
- * command. The buffer must look like an RFC 822 message: headers,
- * a blank line, then the body. */
-void mail_send_current(void);
-
-/* Add an `Attach:` pseudo-header to the current compose buffer.
- * `path` non-empty → attach that file (~ expanded, must be readable).
- * `path` NULL/empty → fzf multi-pick over project files; each pick
- * becomes one Attach: line. The headers are consumed by
- * mail_send_current, which emits a multipart/mixed message. */
-void mail_attach_add(const char *path);
-
 /* Open a compose buffer pre-filled from a flat array of header+body
  * lines (one row per line, the first empty line marks the start of
- * the body). Used by /reply/forward and by external producers like
- * the git-patch plugin that already have a fully-formed RFC 822
- * message. `title` becomes the buffer title; filetype is
- * "mail-compose" so :mail-send picks it up. */
+ * the body). Used by external producers like the git-patch plugin
+ * that already have a fully-formed RFC 822 message. `title` becomes
+ * the buffer title; filetype is "mail-compose" so :mail-send picks
+ * it up. */
 void mail_compose_with_lines(const char *title, char **lines, int count);
-
-/* Open a compose buffer pre-filled from a `mailto:` URI (RFC 6068).
- * Recognized query keys: to, cc, bcc, subject, body, in-reply-to,
- * references. Recipients in the path and any `to` query values are
- * merged. `%0A` / `%0D%0A` in the body become real line breaks.
- * Used by the buffer pre-open hook so `hed mailto:foo@bar?...` works
- * when hed is registered as the system mailto handler. */
-void mail_compose_uri(const char *uri);
-
-/* Open a compose buffer pre-filled with a reply to the message being
- * viewed. reply_all=0 → sender only, 1 → reply-all. */
-void mail_reply(int reply_all);
-
-/* Open a compose buffer pre-filled with a forward of the message
- * being viewed (raw original inlined after a separator). */
-void mail_forward(void);
-
-/* Open the viewed message's HTML body in the system browser (written
- * to /tmp, handed to open_path). Status note when there is none. */
-void mail_open_html(void);
-
-/* Act on attachments of the current mail-message buffer.
- *   dest_dir == NULL → extract to /tmp and open with `open_path`.
- *   dest_dir != NULL → extract into dest_dir (created if missing).
- *                      `~` is expanded; trailing slash is fine.
- * Selection:
- *   part_id >= 0 → act on that single part-id.
- *   part_id <  0 → 1 attachment auto-acts; many → fzf multi-select
- *                  (Tab to pick multiple, <C-a> to select all). */
-void mail_attach_action(int part_id, const char *dest_dir);
-
-/* Extract every cached attachment of the currently-viewed mail-message
- * into a fresh /tmp dir and append each resulting path to *out_paths.
- * Allocates a new char* array (caller frees with free() per entry +
- * free(*out_paths)). Returns the number of files written; 0 if the
- * current buffer is not a mail-message or has no attachments. */
-int mail_extract_attachments_to_tmp(char ***out_paths);
 
 #endif

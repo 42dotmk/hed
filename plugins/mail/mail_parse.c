@@ -1,6 +1,7 @@
 #include "mail_parse.h"
 #include "lib/strbuf.h"
 #include "lib/strutil.h"
+#include "lib/vector.h"
 #include "utils/term_cmd.h"
 
 #include <stdio.h>
@@ -11,46 +12,26 @@
 #define PART_DEPTH_MAX 8
 
 static void lines_push(MailRender *r, const char *s, size_t len) {
-    if (r->line_count == r->line_cap) {
-        int ncap = r->line_cap ? r->line_cap * 2 : 64;
-        char **nl = realloc(r->lines, (size_t)ncap * sizeof(*nl));
-        if (!nl)
-            return;
-        r->lines = nl;
-        r->line_cap = ncap;
-    }
     char *dup = malloc(len + 1);
     if (!dup)
         return;
     if (len)
         memcpy(dup, s, len);
     dup[len] = '\0';
-    r->lines[r->line_count++] = dup;
+    arrput(r->lines, dup);
 }
 
 static void lines_pushz(MailRender *r, const char *s) {
     lines_push(r, s, strlen(s));
 }
 
-static void attach_push(MailRender *r, const MailAttachInfo *a) {
-    if (r->attach_count == r->attach_cap) {
-        int ncap = r->attach_cap ? r->attach_cap * 2 : 8;
-        MailAttachInfo *na = realloc(r->attaches, (size_t)ncap * sizeof(*na));
-        if (!na)
-            return;
-        r->attaches = na;
-        r->attach_cap = ncap;
-    }
-    r->attaches[r->attach_count++] = *a;
-}
-
 void mail_render_init(MailRender *r) { memset(r, 0, sizeof(*r)); }
 
 void mail_render_free(MailRender *r) {
-    for (int i = 0; i < r->line_count; i++)
+    for (ptrdiff_t i = 0; i < arrlen(r->lines); i++)
         free(r->lines[i]);
-    free(r->lines);
-    free(r->attaches);
+    arrfree(r->lines);
+    arrfree(r->attaches);
     free(r->html);
     memset(r, 0, sizeof(*r));
 }
@@ -152,6 +133,13 @@ static void msg_state_reset(MsgState *m) {
     memset(m, 0, sizeof(*m));
 }
 
+static int span_blank(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++)
+        if (s[i] != ' ' && s[i] != '\t')
+            return 0;
+    return 1;
+}
+
 static void emit_msg(MailRender *r, MsgState *m, int is_first) {
     if (!is_first) {
         lines_pushz(r, "");
@@ -189,8 +177,10 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
             size_t off = (size_t)snprintf(al, cap, "Attachments:");
             for (int i = 0; i < n_att; i++) {
                 const MailAttachInfo *a = &r->attaches[m->attach_start + i];
+                /* 1-based whole-thread attachment number — what
+                 * :mail-attach <n> takes. */
                 off += (size_t)snprintf(
-                    al + off, cap - off, "  [%d] %s", a->part_id,
+                    al + off, cap - off, "  [%d] %s", m->attach_start + i + 1,
                     a->filename[0] ? a->filename : "(unnamed)");
             }
             lines_pushz(r, al);
@@ -201,58 +191,33 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
     lines_pushz(r, "");
 
     /* Body: prefer plain. Fall back to html via w3m/lynx. */
-    char *body = NULL;
-    size_t body_len = 0;
     if (m->have_plain && m->plain.len > 0) {
-        body = m->plain.data;
-        body_len = m->plain.len;
-    }
-    if (body) {
-        /* Strip leading and trailing blank lines while splitting. */
-        size_t a = 0;
-        /* Skip leading whitespace-only lines */
-        while (a < body_len) {
+        const char *body = m->plain.data;
+        size_t body_len = m->plain.len;
+
+        /* Collect line spans, then drop leading/trailing blank lines. */
+        typedef struct {
+            size_t off, len;
+        } LineSpan;
+        LineSpan *ls = NULL;
+        for (size_t a = 0;;) {
             size_t b = a;
             while (b < body_len && body[b] != '\n')
                 b++;
-            int blank = 1;
-            for (size_t k = a; k < b; k++)
-                if (body[k] != ' ' && body[k] != '\t') {
-                    blank = 0;
-                    break;
-                }
-            if (!blank)
+            LineSpan sp = {a, b - a};
+            arrput(ls, sp);
+            if (b >= body_len)
                 break;
             a = b + 1;
         }
-        /* Trim trailing blank lines */
-        size_t end = body_len;
-        while (end > a) {
-            size_t e = end;
-            size_t s = e;
-            while (s > a && body[s - 1] != '\n')
-                s--;
-            int blank = 1;
-            for (size_t k = s; k < e - (e > 0 && body[e - 1] == '\n' ? 1 : 0);
-                 k++)
-                if (body[k] != ' ' && body[k] != '\t') {
-                    blank = 0;
-                    break;
-                }
-            if (!blank)
-                break;
-            end = s > 0 ? s - 1 : 0;
-            if (s == a)
-                break;
-        }
-        size_t p = a;
-        while (p <= end) {
-            size_t q = p;
-            while (q < end && body[q] != '\n')
-                q++;
-            lines_push(r, body + p, q - p);
-            p = q + 1;
-        }
+        ptrdiff_t lo = 0, hi = arrlen(ls) - 1;
+        while (lo <= hi && span_blank(body + ls[lo].off, ls[lo].len))
+            lo++;
+        while (hi >= lo && span_blank(body + ls[hi].off, ls[hi].len))
+            hi--;
+        for (ptrdiff_t i = lo; i <= hi; i++)
+            lines_push(r, body + ls[i].off, ls[i].len);
+        arrfree(ls);
     } else if (m->html.data && m->html.len > 0) {
         render_html(m->html.data, m->html.len, r);
     } else {
@@ -261,25 +226,14 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
 }
 
 /* Push the current MsgState onto saved[] (taking ownership of its
- * heap buffers) and reset the working copy. Called wherever we used
- * to call emit_msg + msg_state_reset; the actual emit happens at the
- * end of parsing in reverse order so the newest message lands at the
- * top of the rendered buffer. */
-static void msg_save(MsgState *m, MsgState **saved, int *n, int *cap,
-                     int attach_total) {
-    if (*n >= *cap) {
-        int ncap = *cap ? *cap * 2 : 8;
-        MsgState *ns = realloc(*saved, (size_t)ncap * sizeof(*ns));
-        if (!ns)
-            return;
-        *saved = ns;
-        *cap = ncap;
-    }
+ * heap buffers) and reset the working copy. The actual emit happens
+ * at the end of parsing in reverse order so the newest message lands
+ * at the top of the rendered buffer. */
+static void msg_save(MsgState *m, MsgState **saved, int attach_total) {
     m->attach_count = attach_total - m->attach_start;
-    (*saved)[(*n)++] = *m;
-    /* Hand ownership of plain/html to the saved entry — wipe the
-     * working copy so msg_state_reset in subsequent flow doesn't
-     * double-free. */
+    arrput(*saved, *m);
+    /* Ownership of plain/html moved into the saved entry — wipe the
+     * working copy so it isn't double-freed. */
     memset(m, 0, sizeof(*m));
 }
 
@@ -289,7 +243,6 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
     int in_message = 0;
 
     MsgState *saved = NULL;
-    int saved_n = 0, saved_cap = 0;
 
     /* Header block flag (between \fheader{ and \fheader}). */
     int in_header = 0;
@@ -315,12 +268,12 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         /* --- markers ------------------------------------------------- */
         if (str_starts_with(line, "\fmessage{")) {
             if (in_message)
-                msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
+                msg_save(&msg, &saved, (int)arrlen(r->attaches));
             in_message = 1;
             in_header = 0;
             in_attachment = 0;
             pstack_depth = 0;
-            msg.attach_start = r->attach_count;
+            msg.attach_start = (int)arrlen(r->attaches);
             marker_field(line, "id:", msg.msg_id, sizeof(msg.msg_id), 0);
             char depth[16];
             if (marker_field(line, "depth:", depth, sizeof(depth), 0))
@@ -329,7 +282,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
         if (strcmp(line, "\fmessage}") == 0) {
             if (in_message) {
-                msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
+                msg_save(&msg, &saved, (int)arrlen(r->attaches));
                 in_message = 0;
             }
             continue;
@@ -368,7 +321,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
         if (strcmp(line, "\fpart}") == 0) {
             if (in_attachment && pstack_depth == attach_depth) {
-                attach_push(r, &cur_att);
+                arrput(r->attaches, cur_att);
                 in_attachment = 0;
             }
             if (pstack_depth > 0)
@@ -394,7 +347,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
         if (strcmp(line, "\fattachment}") == 0) {
             if (in_attachment) {
-                attach_push(r, &cur_att);
+                arrput(r->attaches, cur_att);
                 in_attachment = 0;
                 if (pstack_depth > 0)
                     pstack_depth--;
@@ -439,14 +392,14 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
     }
 
     if (in_message)
-        msg_save(&msg, &saved, &saved_n, &saved_cap, r->attach_count);
+        msg_save(&msg, &saved, (int)arrlen(r->attaches));
 
     /* Emit messages newest-first. notmuch outputs the thread in
      * arrival/depth order (root → replies), which is oldest-first;
      * reversing puts the most recent message at the top of the
      * buffer — what the reader actually wants to see. */
-    for (int i = saved_n - 1; i >= 0; i--) {
-        emit_msg(r, &saved[i], i == saved_n - 1);
+    for (ptrdiff_t i = arrlen(saved) - 1; i >= 0; i--) {
+        emit_msg(r, &saved[i], i == arrlen(saved) - 1);
         if (!r->html && saved[i].html.len > 0) {
             r->html = saved[i].html.data;
             r->html_len = saved[i].html.len;
@@ -454,5 +407,5 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
         msg_state_reset(&saved[i]);
     }
-    free(saved);
+    arrfree(saved);
 }

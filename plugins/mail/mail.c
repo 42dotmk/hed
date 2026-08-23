@@ -4,20 +4,21 @@
  * :mail-refresh       clear filter and reload
  * :mail-filter [q]    filter by extra query terms (prompt if no args)
  * :mail-query [q]     replace the base query entirely
- * :mail-sync          run mbsync + notmuch new, then reload
+ * :mail-sync          run the sync command + notmuch new, then reload
  *
  * Inside a mail list buffer:
  *   <CR>  open the selected thread
  *   /     open filter prompt
  *   r     refresh (clear filter)
- *   R     sync (mbsync + notmuch new)
+ *   R     sync (sync command + notmuch new)
  *
- * Override base query or mbsync profile in config.c:
+ * Override base query or sync command in config.c:
  *   mail_set_query("tag:inbox AND NOT tag:muted");
- *   mail_set_mbsync_profile("personal");           */
+ *   mail_set_sync_cmd("mbsync -a");                 default: hml recv */
 
 #include "mail.h"
 #include "hed.h"
+#include "mail_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -127,10 +128,11 @@ static void cmd_mail_open_html(const char *args) {
 static void cmd_mail_attach(const char *args) {
     /* Forms:
      *   :mail-attach                  → open (multi fzf if >1)
-     *   :mail-attach <id>             → open part <id>
+     *   :mail-attach <n>              → open attachment n (1-based, as
+     *                                   numbered in the Attachments: line)
      *   :mail-attach save [dir]       → save (multi fzf if >1) to dir
      *                                   (default ~/Downloads)
-     *   :mail-attach save <id> [dir]  → save part <id> to dir
+     *   :mail-attach save <n> [dir]   → save attachment n to dir
      */
     int id = -1;
     const char *dest = NULL;
@@ -192,7 +194,8 @@ static int mail_plugin_init(void) {
     cmd("mail-refresh", cmd_mail_refresh, "clear filter and refresh mail list");
     cmd("mail-filter", cmd_mail_filter, "filter mail (appended to base query)");
     cmd("mail-query", cmd_mail_query, "set base notmuch query");
-    cmd("mail-sync", cmd_mail_sync, "mbsync + notmuch new, then refresh");
+    cmd("mail-sync", cmd_mail_sync,
+        "run the sync command + notmuch new, then refresh");
     cmd("mail-tag", cmd_mail_tag, "apply notmuch tags to thread under cursor");
     cmd("mail-tag-all", cmd_mail_tag_all,
         "apply notmuch tags to every thread in the current query");
@@ -211,8 +214,8 @@ static int mail_plugin_init(void) {
     cmd("mail-open-html", cmd_mail_open_html,
         "open the viewed message's HTML body in the system browser");
     cmd("mail-attach", cmd_mail_attach,
-        "open/save attachment(s) (no args: open, fzf multi-pick if >1; [id]; "
-        "'save [id] [dir]')");
+        "open/save attachment(s) (no args: open, fzf multi-pick if >1; [n]; "
+        "'save [n] [dir]')");
     cmd("mail-attach-add", cmd_mail_attach_add,
         "attach file(s) to the compose buffer ([path]; no arg: fzf "
         "multi-pick)");
@@ -231,7 +234,7 @@ static int mail_plugin_init(void) {
     cmapn_ft("mail", "<CR>", "mail-open", "open selected thread");
     cmapn_ft("mail", "/", "mail-filter", "open filter prompt");
     cmapn_ft("mail", "r", "mail-refresh", "refresh (clear filter)");
-    cmapn_ft("mail", "R", "mail-sync", "sync mbsync + notmuch");
+    cmapn_ft("mail", "R", "mail-sync", "sync mail + notmuch new");
     cmapn_ft("mail", "<C-r>", "mail-read", "mark thread under cursor as read");
     cmapv_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
     cmapvl_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
@@ -242,8 +245,7 @@ static int mail_plugin_init(void) {
     cmapn_ft("mail", "C", "mail-compose", "start a new compose buffer");
     cmapn_ft("mail", "D", "mail-delete", "mark thread under cursor as deleted");
     cmapv_ft("mail", "D", "mail-delete", "mark selected threads as deleted");
-    keybind_register_command_ft(MODE_VISUAL_LINE, "D", "mail", "mail-delete",
-                                "mark selected threads as deleted");
+    cmapvl_ft("mail", "D", "mail-delete", "mark selected threads as deleted");
 
     cmapn_ft("mail-mailboxes", "<CR>", "mail-select", "select this mailbox");
 

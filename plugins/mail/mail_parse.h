@@ -4,20 +4,16 @@
 #include <stddef.h>
 
 typedef struct {
-    int part_id;
+    int part_id; /* notmuch part id — unique per message, not per thread */
     char filename[256];
     char content_type[128];
     char msg_id[256];
 } MailAttachInfo;
 
 typedef struct {
-    char **lines; /* rendered display lines (each is malloc'd) */
-    int line_count;
-    int line_cap;
+    char **lines; /* stb_ds array of malloc'd display lines */
 
-    MailAttachInfo *attaches;
-    int attach_count;
-    int attach_cap;
+    MailAttachInfo *attaches; /* stb_ds array, whole-thread order */
 
     /* Raw text/html source of the newest message that carries one.
      * malloc'd, NUL-terminated; NULL when no message has an HTML part. */
@@ -41,7 +37,10 @@ void mail_render_free(MailRender *r);
  *     <body, text/plain when available, w3m-rendered HTML otherwise>
  *
  * Messages after the first are preceded by a one-line divider.
- * Attachments collected across all messages land in `r->attaches`. */
+ * Attachments collected across all messages land in `r->attaches`;
+ * the [n] labels are 1-based indices into that array (stable across
+ * the whole thread, unlike notmuch part ids which restart per
+ * message). */
 void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count);
 
 #endif

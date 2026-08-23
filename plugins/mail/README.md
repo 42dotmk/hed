@@ -1,6 +1,7 @@
 # mail
 
-A notmuch-backed mail reader for hed. Sync with `mbsync`, index with
+A notmuch-backed mail reader for hed. Sync with a configurable
+command (`hml recv` by default; `mbsync` works too), index with
 `notmuch`, browse threads in a list buffer, read messages in a clean
 rendered view, reply / forward / send via `msmtp` (or any sendmail-
 compatible binary that reads RFC 822 on stdin).
@@ -8,7 +9,7 @@ compatible binary that reads RFC 822 on stdin).
 ## Requirements
 
 - `notmuch` — search, tagging, message extraction
-- `mbsync` (optional) — `:mail-sync`
+- `hml` or `mbsync` (optional) — `:mail-sync` (see `mail_set_sync_cmd`)
 - `msmtp` or compatible (optional) — `:mail-send`
 - `w3m` or `lynx` (optional) — HTML-only message rendering
 
@@ -37,7 +38,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-filter [q]` | Append a filter to the base query (prompts if empty) |
 | `:mail-mailbox [q]` | Scope listing to `folder:…` / `path:…` (empty = all) |
 | `:mail-mailboxes` | Open the mailbox sidebar (accounts + folders + saved views) |
-| `:mail-sync` | Run `mbsync` then `notmuch new`, then reload |
+| `:mail-sync` | Run the sync command then `notmuch new` (async), then reload |
 | `:mail-tag <±tags>` | Apply tags to thread under cursor (or visual selection) |
 | `:mail-tag-all <±tags>` | Apply tags to every thread in the current query |
 | `:mail-delete` | Shorthand for `+deleted -unread -inbox` on the current thread |
@@ -46,8 +47,8 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-reply` / `:mail-reply-all` | Reply to the message being viewed |
 | `:mail-forward` | Forward the message being viewed |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
-| `:mail-attach [id]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all) |
-| `:mail-attach save [id] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
+| `:mail-attach [n]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
+| `:mail-attach save [n] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 | `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
 
 Tag tokens without a leading `+`/`-` get `+` prefixed, so
@@ -62,7 +63,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `<CR>` | Open the selected thread |
 | `/` | Filter prompt |
 | `r` | Refresh (clears filter) |
-| `R` | Sync (`mbsync` + `notmuch new`) |
+| `R` | Sync (sync command + `notmuch new`) |
 | `<C-r>` | Mark thread(s) under cursor / selection as read |
 | `<C-S-r>` | Mark every thread in the current query as read |
 | `D` | Mark thread(s) as deleted |
@@ -114,7 +115,10 @@ Attachments:  [2] notes.pdf  [3] chart.png
 - Headers are normalized to the columns shown above; missing fields
   are simply omitted.
 - The `Attachments:` line appears right below `Date:` only when the
-  message has attachments. Each entry is `[<notmuch part id>] <name>`.
+  message has attachments. Each entry is `[<n>] <name>` where `n` is
+  a 1-based number that is unique across the whole thread (notmuch
+  part ids restart per message, so they can't address an attachment
+  unambiguously) — it's what `:mail-attach <n>` takes.
 - Multi-message threads render every message as its own section with
   a horizontal-rule divider between them.
 - The body always prefers `text/plain` if present. When only HTML is
@@ -132,7 +136,9 @@ section divider.
 
 ## Configuration
 
-All knobs go in `src/config.c` after `plugin_load(&plugin_mail, 1)`:
+All knobs live in `mail.h` and go in your user config
+(`~/.config/hed/config.c`) or `src/config.h` after
+`plugin_load(&plugin_mail, 1)`:
 
 ```c
 #include "mail/mail.h"
@@ -141,7 +147,7 @@ plugin_load(&plugin_mail, 1);
 
 mail_set_dir("/home/user/.mail");              /* maildir root        */
 mail_set_query("tag:inbox AND NOT tag:muted"); /* default base query  */
-mail_set_mbsync_profile("personal");           /* default: "-a"       */
+mail_set_sync_cmd("mbsync personal");          /* default: "hml recv" */
 mail_set_send_cmd("msmtp -t -a personal");     /* default: "msmtp -t" */
 mail_set_from("Me <me@example.com>");          /* From: in compose    */
 
@@ -208,14 +214,14 @@ message-mode convention), equivalent to `:mail-send`.
 Attachments are detected at parse time from the notmuch text stream —
 no second pass over the buffer. `:mail-attach` (or `a` in a message
 buffer) extracts each part with
-`notmuch show --part=<id> --format=raw` to
-`/tmp/hed-mail-<id>-<safename>` and opens it via the `open` plugin.
-With multiple attachments, an fzf picker shows `[id] name` for each
-part — `Tab` toggles a row, `<C-a>` selects all; every picked part is
-opened. You can still bypass the picker by passing an explicit id
-(`:mail-attach 3`).
+`notmuch show --part=<part> --format=raw` into a private temp dir
+(keeping the real filename, whose extension picks the opener) and
+opens it via the `open` plugin. With multiple attachments, an fzf
+picker shows `[n] name` for each part — `Tab` toggles a row, `<C-a>`
+selects all; every picked part is opened. You can still bypass the
+picker by passing an explicit number (`:mail-attach 3`).
 
-`:mail-attach save [id] [dir]` (or `A` in a message buffer) goes
+`:mail-attach save [n] [dir]` (or `A` in a message buffer) goes
 through the same picker but writes the picked parts into `dir`
 (default `~/Downloads`, created if needed) instead of opening them.
 
@@ -224,7 +230,8 @@ through the same picker but writes the picked parts into `dir`
 ```
 plugins/mail/
 ├── mail.c          # plugin entry, commands, keybinds
-├── mail.h          # public API
+├── mail.h          # public configuration API
+├── mail_internal.h # cross-file plumbing between the .c files
 ├── mail_impl.c     # query, list/sidebar/message buffers, highlighter
 ├── mail_parse.{c,h}# notmuch text → clean display lines + attachments
 └── mail_send.c     # compose / send / reply / forward

@@ -1,34 +1,29 @@
 #include "buf/row.h"
 #include "hed.h"
 #include "input/prompt.h"
+#include "lib/proc.h"
 #include "lib/theme.h"
 #include "mail.h"
+#include "mail_internal.h"
 #include "mail_parse.h"
 #include "open/open.h"
+#include "select_loop.h"
 #include "utils/term_cmd.h"
-#include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+/* Listing cap handed to `notmuch search --limit`. */
 #define MAIL_MAX 500
-#define MAIL_MBOX_MAX 256
-#define MAIL_ATTACH_MAX 32
 #define MAIL_LIST_BUF "mail://list"
 #define MAIL_MBOX_BUF "mail://mailboxes"
 
-typedef struct {
-    char msg_id[256];
-    int part_id;
-    char filename[256];
-} MailAttach;
-
-static MailAttach attachments[MAIL_ATTACH_MAX];
-static int attach_count = 0;
+/* Attachments of the currently-viewed thread, in "Attachments: [n]"
+ * numbering order (stb_ds; taken over from the last MailRender). */
+static MailAttachInfo *attachments = NULL;
 
 /* Raw text/html of the viewed thread's newest HTML-bearing message,
  * cached at open like the attachments above. NULL when none. */
@@ -64,13 +59,12 @@ static int has_unread_tag(const char *line) {
     return 0;
 }
 
-static MailEntry mail_entries[MAIL_MAX];
-static int mail_entry_count = 0;
+static MailEntry *mail_entries = NULL; /* stb_ds */
 
 static char base_query[512] = "*";
 static char filter_query[512] = "";
 static char mailbox_query[512] = "";
-static char mbsync_profile[128] = "-a";
+static char sync_cmd[256] = "hml recv";
 static char mail_dir[512] = ""; /* lazily initialised to $HOME/.mail */
 
 typedef enum {
@@ -86,38 +80,33 @@ typedef struct {
     MailboxKind kind;
 } MailboxEntry;
 
-static MailboxEntry mailbox_entries[MAIL_MBOX_MAX];
-static int mailbox_entry_count = 0;
+static MailboxEntry *mailbox_entries = NULL; /* stb_ds */
 
-#define MAIL_VIEWS_MAX 32
 typedef struct {
     char name[64];
     char query[256];
 } MailView;
-static MailView views[MAIL_VIEWS_MAX];
-static int view_count = 0;
+static MailView *views = NULL; /* stb_ds */
 
 void mail_add_view(const char *name, const char *query) {
     if (!name || !*name)
         return;
     /* Update or remove existing by name. */
-    for (int i = 0; i < view_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(views); i++) {
         if (strcmp(views[i].name, name) == 0) {
-            if (!query || !*query) {
-                views[i] = views[--view_count]; /* unordered remove */
-            } else {
+            if (!query || !*query)
+                arrdel(views, i);
+            else
                 snprintf(views[i].query, sizeof(views[i].query), "%s", query);
-            }
             return;
         }
     }
     if (!query || !*query)
         return;
-    if (view_count >= MAIL_VIEWS_MAX)
-        return;
-    MailView *v = &views[view_count++];
-    snprintf(v->name, sizeof(v->name), "%s", name);
-    snprintf(v->query, sizeof(v->query), "%s", query);
+    MailView v;
+    snprintf(v.name, sizeof(v.name), "%s", name);
+    snprintf(v.query, sizeof(v.query), "%s", query);
+    arrput(views, v);
 }
 
 /* ------------------------------------------------------------------ */
@@ -192,61 +181,47 @@ static int is_maildir(const char *path) {
     return 1;
 }
 
-/* Append an entry, bounds-checked. */
 static void mbox_add(const char *display, const char *query, MailboxKind k) {
-    if (mailbox_entry_count >= MAIL_MBOX_MAX)
-        return;
-    MailboxEntry *e = &mailbox_entries[mailbox_entry_count++];
-    snprintf(e->display, sizeof(e->display), "%s", display);
-    snprintf(e->query, sizeof(e->query), "%s", query ? query : "");
-    e->kind = k;
+    MailboxEntry e;
+    snprintf(e.display, sizeof(e.display), "%s", display);
+    snprintf(e.query, sizeof(e.query), "%s", query ? query : "");
+    e.kind = k;
+    arrput(mailbox_entries, e);
 }
 
 static int cmp_str(const void *a, const void *b) {
     return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-/* Read sorted directory entries (excluding "." / ".." and hidden helpers
- * like "cur" / "new" / "tmp"). Caller frees each entry and the array. */
-static int read_subdirs(const char *path, char ***out) {
+/* Sorted subdirectory names (excluding the "cur"/"new"/"tmp" maildir
+ * innards) as an stb_ds array of strdup'd strings. */
+static char **read_subdirs(const char *path) {
     FsDir *d = NULL;
-    if (fs_dir_open(&d, path) != ED_OK) {
-        *out = NULL;
-        return 0;
-    }
+    if (fs_dir_open(&d, path) != ED_OK)
+        return NULL;
 
     char **names = NULL;
-    int cap = 0;
-    int n = 0;
     FsDirEntry de;
     while (fs_dir_next(d, &de)) {
-        const char *name = de.name;
         if (!de.is_dir)
             continue;
-        if (!strcmp(name, "cur") || !strcmp(name, "new") ||
-            !strcmp(name, "tmp"))
+        if (!strcmp(de.name, "cur") || !strcmp(de.name, "new") ||
+            !strcmp(de.name, "tmp"))
             continue;
-
-        if (n == cap) {
-            cap = cap ? cap * 2 : 16;
-            char **nn = realloc(names, (size_t)cap * sizeof(*nn));
-            if (!nn)
-                break;
-            names = nn;
-        }
-        names[n++] = strdup(name);
+        char *dup = strdup(de.name);
+        if (dup)
+            arrput(names, dup);
     }
     fs_dir_close(d);
-    if (n > 1)
-        qsort(names, (size_t)n, sizeof(*names), cmp_str);
-    *out = names;
-    return n;
+    if (arrlen(names) > 1)
+        qsort(names, (size_t)arrlen(names), sizeof(*names), cmp_str);
+    return names;
 }
 
-static void free_names(char **names, int n) {
-    for (int i = 0; i < n; i++)
+static void free_names(char **names) {
+    for (ptrdiff_t i = 0; i < arrlen(names); i++)
         free(names[i]);
-    free(names);
+    arrfree(names);
 }
 
 /* Scan the maildir root. Two layouts supported:
@@ -254,12 +229,12 @@ static void free_names(char **names, int n) {
  *   ~/.mail/<account>/...           — collection; each account may be a
  *                                     maildir itself or contain folders */
 static void mailboxes_scan(void) {
-    mailbox_entry_count = 0;
+    arr_reset(mailbox_entries);
     mbox_add("[All mail]", "", MBE_ALL);
 
-    if (view_count > 0) {
+    if (arrlen(views) > 0) {
         mbox_add("── Views ──", "", MBE_HEADER);
-        for (int i = 0; i < view_count; i++)
+        for (ptrdiff_t i = 0; i < arrlen(views); i++)
             mbox_add(views[i].name, views[i].query, MBE_VIEW);
     }
 
@@ -272,12 +247,11 @@ static void mailboxes_scan(void) {
         return;
     }
 
-    char **accounts = NULL;
-    int nacc = read_subdirs(root, &accounts);
-    if (nacc > 0)
+    char **accounts = read_subdirs(root);
+    if (arrlen(accounts) > 0)
         mbox_add("── Mailboxes ──", "", MBE_HEADER);
 
-    for (int i = 0; i < nacc; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(accounts); i++) {
         const char *acct = accounts[i];
         char acct_path[1024];
         snprintf(acct_path, sizeof(acct_path), "%s/%s", root, acct);
@@ -288,15 +262,13 @@ static void mailboxes_scan(void) {
         mbox_add(acct, qall, MBE_MAILBOX);
 
         if (is_maildir(acct_path)) {
-            char qf[256], disp[256];
-            snprintf(disp, sizeof(disp), "  (root)");
+            char qf[256];
             snprintf(qf, sizeof(qf), "folder:%s", acct);
-            mbox_add(disp, qf, MBE_MAILBOX);
+            mbox_add("  (root)", qf, MBE_MAILBOX);
         }
 
-        char **folders = NULL;
-        int nf = read_subdirs(acct_path, &folders);
-        for (int j = 0; j < nf; j++) {
+        char **folders = read_subdirs(acct_path);
+        for (ptrdiff_t j = 0; j < arrlen(folders); j++) {
             char child[2048];
             snprintf(child, sizeof(child), "%s/%s", acct_path, folders[j]);
             if (!is_maildir(child))
@@ -306,30 +278,71 @@ static void mailboxes_scan(void) {
             snprintf(qf, sizeof(qf), "folder:%s/%s", acct, folders[j]);
             mbox_add(disp, qf, MBE_MAILBOX);
         }
-        free_names(folders, nf);
+        free_names(folders);
     }
-    free_names(accounts, nacc);
+    free_names(accounts);
 }
 
 /* ------------------------------------------------------------------ */
-/* mbsync                                                              */
+/* Sync                                                                */
 /* ------------------------------------------------------------------ */
 
-void mail_set_mbsync_profile(const char *profile) {
-    snprintf(mbsync_profile, sizeof(mbsync_profile), "%s",
-             profile ? profile : "-a");
+void mail_set_sync_cmd(const char *cmd) {
+    snprintf(sync_cmd, sizeof(sync_cmd), "%s",
+             (cmd && *cmd) ? cmd : "hml recv");
+}
+
+/* :mail-sync runs `<sync_cmd> && notmuch new` in a background child so
+ * the editor stays responsive; the list refreshes when it exits. */
+static struct {
+    Proc pr;
+    int running;
+} sync_job;
+
+static void sync_on_readable(int fd, void *ud) {
+    (void)ud;
+    char buf[512];
+    ssize_t r = read(fd, buf, sizeof(buf));
+    if (r > 0)
+        return; /* progress chatter — stderr already goes to the log */
+    if (r < 0 && (errno == EAGAIN || errno == EINTR))
+        return;
+
+    /* EOF: child finished. */
+    ed_loop_unregister(fd);
+    close(fd);
+    sync_job.pr.from_fd = -1;
+    int st = 0;
+    waitpid(sync_job.pr.pid, &st, 0);
+    sync_job.running = 0;
+
+    if (WIFEXITED(st) && WEXITSTATUS(st) == 0) {
+        mail_open_list();
+        ed_set_status_message("mail: sync complete");
+    } else if (WIFEXITED(st)) {
+        ed_set_status_message("mail: sync (%s) exited with status %d", sync_cmd,
+                              WEXITSTATUS(st));
+    } else {
+        ed_set_status_message("mail: sync (%s) failed", sync_cmd);
+    }
+    ed_render_frame();
 }
 
 void mail_sync(void) {
-    ed_set_status_message("mail: running hml recv...");
-    int rc = term_cmd_system("hml recv");
-    if (rc != 0) {
-        ed_set_status_message("mail: hml exited with status %d", rc);
+    if (sync_job.running) {
+        ed_set_status_message("mail: sync already running");
         return;
     }
-    term_cmd_system("notmuch new 2>/dev/null");
-    ed_set_status_message("mail: sync complete");
-    mail_open_list();
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "{ %s; } && notmuch new", sync_cmd);
+    const char *argv[] = {"sh", "-c", cmd, NULL};
+    if (proc_spawn(argv, 0, &sync_job.pr) != 0) {
+        ed_set_status_message("mail: failed to run %s", sync_cmd);
+        return;
+    }
+    sync_job.running = 1;
+    ed_loop_register("mail-sync", sync_job.pr.from_fd, sync_on_readable, NULL);
+    ed_set_status_message("mail: syncing (%s) ...", sync_cmd);
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,7 +361,7 @@ void mail_sync(void) {
 #define MC_META COLOR_COMMENT                        /* date / tags / dim   */
 
 /* Colors for the mail message view. */
-#define MC_MSG_MARKER COLOR_DELIMITER /* \fpart{ lines       */
+#define MC_MSG_MARKER COLOR_DELIMITER /* section dividers    */
 #define MC_MSG_HDR_KEY COLOR_KEYWORD  /* From: / Subject: …  */
 #define MC_MSG_HDR_VAL COLOR_VARIABLE /* header value        */
 #define MC_MSG_QUOTE COLOR_COMMENT    /* > quoted lines      */
@@ -448,8 +461,12 @@ static int parse_msg_spans(const char *raw, int len, MailSpan *sp, int max) {
     if (len <= 0)
         return 0;
 
-    /* Section separator emitted by mail_parse between messages. */
-    if ((unsigned char)raw[0] >= 0x80) {
+    /* Section divider emitted by mail_parse between messages — a run
+     * of "─" (U+2500, UTF-8 e2 94 80). Match the actual glyph, not
+     * just any non-ASCII lead byte, so body text starting with
+     * Cyrillic/emoji isn't painted as a divider. */
+    if (len >= 3 && (unsigned char)raw[0] == 0xE2 &&
+        (unsigned char)raw[1] == 0x94 && (unsigned char)raw[2] == 0x80) {
         if (n < max)
             sp[n++] = (MailSpan){0, len, MC_MSG_MARKER};
         return n;
@@ -525,29 +542,29 @@ static void mail_run_query(void) {
     int count = 0;
     term_cmd_capture(cmd, &lines, &count);
 
-    mail_entry_count = 0;
-    for (int i = 0; i < count && mail_entry_count < MAIL_MAX; i++) {
+    arr_reset(mail_entries);
+    for (int i = 0; i < count; i++) {
         const char *line = lines[i];
         if (!line || !line[0])
             continue;
 
-        MailEntry *e = &mail_entries[mail_entry_count];
+        MailEntry e;
 
         /* First token is the thread ID — ends at the first space. */
         const char *sp = strchr(line, ' ');
         if (sp) {
             size_t tlen = (size_t)(sp - line);
-            if (tlen >= sizeof(e->thread_id))
-                tlen = sizeof(e->thread_id) - 1;
-            memcpy(e->thread_id, line, tlen);
-            e->thread_id[tlen] = '\0';
-            snprintf(e->display, sizeof(e->display), "%s", sp + 1);
+            if (tlen >= sizeof(e.thread_id))
+                tlen = sizeof(e.thread_id) - 1;
+            memcpy(e.thread_id, line, tlen);
+            e.thread_id[tlen] = '\0';
+            snprintf(e.display, sizeof(e.display), "%s", sp + 1);
         } else {
-            snprintf(e->thread_id, sizeof(e->thread_id), "%s", line);
-            e->display[0] = '\0';
+            snprintf(e.thread_id, sizeof(e.thread_id), "%s", line);
+            e.display[0] = '\0';
         }
-        e->is_unread = has_unread_tag(e->display);
-        mail_entry_count++;
+        e.is_unread = has_unread_tag(e.display);
+        arrput(mail_entries, e);
     }
 
     term_cmd_free(lines, count);
@@ -559,6 +576,7 @@ static void mail_run_query(void) {
 
 void mail_open_list(void) {
     mail_run_query();
+    int n = (int)arrlen(mail_entries);
 
     /* Highlighting comes from mail_list_render_hook registered in
      * mail_plugin_init; the filetype is the dispatch filter. */
@@ -576,10 +594,10 @@ void mail_open_list(void) {
     Buffer *buf = &E.buffers[idx];
     buf_special_clear(buf);
 
-    if (mail_entry_count == 0) {
+    if (n == 0) {
         buf_special_addf(buf, "(no messages)");
     } else {
-        for (int i = 0; i < mail_entry_count; i++)
+        for (int i = 0; i < n; i++)
             buf_special_addf(buf, "%s%s",
                              mail_entries[i].is_unread ? "U " : "  ",
                              mail_entries[i].display);
@@ -587,21 +605,19 @@ void mail_open_list(void) {
     buf_special_show(idx);
 
     int unread = 0;
-    for (int i = 0; i < mail_entry_count; i++)
+    for (int i = 0; i < n; i++)
         if (mail_entries[i].is_unread)
             unread++;
-    int read = mail_entry_count - unread;
 
-    if (mail_entry_count == 0 && mailbox_query[0] && !q_is_wild(base_query)) {
+    if (n == 0 && mailbox_query[0] && !q_is_wild(base_query)) {
         ed_set_status_message(
             "mail: 0 threads in %s — base query [%s] may be filtering them out "
             "(try :mail-query *)",
             mailbox_query, base_query);
     } else {
         ed_set_status_message(
-            "mail: %d threads (%d unread, %d read)  [%s]%s%s%s%s",
-            mail_entry_count, unread, read, base_query,
-            mailbox_query[0] ? "  mbox=" : "",
+            "mail: %d threads (%d unread, %d read)  [%s]%s%s%s%s", n, unread,
+            n - unread, base_query, mailbox_query[0] ? "  mbox=" : "",
             mailbox_query[0] ? mailbox_query : "",
             filter_query[0] ? "  filter=" : "",
             filter_query[0] ? filter_query : "");
@@ -616,7 +632,7 @@ void mail_open_list(void) {
  * the "U " prefix on the mail-list row. No-op if the thread isn't
  * unread. */
 static void mark_thread_read(int row) {
-    if (row < 0 || row >= mail_entry_count)
+    if (row < 0 || row >= arrlen(mail_entries))
         return;
     if (!mail_entries[row].is_unread)
         return;
@@ -645,9 +661,6 @@ static void mark_thread_read(int row) {
     }
 }
 
-/* Open (or focus) the thread for mail_entries[row], marking it as read.
- * The caller is responsible for jump-list bookkeeping and for syncing
- * the mail-list buffer's cursor if needed. */
 /* Open (or focus) the thread buffer for `tid` ("thread:…"). `title` is
  * the mail-list display line, or NULL when the thread isn't in the
  * current listing (e.g. followed from a mail:// link) — then the
@@ -698,10 +711,10 @@ static void open_thread_tid(const char *tid, const char *title) {
     term_cmd_free(lines, count);
 
     buf_special_clear(tbuf);
-    buf_special_add_lines(tbuf, mr.lines, mr.line_count);
+    buf_special_add_lines(tbuf, mr.lines, (int)arrlen(mr.lines));
 
     if (!title) {
-        for (int i = 0; i < mr.line_count && i < 20; i++) {
+        for (ptrdiff_t i = 0; i < arrlen(mr.lines) && i < 20; i++) {
             const char *l = mr.lines[i];
             if (l && strncmp(l, "Subject: ", 9) == 0 && l[9]) {
                 title = l + 9;
@@ -712,16 +725,11 @@ static void open_thread_tid(const char *tid, const char *title) {
     free(tbuf->title);
     tbuf->title = strdup(title ? title : tid);
 
-    /* Cache attachments for :mail-attach without rescanning the buffer. */
-    attach_count = 0;
-    for (int i = 0; i < mr.attach_count && attach_count < MAIL_ATTACH_MAX;
-         i++) {
-        MailAttach *a = &attachments[attach_count++];
-        a->part_id = mr.attaches[i].part_id;
-        snprintf(a->msg_id, sizeof(a->msg_id), "%s", mr.attaches[i].msg_id);
-        snprintf(a->filename, sizeof(a->filename), "%s",
-                 mr.attaches[i].filename);
-    }
+    /* Take over the attachment list for :mail-attach without
+     * rescanning the buffer. */
+    arrfree(attachments);
+    attachments = mr.attaches;
+    mr.attaches = NULL;
 
     /* Cache the raw HTML for :mail-open-html, stealing it from the
      * render so mail_render_free doesn't drop it. */
@@ -738,7 +746,7 @@ static void open_thread_tid(const char *tid, const char *title) {
 }
 
 static void open_thread_row(int row) {
-    if (row < 0 || row >= mail_entry_count)
+    if (row < 0 || row >= arrlen(mail_entries))
         return;
 
     const char *tid = mail_entries[row].thread_id;
@@ -758,9 +766,9 @@ void mail_open_thread(const char *tid) {
         return;
     /* Prefer the listing row when present so the thread is marked read
      * and the list cursor bookkeeping applies. */
-    for (int i = 0; i < mail_entry_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(mail_entries); i++) {
         if (strcmp(mail_entries[i].thread_id, tid) == 0) {
-            open_thread_row(i);
+            open_thread_row((int)i);
             return;
         }
     }
@@ -777,7 +785,7 @@ void mail_handle_enter(void) {
         return;
 
     int row = win->cursor.y;
-    if (row < 0 || row >= mail_entry_count)
+    if (row < 0 || row >= arrlen(mail_entries))
         return;
 
     /* Record current position so <C-o> returns to the mail list. */
@@ -808,15 +816,15 @@ static int find_current_message_row(void) {
     if (strncmp(buf->filename, "mail://", 7) != 0)
         return -1;
     const char *tid = buf->filename + 7;
-    for (int i = 0; i < mail_entry_count; i++) {
+    for (ptrdiff_t i = 0; i < arrlen(mail_entries); i++) {
         if (strcmp(mail_entries[i].thread_id, tid) == 0)
-            return i;
+            return (int)i;
     }
     return -1;
 }
 
 static void goto_message_at(int row) {
-    if (row < 0 || row >= mail_entry_count)
+    if (row < 0 || row >= arrlen(mail_entries))
         return;
     /* Keep the mail-list cursor in sync so closing the message buffer
      * later returns the user to the right row. */
@@ -834,7 +842,7 @@ void mail_next_message(void) {
         ed_set_status_message("mail: not viewing a mail message");
         return;
     }
-    if (r + 1 >= mail_entry_count) {
+    if (r + 1 >= arrlen(mail_entries)) {
         ed_set_status_message("mail: no next message");
         return;
     }
@@ -958,8 +966,8 @@ void mail_apply_tags(const char *args) {
     }
     if (row_start < 0)
         row_start = 0;
-    if (row_end >= mail_entry_count)
-        row_end = mail_entry_count - 1;
+    if (row_end >= arrlen(mail_entries))
+        row_end = (int)arrlen(mail_entries) - 1;
     if (row_start > row_end) {
         ed_set_status_message("mail-tag: no thread under cursor");
         return;
@@ -1015,7 +1023,6 @@ void mail_apply_tags(const char *args) {
 
     if (was_visual)
         ed_set_mode(MODE_NORMAL);
-    // kb_move_down();
 
     ed_set_status_message("mail-tag: %s applied to %d thread%s", tag_args,
                           applied, applied == 1 ? "" : "s");
@@ -1093,12 +1100,12 @@ static void mailbox_render_hook(const HookRenderEvent *ev) {
             continue;
 
         int indented = (len >= 2 && raw[0] == ' ' && raw[1] == ' ');
-        MailboxKind kind = (row < mailbox_entry_count)
+        MailboxKind kind = (row < arrlen(mailbox_entries))
                                ? mailbox_entries[row].kind
                                : MBE_MAILBOX;
 
         int active = 0;
-        if (row < mailbox_entry_count) {
+        if (row < arrlen(mailbox_entries)) {
             const MailboxEntry *e = &mailbox_entries[row];
             if (e->kind == MBE_MAILBOX)
                 active = strcmp(e->query, mailbox_query) == 0;
@@ -1145,16 +1152,16 @@ void mail_open_mailboxes(void) {
     Buffer *buf = &E.buffers[idx];
     buf_special_clear(buf);
     int active_row = 0;
-    if (mailbox_entry_count == 0) {
+    if (arrlen(mailbox_entries) == 0) {
         buf_special_addf(buf, "(no mailboxes found — check mail_set_dir)");
     } else {
-        for (int i = 0; i < mailbox_entry_count; i++) {
+        for (ptrdiff_t i = 0; i < arrlen(mailbox_entries); i++) {
             const MailboxEntry *e = &mailbox_entries[i];
             buf_special_addf(buf, "%s", e->display);
             if (e->kind == MBE_MAILBOX && strcmp(e->query, mailbox_query) == 0)
-                active_row = i;
+                active_row = (int)i;
             else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
-                active_row = i;
+                active_row = (int)i;
         }
     }
     buf_special_show(idx);
@@ -1163,7 +1170,7 @@ void mail_open_mailboxes(void) {
         win->cursor.y = active_row;
 
     ed_set_status_message("mailboxes: %d entries  (root: %s)",
-                          mailbox_entry_count, resolve_mail_dir());
+                          (int)arrlen(mailbox_entries), resolve_mail_dir());
 }
 
 /* ------------------------------------------------------------------ */
@@ -1187,20 +1194,10 @@ static void sanitize_name(const char *in, char *out, size_t cap) {
     out[n] = '\0';
 }
 
-/* Expand a leading ~ or ~/ into $HOME (leaving ~user and HOME-missing
- * as-is). Returns a freshly malloced string; the caller frees. */
-static char *expand_home_dup(const char *in) {
-    if (!in)
-        return NULL;
-    char buf[PATH_MAX];
-    str_expand_tilde(in, buf, sizeof(buf));
-    return strdup(buf);
-}
-
 /* Extract one attachment. If dest_dir is NULL, write into /tmp and
  * open with open_path. Otherwise write into dest_dir/<sanitized-name>.
  * Returns 0 on success, non-zero on failure. */
-static int extract_attachment(const MailAttach *a, const char *dest_dir) {
+static int extract_attachment(const MailAttachInfo *a, const char *dest_dir) {
     char safe[256];
     sanitize_name(a->filename[0] ? a->filename : "attachment", safe,
                   sizeof(safe));
@@ -1281,32 +1278,19 @@ void mail_open_html(void) {
     open_path(path);
 }
 
-/* Extract every cached attachment into a fresh /tmp dir; used by
- * mail_forward to attach files to an outgoing message. Returns the
- * number of files actually written. The dir is unique per call (PID
- * + timestamp + monotonic counter) so concurrent forwards don't
- * stomp each other. */
-int mail_extract_attachments_to_tmp(char ***out_paths) {
-    if (out_paths)
-        *out_paths = NULL;
-
+char **mail_extract_attachments_to_tmp(void) {
     Buffer *buf = buf_cur();
     if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0)
-        return 0;
-    if (attach_count == 0)
-        return 0;
+        return NULL;
+    if (arrlen(attachments) == 0)
+        return NULL;
 
     char dir[256];
     if (fs_temp_dir("hed-mail-fwd", dir, sizeof(dir)) != ED_OK)
-        return 0;
+        return NULL;
 
-    char **paths = calloc((size_t)attach_count, sizeof(char *));
-    if (!paths)
-        return 0;
-    int n = 0;
-
-    for (int i = 0; i < attach_count; i++) {
-        /* Reuse extract_attachment so we share one extraction path. */
+    char **paths = NULL;
+    for (ptrdiff_t i = 0; i < arrlen(attachments); i++) {
         if (extract_attachment(&attachments[i], dir) != 0)
             continue;
         char safe[256];
@@ -1315,28 +1299,16 @@ int mail_extract_attachments_to_tmp(char ***out_paths) {
                       safe, sizeof(safe));
         char path[1024];
         snprintf(path, sizeof(path), "%s/%s", dir, safe);
-        paths[n] = strdup(path);
-        if (paths[n])
-            n++;
+        char *dup = strdup(path);
+        if (dup)
+            arrput(paths, dup);
     }
-
-    if (n == 0) {
-        free(paths);
-        return 0;
-    }
-    if (out_paths) {
-        *out_paths = paths;
-    } else {
-        for (int i = 0; i < n; i++)
-            free(paths[i]);
-        free(paths);
-    }
-    return n;
+    return paths;
 }
 
 /* Run the picked attachments through extract_attachment. Reports
  * aggregate status to the status line. */
-static void act_on_attachments(const MailAttach **picks, int n,
+static void act_on_attachments(const MailAttachInfo **picks, int n,
                                const char *dest_dir) {
     int ok = 0, fail = 0;
     for (int i = 0; i < n; i++) {
@@ -1356,14 +1328,15 @@ static void act_on_attachments(const MailAttach **picks, int n,
     }
 }
 
-void mail_attach_action(int part_id, const char *dest_dir) {
+void mail_attach_action(int att_no, const char *dest_dir) {
     Buffer *buf = buf_cur();
     if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0) {
         ed_set_status_message("mail-attach: open a message first");
         return;
     }
 
-    if (attach_count == 0) {
+    int n_att = (int)arrlen(attachments);
+    if (n_att == 0) {
         ed_set_status_message("mail-attach: no attachments in this message");
         return;
     }
@@ -1371,7 +1344,9 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     /* Resolve / create dest dir up front so we fail fast. */
     char *resolved_dir = NULL;
     if (dest_dir && *dest_dir) {
-        resolved_dir = expand_home_dup(dest_dir);
+        char full[PATH_MAX];
+        str_expand_tilde(dest_dir, full, sizeof(full));
+        resolved_dir = strdup(full);
         if (!resolved_dir) {
             ed_set_status_message("mail-attach: out of memory");
             return;
@@ -1388,34 +1363,35 @@ void mail_attach_action(int part_id, const char *dest_dir) {
         }
     }
 
-    /* Direct part-id path: act on one specific attachment, no fzf. */
-    if (part_id >= 0) {
-        for (int i = 0; i < attach_count; i++) {
-            if (attachments[i].part_id == part_id) {
-                const MailAttach *one[1] = {&attachments[i]};
-                act_on_attachments(one, 1, resolved_dir);
-                free(resolved_dir);
-                return;
-            }
+    /* Direct path: act on one attachment by its 1-based number (as
+     * shown in the rendered Attachments: line), no fzf. Numbers are
+     * thread-wide, so they stay unambiguous even when several
+     * messages reuse the same notmuch part id. */
+    if (att_no >= 0) {
+        if (att_no < 1 || att_no > n_att) {
+            ed_set_status_message("mail-attach: no attachment %d (1..%d)",
+                                  att_no, n_att);
+            free(resolved_dir);
+            return;
         }
-        ed_set_status_message("mail-attach: no attachment with part id %d",
-                              part_id);
+        const MailAttachInfo *one[1] = {&attachments[att_no - 1]};
+        act_on_attachments(one, 1, resolved_dir);
         free(resolved_dir);
         return;
     }
 
     /* Auto-pick when there is only one attachment. */
-    if (attach_count == 1) {
-        const MailAttach *one[1] = {&attachments[0]};
+    if (n_att == 1) {
+        const MailAttachInfo *one[1] = {&attachments[0]};
         act_on_attachments(one, 1, resolved_dir);
         free(resolved_dir);
         return;
     }
 
     /* Multiple attachments: fzf with multi=1. Tab toggles, <C-a>
-     * select-all. Items are "[<part_id>] <filename>". */
-    const char **items = malloc(sizeof(char *) * (size_t)attach_count);
-    char **labels = malloc(sizeof(char *) * (size_t)attach_count);
+     * select-all. Items are "[<number>] <filename>". */
+    const char **items = malloc(sizeof(char *) * (size_t)n_att);
+    char **labels = malloc(sizeof(char *) * (size_t)n_att);
     if (!items || !labels) {
         free(items);
         free(labels);
@@ -1423,9 +1399,9 @@ void mail_attach_action(int part_id, const char *dest_dir) {
         ed_set_status_message("mail-attach: out of memory");
         return;
     }
-    for (int i = 0; i < attach_count; i++) {
+    for (int i = 0; i < n_att; i++) {
         char tmp[320];
-        snprintf(tmp, sizeof(tmp), "[%d] %s", attachments[i].part_id,
+        snprintf(tmp, sizeof(tmp), "[%d] %s", i + 1,
                  attachments[i].filename[0] ? attachments[i].filename
                                             : "(unnamed)");
         labels[i] = strdup(tmp);
@@ -1433,8 +1409,8 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     }
     char **sel = NULL;
     int cnt = 0;
-    int ok = picker_list(items, attach_count, 1, &sel, &cnt);
-    for (int i = 0; i < attach_count; i++)
+    int ok = picker_list(items, n_att, 1, &sel, &cnt);
+    for (int i = 0; i < n_att; i++)
         free(labels[i]);
     free(labels);
     free(items);
@@ -1446,7 +1422,8 @@ void mail_attach_action(int part_id, const char *dest_dir) {
         return;
     }
 
-    const MailAttach **picks = malloc(sizeof(MailAttach *) * (size_t)cnt);
+    const MailAttachInfo **picks =
+        malloc(sizeof(MailAttachInfo *) * (size_t)cnt);
     if (!picks) {
         picker_list_free(sel, cnt);
         free(resolved_dir);
@@ -1455,17 +1432,10 @@ void mail_attach_action(int part_id, const char *dest_dir) {
     }
     int picked = 0;
     for (int i = 0; i < cnt; i++) {
-        if (!sel[i] || sel[i][0] != '[')
+        int no = 0;
+        if (!sel[i] || sscanf(sel[i], "[%d]", &no) != 1 || no < 1 || no > n_att)
             continue;
-        int pid = -1;
-        if (sscanf(sel[i], "[%d]", &pid) != 1 || pid < 0)
-            continue;
-        for (int j = 0; j < attach_count; j++) {
-            if (attachments[j].part_id == pid) {
-                picks[picked++] = &attachments[j];
-                break;
-            }
-        }
+        picks[picked++] = &attachments[no - 1];
     }
     picker_list_free(sel, cnt);
 
@@ -1487,7 +1457,7 @@ void mail_handle_mailbox_enter(void) {
     if (!win)
         return;
     int row = win->cursor.y;
-    if (row < 0 || row >= mailbox_entry_count)
+    if (row < 0 || row >= arrlen(mailbox_entries))
         return;
 
     MailboxEntry *e = &mailbox_entries[row];
