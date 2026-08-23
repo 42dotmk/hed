@@ -40,6 +40,10 @@ void kb_goto_word_end(void);
 /* True while any visual mode is active. */
 int kb_in_visual(void);
 
+/* Register the modeless basics shared by the emacs and vscode keymaps
+ * (Esc/CR/Tab/BS, arrow drop/extend, word-wise and Home/End extend). */
+void keybind_register_modeless_basics(void);
+
 /* Selection-aware variants used by modeless keymaps. `kb_drop_*` exits
  * any active visual selection and then moves; `kb_extend_*` enters
  * visual mode (if not already) and then moves, extending the selection. */

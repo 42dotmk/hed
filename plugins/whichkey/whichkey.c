@@ -72,6 +72,67 @@ static void wk_clear(void) {
     }
 }
 
+/* Emit `n` (tail, desc) pairs into out+off as a column-major table:
+ * measure the tail column from the data (capped so descriptions keep
+ * room), pad short trailing rows, honour MAX_LINES. Shared by the
+ * prefix-match section and the filetype section. */
+static size_t wk_emit_table(char *out, size_t outsz, size_t off,
+                            const char *const *tails, const char *const *descs,
+                            int n, int ncols, int col_w, int *truncated) {
+    int max_tail = 1;
+    for (int i = 0; i < n; i++) {
+        int t = (int)strlen(tails[i]);
+        if (t > max_tail)
+            max_tail = t;
+    }
+    int tail_w = max_tail;
+    if (tail_w > col_w / 3)
+        tail_w = col_w / 3;
+    int desc_w = col_w - tail_w - 2;
+    if (desc_w < 4)
+        desc_w = 4;
+
+    int max_cells = MAX_LINES * ncols;
+    int cells = n < max_cells ? n : max_cells;
+    if (cells < n)
+        *truncated = 1;
+    int nrows = (cells + ncols - 1) / ncols;
+    if (nrows < 1)
+        nrows = 1;
+
+    for (int r = 0; r < nrows; r++) {
+        int stop = 0;
+        for (int c = 0; c < ncols; c++) {
+            int idx = c * nrows + r;
+            int last_col = (c == ncols - 1);
+            if (off + (size_t)col_w + 4 > outsz) {
+                *truncated = 1;
+                stop = 1;
+                break;
+            }
+            /* Pad empty slots so columns stay aligned on short rows. */
+            const char *tail = idx < cells ? tails[idx] : "";
+            const char *desc = idx < cells ? descs[idx] : "";
+            char tbuf[64], dbuf[256];
+            snprintf(tbuf, sizeof(tbuf), "%.*s", tail_w, tail);
+            snprintf(dbuf, sizeof(dbuf), "%.*s", desc_w, desc);
+            off += (size_t)snprintf(out + off, outsz - off, " %-*s %-*s",
+                                    tail_w, tbuf, desc_w, dbuf);
+            if (last_col) {
+                if (off < outsz)
+                    out[off++] = '\n';
+            } else {
+                off += (size_t)snprintf(out + off, outsz - off, "%s", COL_SEP);
+            }
+        }
+        if (stop || *truncated)
+            break;
+    }
+    if (*truncated && off + 8 < outsz)
+        off += (size_t)snprintf(out + off, outsz - off, " ...\n");
+    return off;
+}
+
 /* Format the partial-match table for `e` into `out`. Returns the
  * number of bytes written (NUL-terminated). */
 static size_t wk_format(const HookKeybindFeedEvent *e, char *out,
@@ -126,104 +187,43 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out,
     if (col_w < MIN_COL_W)
         col_w = MIN_COL_W;
 
-    /* Pick the tail column width from the data, capped so descriptions
-     * still get room. */
-    int max_tail = 1;
+    /* Build (tail, desc) pairs, falling back to the underlying
+     * command's description when the keybinding itself doesn't carry
+     * one (typical for cmap* bindings registered without a desc). */
+    const char **tails = NULL, **descs = NULL; /* stb_ds arrays */
     for (int i = 0; i < n; i++) {
-        int t = (int)strlen(sorted[i]->sequence + prefix_len);
-        if (t > max_tail)
-            max_tail = t;
-    }
-    int tail_w = max_tail;
-    if (tail_w > col_w / 3)
-        tail_w = col_w / 3;
-    int desc_w = col_w - tail_w - 2;
-    if (desc_w < 4)
-        desc_w = 4;
-
-    int max_cells = MAX_LINES * ncols;
-    int cells = n < max_cells ? n : max_cells;
-    if (cells < n)
-        truncated = 1;
-
-    /* Column-major layout: items fill the first column top-to-bottom,
-     * then the second, etc. Reading down a column gives an
-     * alphabetical run, so visual order matches the sort. */
-    int nrows = (cells + ncols - 1) / ncols;
-    if (nrows < 1)
-        nrows = 1;
-
-    for (int r = 0; r < nrows; r++) {
-        for (int c = 0; c < ncols; c++) {
-            int idx = c * nrows + r;
-            int last_col = (c == ncols - 1);
-
-            if (idx >= cells) {
-                /* No item for this slot — pad so the columns stay
-                 * aligned on shorter trailing rows. */
-                if (off + (size_t)col_w + 4 > outsz) {
-                    truncated = 1;
-                    break;
-                }
-                off += (size_t)snprintf(out + off, outsz - off, " %-*s %-*s",
-                                        tail_w, "", desc_w, "");
-            } else {
-                const KeybindMatchView *m = sorted[idx];
-                const char *tail = m->sequence + prefix_len;
-                const char *desc = m->desc;
-
-                /* Fall back to the underlying command's description
-                 * when the keybinding itself doesn't carry one
-                 * (typical for cmap* bindings registered without a
-                 * desc). */
-                char cmdname[64];
-                if ((!desc || !*desc) && m->is_command && m->cmdline) {
-                    const char *p = m->cmdline;
-                    while (*p == ' ' || *p == '\t' || *p == ':')
-                        p++;
-                    const char *end = p;
-                    while (*end && *end != ' ' && *end != '\t')
-                        end++;
-                    size_t len = (size_t)(end - p);
-                    if (len > 0 && len < sizeof(cmdname)) {
-                        memcpy(cmdname, p, len);
-                        cmdname[len] = '\0';
-                        const char *cdesc = command_find_desc(cmdname);
-                        if (cdesc && *cdesc)
-                            desc = cdesc;
-                    }
-                }
-                if (!desc)
-                    desc = m->cmdline ? m->cmdline : "";
-
-                if (off + (size_t)col_w + 4 > outsz) {
-                    truncated = 1;
-                    break;
-                }
-
-                char tbuf[64], dbuf[256];
-                snprintf(tbuf, sizeof(tbuf), "%.*s", tail_w, tail);
-                snprintf(dbuf, sizeof(dbuf), "%.*s", desc_w, desc);
-
-                off += (size_t)snprintf(out + off, outsz - off, " %-*s %-*s",
-                                        tail_w, tbuf, desc_w, dbuf);
-            }
-
-            if (last_col) {
-                if (off < outsz)
-                    out[off++] = '\n';
-            } else {
-                off += (size_t)snprintf(out + off, outsz - off, "%s", COL_SEP);
+        const KeybindMatchView *m = sorted[i];
+        const char *desc = m->desc;
+        char cmdname[64];
+        if ((!desc || !*desc) && m->is_command && m->cmdline) {
+            const char *p = m->cmdline;
+            while (*p == ' ' || *p == '\t' || *p == ':')
+                p++;
+            const char *end = p;
+            while (*end && *end != ' ' && *end != '\t')
+                end++;
+            size_t len = (size_t)(end - p);
+            if (len > 0 && len < sizeof(cmdname)) {
+                memcpy(cmdname, p, len);
+                cmdname[len] = '\0';
+                const char *cdesc = command_find_desc(cmdname);
+                if (cdesc && *cdesc)
+                    desc = cdesc;
             }
         }
-        if (truncated)
-            break;
+        if (!desc)
+            desc = m->cmdline ? m->cmdline : "";
+        arrput(tails, m->sequence + prefix_len);
+        arrput(descs, desc);
     }
     free(sorted);
 
-    if (truncated && off + 8 < outsz) {
-        off += (size_t)snprintf(out + off, outsz - off, " ...\n");
-    }
+    /* Column-major layout: reading down a column gives an
+     * alphabetical run, so visual order matches the sort. */
+    off = wk_emit_table(out, outsz, off, tails, descs, n, ncols, col_w,
+                        &truncated);
+    arrfree(tails);
+    arrfree(descs);
 
     /* Append a "Filetype (<ft>)" section listing every ft-specific
      * binding registered for the current buffer's filetype that isn't
@@ -282,65 +282,9 @@ static size_t wk_format(const HookKeybindFeedEvent *e, char *out,
                 off += (size_t)snprintf(out + off, outsz - off,
                                         "\n── Filetype (%s) ──\n", cur_ft);
             }
-            int ft_max_tail = 1;
-            for (int i = 0; i < ft_n; i++) {
-                int t = (int)strlen(ft_seqs[i]);
-                if (t > ft_max_tail)
-                    ft_max_tail = t;
-            }
-            int ft_tail_w = ft_max_tail;
-            if (ft_tail_w > col_w / 3)
-                ft_tail_w = col_w / 3;
-            int ft_desc_w = col_w - ft_tail_w - 2;
-            if (ft_desc_w < 4)
-                ft_desc_w = 4;
-
-            int ft_max_cells = MAX_LINES * ncols;
-            int ft_cells = ft_n < ft_max_cells ? ft_n : ft_max_cells;
-            int ft_truncated = ft_cells < ft_n;
-            int ft_rows = (ft_cells + ncols - 1) / ncols;
-            if (ft_rows < 1)
-                ft_rows = 1;
-
-            for (int r = 0; r < ft_rows; r++) {
-                for (int c = 0; c < ncols; c++) {
-                    int idx = c * ft_rows + r;
-                    int last_col = (c == ncols - 1);
-                    if (idx >= ft_cells) {
-                        if (off + (size_t)col_w + 4 > outsz) {
-                            ft_truncated = 1;
-                            break;
-                        }
-                        off += (size_t)snprintf(out + off, outsz - off,
-                                                " %-*s %-*s", ft_tail_w, "",
-                                                ft_desc_w, "");
-                    } else {
-                        if (off + (size_t)col_w + 4 > outsz) {
-                            ft_truncated = 1;
-                            break;
-                        }
-                        char tbuf[64], dbuf[256];
-                        snprintf(tbuf, sizeof(tbuf), "%.*s", ft_tail_w,
-                                 ft_seqs[idx]);
-                        snprintf(dbuf, sizeof(dbuf), "%.*s", ft_desc_w,
-                                 ft_descs[idx]);
-                        off += (size_t)snprintf(out + off, outsz - off,
-                                                " %-*s %-*s", ft_tail_w, tbuf,
-                                                ft_desc_w, dbuf);
-                    }
-                    if (last_col) {
-                        if (off < outsz)
-                            out[off++] = '\n';
-                    } else {
-                        off += (size_t)snprintf(out + off, outsz - off, "%s",
-                                                COL_SEP);
-                    }
-                }
-                if (ft_truncated)
-                    break;
-            }
-            if (ft_truncated && off + 8 < outsz)
-                off += (size_t)snprintf(out + off, outsz - off, " ...\n");
+            int ft_truncated = 0;
+            off = wk_emit_table(out, outsz, off, ft_seqs, ft_descs, ft_n, ncols,
+                                col_w, &ft_truncated);
         }
         arrfree(ft_seqs);
         arrfree(ft_descs);

@@ -604,6 +604,47 @@ EXTEND_THEN(file_start, kb_goto_file_start())
 EXTEND_THEN(file_end, kb_goto_file_end())
 EXTEND_THEN(page_up, buf_scroll_page_up())
 EXTEND_THEN(page_down, buf_scroll_page_down())
+
+/* The modeless-keymap basics shared verbatim by the emacs and vscode
+ * keymaps: insert-mode Esc/Enter/Tab/Backspace, plain arrows drop the
+ * selection, Shift+arrows extend it, Ctrl+Shift+arrows extend word-
+ * wise, Shift+Home/End extend to bol/eol. Keymap plugins call this
+ * once, then add their own flavor on top (last-write-wins). */
+void keybind_register_modeless_basics(void) {
+    mapi("<Esc>", kb_insert_escape, "exit insert (no-op when modeless)");
+    mapi("<CR>", kb_insert_newline, "newline");
+    mapi("<Tab>", kb_insert_tab, "insert tab");
+    mapi("<BS>", kb_insert_backspace, "backspace");
+    mapv("<Esc>", kb_visual_escape, "exit visual");
+
+    /* Plain motion: drops any active selection. */
+    mapi("<Up>", kb_drop_up, "up");
+    mapi("<Down>", kb_drop_down, "down");
+    mapi("<Left>", kb_drop_left, "left");
+    mapi("<Right>", kb_drop_right, "right");
+    mapv("<Up>", kb_drop_up, "up");
+    mapv("<Down>", kb_drop_down, "down");
+    mapv("<Left>", kb_drop_left, "left");
+    mapv("<Right>", kb_drop_right, "right");
+
+    /* Shift+motion: enter / extend a selection. */
+    mapi("<S-Up>", kb_extend_up, "select up");
+    mapi("<S-Down>", kb_extend_down, "select down");
+    mapi("<S-Left>", kb_extend_left, "select left");
+    mapi("<S-Right>", kb_extend_right, "select right");
+    mapv("<S-Up>", kb_extend_up, "extend up");
+    mapv("<S-Down>", kb_extend_down, "extend down");
+    mapv("<S-Left>", kb_extend_left, "extend left");
+    mapv("<S-Right>", kb_extend_right, "extend right");
+    mapi("<C-S-Left>", kb_extend_word_l, "select previous word");
+    mapi("<C-S-Right>", kb_extend_word_r, "select next word");
+    mapv("<C-S-Left>", kb_extend_word_l, "extend previous word");
+    mapv("<C-S-Right>", kb_extend_word_r, "extend next word");
+    mapi("<S-Home>", kb_extend_bol, "select to bol");
+    mapi("<S-End>", kb_extend_eol, "select to eol");
+    mapv("<S-Home>", kb_extend_bol, "extend to bol");
+    mapv("<S-End>", kb_extend_eol, "extend to eol");
+}
 /* kb_goto_file_start is defined further below (jump-list aware version
  * used by vim's gg). Both keymap plugins reach it through this header. */
 

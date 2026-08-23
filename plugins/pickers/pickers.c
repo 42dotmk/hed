@@ -228,41 +228,29 @@ static void cmd_recent(const char *args) {
         return;
     }
 
-    char cmd_buf[8192];
-    int off = 0;
-
-    off += snprintf(cmd_buf + off, sizeof(cmd_buf) - off, "printf '%%s\\n' ");
-
-    for (int i = 0; i < len && off < (int)sizeof(cmd_buf) - 1024; i++) {
+    FzfInput in;
+    fzf_input_init(&in, 1);
+    for (int i = 0; i < len; i++) {
         const char *file = recent_files_get(&E.recent_files, i);
         if (!file)
             continue;
-
-        char escaped[1024];
-        shell_escape_single(file, escaped, sizeof(escaped));
-
-        size_t need = strlen(escaped) + 2;
-        if (off + need >= sizeof(cmd_buf)) {
-            break;
-        }
-
-        off += snprintf(cmd_buf + off, sizeof(cmd_buf) - off, "%s ", escaped);
+        const char *row[1] = {file};
+        fzf_input_row(&in, row);
     }
-
-    cmd_buf[off] = '\0';
 
     char **sel = NULL;
     int cnt = 0;
     const char *fzf_opts =
         "--preview '" FZF_FILE_PREVIEW_BODY "' --preview-window right,60%,wrap";
 
-    if (fzf_run_opts(cmd_buf, fzf_opts, 0, &sel, &cnt) && cnt > 0 && sel[0] &&
-        sel[0][0]) {
+    if (fzf_run_opts(fzf_input_cmd(&in), fzf_opts, 0, &sel, &cnt) && cnt > 0 &&
+        sel[0] && sel[0][0]) {
         buf_open_or_switch(sel[0], true);
     } else {
         ed_set_status_message("no selection");
     }
 
+    fzf_input_free(&in);
     fzf_free(sel, cnt);
 }
 
