@@ -21,7 +21,7 @@ static int emacs_keybinds_init(void) {
 
     /* Search / cancel */
     cmapi("<C-s>", "search", "isearch forward");
-    cmapi("<C-r>", "search", "isearch backward (TODO)");
+    cmapi("<C-r>", "search_prev", "previous search match");
     mapv("<C-g>", kb_visual_escape, "cancel selection");
 
     /* C-x prefix cluster */
@@ -35,6 +35,7 @@ static int emacs_keybinds_init(void) {
     cmapi("<C-x>3", "vsplit", "split vertical");
     cmapi("<C-x>o", "wfocus", "other window");
     cmapi("<C-x>u", "undo", "undo");
+    cmapi("<C-x>s", "wa", "save all buffers");
 
     /* Meta bindings (real M-keys via input layer) */
     cmapi("<M-x>", "prompt", "M-x (command mode)");

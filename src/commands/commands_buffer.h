@@ -13,6 +13,8 @@ void cmd_buffer_delete_force(const char *args);
 /* File I/O and lifecycle */
 void cmd_quit(const char *args);
 void cmd_quit_force(const char *args);
+void cmd_write_all(const char *args);
+void cmd_quit_all(const char *args);
 void cmd_write(const char *args);
 void cmd_write_quit(const char *args);
 void cmd_edit(const char *args);

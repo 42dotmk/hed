@@ -12,7 +12,9 @@ unavailable.
 |---|---|
 | `:e <path>` | Edit file or directory |
 | `:w` | Write current buffer |
+| `:wa` | Write all dirty named buffers |
 | `:q` `:q!` `:quit` | Quit / force quit |
+| `:qa` `:qa!` | Quit if nothing unsaved / discard everything |
 | `:wq` | Write + quit |
 | `:bn` `:bp` `:b <n>` | Next / previous / nth buffer |
 | `:ls` | List open buffers |
@@ -80,8 +82,9 @@ active visual selection when one exists.
 | `:insert` `:append` `:insert_bol` `:append_eol` | Enter insert mode |
 | `:visual` `:visual_line` `:visual_block` | Toggle visual modes |
 | `:put [reg]` `:put!` | Paste after / before (over the selection if active) |
-| `:search` `:search_next` `:search_word` `:search_selection` | Search family |
+| `:search` `:search_next` `:search_prev` `:search_word` `:search_selection` | Search family |
 | `:center` `:scrollup` `:scrolldown` | View motion (half-page scrolls) |
+| `:scroll_line_up` `:scroll_line_down` | Scroll the viewport one line (vim `C-y`/`C-e`, VSCode `Ctrl+Up/Down`) |
 
 ## Misc
 

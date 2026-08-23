@@ -30,6 +30,7 @@ or pre-load it in `src/config.c` by setting `plugin_load(&plugin_emacs_keybinds,
 | `C-w` | Kill region |
 | `C-y` | Yank (paste from kill ring / register) |
 | `C-x u` | Undo |
+| `C-x s` | Save all buffers (`:wa`) |
 
 ## Selection
 

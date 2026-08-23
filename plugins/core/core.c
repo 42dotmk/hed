@@ -332,6 +332,9 @@ static void register_commands(void) {
     cmd("quit", cmd_quit, "quit");
     cmd("w", cmd_write, "write");
     cmd("wq", cmd_write_quit, "write+quit");
+    cmd("wa", cmd_write_all, "write all dirty named buffers");
+    cmd("qa", cmd_quit_all, "quit if nothing is unsaved");
+    cmd("qa!", cmd_quit_force, "quit, discarding all changes");
     cmd("bn", cmd_buffer_next, "next buf");
     cmd("bp", cmd_buffer_prev, "prev buf");
     cmd("b#", cmd_buffer_alt, "alt buf");
@@ -435,8 +438,11 @@ static void register_commands(void) {
     cmd("center", cmd_center, "center current line on screen");
     cmd("scrollup", cmd_scrollup, "scroll up half a page");
     cmd("scrolldown", cmd_scrolldown, "scroll down half a page");
+    cmd("scroll_line_up", cmd_scroll_line_up, "scroll view up one line");
+    cmd("scroll_line_down", cmd_scroll_line_down, "scroll view down one line");
     cmd("search", cmd_search, "open search prompt");
     cmd("search_next", cmd_search_next, "jump to next search match");
+    cmd("search_prev", cmd_search_prev, "jump to previous search match");
     cmd("search_word", cmd_search_word, "search word under cursor");
     cmd("search_selection", cmd_search_selection, "search visual selection");
     cmd("match_bracket", cmd_match_bracket, "jump to matching bracket");

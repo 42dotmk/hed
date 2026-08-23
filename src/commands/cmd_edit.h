@@ -30,10 +30,13 @@ void cmd_replace_char(const char *args);
 void cmd_center(const char *args);
 void cmd_scrollup(const char *args);
 void cmd_scrolldown(const char *args);
+void cmd_scroll_line_up(const char *args);
+void cmd_scroll_line_down(const char *args);
 
 /* Search / navigation */
 void cmd_search(const char *args);
 void cmd_search_next(const char *args);
+void cmd_search_prev(const char *args);
 void cmd_search_word(const char *args);
 void cmd_search_selection(const char *args);
 void cmd_match_bracket(const char *args);

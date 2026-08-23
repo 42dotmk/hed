@@ -24,6 +24,7 @@ default `src/config.c`, so this is what you get on a fresh install.
 | `{` `}` | Previous / next paragraph |
 | `<C-u>` `<C-d>` | Half-page up / down |
 | `<C-b>` `<C-f>` | Full page up / down |
+| `<C-e>` `<C-y>` | Scroll the view one line down / up |
 | `S-arrows`, `C-S-Left/Right`, `S-Home/End` | Extend a selection (shared modeless basics — same as the emacs/vscode keymaps) |
 | `%` | Match bracket |
 | `n` `N` | Next / previous search match |

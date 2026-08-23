@@ -135,6 +135,50 @@ void cmd_buffer_delete_force(const char *args) {
  * FILE I/O AND LIFECYCLE COMMANDS
  * ============================================ */
 
+/* :wa — write every dirty buffer that has a filename. */
+void cmd_write_all(const char *args) {
+    (void)args;
+    int saved = 0, failed = 0, skipped = 0;
+    for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++) {
+        Buffer *b = &E.buffers[i];
+        if (!b->dirty)
+            continue;
+        if (!b->filename || !*b->filename) {
+            skipped++;
+            continue;
+        }
+        if (buf_save_in(b) == ED_OK)
+            saved++;
+        else
+            failed++;
+    }
+    if (failed)
+        ed_set_status_message("wa: %d saved, %d FAILED", saved, failed);
+    else if (skipped)
+        ed_set_status_message("wa: %d saved (%d unnamed skipped)", saved,
+                              skipped);
+    else
+        ed_set_status_message("wa: %d saved", saved);
+}
+
+/* :qa — quit when no buffer has unsaved changes (:qa! forces). */
+void cmd_quit_all(const char *args) {
+    (void)args;
+    int dirty = 0;
+    for (ptrdiff_t i = 0; i < arrlen(E.buffers); i++)
+        if (E.buffers[i].dirty)
+            dirty++;
+    if (dirty) {
+        ed_set_status_message(
+            "%d buffer%s with unsaved changes (:wa to save, :qa! to force)",
+            dirty, dirty == 1 ? "" : "s");
+        return;
+    }
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+    exit(0);
+}
+
 void cmd_quit(const char *args) {
     (void)args;
     Buffer *buf = buf_cur();

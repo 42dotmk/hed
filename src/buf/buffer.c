@@ -983,7 +983,10 @@ void buf_yank_line_in(Buffer *buf) {
 
 /*** Search ***/
 
-void buf_find_in(Buffer *buf) {
+/* dir: +1 = forward from the next row, -1 = backward from the
+ * previous row. Row-granular, wrapping — the shared body of
+ * buf_find_in / buf_find_prev_in. */
+static void buf_find_dir(Buffer *buf, int dir) {
     if (!buf)
         return;
     if (E.search_query.len == 0)
@@ -1008,7 +1011,8 @@ void buf_find_in(Buffer *buf) {
     }
 
     for (int i = 0; i < buf->num_rows; i++) {
-        current = (start_y + i + 1) % buf->num_rows;
+        current = ((start_y + dir * (i + 1)) % buf->num_rows + buf->num_rows) %
+                  buf->num_rows;
         Row *row = &buf->rows[current];
         const char *render = row->render.data;
         const char *match = NULL;
@@ -1049,6 +1053,9 @@ void buf_find_in(Buffer *buf) {
     ed_set_status_message("Not found%s: %s", use_regex ? " (regex)" : "",
                           E.search_query.data);
 }
+
+void buf_find_in(Buffer *buf) { buf_find_dir(buf, +1); }
+void buf_find_prev_in(Buffer *buf) { buf_find_dir(buf, -1); }
 
 /* Reload current buffer's file from disk, discarding unsaved changes */
 void buf_reload(Buffer *buf) {

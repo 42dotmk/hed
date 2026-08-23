@@ -276,6 +276,38 @@ void cmd_scrolldown(const char *args) {
     buf_scroll_half_page_down();
 }
 
+/* Scroll the viewport one line (vim C-e/C-y, VSCode Ctrl+Down/Up):
+ * move row_offset, dragging the cursor along only as far as needed to
+ * keep it visible. */
+static void scroll_line(int dir) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || buf->num_rows == 0)
+        return;
+    win->row_offset += dir;
+    if (win->row_offset > buf->num_rows - 1)
+        win->row_offset = buf->num_rows - 1;
+    if (win->row_offset < 0)
+        win->row_offset = 0;
+    if (win->cursor.y < win->row_offset)
+        win->cursor.y = win->row_offset;
+    if (win->height > 0 && win->cursor.y >= win->row_offset + win->height)
+        win->cursor.y = win->row_offset + win->height - 1;
+    int len = (int)buf->rows[win->cursor.y].chars.len;
+    if (win->cursor.x > len)
+        win->cursor.x = len;
+}
+
+void cmd_scroll_line_up(const char *args) {
+    (void)args;
+    scroll_line(-1);
+}
+
+void cmd_scroll_line_down(const char *args) {
+    (void)args;
+    scroll_line(+1);
+}
+
 /*** Search / navigation ***/
 
 void cmd_search(const char *args) {
@@ -290,6 +322,15 @@ void cmd_search_next(const char *args) {
         return;
     kb_jump_save_current();
     buf_find_in(buf);
+}
+
+void cmd_search_prev(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return;
+    kb_jump_save_current();
+    buf_find_prev_in(buf);
 }
 
 void cmd_search_word(const char *args) {

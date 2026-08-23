@@ -103,6 +103,8 @@ void buf_delete_line_in(Buffer *buf);
 void buf_delete_lines_in(Buffer *buf, int sy, int ey);
 void buf_yank_line_in(Buffer *buf);
 void buf_find_in(Buffer *buf);
+/* Same, searching backward from the previous row. */
+void buf_find_prev_in(Buffer *buf);
 /* Reload this buffer's file content from disk (discard changes) */
 void buf_reload(Buffer *buf);
 

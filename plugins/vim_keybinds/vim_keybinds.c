@@ -123,6 +123,8 @@ static int vim_keybinds_init(void) {
     cmapn("<C-u>", "scrollup", "scroll up");
     cmapn("<C-b>", "goto pageup", "page up");
     cmapn("<C-f>", "goto pagedown", "page down");
+    cmapn("<C-e>", "scroll_line_down", "scroll view down one line");
+    cmapn("<C-y>", "scroll_line_up", "scroll view up one line");
     cmapn(">>", "indent", "indent");
     cmapn("<Right>", "wgrowwidth", "grow window width");
     cmapn("<Left>", "wshrinkwidth", "shrink window width");
@@ -148,6 +150,7 @@ static int vim_keybinds_init(void) {
     cmapn("gF", "searchpath", "search file");
     cmapn("i", "insert", "insert");
     cmapn("n", "search_next", "next match");
+    cmapn("N", "search_prev", "previous match");
     cmapn("p", "put", "paste after");
     cmapn("P", "put!", "paste before");
     cmapn("r", "replace_char", "replace char");

@@ -56,6 +56,14 @@ static int vscode_keybinds_init(void) {
     cmapi("<M-N>", "bp", "prev buffer");
     cmapi("<C-PageDown>", "bn", "next buffer (Ctrl+PgDn)");
     cmapi("<C-PageUp>", "bp", "prev buffer (Ctrl+PgUp)");
+    cmapi("<C-b>", "e .", "file explorer (dired)");
+    cmapi("<C-k>s", "wa", "save all");
+    cmapi("<C-k><C-w>", "qa", "close all (quit if nothing unsaved)");
+    cmapi("<C-k><C-Left>", "wh", "focus left editor group");
+    cmapi("<C-k><C-Right>", "wl", "focus right editor group");
+    cmapi("<C-k>g", "git", "source control (lazygit)");
+    cmapi("<M-t>", "tmux_toggle", "toggle terminal (tmux pane)");
+    cmapi("<M-z>", "wrap", "toggle word wrap");
 
     /* Command palette. F1 / Alt+P because terminals can't deliver
      * Ctrl+Shift+P. */
@@ -79,11 +87,16 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-f>", "search", "find in file");
     cmapi("<C-S-f>", "rg", "search in workspace");
     cmapi("<F3>", "search_next", "find next");
+    cmapi("<S-F3>", "search_prev", "find previous");
     cmapi("<C-g>", "prompt goto", "go to line");
     cmapi("<M-Left>", "jump_back", "navigate back");
     cmapi("<M-Right>", "jump_forward", "navigate forward");
     cmapi("<F12>", "tag", "go to definition (ctags)");
     cmapi("<C-t>", "tag", "go to symbol (ctags)");
+    cmapi("<F8>", "cnext", "next problem (quickfix)");
+    cmapi("<S-F8>", "cprev", "previous problem (quickfix)");
+    cmapi("<M-m>", "ctoggle", "toggle problems panel (quickfix)");
+    cmapi("<M-l>", "mc_match_all", "select all occurrences");
 
     /* Multi-cursor (VSCode Ctrl+D family, via the multicursor plugin). */
     cmapi("<C-d>", "mc_next_match", "add cursor at next occurrence");
@@ -106,6 +119,17 @@ static int vscode_keybinds_init(void) {
     cmapv("<C-_>", "toggle_comment", "toggle comment (Ctrl+/)");
     cmapi("<M-/>", "toggle_comment", "toggle comment");
     cmapi("<M-F>", "fmt", "format document (Shift+Alt+F)");
+
+    /* Language niceties (Ctrl+K chords, matching VSCode). */
+    cmapi("<C-k><C-i>", "lsp_hover", "show hover (lsp)");
+    cmapi("<C-k>v", "viewmd", "markdown preview");
+
+    /* Scrolling: VSCode Ctrl+Up/Down scrolls without moving the
+     * cursor; multicursor keeps its VSCode-faithful Ctrl+Alt+Up/Down
+     * (this keymap's init re-runs on :keymap, so these win the
+     * last-write-wins race against multicursor's global binds). */
+    cmapi("<C-Up>", "scroll_line_up", "scroll up one line");
+    cmapi("<C-Down>", "scroll_line_down", "scroll down one line");
 
     /* Folding (VSCode Ctrl+K chords; Ctrl+0 isn't deliverable, so the
      * fold-all chord is Ctrl+K then plain 0). */

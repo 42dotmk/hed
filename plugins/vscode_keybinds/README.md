@@ -20,6 +20,13 @@ pre-load it in `src/config.c` by setting
 | `Alt+-` | Split horizontal |
 | `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous buffer |
 | `Alt+N` / `Alt+Shift+N` | Next / previous buffer |
+| `Ctrl+B` | File explorer (dired on cwd) |
+| `Ctrl+K S` | Save all (`:wa`) |
+| `Ctrl+K Ctrl+W` | Close all — quit if nothing unsaved (`:qa`) |
+| `Ctrl+K Ctrl+Left/Right` | Focus editor group left / right |
+| `Ctrl+K G` | Source control (`:git`, lazygit) |
+| `Alt+T` | Toggle terminal (`:tmux_toggle`) |
+| `Alt+Z` | Toggle word wrap |
 
 ## Edit
 
@@ -41,11 +48,17 @@ pre-load it in `src/config.c` by setting
 | Key | Action |
 |---|---|
 | `Ctrl+F` | Search in file |
-| `F3` | Find next |
+| `F3` / `Shift+F3` | Find next / previous |
 | `Ctrl+Shift+F` | Search in workspace (`:rg`) |
 | `Ctrl+G` | Go to line (prompt prefilled with `:goto `) |
 | `Alt+Left` / `Alt+Right` | Navigate back / forward (jump list) |
 | `F12` `Ctrl+T` | Go to definition / symbol (`:tag`, needs ctags) |
+| `F8` / `Shift+F8` | Next / previous problem (quickfix) |
+| `Alt+M` | Toggle problems panel (quickfix) |
+| `Alt+L` | Select all occurrences (`:mc_match_all`) |
+| `Ctrl+K Ctrl+I` | Show hover (`:lsp_hover`) |
+| `Ctrl+K V` | Markdown preview (`:viewmd`) |
+| `Ctrl+Up` / `Ctrl+Down` | Scroll one line without moving the cursor |
 
 ## Multi-cursor (multicursor plugin)
 
