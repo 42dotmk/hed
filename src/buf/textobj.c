@@ -94,7 +94,7 @@ static int utf8_prev_cp(const char *s, int len, int idx) {
         idx--;
     return idx;
 }
-static int is_word_byte(unsigned char b) {
+int textobj_is_word_byte(unsigned char b) {
     return (b == '_' || (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') ||
             (b >= 'a' && b <= 'z') || (b & 0x80));
 }
@@ -106,7 +106,7 @@ static int char_class(const char *s, int len, int idx) {
     unsigned char b = (unsigned char)s[idx];
     if (b == ' ' || b == '\t')
         return 0;
-    if (is_word_byte(b))
+    if (textobj_is_word_byte(b))
         return 1;
     return 2;
 }

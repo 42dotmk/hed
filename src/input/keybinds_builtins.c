@@ -561,20 +561,20 @@ void kb_goto_word_end(void) { kb_apply_motion(textobj_to_word_end); }
  * Used by modeless keymaps (vscode_keybinds, emacs_keybinds) to bind
  * Shift+arrow to extend and plain arrow to drop. */
 
-static int in_visual_mode(void) {
+int kb_in_visual(void) {
     return E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_LINE ||
            E.mode == MODE_VISUAL_BLOCK;
 }
 
 #define DROP_THEN(name, body)                                                  \
     void kb_drop_##name(void) {                                                \
-        if (in_visual_mode())                                                  \
+        if (kb_in_visual())                                                    \
             kb_visual_escape();                                                \
         body;                                                                  \
     }
 #define EXTEND_THEN(name, body)                                                \
     void kb_extend_##name(void) {                                              \
-        if (!in_visual_mode())                                                 \
+        if (!kb_in_visual())                                                   \
             kb_visual_begin(0);                                                \
         body;                                                                  \
     }
@@ -587,6 +587,10 @@ DROP_THEN(word_l, kb_goto_word_start())
 DROP_THEN(word_r, kb_goto_word_end())
 DROP_THEN(bol, kb_goto_line_start())
 DROP_THEN(eol, kb_goto_line_end())
+DROP_THEN(file_start, kb_goto_file_start())
+DROP_THEN(file_end, kb_goto_file_end())
+DROP_THEN(page_up, buf_scroll_page_up())
+DROP_THEN(page_down, buf_scroll_page_down())
 
 EXTEND_THEN(left, kb_move_left())
 EXTEND_THEN(right, kb_move_right())
@@ -596,6 +600,10 @@ EXTEND_THEN(word_l, kb_goto_word_start())
 EXTEND_THEN(word_r, kb_goto_word_end())
 EXTEND_THEN(bol, kb_goto_line_start())
 EXTEND_THEN(eol, kb_goto_line_end())
+EXTEND_THEN(file_start, kb_goto_file_start())
+EXTEND_THEN(file_end, kb_goto_file_end())
+EXTEND_THEN(page_up, buf_scroll_page_up())
+EXTEND_THEN(page_down, buf_scroll_page_down())
 /* kb_goto_file_start is defined further below (jump-list aware version
  * used by vim's gg). Both keymap plugins reach it through this header. */
 

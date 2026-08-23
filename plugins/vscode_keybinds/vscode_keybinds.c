@@ -7,18 +7,6 @@
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-static int vsc_in_visual(void) {
-    return E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_LINE ||
-           E.mode == MODE_VISUAL_BLOCK;
-}
-
-/* Word-ish byte for Ctrl+Backspace / Ctrl+Del word deletion. Bytes
- * >= 0x80 (UTF-8 continuations and starts) count as word bytes so a
- * multi-byte char is never split across a boundary decision. */
-static int vsc_word_byte(unsigned char c) {
-    return isalnum(c) || c == '_' || c >= 0x80;
-}
-
 /* Ctrl+G: open the ":" prompt prefilled with "goto " so typing a
  * number + Enter jumps to it (VSCode's Go to Line). */
 static void vsc_goto_line_prompt(void) {
@@ -34,7 +22,7 @@ static void vsc_select_all(void) {
     Window *win = window_cur();
     if (!buf || !win || buf->num_rows == 0)
         return;
-    if (vsc_in_visual())
+    if (kb_in_visual())
         kb_visual_escape();
     win->cursor.y = 0;
     win->cursor.x = 0;
@@ -49,7 +37,7 @@ static void vsc_select_line(void) {
     Window *win = window_cur();
     if (!buf || !win || buf->num_rows == 0)
         return;
-    if (!vsc_in_visual()) {
+    if (!kb_in_visual()) {
         win->cursor.x = 0;
         kb_visual_begin(0);
     }
@@ -61,56 +49,10 @@ static void vsc_select_line(void) {
     }
 }
 
-/* Ctrl+Home / Ctrl+End: jump to file start/end, dropping any selection. */
-static void vsc_goto_file_start(void) {
-    if (vsc_in_visual())
-        kb_visual_escape();
-    kb_goto_file_start();
-}
-static void vsc_goto_file_end(void) {
-    if (vsc_in_visual())
-        kb_visual_escape();
-    kb_goto_file_end();
-}
-
-/* Ctrl+Shift+Home / Ctrl+Shift+End: extend selection to file edges. */
-static void vsc_extend_file_start(void) {
-    if (!vsc_in_visual())
-        kb_visual_begin(0);
-    kb_goto_file_start();
-}
-static void vsc_extend_file_end(void) {
-    if (!vsc_in_visual())
-        kb_visual_begin(0);
-    kb_goto_file_end();
-}
-
-/* PageUp / PageDown (plain drops selection, shifted extends it). */
-static void vsc_page_up(void) {
-    if (vsc_in_visual())
-        kb_visual_escape();
-    buf_scroll_page_up();
-}
-static void vsc_page_down(void) {
-    if (vsc_in_visual())
-        kb_visual_escape();
-    buf_scroll_page_down();
-}
-static void vsc_extend_page_up(void) {
-    if (!vsc_in_visual())
-        kb_visual_begin(0);
-    buf_scroll_page_up();
-}
-static void vsc_extend_page_down(void) {
-    if (!vsc_in_visual())
-        kb_visual_begin(0);
-    buf_scroll_page_down();
-}
-
 /* Del: delete forward (the selection if one is active; joins with the
  * next line at eol). */
 static void vsc_delete_forward(void) {
-    if (vsc_in_visual()) {
+    if (kb_in_visual()) {
         kb_visual_delete_selection();
         return;
     }
@@ -130,10 +72,49 @@ static void vsc_delete_forward(void) {
     }
 }
 
+/* Scan one word (or whitespace-then-punctuation run) from `x` in
+ * direction `dir` (-1 left, +1 right) and return the far boundary.
+ * VSCode semantics: skip adjacent whitespace first, then consume one
+ * run of word bytes or one run of punctuation. */
+static int vsc_word_boundary(const Row *row, int x, int dir) {
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int i = x;
+#define AT(j) ((unsigned char)s[(dir) < 0 ? (j) - 1 : (j)])
+#define MORE(j) ((dir) < 0 ? (j) > 0 : (j) < len)
+    while (MORE(i) && isspace(AT(i)))
+        i += dir;
+    if (MORE(i)) {
+        if (textobj_is_word_byte(AT(i))) {
+            while (MORE(i) && textobj_is_word_byte(AT(i)))
+                i += dir;
+        } else {
+            while (MORE(i) && !textobj_is_word_byte(AT(i)) && !isspace(AT(i)))
+                i += dir;
+        }
+    }
+#undef AT
+#undef MORE
+    return i;
+}
+
+/* Delete [from, to) on the cursor row as one undo step. */
+static void vsc_delete_span(int from, int to) {
+    Window *win = window_cur();
+    if (!win || from >= to)
+        return;
+    int y = win->cursor.y;
+    TextSelection sel = {.start = {y, from},
+                         .end = {y, to},
+                         .cursor = {y, from},
+                         .type = SEL_VISUAL};
+    buf_delete_selection(&sel);
+}
+
 /* Ctrl+Backspace: delete the word (or whitespace/punctuation run) left
  * of the cursor. At column 0 joins with the previous line. */
 static void vsc_delete_word_left(void) {
-    if (vsc_in_visual()) {
+    if (kb_in_visual()) {
         kb_visual_delete_selection();
         return;
     }
@@ -146,32 +127,12 @@ static void vsc_delete_word_left(void) {
         return;
     }
     Row *row = &buf->rows[win->cursor.y];
-    const char *s = row->chars.data;
-    int x = win->cursor.x;
-    while (x > 0 && isspace((unsigned char)s[x - 1]))
-        x--;
-    if (x > 0) {
-        if (vsc_word_byte((unsigned char)s[x - 1])) {
-            while (x > 0 && vsc_word_byte((unsigned char)s[x - 1]))
-                x--;
-        } else {
-            while (x > 0 && !vsc_word_byte((unsigned char)s[x - 1]) &&
-                   !isspace((unsigned char)s[x - 1]))
-                x--;
-        }
-    }
-    int prev = win->cursor.x;
-    while (win->cursor.x > x) {
-        kb_insert_backspace();
-        if (win->cursor.x == prev)
-            break; /* read-only buffer etc. */
-        prev = win->cursor.x;
-    }
+    vsc_delete_span(vsc_word_boundary(row, win->cursor.x, -1), win->cursor.x);
 }
 
 /* Ctrl+Del: delete the word right of the cursor. At eol joins lines. */
 static void vsc_delete_word_right(void) {
-    if (vsc_in_visual()) {
+    if (kb_in_visual()) {
         kb_visual_delete_selection();
         return;
     }
@@ -180,35 +141,11 @@ static void vsc_delete_word_right(void) {
     if (!buf || !win || buf->num_rows == 0)
         return;
     Row *row = &buf->rows[win->cursor.y];
-    int len = (int)row->chars.len;
-    int x = win->cursor.x;
-    if (x >= len) {
+    if (win->cursor.x >= (int)row->chars.len) {
         vsc_delete_forward();
         return;
     }
-    const char *s = row->chars.data;
-    int e = x;
-    while (e < len && isspace((unsigned char)s[e]))
-        e++;
-    if (e < len) {
-        if (vsc_word_byte((unsigned char)s[e])) {
-            while (e < len && vsc_word_byte((unsigned char)s[e]))
-                e++;
-        } else {
-            while (e < len && !vsc_word_byte((unsigned char)s[e]) &&
-                   !isspace((unsigned char)s[e]))
-                e++;
-        }
-    }
-    int ndel = e - x;
-    while (ndel > 0) {
-        int before = (int)row->chars.len;
-        cmd_delete_char(NULL);
-        int removed = before - (int)row->chars.len;
-        if (removed <= 0)
-            break; /* read-only buffer etc. */
-        ndel -= removed;
-    }
+    vsc_delete_span(win->cursor.x, vsc_word_boundary(row, win->cursor.x, +1));
 }
 
 /* ------------------------------------------------------------------ */
@@ -268,24 +205,24 @@ static int vscode_keybinds_init(void) {
     mapv("<C-l>", vsc_select_line, "extend selection by a line");
 
     /* File-edge motion (Ctrl+Home/End) and selection (+Shift). */
-    mapi("<C-Home>", vsc_goto_file_start, "start of file");
-    mapi("<C-End>", vsc_goto_file_end, "end of file");
-    mapv("<C-Home>", vsc_goto_file_start, "start of file");
-    mapv("<C-End>", vsc_goto_file_end, "end of file");
-    mapi("<C-S-Home>", vsc_extend_file_start, "select to start of file");
-    mapi("<C-S-End>", vsc_extend_file_end, "select to end of file");
-    mapv("<C-S-Home>", vsc_extend_file_start, "extend to start of file");
-    mapv("<C-S-End>", vsc_extend_file_end, "extend to end of file");
+    mapi("<C-Home>", kb_drop_file_start, "start of file");
+    mapi("<C-End>", kb_drop_file_end, "end of file");
+    mapv("<C-Home>", kb_drop_file_start, "start of file");
+    mapv("<C-End>", kb_drop_file_end, "end of file");
+    mapi("<C-S-Home>", kb_extend_file_start, "select to start of file");
+    mapi("<C-S-End>", kb_extend_file_end, "select to end of file");
+    mapv("<C-S-Home>", kb_extend_file_start, "extend to start of file");
+    mapv("<C-S-End>", kb_extend_file_end, "extend to end of file");
 
     /* Paging. */
-    mapi("<PageUp>", vsc_page_up, "page up");
-    mapi("<PageDown>", vsc_page_down, "page down");
-    mapv("<PageUp>", vsc_page_up, "page up");
-    mapv("<PageDown>", vsc_page_down, "page down");
-    mapi("<S-PageUp>", vsc_extend_page_up, "select page up");
-    mapi("<S-PageDown>", vsc_extend_page_down, "select page down");
-    mapv("<S-PageUp>", vsc_extend_page_up, "extend page up");
-    mapv("<S-PageDown>", vsc_extend_page_down, "extend page down");
+    mapi("<PageUp>", kb_drop_page_up, "page up");
+    mapi("<PageDown>", kb_drop_page_down, "page down");
+    mapv("<PageUp>", kb_drop_page_up, "page up");
+    mapv("<PageDown>", kb_drop_page_down, "page down");
+    mapi("<S-PageUp>", kb_extend_page_up, "select page up");
+    mapi("<S-PageDown>", kb_extend_page_down, "select page down");
+    mapv("<S-PageUp>", kb_extend_page_up, "extend page up");
+    mapv("<S-PageDown>", kb_extend_page_down, "extend page down");
 
     /* File / window / buffer. */
     cmapi("<C-s>", "w", "save");

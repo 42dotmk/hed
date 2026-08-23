@@ -18,6 +18,11 @@ typedef struct TextSelection {
     SelectionType type; /* selection type for yank/paste */
 } TextSelection;
 
+/* Word-character predicate used by the word motions: alnum, '_', or
+ * any byte >= 0x80 (multi-byte chars never split at a boundary).
+ * Exported so plugins classify bytes the same way the motions do. */
+int textobj_is_word_byte(unsigned char b);
+
 /* Text-object helpers. All return 1 on success, 0 on failure. */
 int textobj_word(Buffer *buf, int line, int col, TextSelection *sel);
 /* Vim "aw": word plus trailing blanks (leading if none after); on blanks,

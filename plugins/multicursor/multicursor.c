@@ -378,12 +378,10 @@ static int mc_query_at_cursor(Buffer *buf, Window *win, StrBuf *q, int *sy,
     }
     Row *row = &buf->rows[win->cursor.y];
     int b = win->cursor.x, e = win->cursor.x;
-    while (b > 0 && (isalnum((unsigned char)row->chars.data[b - 1]) ||
-                     row->chars.data[b - 1] == '_'))
+    while (b > 0 && textobj_is_word_byte((unsigned char)row->chars.data[b - 1]))
         b--;
     while (e < (int)row->chars.len &&
-           (isalnum((unsigned char)row->chars.data[e]) ||
-            row->chars.data[e] == '_'))
+           textobj_is_word_byte((unsigned char)row->chars.data[e]))
         e++;
     *sy = win->cursor.y;
     *sx = b;
