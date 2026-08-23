@@ -160,12 +160,6 @@ static void cmd_mail_attach_add(const char *args) {
 static void kb_next_msg(void) { mail_next_message(); }
 static void kb_prev_msg(void) { mail_prev_message(); }
 
-static void kb_close(void) {
-    EdError err = buf_close(E.current_buffer);
-    if (err == ED_ERR_BUFFER_DIRTY)
-        ed_set_status_message("buffer has unsaved changes (use :bd! to force)");
-}
-
 /* Intercept "open this path" for the mail URI schemes: mailto: routes
  * to compose (makes `hed mailto:foo@bar?subject=Hi` work for desktop
  * mail-handler registration), mail://thread:… opens that thread view —
@@ -264,10 +258,10 @@ static int mail_plugin_init(void) {
 
     /* q closes the current mail buffer in normal mode, for any of the
      * mail filetypes (list, message, mailbox sidebar, compose). */
-    mapn_ft("mail", "q", kb_close, "close mail buffer");
-    mapn_ft("mail-message", "q", kb_close, "close mail buffer");
-    mapn_ft("mail-mailboxes", "q", kb_close, "close mailbox sidebar");
-    mapn_ft("mail-compose", "q", kb_close, "close compose buffer");
+    cmapn_ft("mail", "q", "bd", "close mail buffer");
+    cmapn_ft("mail-message", "q", "bd", "close mail buffer");
+    cmapn_ft("mail-mailboxes", "q", "bd", "close mailbox sidebar");
+    cmapn_ft("mail-compose", "q", "bd", "close compose buffer");
 
     return 0;
 }

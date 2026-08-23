@@ -411,6 +411,21 @@ void cmd_prompt_open(void) {
     prompt_open(&colon_vt, &g_cmd_state);
 }
 
+/* :prompt [prefill] — open the colon prompt, optionally pre-filled with
+ * "prefill " (a trailing space is appended so an argument can be typed
+ * immediately). Lets keymaps bind "open the prompt ready for X" without
+ * a C trampoline: cmapn(" mn", "prompt task_note", "add note"). */
+void cmd_prompt(const char *args) {
+    cmd_prompt_open();
+    Prompt *p = prompt_current();
+    if (!p || !args || !*args)
+        return;
+    size_t n = strlen(args);
+    char text[256];
+    snprintf(text, sizeof(text), "%s%s", args, args[n - 1] == ' ' ? "" : " ");
+    prompt_set_text(p, text, (int)strlen(text));
+}
+
 /* ===========================================================================
  * The "/" search prompt
  *

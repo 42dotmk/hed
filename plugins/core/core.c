@@ -4,6 +4,7 @@
  * dired's :keymap, etc.) live with their plugin, not here. */
 
 #include "hed.h"
+#include "input/command_mode.h" /* cmd_prompt */
 
 /* :goto — move the cursor by line number, by motion symbol, or by motion
  * symbol with a count.
@@ -405,6 +406,10 @@ static void register_commands(void) {
     cmd("join", cmd_join, "join line with next");
     cmd("indent", cmd_indent, "indent current line");
     cmd("unindent", cmd_unindent, "unindent current line");
+    cmd("move_line_up", cmd_move_line_up, "move current line up");
+    cmd("move_line_down", cmd_move_line_down, "move current line down");
+    cmd("duplicate_line", cmd_duplicate_line, "duplicate current line");
+    cmd("prompt", cmd_prompt, "open : prompt, optionally prefilled");
     cmd("toggle_case", cmd_toggle_case, "toggle case of char under cursor");
     cmd("toggle_comment", cmd_toggle_comment, "toggle line comment");
     cmd("replace_char", cmd_replace_char,

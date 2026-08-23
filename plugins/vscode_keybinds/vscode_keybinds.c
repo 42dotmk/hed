@@ -1,20 +1,9 @@
 #include "vscode_keybinds.h"
 #include "hed.h"
-#include "input/command_mode.h"
-#include "input/prompt.h"
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
-
-/* Ctrl+G: open the ":" prompt prefilled with "goto " so typing a
- * number + Enter jumps to it (VSCode's Go to Line). */
-static void vsc_goto_line_prompt(void) {
-    cmd_prompt_open();
-    Prompt *p = prompt_current();
-    if (p)
-        prompt_set_text(p, "goto ", 5);
-}
 
 /* Ctrl+A: select the whole buffer. */
 static void vsc_select_all(void) {
@@ -160,8 +149,8 @@ static int vscode_keybinds_init(void) {
     mapi("<BS>", kb_insert_backspace, "backspace");
     mapv("<Esc>", kb_visual_escape, "exit visual");
     mapi("<Del>", vsc_delete_forward, "delete forward");
-    mapv("<Del>", kb_visual_delete_selection, "delete selection");
-    mapv("<BS>", kb_visual_delete_selection, "delete selection");
+    cmapv("<Del>", "delete", "delete selection");
+    cmapv("<BS>", "delete", "delete selection");
     mapi("<C-h>", vsc_delete_word_left, "delete word left (Ctrl+Backspace)");
     mapi("<C-Del>", vsc_delete_word_right, "delete word right");
 
@@ -241,8 +230,8 @@ static int vscode_keybinds_init(void) {
 
     /* Command palette. F1 / Alt+P because terminals can't deliver
      * Ctrl+Shift+P. */
-    mapi("<M-p>", kb_enter_command_mode, "command palette");
-    mapi("<F1>", kb_enter_command_mode, "command palette");
+    cmapi("<M-p>", "prompt", "command palette");
+    cmapi("<F1>", "prompt", "command palette");
 
     /* Undo / redo / clipboard. */
     cmapi("<C-z>", "undo", "undo");
@@ -254,14 +243,14 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-x>", "delete_line", "cut line");
     cmapn("<C-c>", "yank_line", "copy line");
     cmapn("<C-x>", "delete_line", "cut line");
-    mapv("<C-c>", kb_visual_yank_selection, "copy selection");
-    mapv("<C-x>", kb_visual_delete_selection, "cut selection");
+    cmapv("<C-c>", "yank", "copy selection");
+    cmapv("<C-x>", "delete", "cut selection");
 
     /* Find & navigate. */
     cmapi("<C-f>", "search", "find in file");
     cmapi("<C-S-f>", "rg", "search in workspace");
     cmapi("<F3>", "search_next", "find next");
-    mapi("<C-g>", vsc_goto_line_prompt, "go to line");
+    cmapi("<C-g>", "prompt goto", "go to line");
     cmapi("<M-Left>", "jump_back", "navigate back");
     cmapi("<M-Right>", "jump_forward", "navigate forward");
     cmapi("<F12>", "tag", "go to definition (ctags)");
@@ -277,16 +266,16 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-k><Esc>", "mc_clear", "clear extra cursors");
 
     /* Line operations. */
-    mapi("<M-Up>", buf_move_line_up, "move line up");
-    mapi("<M-Down>", buf_move_line_down, "move line down");
-    mapi("<M-S-Down>", buf_duplicate_line, "duplicate line");
-    mapi("<C-]>", buf_indent_line, "indent line");
-    mapi("<S-Tab>", buf_unindent_line, "unindent line");
-    mapv("<C-]>", buf_indent_line, "indent line");
-    mapv("<S-Tab>", buf_unindent_line, "unindent line");
-    mapi("<C-_>", buf_toggle_comment, "toggle comment (Ctrl+/)");
-    mapv("<C-_>", buf_toggle_comment, "toggle comment (Ctrl+/)");
-    mapi("<M-/>", buf_toggle_comment, "toggle comment");
+    cmapi("<M-Up>", "move_line_up", "move line up");
+    cmapi("<M-Down>", "move_line_down", "move line down");
+    cmapi("<M-S-Down>", "duplicate_line", "duplicate line");
+    cmapi("<C-]>", "indent", "indent line");
+    cmapi("<S-Tab>", "unindent", "unindent line");
+    cmapv("<C-]>", "indent", "indent line");
+    cmapv("<S-Tab>", "unindent", "unindent line");
+    cmapi("<C-_>", "toggle_comment", "toggle comment (Ctrl+/)");
+    cmapv("<C-_>", "toggle_comment", "toggle comment (Ctrl+/)");
+    cmapi("<M-/>", "toggle_comment", "toggle comment");
     cmapi("<M-F>", "fmt", "format document (Shift+Alt+F)");
 
     /* Folding (VSCode Ctrl+K chords; Ctrl+0 isn't deliverable, so the

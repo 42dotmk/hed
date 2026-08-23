@@ -79,6 +79,21 @@ void cmd_indent(const char *args) {
     buf_indent_line();
 }
 
+void cmd_move_line_up(const char *args) {
+    (void)args;
+    buf_move_line_up();
+}
+
+void cmd_move_line_down(const char *args) {
+    (void)args;
+    buf_move_line_down();
+}
+
+void cmd_duplicate_line(const char *args) {
+    (void)args;
+    buf_duplicate_line();
+}
+
 void cmd_unindent(const char *args) {
     (void)args;
     buf_unindent_line();

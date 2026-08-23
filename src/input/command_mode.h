@@ -13,6 +13,10 @@
 /* Open the ":" command prompt (same effect as pressing `:` in vim). */
 void cmd_prompt_open(void);
 
+/* :prompt command — open the colon prompt, optionally pre-filled with
+ * args plus a trailing space. Registered by the core plugin. */
+void cmd_prompt(const char *args);
+
 /* Open the "/" interactive search prompt. */
 void ed_search_prompt(void);
 

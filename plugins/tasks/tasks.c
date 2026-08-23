@@ -58,7 +58,6 @@
 
 #include "tasks.h"
 #include "hed.h"
-#include "input/command_mode.h"       /* cmd_prompt_open */
 #include "input/picker.h"             /* picker_list (:org-files) */
 #include "lib/path_limits.h"          /* PATH_MAX */
 #include "markdown/markdown_fields.h" /* MdFieldDef, md_parse_field, ... */
@@ -1264,24 +1263,6 @@ static void cmd_task_archive_open(const char *args) {
 
 /* --- keybinds --------------------------------------------------------- */
 
-/* Open the ":" prompt pre-filled with `cmdline` (with a trailing space)
- * so commands that take an argument are one keystroke from typing it.
- * Enter runs whatever default the command applies to an empty arg. */
-static void prompt_prefilled(const char *cmdline) {
-    cmd_prompt_open();
-    Prompt *p = prompt_current();
-    if (!p)
-        return;
-    prompt_set_text(p, cmdline, (int)strlen(cmdline));
-    ed_set_status_message(":%s", p->buf);
-}
-
-static void kb_task_note(void) { prompt_prefilled("task_note "); }
-static void kb_task_capture(void) { prompt_prefilled("task_capture "); }
-static void kb_task_deadline(void) { prompt_prefilled("task_deadline "); }
-static void kb_task_schedule(void) { prompt_prefilled("task_schedule "); }
-static void kb_task_prio(void) { prompt_prefilled("task_prio "); }
-
 /* --- highlight (HOOK_RENDER_PRE) -------------------------------------- */
 
 static void on_render_pre(const HookRenderEvent *e) {
@@ -1363,10 +1344,10 @@ static int tasks_init(void) {
      * invisible everywhere else. */
     cmapn_ft("markdown", " mc", "task_cycle", "task: cycle status");
     cmapn_ft("markdown", " ma", "task_agenda", "task: agenda");
-    mapn_ft("markdown", " mn", kb_task_note, "task: add dated note");
-    mapn_ft("markdown", " md", kb_task_deadline, "task: set deadline");
-    mapn_ft("markdown", " ms", kb_task_schedule, "task: set schedule");
-    mapn_ft("markdown", " mp", kb_task_prio, "task: set priority");
+    cmapn_ft("markdown", " mn", "prompt task_note", "task: add dated note");
+    cmapn_ft("markdown", " md", "prompt task_deadline", "task: set deadline");
+    cmapn_ft("markdown", " ms", "prompt task_schedule", "task: set schedule");
+    cmapn_ft("markdown", " mp", "prompt task_prio", "task: set priority");
     cmapn_ft("markdown", " mx", "task_archive",
              "task: archive task under cursor");
     cmapn_ft("markdown", " mX", "task_archive_done",
@@ -1374,7 +1355,7 @@ static int tasks_init(void) {
 
     /* Global on purpose: capture happens from whatever buffer you're
      * in — source file, mail thread, anything with a filename. */
-    mapn(" X", kb_task_capture, "task: capture into todo");
+    cmapn(" X", "prompt task_capture", "task: capture into todo");
 
     hook_register_render(HOOK_RENDER_PRE, -1, "markdown", on_render_pre);
     return 0;

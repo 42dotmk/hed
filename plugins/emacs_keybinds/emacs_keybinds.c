@@ -75,12 +75,12 @@ static int emacs_keybinds_init(void) {
     mapi("<M-x>", kb_enter_command_mode, "M-x (command mode)");
     mapi("<M-f>", kb_drop_word_r, "forward word");
     mapi("<M-b>", kb_drop_word_l, "backward word");
-    mapi("<M-<>", kb_goto_file_start, "beginning of buffer");
-    mapi("<M->>", kb_goto_file_end, "end of buffer");
+    cmapi("<M-<>", "goto gg", "beginning of buffer");
+    cmapi("<M->>", "goto G", "end of buffer");
     cmapi("<M-d>", "delete_eol", "kill word forward (approx)");
     mapi("<M-w>", kb_visual_yank_selection, "copy region");
 
-    mapv("<C-w>", kb_visual_delete_selection, "kill region (cut)");
+    cmapv("<C-w>", "delete", "kill region (cut)");
 
     ed_set_modeless(1);
     return 0;
