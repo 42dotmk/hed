@@ -69,10 +69,10 @@ static int vim_keybinds_init(void) {
     mapi("<Tab>", kb_insert_tab, "insert tab");
     mapi("<BS>", kb_insert_backspace, "backspace");
     mapi("<C-h>", kb_insert_backspace, "backspace");
-    mapi("<Up>", kb_move_up, "move up");
-    mapi("<Down>", kb_move_down, "move down");
-    mapi("<Left>", kb_move_left, "move left");
-    mapi("<Right>", kb_move_right, "move right");
+    cmapi("<Up>", "goto up", "move up");
+    cmapi("<Down>", "goto down", "move down");
+    cmapi("<Left>", "goto left", "move left");
+    cmapi("<Right>", "goto right", "move right");
     cmapn("/", "search", "search");
 
     cmapn("O", "new_line_above", "new line above");
@@ -91,14 +91,14 @@ static int vim_keybinds_init(void) {
     cmapn("<C-*>", "search_word", "find word");
 
     /* --- Visual mode --- */
-    mapv("h", kb_move_left, "left");
-    mapv("j", kb_move_down, "down");
-    mapv("k", kb_move_up, "up");
-    mapv("l", kb_move_right, "right");
-    mapv("<Left>", kb_move_left, "left");
-    mapv("<Down>", kb_move_down, "down");
-    mapv("<Up>", kb_move_up, "up");
-    mapv("<Right>", kb_move_right, "right");
+    cmapv("h", "extend left", "left");
+    cmapv("j", "extend down", "down");
+    cmapv("k", "extend up", "up");
+    cmapv("l", "extend right", "right");
+    cmapv("<Left>", "extend left", "left");
+    cmapv("<Down>", "extend down", "down");
+    cmapv("<Up>", "extend up", "up");
+    cmapv("<Right>", "extend right", "right");
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
      * cmapv covers all three visual modes. */
     cmapv("y", "yank", "yank");

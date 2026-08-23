@@ -392,11 +392,6 @@ void kb_insert_escape(void) {
 }
 
 /* Normal mode - cursor movement */
-void kb_move_left(void) { buf_move_cursor_key(KEY_ARROW_LEFT); }
-void kb_move_right(void) { buf_move_cursor_key(KEY_ARROW_RIGHT); }
-void kb_move_up(void) { buf_move_cursor_key(KEY_ARROW_UP); }
-void kb_move_down(void) { buf_move_cursor_key(KEY_ARROW_DOWN); }
-
 /* f/F argument: the target char typed after the motion key. Multibyte
  * chars arrive byte-at-a-time from ed_read_key, so continuation bytes
  * are collected into one codepoint. During a count-repeat burst (3fx)
@@ -543,7 +538,6 @@ static void kb_apply_motion(TextObjMotion fn) {
 /* Implementation below — count-aware line jump used by gg/G. */
 static void goto_line_or(int fallback_y);
 
-void kb_goto_line_start(void) { kb_apply_motion(textobj_to_line_start); }
 void kb_goto_line_end(void) { kb_apply_motion(textobj_to_line_end); }
 /* kb_goto_file_end: with no count → end of file, with count → that line. */
 void kb_goto_file_end(void) {
@@ -552,9 +546,6 @@ void kb_goto_file_end(void) {
         return;
     goto_line_or(buf->num_rows - 1);
 }
-void kb_goto_word_start(void) { kb_apply_motion(textobj_to_word_start); }
-void kb_goto_word_end(void) { kb_apply_motion(textobj_to_word_end); }
-
 /* Selection-aware motion helpers (VSCode / modern Emacs semantics):
  *   kb_extend_* — enter visual if not already, then move (extending
  * the selection). Used by modeless keymaps (vscode_keybinds,

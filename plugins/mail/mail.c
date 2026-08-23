@@ -93,7 +93,7 @@ static void cmd_mail_mailboxes(const char *args) {
 static void kb_enter(void) { mail_handle_enter(); }
 static void kb_mark_read(void) {
     mail_apply_tags("-unread");
-    kb_move_down();
+    buf_move_cursor_key(KEY_ARROW_DOWN);
 }
 static void kb_mbox_enter(void) { mail_handle_mailbox_enter(); }
 

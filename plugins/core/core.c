@@ -32,7 +32,7 @@ static void cmd_goto(const char *args) {
     }
     Buffer *buf = buf_cur();
     Window *win = window_cur();
-    if (!buf || !win)
+    if (!buf || !win || buf->num_rows == 0)
         return;
 
     /* An explicit motion is a plain motion: drop any active selection
