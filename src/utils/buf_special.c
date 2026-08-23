@@ -174,6 +174,30 @@ Window *buf_special_show_modal(int idx, int anchor_x, int anchor_y) {
     return m;
 }
 
+int buf_special_modal_key(Window *modal, int key, int allow_close) {
+    if (!modal || !valid_idx(modal->buffer_index))
+        return 0;
+    Buffer *b = &E.buffers[modal->buffer_index];
+    if (allow_close && (key == 'q' || key == '\x1b')) {
+        buf_special_close(modal->buffer_index);
+        return 2;
+    }
+    if (key == 'j' || key == KEY_ARROW_DOWN) {
+        int max_off = b->num_rows - modal->height;
+        if (max_off < 0)
+            max_off = 0;
+        if (modal->row_offset < max_off)
+            modal->row_offset++;
+        return 1;
+    }
+    if (key == 'k' || key == KEY_ARROW_UP) {
+        if (modal->row_offset > 0)
+            modal->row_offset--;
+        return 1;
+    }
+    return 0;
+}
+
 void buf_special_close(int idx) {
     if (!valid_idx(idx))
         return;

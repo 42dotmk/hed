@@ -913,8 +913,7 @@ static void dired_keypress_hook(HookKeyEvent *event) {
     if (!modal || modal != dired_pending.modal)
         return;
 
-    int key = event->key;
-    switch (key) {
+    switch (event->key) {
     case 'y':
     case 'Y':
         dired_dismiss_pending(1);
@@ -923,27 +922,12 @@ static void dired_keypress_hook(HookKeyEvent *event) {
     case 'N':
     case 'q':
     case '\x1b':
+        /* dired_dismiss_pending owns the teardown (it must free the
+         * pending ops), so closing is not delegated to the helper. */
         dired_dismiss_pending(0);
         break;
-    case 'j':
-    case KEY_ARROW_DOWN: {
-        int idx = modal->buffer_index;
-        if (idx >= 0 && idx < (int)arrlen(E.buffers)) {
-            Buffer *cb = &E.buffers[idx];
-            int max_off = cb->num_rows - modal->height;
-            if (max_off < 0)
-                max_off = 0;
-            if (modal->row_offset < max_off)
-                modal->row_offset++;
-        }
-        break;
-    }
-    case 'k':
-    case KEY_ARROW_UP:
-        if (modal->row_offset > 0)
-            modal->row_offset--;
-        break;
     default:
+        buf_special_modal_key(modal, event->key, 0);
         break;
     }
     event->consumed = 1;

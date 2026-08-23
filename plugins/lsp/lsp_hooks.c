@@ -40,30 +40,8 @@ static void lsp_hook_keypress(HookKeyEvent *event) {
     if (!modal || modal != lsp_popup)
         return;
 
-    int idx = modal->buffer_index;
-    Buffer *mbuf =
-        (idx >= 0 && idx < (int)arrlen(E.buffers)) ? &E.buffers[idx] : NULL;
-    if (!mbuf) {
+    if (buf_special_modal_key(modal, event->key, 1) == 2)
         lsp_popup = NULL;
-        return;
-    }
-
-    int key = event->key;
-    if (key == '\x1b' || key == 'q') {
-        winmodal_destroy(modal);
-        mbuf->dirty = 0;
-        buf_close(idx);
-        lsp_popup = NULL;
-    } else if (key == 'j' || key == KEY_ARROW_DOWN) {
-        int max_off = mbuf->num_rows - modal->height;
-        if (max_off < 0)
-            max_off = 0;
-        if (modal->row_offset < max_off)
-            modal->row_offset++;
-    } else if (key == 'k' || key == KEY_ARROW_UP) {
-        if (modal->row_offset > 0)
-            modal->row_offset--;
-    }
     event->consumed = 1; /* swallow all keys while popup is open */
 }
 
