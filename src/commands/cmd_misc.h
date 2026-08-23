@@ -9,7 +9,6 @@ void cmd_registers(const char *args);
 void cmd_put(const char *args);
 void cmd_undo(const char *args);
 void cmd_redo(const char *args);
-void cmd_repeat(const char *args);
 void cmd_macro_record(const char *args);
 void cmd_macro_play(const char *args);
 void cmd_ln(const char *args);

@@ -176,6 +176,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `pickers` | Fuzzy pickers |
 | `quickfix_preview` | Cursor → preview sync in quickfix buffers. |
 | `reload` | Reload functionality |
+| `repeat_last` | Vim-style dot repeat: records the last change, `:repeat` (bound to `.`) replays it. |
 | `scratch` | Scratch buffer support |
 | `sed` | Stream editor integration |
 | `selectlist` | Selection list functionality |
@@ -343,7 +344,10 @@ link errors.
 
 Events: char/line insert/delete, buffer open/close/switch/save,
 buffer pre-open and pre-save (intercept hooks), mode change, cursor
-movement, keypress.
+movement, keypress, raw keypress (`HOOK_KEY_RAW` — every real key,
+including ones read inside command callbacks; never replayed keys),
+and post-dispatch (`HOOK_DISPATCH_POST` — command boundary after each
+main-loop key). The `repeat_last` plugin is built on the last two.
 
 Pre-open / pre-save let plugins claim ownership of an action by
 setting `event->consumed = 1`. The `dired` plugin uses this to handle

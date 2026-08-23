@@ -226,19 +226,6 @@ void cmd_redo(const char *args) {
         ed_set_status_message("Already at newest change");
 }
 
-void cmd_repeat(const char *args) {
-    (void)args;
-    /* Get the last executed keybind sequence from '.' register */
-    const StrBuf *dot_reg = regs_get('.');
-    if (!dot_reg || !dot_reg->data || dot_reg->len == 0) {
-        ed_set_status_message("No previous command to repeat");
-        return;
-    }
-
-    /* Replay the sequence through the macro queue */
-    macro_replay_string(dot_reg->data, dot_reg->len);
-}
-
 void cmd_macro_record(const char *args) {
     (void)args;
     if (macro_is_recording()) {

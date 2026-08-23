@@ -41,6 +41,19 @@ typedef enum {
      * Set event->consumed = 1 to prevent further processing. */
     HOOK_KEYPRESS,
 
+    /* Fires from ed_read_key() for every REAL keypress — including
+     * keys read inside command callbacks (operator arguments, f/t
+     * targets, prompt input) that never reach HOOK_KEYPRESS. Replayed
+     * keys (macro queue, multicursor replay) do not fire it. Purely
+     * observational: `consumed` is ignored. */
+    HOOK_KEY_RAW,
+
+    /* Fires at the end of ed_process_keypress(), after one main-loop
+     * key (and any follow-on keys its command consumed) has been
+     * fully dispatched. Payload is that key; `consumed` is ignored.
+     * This is the "command boundary" for recorders like dot-repeat. */
+    HOOK_DISPATCH_POST,
+
     /* Fires for every decoded mouse event (KEY_MOUSE from the input
      * parser). Payload is the MouseEvent from input/input.h. Core only
      * parses and forwards — click/drag/scroll semantics live in

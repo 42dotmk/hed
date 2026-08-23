@@ -342,7 +342,6 @@ static void register_commands(void) {
     cmd("put", cmd_put, "put reg");
     cmd("undo", cmd_undo, "undo");
     cmd("redo", cmd_redo, "redo");
-    cmd("repeat", cmd_repeat, "repeat last");
     cmd("record", cmd_macro_record, "record macro");
     cmd("play", cmd_macro_play, "play macro");
     cmd("ln", cmd_ln, "line nums");

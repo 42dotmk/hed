@@ -30,6 +30,7 @@
 #include "plugin.h"
 #include "quickfix_preview/quickfix_preview.h"
 #include "reload/reload.h"
+#include "repeat_last/repeat_last.h"
 #include "scratch/scratch.h"
 #include "search/search.h"
 #include "sed/sed_plugin.h"
@@ -58,6 +59,7 @@ static void config_load_default_plugins(void) {
     plugin_load(&plugin_clipboard, 1);
     plugin_load(&plugin_quickfix_preview, 1);
     plugin_load(&plugin_dired, 1);
+    plugin_load(&plugin_repeat_last, 1);
     plugin_load(&plugin_lsp, 1);
     plugin_load(&plugin_viewmd, 1);
     plugin_load(&plugin_auto_pair, 1);

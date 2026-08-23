@@ -5,7 +5,6 @@
 #include "fs/fs.h"
 #include "hooks.h"
 #include "input/command_mode.h"
-#include "input/dot_repeat.h"
 #include "input/input.h"
 #include "input/keybinds.h"
 #include "input/macros.h"
@@ -162,10 +161,12 @@ int ed_read_key(void) {
         key != KEY_MOUSE)
         ed_key_capture_buf[ed_key_capture_len++] = key;
 
-    /* Feed real keypresses (only — replayed macro/multicursor keys
-     * return above) to the dot-repeat recorder. */
-    if (key != KEY_PASTE_START && key != KEY_PASTE_END && key != KEY_MOUSE)
-        dot_record_key(key);
+    /* Announce real keypresses (only — replayed macro/multicursor
+     * keys return above) to observers like the dot-repeat recorder. */
+    if (key != KEY_PASTE_START && key != KEY_PASTE_END && key != KEY_MOUSE) {
+        HookKeyEvent raw = {key, 0};
+        hook_fire_key(HOOK_KEY_RAW, &raw);
+    }
 
     if (macro_is_recording()) {
         int should_record = 1;
@@ -386,10 +387,10 @@ void ed_process_keypress(void) {
         return;
     ed_dispatch_key(c);
 
-    /* Command-boundary check for dot repeat: back in plain normal
-     * mode means the key run (operator + args, or a whole insert
-     * session) is complete. */
-    dot_boundary();
+    /* One main-loop key fully dispatched — the command boundary for
+     * recorders like dot-repeat. */
+    HookKeyEvent post = {c, 0};
+    hook_fire_key(HOOK_DISPATCH_POST, &post);
 }
 
 void ed_init_state() {
