@@ -556,36 +556,22 @@ void kb_goto_word_start(void) { kb_apply_motion(textobj_to_word_start); }
 void kb_goto_word_end(void) { kb_apply_motion(textobj_to_word_end); }
 
 /* Selection-aware motion helpers (VSCode / modern Emacs semantics):
- *   kb_drop_*   — drop any active selection, then move.
- *   kb_extend_* — enter visual if not already, then move (extending sel).
- * Used by modeless keymaps (vscode_keybinds, emacs_keybinds) to bind
- * Shift+arrow to extend and plain arrow to drop. */
+ *   kb_extend_* — enter visual if not already, then move (extending
+ * the selection). Used by modeless keymaps (vscode_keybinds,
+ * emacs_keybinds) for Shift+arrow; the plain (dropping) motions are
+ * the :left/:goto/:pageup command family. */
 
 int kb_in_visual(void) {
     return E.mode == MODE_VISUAL || E.mode == MODE_VISUAL_LINE ||
            E.mode == MODE_VISUAL_BLOCK;
 }
 
-#define DROP_THEN(name, body)                                                  \
-    void kb_drop_##name(void) {                                                \
-        if (kb_in_visual())                                                    \
-            kb_visual_escape();                                                \
-        body;                                                                  \
-    }
 #define EXTEND_THEN(name, body)                                                \
     void kb_extend_##name(void) {                                              \
         if (!kb_in_visual())                                                   \
             kb_visual_begin(0);                                                \
         body;                                                                  \
     }
-
-/* Only the arrow family keeps drop wrappers — every other plain
- * motion is a cmap onto :goto / :pageup / :pagedown, which drop the
- * selection themselves. */
-DROP_THEN(left, kb_move_left())
-DROP_THEN(right, kb_move_right())
-DROP_THEN(up, kb_move_up())
-DROP_THEN(down, kb_move_down())
 
 EXTEND_THEN(left, kb_move_left())
 EXTEND_THEN(right, kb_move_right())
@@ -612,15 +598,15 @@ void keybind_register_modeless_basics(void) {
     mapi("<BS>", kb_insert_backspace, "backspace");
     mapv("<Esc>", kb_visual_escape, "exit visual");
 
-    /* Plain motion: drops any active selection. */
-    mapi("<Up>", kb_drop_up, "up");
-    mapi("<Down>", kb_drop_down, "down");
-    mapi("<Left>", kb_drop_left, "left");
-    mapi("<Right>", kb_drop_right, "right");
-    mapv("<Up>", kb_drop_up, "up");
-    mapv("<Down>", kb_drop_down, "down");
-    mapv("<Left>", kb_drop_left, "left");
-    mapv("<Right>", kb_drop_right, "right");
+    /* Plain motion: drops any active selection (the :left family). */
+    cmapi("<Up>", "up", "up");
+    cmapi("<Down>", "down", "down");
+    cmapi("<Left>", "left", "left");
+    cmapi("<Right>", "right", "right");
+    cmapv("<Up>", "up", "up");
+    cmapv("<Down>", "down", "down");
+    cmapv("<Left>", "left", "left");
+    cmapv("<Right>", "right", "right");
 
     /* Shift+motion: enter / extend a selection. */
     mapi("<S-Up>", kb_extend_up, "select up");

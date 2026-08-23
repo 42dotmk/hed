@@ -46,6 +46,10 @@ static void register_text_objects(void) {
     textobj_register("aw", textobj_word_around, "around word");
     textobj_register("aW", textobj_WORD_around, "around WORD");
     textobj_register("ap", textobj_paragraph, "around paragraph");
+    textobj_register("il", textobj_line, "inner line");
+    textobj_register("al", textobj_line_with_newline, "around line");
+    textobj_register("ie", textobj_entire, "entire buffer");
+    textobj_register("ae", textobj_entire, "entire buffer");
 }
 
 static int vim_keybinds_init(void) {

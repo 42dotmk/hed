@@ -94,6 +94,86 @@ void cmd_duplicate_line(const char *args) {
     buf_duplicate_line();
 }
 
+/* Arrow motion: wrap-aware (moves by visual row when soft-wrap is
+ * on), unlike the j/k textobjs which move by buffer line. Like :goto,
+ * a plain motion drops any active selection (the shifted variants
+ * extend instead). */
+static void arrow_motion(int key) {
+    if (kb_in_visual())
+        kb_visual_escape();
+    buf_move_cursor_key(key);
+}
+
+void cmd_left(const char *args) {
+    (void)args;
+    arrow_motion(KEY_ARROW_LEFT);
+}
+
+void cmd_right(const char *args) {
+    (void)args;
+    arrow_motion(KEY_ARROW_RIGHT);
+}
+
+void cmd_up(const char *args) {
+    (void)args;
+    arrow_motion(KEY_ARROW_UP);
+}
+
+void cmd_down(const char *args) {
+    (void)args;
+    arrow_motion(KEY_ARROW_DOWN);
+}
+
+/* Delete the active selection, else the given text object. Backs the
+ * VSCode Del / Ctrl+Backspace / Ctrl+Del binds: the objects include
+ * the newline at line edges, so deleting there joins lines. */
+static void delete_obj_or_selection(TextObjFunc fn) {
+    ASSERT_EDIT(buf, win);
+    if (win->sel.type != SEL_NONE) {
+        kb_visual_delete_selection();
+        return;
+    }
+    TextSelection sel;
+    if (!fn(buf, win->cursor.y, win->cursor.x, &sel))
+        return;
+    buf_delete_selection(&sel);
+}
+
+void cmd_delete_forward(const char *args) {
+    (void)args;
+    delete_obj_or_selection(textobj_char_forward);
+}
+
+void cmd_delete_word_left(const char *args) {
+    (void)args;
+    delete_obj_or_selection(textobj_word_run_back);
+}
+
+void cmd_delete_word_right(const char *args) {
+    (void)args;
+    delete_obj_or_selection(textobj_word_run_fwd);
+}
+
+/* :select_line — select the current line; repeating extends the
+ * selection one line at a time (VSCode Ctrl+L semantics). */
+void cmd_select_line(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || buf->num_rows == 0)
+        return;
+    if (!kb_in_visual()) {
+        win->cursor.x = 0;
+        kb_visual_begin(0);
+    }
+    if (win->cursor.y < buf->num_rows - 1) {
+        win->cursor.y++;
+        win->cursor.x = 0;
+    } else {
+        kb_goto_line_end();
+    }
+}
+
 /* Full-page motion. Like :goto, an explicit plain motion drops any
  * active selection (the shifted variants extend instead). */
 void cmd_page_up(const char *args) {

@@ -9,10 +9,10 @@ static int emacs_keybinds_init(void) {
     /* Emacs motion (also drops selection). */
     cmapi("<C-a>", "goto 0", "beginning of line");
     cmapi("<C-e>", "goto $", "end of line");
-    mapi("<C-b>", kb_drop_left, "backward char");
-    mapi("<C-f>", kb_drop_right, "forward char");
-    mapi("<C-n>", kb_drop_down, "next line");
-    mapi("<C-p>", kb_drop_up, "previous line");
+    cmapi("<C-b>", "left", "backward char");
+    cmapi("<C-f>", "right", "forward char");
+    cmapi("<C-n>", "down", "next line");
+    cmapi("<C-p>", "up", "previous line");
 
     /* Editing */
     cmapi("<C-d>", "delete_char", "delete char forward");
@@ -42,7 +42,7 @@ static int emacs_keybinds_init(void) {
     cmapi("<M-b>", "goto b", "backward word");
     cmapi("<M-<>", "goto gg", "beginning of buffer");
     cmapi("<M->>", "goto G", "end of buffer");
-    cmapi("<M-d>", "delete_eol", "kill word forward (approx)");
+    cmapi("<M-d>", "delete_word_right", "kill word forward");
     cmapv("<M-w>", "yank", "copy region");
 
     cmapv("<C-w>", "delete", "kill region (cut)");

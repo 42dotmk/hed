@@ -1,5 +1,6 @@
 #include "buf/textobj.h"
 #include "buf/row.h"
+#include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <string.h>
@@ -1239,6 +1240,86 @@ TextSelection textsel_make_range(int sy, int sx, int ey, int ex,
 /**
  * Move cursor one character to the right (l, <Right>)
  */
+/* Char under the cursor, or the newline when sitting at EOL — so
+ * deleting it joins with the next line (VSCode Del semantics). */
+int textobj_char_forward(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+    if (col < (int)buf->rows[line].chars.len)
+        return textobj_char_at_cursor(buf, line, col, sel);
+    if (line + 1 >= buf->num_rows)
+        return 0;
+    TextPos cursor = {line, col};
+    return set_selection(sel, (TextPos){line, col}, (TextPos){line + 1, 0},
+                         cursor);
+}
+
+/* One "word run" boundary from `x` in direction `dir` (-1 left,
+ * +1 right): skip adjacent whitespace, then consume one run of word
+ * bytes or one run of punctuation (VSCode Ctrl+Backspace / Ctrl+Del
+ * semantics). */
+static int word_run_boundary(const Row *row, int x, int dir) {
+    const char *s = row->chars.data;
+    int len = (int)row->chars.len;
+    int i = x;
+#define AT(j) ((unsigned char)s[(dir) < 0 ? (j) - 1 : (j)])
+#define MORE(j) ((dir) < 0 ? (j) > 0 : (j) < len)
+    while (MORE(i) && isspace(AT(i)))
+        i += dir;
+    if (MORE(i)) {
+        if (textobj_is_word_byte(AT(i))) {
+            while (MORE(i) && textobj_is_word_byte(AT(i)))
+                i += dir;
+        } else {
+            while (MORE(i) && !textobj_is_word_byte(AT(i)) && !isspace(AT(i)))
+                i += dir;
+        }
+    }
+#undef AT
+#undef MORE
+    return i;
+}
+
+/* Word run left of the cursor; at column 0, the previous line's
+ * newline (deleting joins the lines). */
+int textobj_word_run_back(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+    if (col == 0) {
+        if (line == 0)
+            return 0;
+        TextPos start = {line - 1, (int)buf->rows[line - 1].chars.len};
+        return set_selection(sel, start, (TextPos){line, 0}, start);
+    }
+    int b = word_run_boundary(&buf->rows[line], col, -1);
+    TextPos start = {line, b};
+    return set_selection(sel, start, (TextPos){line, col}, start);
+}
+
+/* Word run right of the cursor; at EOL, the newline (joining). */
+int textobj_word_run_fwd(Buffer *buf, int line, int col, TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+    Row *row = &buf->rows[line];
+    if (col >= (int)row->chars.len)
+        return textobj_char_forward(buf, line, col, sel);
+    int e = word_run_boundary(row, col, +1);
+    TextPos cursor = {line, col};
+    return set_selection(sel, (TextPos){line, col}, (TextPos){line, e}, cursor);
+}
+
+/* Entire buffer: {0,0} .. one past the last char of the last row.
+ * Backs the "ae"/"ie" text objects (:select ae = select all). */
+int textobj_entire(Buffer *buf, int line, int col, TextSelection *sel) {
+    (void)line;
+    (void)col;
+    if (!buf || buf->num_rows == 0)
+        return 0;
+    int last = buf->num_rows - 1;
+    TextPos end = {last, (int)buf->rows[last].chars.len};
+    return set_selection(sel, (TextPos){0, 0}, end, end);
+}
+
 int textobj_char_right(Buffer *buf, int line, int col, TextSelection *sel) {
     if (!buf || line < 0 || line >= buf->num_rows)
         return 0;

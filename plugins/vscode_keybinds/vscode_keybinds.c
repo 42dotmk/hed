@@ -1,162 +1,26 @@
 #include "vscode_keybinds.h"
 #include "hed.h"
 
-/* ------------------------------------------------------------------ */
-/* Helpers                                                             */
-/* ------------------------------------------------------------------ */
-
-/* Ctrl+A: select the whole buffer. */
-static void vsc_select_all(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0)
-        return;
-    if (kb_in_visual())
-        kb_visual_escape();
-    win->cursor.y = 0;
-    win->cursor.x = 0;
-    kb_visual_begin(0);
-    kb_goto_file_end();
-    kb_goto_line_end();
-}
-
-/* Ctrl+L: select the current line; repeat to extend a line at a time. */
-static void vsc_select_line(void) {
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0)
-        return;
-    if (!kb_in_visual()) {
-        win->cursor.x = 0;
-        kb_visual_begin(0);
-    }
-    if (win->cursor.y < buf->num_rows - 1) {
-        win->cursor.y++;
-        win->cursor.x = 0;
-    } else {
-        kb_goto_line_end();
-    }
-}
-
-/* Del: delete forward (the selection if one is active; joins with the
- * next line at eol). */
-static void vsc_delete_forward(void) {
-    if (kb_in_visual()) {
-        kb_visual_delete_selection();
-        return;
-    }
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0)
-        return;
-    Row *row = &buf->rows[win->cursor.y];
-    if (win->cursor.x >= (int)row->chars.len) {
-        if (win->cursor.y >= buf->num_rows - 1)
-            return;
-        win->cursor.y++;
-        win->cursor.x = 0;
-        kb_insert_backspace(); /* join with the line we came from */
-    } else {
-        cmd_delete_char(NULL);
-    }
-}
-
-/* Scan one word (or whitespace-then-punctuation run) from `x` in
- * direction `dir` (-1 left, +1 right) and return the far boundary.
- * VSCode semantics: skip adjacent whitespace first, then consume one
- * run of word bytes or one run of punctuation. */
-static int vsc_word_boundary(const Row *row, int x, int dir) {
-    const char *s = row->chars.data;
-    int len = (int)row->chars.len;
-    int i = x;
-#define AT(j) ((unsigned char)s[(dir) < 0 ? (j) - 1 : (j)])
-#define MORE(j) ((dir) < 0 ? (j) > 0 : (j) < len)
-    while (MORE(i) && isspace(AT(i)))
-        i += dir;
-    if (MORE(i)) {
-        if (textobj_is_word_byte(AT(i))) {
-            while (MORE(i) && textobj_is_word_byte(AT(i)))
-                i += dir;
-        } else {
-            while (MORE(i) && !textobj_is_word_byte(AT(i)) && !isspace(AT(i)))
-                i += dir;
-        }
-    }
-#undef AT
-#undef MORE
-    return i;
-}
-
-/* Delete [from, to) on the cursor row as one undo step. */
-static void vsc_delete_span(int from, int to) {
-    Window *win = window_cur();
-    if (!win || from >= to)
-        return;
-    int y = win->cursor.y;
-    TextSelection sel = {.start = {y, from},
-                         .end = {y, to},
-                         .cursor = {y, from},
-                         .type = SEL_VISUAL};
-    buf_delete_selection(&sel);
-}
-
-/* Ctrl+Backspace: delete the word (or whitespace/punctuation run) left
- * of the cursor. At column 0 joins with the previous line. */
-static void vsc_delete_word_left(void) {
-    if (kb_in_visual()) {
-        kb_visual_delete_selection();
-        return;
-    }
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0)
-        return;
-    if (win->cursor.x == 0) {
-        kb_insert_backspace();
-        return;
-    }
-    Row *row = &buf->rows[win->cursor.y];
-    vsc_delete_span(vsc_word_boundary(row, win->cursor.x, -1), win->cursor.x);
-}
-
-/* Ctrl+Del: delete the word right of the cursor. At eol joins lines. */
-static void vsc_delete_word_right(void) {
-    if (kb_in_visual()) {
-        kb_visual_delete_selection();
-        return;
-    }
-    Buffer *buf = buf_cur();
-    Window *win = window_cur();
-    if (!buf || !win || buf->num_rows == 0)
-        return;
-    Row *row = &buf->rows[win->cursor.y];
-    if (win->cursor.x >= (int)row->chars.len) {
-        vsc_delete_forward();
-        return;
-    }
-    vsc_delete_span(win->cursor.x, vsc_word_boundary(row, win->cursor.x, +1));
-}
-
-/* ------------------------------------------------------------------ */
-/* Keymap                                                              */
-/* ------------------------------------------------------------------ */
+/* Pure registration: every action is a :command (cmd_edit.c and
+ * friends), so the whole keymap is cmap glue plus the shared modeless
+ * basics. */
 
 static int vscode_keybinds_init(void) {
     /* Esc/CR/Tab/BS + arrow drop/extend selection (shared with the
      * emacs keymap). */
     keybind_register_modeless_basics();
 
-    mapi("<Del>", vsc_delete_forward, "delete forward");
+    cmapi("<Del>", "delete_forward", "delete forward");
     cmapv("<Del>", "delete", "delete selection");
     cmapv("<BS>", "delete", "delete selection");
-    mapi("<C-h>", vsc_delete_word_left, "delete word left (Ctrl+Backspace)");
-    mapi("<C-Del>", vsc_delete_word_right, "delete word right");
+    cmapi("<C-h>", "delete_word_left", "delete word left (Ctrl+Backspace)");
+    cmapi("<C-Del>", "delete_word_right", "delete word right");
 
     /* Whole-buffer / line selection. */
-    mapi("<C-a>", vsc_select_all, "select all");
-    mapv("<C-a>", vsc_select_all, "select all");
-    mapi("<C-l>", vsc_select_line, "select line");
-    mapv("<C-l>", vsc_select_line, "extend selection by a line");
+    cmapi("<C-a>", "select ae", "select all");
+    cmapv("<C-a>", "select ae", "select all");
+    cmapi("<C-l>", "select_line", "select line");
+    cmapv("<C-l>", "select_line", "extend selection by a line");
 
     /* File-edge motion (Ctrl+Home/End) and selection (+Shift). */
     cmapi("<C-Home>", "goto gg", "start of file");

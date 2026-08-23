@@ -37,7 +37,7 @@ static void cmd_goto(const char *args) {
 
     /* An explicit motion is a plain motion: drop any active selection
      * first (VSCode / modern-emacs modeless semantics, same as the
-     * kb_drop_* family). Extending is the shifted variant's job;
+     * :left/:pageup family). Extending is the shifted variant's job;
      * nothing binds :goto in visual mode expecting extend. */
     if (kb_in_visual())
         kb_visual_escape();
@@ -404,9 +404,17 @@ static void register_commands(void) {
     cmd("change", cmd_change, "change <textobj>");
     cmd("yank", cmd_yank, "yank <textobj> (selection if active)");
     cmd("select", cmd_select, "visually select <textobj>");
+    cmd("select_line", cmd_select_line,
+        "select current line; repeat extends line-wise");
     cmd("delete_line", cmd_delete_line, "delete current line");
     cmd("delete_char", cmd_delete_char, "delete char under cursor");
     cmd("delete_eol", cmd_delete_eol, "delete to end of line");
+    cmd("delete_forward", cmd_delete_forward,
+        "delete selection/char forward (joins lines at eol)");
+    cmd("delete_word_left", cmd_delete_word_left,
+        "delete word run left (joins lines at bol)");
+    cmd("delete_word_right", cmd_delete_word_right,
+        "delete word run right (joins lines at eol)");
     cmd("change_line", cmd_change_line, "change current line");
     cmd("change_eol", cmd_change_eol, "change to end of line");
     cmd("yank_line", cmd_yank_line, "yank current line");
@@ -426,6 +434,10 @@ static void register_commands(void) {
     cmd("scrolldown", cmd_scrolldown, "scroll down half a page");
     cmd("pageup", cmd_page_up, "page up (drops selection)");
     cmd("pagedown", cmd_page_down, "page down (drops selection)");
+    cmd("left", cmd_left, "cursor left (wrap-aware, drops selection)");
+    cmd("right", cmd_right, "cursor right (wrap-aware, drops selection)");
+    cmd("up", cmd_up, "cursor up (wrap-aware, drops selection)");
+    cmd("down", cmd_down, "cursor down (wrap-aware, drops selection)");
     cmd("search", cmd_search, "open search prompt");
     cmd("search_next", cmd_search_next, "jump to next search match");
     cmd("search_word", cmd_search_word, "search word under cursor");

@@ -32,6 +32,10 @@ int textobj_word_around(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_WORD(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_WORD_around(Buffer *buf, int line, int col, TextSelection *sel);
 int textobj_line(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_entire(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_char_forward(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_word_run_back(Buffer *buf, int line, int col, TextSelection *sel);
+int textobj_word_run_fwd(Buffer *buf, int line, int col, TextSelection *sel);
 /* Brackets/quotes: inner selection inferred from nearest enclosing pair. */
 int textobj_brackets(Buffer *buf, int line, int col, TextSelection *sel);
 /* Brackets/quotes with explicit delimiters; include_delims=1 returns outer
