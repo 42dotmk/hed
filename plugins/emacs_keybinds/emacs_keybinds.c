@@ -63,7 +63,7 @@ static int emacs_keybinds_init(void) {
     cmapi("<C-x><C-s>", "w", "save");
     cmapi("<C-x><C-c>", "q", "quit");
     cmapi("<C-x><C-f>", "fzf", "find files");
-    cmapi("<C-x>b", "fzf", "switch buffer");
+    cmapi("<C-x>b", "ls", "switch buffer");
     cmapi("<C-x>k", "bd", "kill buffer");
     cmapi("<C-x>0", "wclose", "close window");
     cmapi("<C-x>2", "split", "split horizontal");
