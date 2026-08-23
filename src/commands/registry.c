@@ -1,4 +1,5 @@
 #include "commands/registry.h"
+#include "buf/buffer.h"
 #include "stb_ds.h"
 #include <stdlib.h>
 #include <string.h>
@@ -13,8 +14,8 @@ void command_init(void) {
     commands = NULL;
 }
 
-void command_register(const char *name, CommandCallback callback,
-                      const char *desc) {
+void command_register_ft(const char *name, const char *filetype,
+                         CommandCallback callback, const char *desc) {
     char *name_copy = strdup(name);
     if (!name_copy)
         return;
@@ -28,20 +29,49 @@ void command_register(const char *name, CommandCallback callback,
         }
     }
 
-    Command cmd = {.name = name_copy, .callback = callback, .desc = desc_copy};
+    Command cmd = {.name = name_copy,
+                   .callback = callback,
+                   .desc = desc_copy,
+                   .filetype = filetype ? strdup(filetype) : NULL};
     arrput(commands, cmd);
 }
 
+void command_register(const char *name, CommandCallback callback,
+                      const char *desc) {
+    command_register_ft(name, NULL, callback, desc);
+}
+
 int command_execute(const char *name, const char *args) {
+    Buffer *buf = buf_cur();
+    const char *ft = (buf && buf->filetype) ? buf->filetype : NULL;
+    CommandCallback global = NULL;
     for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
-        if (commands[i].name && strcmp(commands[i].name, name) == 0) {
-            if (commands[i].callback) {
+        if (!commands[i].name || strcmp(commands[i].name, name) != 0 ||
+            !commands[i].callback)
+            continue;
+        if (commands[i].filetype) {
+            if (ft && strcmp(commands[i].filetype, ft) == 0) {
                 commands[i].callback(args);
                 return 1;
             }
+        } else if (!global) {
+            global = commands[i].callback;
         }
     }
+    if (global) {
+        global(args);
+        return 1;
+    }
     return 0;
+}
+
+int command_visible(const Command *c) {
+    if (!c)
+        return 0;
+    if (!c->filetype)
+        return 1;
+    Buffer *buf = buf_cur();
+    return buf && buf->filetype && strcmp(buf->filetype, c->filetype) == 0;
 }
 
 int command_execute_line(const char *line) {

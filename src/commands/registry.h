@@ -11,6 +11,8 @@ typedef struct {
     char *name;
     CommandCallback callback;
     char *desc;
+    char *filetype; /* NULL = global; else only runs/lists when the
+                       current buffer has this filetype */
 } Command;
 
 /* Built-in command declarations live in commands/cmd_builtins.h */
@@ -41,6 +43,13 @@ void command_init(void);
 void command_register(const char *name, CommandCallback callback,
                       const char *desc);
 
+/* Filetype-scoped variant, mirroring keybind_register_ft: the command
+ * only resolves while the current buffer has `filetype`, and wins over
+ * a global command of the same name. Replaces the hand-written
+ * `if (strcmp(buf->filetype, "x"))` guards inside callbacks. */
+void command_register_ft(const char *name, const char *filetype,
+                         CommandCallback callback, const char *desc);
+
 /**
  * Execute a command by name with arguments
  *
@@ -61,13 +70,19 @@ int command_execute_line(const char *line);
 /* Helper to invoke a command programmatically (e.g., from keymaps) */
 int command_invoke(const char *name, const char *args);
 
+/* True when `c` applies right now: global, or filetype-scoped and the
+ * current buffer has that filetype. Listings (palette, completion)
+ * use this to hide out-of-scope commands. */
+int command_visible(const Command *c);
+
 /* Look up a registered command's description by name. Returns the
  * description string (registry-owned) or NULL if not found / no
  * description. Used by UIs (e.g. whichkey) that want to fall back
  * to the command's own desc when a keybinding wasn't given one. */
 const char *command_find_desc(const char *name);
 
-/* Convenience macro — used by plugins and config.c */
+/* Convenience macros — used by plugins and config.c */
 #define cmd(name, cb, desc) command_register(name, cb, desc)
+#define cmd_ft(ft, name, cb, desc) command_register_ft(name, ft, cb, desc)
 
 #endif

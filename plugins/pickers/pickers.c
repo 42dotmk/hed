@@ -145,6 +145,8 @@ static void cmd_cpick(const char *args) {
     FzfInput in;
     fzf_input_init(&in, 2);
     for (ptrdiff_t i = 0; i < arrlen(commands); i++) {
+        if (!command_visible(&commands[i]))
+            continue;
         const char *row[2] = {
             commands[i].name ? commands[i].name : "",
             commands[i].desc ? commands[i].desc : "",

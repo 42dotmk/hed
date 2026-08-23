@@ -126,7 +126,7 @@ static int cmdcomp_complete_cmdname(Prompt *p, CmdComp *c) {
     for (ptrdiff_t i = 0; i < arrlen(commands) &&
                           n < (ptrdiff_t)(sizeof(matches) / sizeof(matches[0]));
          i++) {
-        if (commands[i].name &&
+        if (commands[i].name && command_visible(&commands[i]) &&
             strncmp(commands[i].name, prefix, (size_t)plen) == 0)
             matches[n++] = (int)i;
     }
