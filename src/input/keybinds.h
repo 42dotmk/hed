@@ -268,5 +268,7 @@ int textobj_lookup(const char *keys, struct Buffer *buf, int line, int col,
     keybind_register_command_ft(MODE_INSERT, x, ft, y, d)
 #define cmapv_ft(ft, x, y, d)                                                  \
     keybind_register_command_ft(MODE_VISUAL, x, ft, y, d)
+#define cmapvl_ft(ft, x, y, d)                                                 \
+    keybind_register_command_ft(MODE_VISUAL_LINE, x, ft, y, d)
 
 #endif // KEYBINDS_H

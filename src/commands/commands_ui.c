@@ -8,6 +8,8 @@
 
 #include "commands/commands_ui.h"
 #include "editor.h"
+#include "input/keybinds_builtins.h"
+#include "lib/args.h"
 #include "lib/strutil.h"
 #include "ui/wlayout.h"
 #include <stdlib.h>
@@ -42,8 +44,14 @@ void cmd_wfocus(const char *args) {
     windows_focus_next();
 }
 
+/* :wclose [h|j|k|l] — close the current window, or the neighbor in
+ * the given direction. */
 void cmd_wclose(const char *args) {
-    (void)args;
+    args = args_skip_ws(args);
+    if (args && *args && !args[1] && strchr("hjkl", *args)) {
+        kb_del_win(*args);
+        return;
+    }
     windows_close_current();
 }
 

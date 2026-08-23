@@ -76,9 +76,5 @@ void kb_replace_char_apply(int c);
 void kb_visual_replace_char_apply(int c);
 
 void kb_del_win(char direction);
-void kb_del_up(void);
-void kb_del_down(void);
-void kb_del_left(void);
-void kb_del_right(void);
 
 #endif /* KEYBINDS_BUILTINS_H */

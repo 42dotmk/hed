@@ -736,10 +736,6 @@ void kb_visual_replace_char_apply(int c) {
 }
 
 void kb_del_win(char direction);
-void kb_del_up(void) { kb_del_win('k'); }
-void kb_del_down(void) { kb_del_win('j'); }
-void kb_del_left(void) { kb_del_win('h'); }
-void kb_del_right(void) { kb_del_win('l'); }
 
 void kb_del_win(char direction) {
     switch (direction) {

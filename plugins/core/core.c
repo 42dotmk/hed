@@ -376,7 +376,7 @@ static void register_commands(void) {
     cmd("split", cmd_split, "horizontal split");
     cmd("vsplit", cmd_vsplit, "vertical split");
     cmd("wfocus", cmd_wfocus, "focus next window");
-    cmd("wclose", cmd_wclose, "close window");
+    cmd("wclose", cmd_wclose, "close window ([hjkl]: neighbor in direction)");
     cmd("wonly", cmd_wonly, "close every other window");
     cmd("new", cmd_new, "new split with empty buffer");
     cmd("wh", cmd_wleft, "focus window left");

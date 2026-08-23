@@ -46,7 +46,7 @@ static int emacs_keybinds_init(void) {
     /* Search / cancel */
     cmapi("<C-s>", "search", "isearch forward");
     cmapi("<C-r>", "search_prev", "previous search match");
-    mapv("<C-g>", kb_visual_escape, "cancel selection");
+    cmapv("<C-g>", "visual", "cancel selection");
 
     /* C-x prefix cluster */
     cmapi("<C-x><C-s>", "w", "save");

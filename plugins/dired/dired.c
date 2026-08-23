@@ -6,10 +6,24 @@
 #include "dired.h"
 #include "hed.h"
 
-static void on_enter(void) { dired_handle_enter(); }
-static void on_parent(void) { dired_handle_parent(); }
-static void on_home(void) { dired_handle_home(); }
-static void on_chdir(void) { dired_handle_chdir(); }
+/* Filetype-scoped commands: only resolve inside a dired buffer, and
+ * the keys are plain cmaps onto them. */
+static void cmd_dired_open(const char *args) {
+    (void)args;
+    dired_handle_enter();
+}
+static void cmd_dired_up(const char *args) {
+    (void)args;
+    dired_handle_parent();
+}
+static void cmd_dired_home(const char *args) {
+    (void)args;
+    dired_handle_home();
+}
+static void cmd_dired_cd(const char *args) {
+    (void)args;
+    dired_handle_chdir();
+}
 
 /* Intercept "open this path" if it's a directory. */
 static void dired_open_pre(HookBufferEvent *ev) {
@@ -36,10 +50,14 @@ static int dired_plugin_init(void) {
                          dired_open_pre);
     hook_register_buffer(HOOK_BUFFER_SAVE_PRE, MODE_NORMAL, "*",
                          dired_save_pre);
-    mapn_ft("dired", "<CR>", on_enter, "dired open");
-    mapn_ft("dired", "-", on_parent, "dired parent");
-    mapn_ft("dired", "~", on_home, "dired home");
-    mapn_ft("dired", "cd", on_chdir, "dired chdir");
+    cmd_ft("dired", "dired-open", cmd_dired_open, "open entry under cursor");
+    cmd_ft("dired", "dired-up", cmd_dired_up, "go to parent directory");
+    cmd_ft("dired", "dired-home", cmd_dired_home, "go to home directory");
+    cmd_ft("dired", "dired-cd", cmd_dired_cd, "chdir to this directory");
+    cmapn_ft("dired", "<CR>", "dired-open", "dired open");
+    cmapn_ft("dired", "-", "dired-up", "dired parent");
+    cmapn_ft("dired", "~", "dired-home", "dired home");
+    cmapn_ft("dired", "cd", "dired-cd", "dired chdir");
     return 0;
 }
 

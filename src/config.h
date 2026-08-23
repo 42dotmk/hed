@@ -144,10 +144,10 @@ static void config_load_defaults(void) {
     cmapn(" wl", "wl", "focus right");
     cmapn(" ts", "tmux_send_line", "send paragraph to tmux");
     cmapn(" ai", "ai_toggle", "toggle AI shell pane");
-    mapn(" dl", kb_del_right, "del win right");
-    mapn(" dh", kb_del_left, "del win left");
-    mapn(" dj", kb_del_down, "del win down");
-    mapn(" dk", kb_del_up, "del win up");
+    cmapn(" dl", "wclose l", "del win right");
+    cmapn(" dh", "wclose h", "del win left");
+    cmapn(" dj", "wclose j", "del win down");
+    cmapn(" dk", "wclose k", "del win up");
     cmapn(" rr", "reload", "reload editor");
     cmapn(" rp", "viewmd", "markdown preview");
     cmapn(" tq", "ctoggle", "toggle quickfix");

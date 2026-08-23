@@ -87,15 +87,20 @@ static void cmd_mail_mailboxes(const char *args) {
     ed_render_frame();
 }
 
-/* Callback keybinds — only where no command expresses the behavior:
- * positional actions and composites (everything else is a cmap*_ft
- * straight onto the command). */
-static void kb_enter(void) { mail_handle_enter(); }
-static void kb_mark_read(void) {
+/* Filetype-scoped commands backing the buffer-local keys. */
+static void cmd_mail_open_entry(const char *args) {
+    (void)args;
+    mail_handle_enter();
+}
+static void cmd_mail_read(const char *args) {
+    (void)args;
     mail_apply_tags("-unread");
     buf_move_cursor_key(KEY_ARROW_DOWN);
 }
-static void kb_mbox_enter(void) { mail_handle_mailbox_enter(); }
+static void cmd_mail_select_mailbox(const char *args) {
+    (void)args;
+    mail_handle_mailbox_enter();
+}
 
 static void cmd_mail_delete(const char *args) {
     (void)args;
@@ -157,8 +162,14 @@ static void cmd_mail_attach_add(const char *args) {
     mail_attach_add(*p ? p : NULL);
 }
 
-static void kb_next_msg(void) { mail_next_message(); }
-static void kb_prev_msg(void) { mail_prev_message(); }
+static void cmd_mail_next(const char *args) {
+    (void)args;
+    mail_next_message();
+}
+static void cmd_mail_prev(const char *args) {
+    (void)args;
+    mail_prev_message();
+}
 
 /* Intercept "open this path" for the mail URI schemes: mailto: routes
  * to compose (makes `hed mailto:foo@bar?subject=Hi` work for desktop
@@ -206,14 +217,24 @@ static int mail_plugin_init(void) {
         "attach file(s) to the compose buffer ([path]; no arg: fzf "
         "multi-pick)");
 
-    mapn_ft("mail", "<CR>", kb_enter, "open selected thread");
+    cmd_ft("mail", "mail-open", cmd_mail_open_entry,
+           "open the thread under the cursor");
+    cmd_ft("mail", "mail-read", cmd_mail_read,
+           "mark thread(s) read and advance");
+    cmd_ft("mail-mailboxes", "mail-select", cmd_mail_select_mailbox,
+           "select this mailbox/view");
+    cmd_ft("mail-message", "mail-next", cmd_mail_next,
+           "open next message in list");
+    cmd_ft("mail-message", "mail-prev", cmd_mail_prev,
+           "open previous message in list");
+
+    cmapn_ft("mail", "<CR>", "mail-open", "open selected thread");
     cmapn_ft("mail", "/", "mail-filter", "open filter prompt");
     cmapn_ft("mail", "r", "mail-refresh", "refresh (clear filter)");
     cmapn_ft("mail", "R", "mail-sync", "sync mbsync + notmuch");
-    mapn_ft("mail", "<C-r>", kb_mark_read, "mark thread under cursor as read");
-    mapv_ft("mail", "<C-r>", kb_mark_read, "mark selected threads as read");
-    keybind_register_ft(MODE_VISUAL_LINE, "<C-r>", "mail", kb_mark_read,
-                        "mark selected threads as read");
+    cmapn_ft("mail", "<C-r>", "mail-read", "mark thread under cursor as read");
+    cmapv_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
+    cmapvl_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
     cmapn_ft("mail", "<C-S-r>", "mail-tag-all -unread",
              "mark all threads in current query as read");
 
@@ -224,7 +245,7 @@ static int mail_plugin_init(void) {
     keybind_register_command_ft(MODE_VISUAL_LINE, "D", "mail", "mail-delete",
                                 "mark selected threads as deleted");
 
-    mapn_ft("mail-mailboxes", "<CR>", kb_mbox_enter, "select this mailbox");
+    cmapn_ft("mail-mailboxes", "<CR>", "mail-select", "select this mailbox");
 
     cmapn_ft("mail-message", "r", "mail-reply", "reply to this message");
     cmapn_ft("mail-message", "R", "mail-reply-all",
@@ -236,9 +257,9 @@ static int mail_plugin_init(void) {
              "open attachment (1: direct; many: fzf multi-pick)");
     cmapn_ft("mail-message", "A", "mail-attach save",
              "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
-    mapn_ft("mail-message", "<C-n>", kb_next_msg, "open next message in list");
-    mapn_ft("mail-message", "<C-p>", kb_prev_msg,
-            "open previous message in list");
+    cmapn_ft("mail-message", "<C-n>", "mail-next", "open next message in list");
+    cmapn_ft("mail-message", "<C-p>", "mail-prev",
+             "open previous message in list");
 
     /* Compose buffer: C-c C-c sends (mutt / Emacs message-mode
      * convention), C-c C-a attaches. Registered for both normal and
