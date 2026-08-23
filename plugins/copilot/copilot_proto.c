@@ -10,6 +10,7 @@
 #include "select_loop.h"
 
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
 
@@ -287,6 +288,27 @@ CpReqKind cp_proto_pending_pop(int id) {
 
 /* --- send ---------------------------------------------------------- */
 
+/* Write the whole buffer, surviving EINTR and short writes (mirrors
+ * lsp_write_all in plugins/lsp/lsp_impl.c). */
+static int cp_write_all(int fd, const char *buf, size_t len) {
+    while (len > 0) {
+        ssize_t n = write(fd, buf, len);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd p = {.fd = fd, .events = POLLOUT};
+                poll(&p, 1, 1000);
+                continue;
+            }
+            return -1;
+        }
+        buf += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
 static void cp_send_raw(const char *body) {
     if (!CP.spawned || CP.to_fd < 0)
         return;
@@ -294,8 +316,9 @@ static void cp_send_raw(const char *body) {
     int clen = (int)strlen(body);
     int hlen =
         snprintf(header, sizeof(header), "Content-Length: %d\r\n\r\n", clen);
-    write(CP.to_fd, header, (size_t)hlen);
-    write(CP.to_fd, body, (size_t)clen);
+    if (cp_write_all(CP.to_fd, header, (size_t)hlen) < 0 ||
+        cp_write_all(CP.to_fd, body, (size_t)clen) < 0)
+        log_msg("copilot: write failed: %s", strerror(errno));
 }
 
 int cp_proto_request(const char *method, cJSON *params, CpReqKind kind) {

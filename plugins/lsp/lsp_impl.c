@@ -8,6 +8,7 @@
 #include "utils/quickfix.h"
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -152,6 +153,28 @@ static LspPending lsp_pending_pop(LspServer *srv, int id) {
 
 /* ------------------------------------------------------- send primitives */
 
+/* Write the whole buffer, surviving EINTR and short writes. The TCP
+ * transport shares one O_NONBLOCK fd for both directions, so EAGAIN is
+ * a real path there — wait for writability and continue. */
+static int lsp_write_all(int fd, const char *buf, size_t len) {
+    while (len > 0) {
+        ssize_t n = write(fd, buf, len);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd p = {.fd = fd, .events = POLLOUT};
+                poll(&p, 1, 1000);
+                continue;
+            }
+            return -1;
+        }
+        buf += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
 static void lsp_send_raw(LspServer *srv, const char *json_str) {
     if (!srv || srv->to_fd < 0)
         return;
@@ -159,8 +182,9 @@ static void lsp_send_raw(LspServer *srv, const char *json_str) {
     int clen = (int)strlen(json_str);
     int hlen =
         snprintf(header, sizeof(header), "Content-Length: %d\r\n\r\n", clen);
-    write(srv->to_fd, header, hlen);
-    write(srv->to_fd, json_str, clen);
+    if (lsp_write_all(srv->to_fd, header, (size_t)hlen) < 0 ||
+        lsp_write_all(srv->to_fd, json_str, (size_t)clen) < 0)
+        log_msg("LSP[%s]: write failed: %s", srv->lang, strerror(errno));
 }
 
 static void lsp_send_request(LspServer *srv, const char *method, cJSON *params,
@@ -1329,13 +1353,12 @@ static int lsp_spawn_process(LspServer *srv, const char *const *argv) {
             _exit(127);
         if (dup2(out_pipe[1], STDOUT_FILENO) < 0)
             _exit(127);
-        /* Redirect stderr to .hedlog so server diagnostics (and any
-         * "command not found"-style execvp fallout) are captured
+        /* Redirect stderr to the editor log so server diagnostics (and
+         * any "command not found"-style execvp fallout) are captured
          * instead of bleeding onto the editor's TTY. */
-        int errfd = open(".hedlog", O_WRONLY | O_APPEND | O_CREAT, 0644);
+        int errfd = log_fileno();
         if (errfd >= 0) {
             dup2(errfd, STDERR_FILENO);
-            close(errfd);
         } else {
             int devnull = open("/dev/null", O_WRONLY);
             if (devnull >= 0) {
