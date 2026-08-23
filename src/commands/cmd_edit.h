@@ -22,12 +22,6 @@ void cmd_unindent(const char *args);
 void cmd_move_line_up(const char *args);
 void cmd_move_line_down(const char *args);
 void cmd_duplicate_line(const char *args);
-void cmd_page_up(const char *args);
-void cmd_page_down(const char *args);
-void cmd_left(const char *args);
-void cmd_right(const char *args);
-void cmd_up(const char *args);
-void cmd_down(const char *args);
 void cmd_toggle_case(const char *args);
 void cmd_toggle_comment(const char *args);
 void cmd_replace_char(const char *args);
@@ -65,5 +59,6 @@ void cmd_change(const char *args);
 void cmd_yank(const char *args);
 void cmd_select(const char *args);
 void cmd_select_line(const char *args);
+void cmd_extend(const char *args);
 
 #endif /* CMD_EDIT_H */

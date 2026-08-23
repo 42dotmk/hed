@@ -27,20 +27,20 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-End>", "goto G", "end of file");
     cmapv("<C-Home>", "goto gg", "start of file");
     cmapv("<C-End>", "goto G", "end of file");
-    mapi("<C-S-Home>", kb_extend_file_start, "select to start of file");
-    mapi("<C-S-End>", kb_extend_file_end, "select to end of file");
-    mapv("<C-S-Home>", kb_extend_file_start, "extend to start of file");
-    mapv("<C-S-End>", kb_extend_file_end, "extend to end of file");
+    cmapi("<C-S-Home>", "extend gg", "select to start of file");
+    cmapi("<C-S-End>", "extend G", "select to end of file");
+    cmapv("<C-S-Home>", "extend gg", "extend to start of file");
+    cmapv("<C-S-End>", "extend G", "extend to end of file");
 
     /* Paging. */
-    cmapi("<PageUp>", "pageup", "page up");
-    cmapi("<PageDown>", "pagedown", "page down");
-    cmapv("<PageUp>", "pageup", "page up");
-    cmapv("<PageDown>", "pagedown", "page down");
-    mapi("<S-PageUp>", kb_extend_page_up, "select page up");
-    mapi("<S-PageDown>", kb_extend_page_down, "select page down");
-    mapv("<S-PageUp>", kb_extend_page_up, "extend page up");
-    mapv("<S-PageDown>", kb_extend_page_down, "extend page down");
+    cmapi("<PageUp>", "goto pageup", "page up");
+    cmapi("<PageDown>", "goto pagedown", "page down");
+    cmapv("<PageUp>", "goto pageup", "page up");
+    cmapv("<PageDown>", "goto pagedown", "page down");
+    cmapi("<S-PageUp>", "extend pageup", "select page up");
+    cmapi("<S-PageDown>", "extend pagedown", "select page down");
+    cmapv("<S-PageUp>", "extend pageup", "extend page up");
+    cmapv("<S-PageDown>", "extend pagedown", "extend page down");
 
     /* File / window / buffer. */
     cmapi("<C-s>", "w", "save");

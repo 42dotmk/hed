@@ -9,10 +9,10 @@ static int emacs_keybinds_init(void) {
     /* Emacs motion (also drops selection). */
     cmapi("<C-a>", "goto 0", "beginning of line");
     cmapi("<C-e>", "goto $", "end of line");
-    cmapi("<C-b>", "left", "backward char");
-    cmapi("<C-f>", "right", "forward char");
-    cmapi("<C-n>", "down", "next line");
-    cmapi("<C-p>", "up", "previous line");
+    cmapi("<C-b>", "goto left", "backward char");
+    cmapi("<C-f>", "goto right", "forward char");
+    cmapi("<C-n>", "goto down", "next line");
+    cmapi("<C-p>", "goto up", "previous line");
 
     /* Editing */
     cmapi("<C-d>", "delete_char", "delete char forward");

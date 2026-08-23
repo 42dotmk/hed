@@ -44,22 +44,6 @@ int kb_in_visual(void);
  * (Esc/CR/Tab/BS, arrow drop/extend, word-wise and Home/End extend). */
 void keybind_register_modeless_basics(void);
 
-/* Selection-extending variants used by modeless keymaps: enter visual
- * mode (if not already), then move. The former kb_drop_* twins are
- * gone — plain motions are the :left/:goto/:pageup command family,
- * which drop the selection themselves. */
-void kb_extend_left(void);
-void kb_extend_right(void);
-void kb_extend_up(void);
-void kb_extend_down(void);
-void kb_extend_word_l(void);
-void kb_extend_word_r(void);
-void kb_extend_bol(void);
-void kb_extend_eol(void);
-void kb_extend_file_start(void);
-void kb_extend_file_end(void);
-void kb_extend_page_up(void);
-void kb_extend_page_down(void);
 void kb_insert_newline(void);
 void kb_insert_tab(void);
 void kb_insert_backspace(void);

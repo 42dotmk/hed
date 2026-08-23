@@ -1,5 +1,10 @@
 #include "test_helpers.h"
+#include "editor.h"
 #include "unity/unity.h"
+
+/* Stub editor state for the textobj page motions (E.screen_rows). The
+ * real global lives in editor.c, which the test doesn't link. */
+Ed E = {.screen_rows = 24};
 
 #include <stdio.h>
 #include <stdlib.h>

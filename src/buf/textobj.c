@@ -1,5 +1,6 @@
 #include "buf/textobj.h"
 #include "buf/row.h"
+#include "editor.h"
 #include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -1306,6 +1307,35 @@ int textobj_word_run_fwd(Buffer *buf, int line, int col, TextSelection *sel) {
     int e = word_run_boundary(row, col, +1);
     TextPos cursor = {line, col};
     return set_selection(sel, (TextPos){line, col}, (TextPos){line, e}, cursor);
+}
+
+/* One screen page up/down: cursor line ± E.screen_rows (the same
+ * stride as buf_scroll_page_up/down), carrying the render column
+ * across rows like the line motions do. */
+static int page_motion(Buffer *buf, int line, int col, int dir,
+                       TextSelection *sel) {
+    if (!buf || line < 0 || line >= buf->num_rows)
+        return 0;
+    int nl = line + dir * E.screen_rows;
+    if (nl < 0)
+        nl = 0;
+    if (nl >= buf->num_rows)
+        nl = buf->num_rows - 1;
+    Row *nr = &buf->rows[nl];
+    int rx = buf_row_cx_to_rx(&buf->rows[line], col);
+    int nc = buf_row_rx_to_cx(nr, rx);
+    if (nc > (int)nr->chars.len)
+        nc = (int)nr->chars.len;
+    TextPos cursor = {nl, nc};
+    return set_selection(sel, (TextPos){line, col}, cursor, cursor);
+}
+
+int textobj_page_up(Buffer *buf, int line, int col, TextSelection *sel) {
+    return page_motion(buf, line, col, -1, sel);
+}
+
+int textobj_page_down(Buffer *buf, int line, int col, TextSelection *sel) {
+    return page_motion(buf, line, col, +1, sel);
 }
 
 /* Entire buffer: {0,0} .. one past the last char of the last row.

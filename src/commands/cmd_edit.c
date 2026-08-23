@@ -10,6 +10,7 @@
 #include "input/keybinds.h"
 #include "input/keybinds_builtins.h"
 #include "input/picker.h"
+#include "lib/args.h"
 #include "lib/safe_string.h"
 #include "lib/strutil.h"
 #include "terminal.h"
@@ -94,36 +95,6 @@ void cmd_duplicate_line(const char *args) {
     buf_duplicate_line();
 }
 
-/* Arrow motion: wrap-aware (moves by visual row when soft-wrap is
- * on), unlike the j/k textobjs which move by buffer line. Like :goto,
- * a plain motion drops any active selection (the shifted variants
- * extend instead). */
-static void arrow_motion(int key) {
-    if (kb_in_visual())
-        kb_visual_escape();
-    buf_move_cursor_key(key);
-}
-
-void cmd_left(const char *args) {
-    (void)args;
-    arrow_motion(KEY_ARROW_LEFT);
-}
-
-void cmd_right(const char *args) {
-    (void)args;
-    arrow_motion(KEY_ARROW_RIGHT);
-}
-
-void cmd_up(const char *args) {
-    (void)args;
-    arrow_motion(KEY_ARROW_UP);
-}
-
-void cmd_down(const char *args) {
-    (void)args;
-    arrow_motion(KEY_ARROW_DOWN);
-}
-
 /* Delete the active selection, else the given text object. Backs the
  * VSCode Del / Ctrl+Backspace / Ctrl+Del binds: the objects include
  * the newline at line edges, so deleting there joins lines. */
@@ -154,6 +125,53 @@ void cmd_delete_word_right(const char *args) {
     delete_obj_or_selection(textobj_word_run_fwd);
 }
 
+/* :extend <motion> [count] — enter visual mode if needed (anchor at
+ * the cursor), then move, growing the selection: the command form of
+ * Shift+motion in the modeless keymaps. <motion> is any registered
+ * text object — including the word-name aliases left/right/up/down/
+ * pageup/pagedown. */
+void cmd_extend(const char *args) {
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win || buf->num_rows == 0)
+        return;
+
+    char motion[32];
+    args = args_skip_ws(args_next_token(args, motion, sizeof(motion)));
+    if (!motion[0]) {
+        ed_set_status_message("Usage: :extend <motion> [count]");
+        return;
+    }
+    int count = 1;
+    if (*args) {
+        char *end;
+        long c = strtol(args, &end, 10);
+        if (end != args && c >= 1)
+            count = (int)c;
+    }
+
+    int began = 0;
+    if (!kb_in_visual()) {
+        kb_visual_begin(0);
+        began = 1;
+    }
+
+    int ty = win->cursor.y, tx = win->cursor.x;
+    for (int i = 0; i < count; i++) {
+        TextSelection sel;
+        if (!textobj_lookup(motion, buf, ty, tx, &sel)) {
+            if (began)
+                kb_visual_escape();
+            ed_set_status_message(":extend: unknown motion '%s'", motion);
+            return;
+        }
+        ty = sel.cursor.line;
+        tx = sel.cursor.col;
+    }
+    win->cursor.y = ty;
+    win->cursor.x = tx;
+}
+
 /* :select_line — select the current line; repeating extends the
  * selection one line at a time (VSCode Ctrl+L semantics). */
 void cmd_select_line(const char *args) {
@@ -172,22 +190,6 @@ void cmd_select_line(const char *args) {
     } else {
         kb_goto_line_end();
     }
-}
-
-/* Full-page motion. Like :goto, an explicit plain motion drops any
- * active selection (the shifted variants extend instead). */
-void cmd_page_up(const char *args) {
-    (void)args;
-    if (kb_in_visual())
-        kb_visual_escape();
-    buf_scroll_page_up();
-}
-
-void cmd_page_down(const char *args) {
-    (void)args;
-    if (kb_in_visual())
-        kb_visual_escape();
-    buf_scroll_page_down();
 }
 
 void cmd_unindent(const char *args) {

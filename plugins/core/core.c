@@ -406,6 +406,9 @@ static void register_commands(void) {
     cmd("select", cmd_select, "visually select <textobj>");
     cmd("select_line", cmd_select_line,
         "select current line; repeat extends line-wise");
+    cmd("extend", cmd_extend,
+        "extend selection by <motion> [count] (textobj or "
+        "left/right/up/down/pageup/pagedown)");
     cmd("delete_line", cmd_delete_line, "delete current line");
     cmd("delete_char", cmd_delete_char, "delete char under cursor");
     cmd("delete_eol", cmd_delete_eol, "delete to end of line");
@@ -432,12 +435,6 @@ static void register_commands(void) {
     cmd("center", cmd_center, "center current line on screen");
     cmd("scrollup", cmd_scrollup, "scroll up half a page");
     cmd("scrolldown", cmd_scrolldown, "scroll down half a page");
-    cmd("pageup", cmd_page_up, "page up (drops selection)");
-    cmd("pagedown", cmd_page_down, "page down (drops selection)");
-    cmd("left", cmd_left, "cursor left (wrap-aware, drops selection)");
-    cmd("right", cmd_right, "cursor right (wrap-aware, drops selection)");
-    cmd("up", cmd_up, "cursor up (wrap-aware, drops selection)");
-    cmd("down", cmd_down, "cursor down (wrap-aware, drops selection)");
     cmd("search", cmd_search, "open search prompt");
     cmd("search_next", cmd_search_next, "jump to next search match");
     cmd("search_word", cmd_search_word, "search word under cursor");

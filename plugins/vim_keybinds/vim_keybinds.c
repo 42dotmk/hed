@@ -50,6 +50,14 @@ static void register_text_objects(void) {
     textobj_register("al", textobj_line_with_newline, "around line");
     textobj_register("ie", textobj_entire, "entire buffer");
     textobj_register("ae", textobj_entire, "entire buffer");
+    /* Word-name aliases so :goto / :extend read naturally from cmaps
+     * (":extend left", ":goto pagedown"). */
+    textobj_register("left", textobj_char_left, "char left");
+    textobj_register("right", textobj_char_right, "char right");
+    textobj_register("up", textobj_line_up, "line up");
+    textobj_register("down", textobj_line_down, "line down");
+    textobj_register("pageup", textobj_page_up, "page up");
+    textobj_register("pagedown", textobj_page_down, "page down");
 }
 
 static int vim_keybinds_init(void) {

@@ -566,26 +566,6 @@ int kb_in_visual(void) {
            E.mode == MODE_VISUAL_BLOCK;
 }
 
-#define EXTEND_THEN(name, body)                                                \
-    void kb_extend_##name(void) {                                              \
-        if (!kb_in_visual())                                                   \
-            kb_visual_begin(0);                                                \
-        body;                                                                  \
-    }
-
-EXTEND_THEN(left, kb_move_left())
-EXTEND_THEN(right, kb_move_right())
-EXTEND_THEN(up, kb_move_up())
-EXTEND_THEN(down, kb_move_down())
-EXTEND_THEN(word_l, kb_goto_word_start())
-EXTEND_THEN(word_r, kb_goto_word_end())
-EXTEND_THEN(bol, kb_goto_line_start())
-EXTEND_THEN(eol, kb_goto_line_end())
-EXTEND_THEN(file_start, kb_goto_file_start())
-EXTEND_THEN(file_end, kb_goto_file_end())
-EXTEND_THEN(page_up, buf_scroll_page_up())
-EXTEND_THEN(page_down, buf_scroll_page_down())
-
 /* The modeless-keymap basics shared verbatim by the emacs and vscode
  * keymaps: insert-mode Esc/Enter/Tab/Backspace, plain arrows drop the
  * selection, Shift+arrows extend it, Ctrl+Shift+arrows extend word-
@@ -598,33 +578,33 @@ void keybind_register_modeless_basics(void) {
     mapi("<BS>", kb_insert_backspace, "backspace");
     mapv("<Esc>", kb_visual_escape, "exit visual");
 
-    /* Plain motion: drops any active selection (the :left family). */
-    cmapi("<Up>", "up", "up");
-    cmapi("<Down>", "down", "down");
-    cmapi("<Left>", "left", "left");
-    cmapi("<Right>", "right", "right");
-    cmapv("<Up>", "up", "up");
-    cmapv("<Down>", "down", "down");
-    cmapv("<Left>", "left", "left");
-    cmapv("<Right>", "right", "right");
+    /* Plain motion: :goto drops any active selection first. */
+    cmapi("<Up>", "goto up", "up");
+    cmapi("<Down>", "goto down", "down");
+    cmapi("<Left>", "goto left", "left");
+    cmapi("<Right>", "goto right", "right");
+    cmapv("<Up>", "goto up", "up");
+    cmapv("<Down>", "goto down", "down");
+    cmapv("<Left>", "goto left", "left");
+    cmapv("<Right>", "goto right", "right");
 
-    /* Shift+motion: enter / extend a selection. */
-    mapi("<S-Up>", kb_extend_up, "select up");
-    mapi("<S-Down>", kb_extend_down, "select down");
-    mapi("<S-Left>", kb_extend_left, "select left");
-    mapi("<S-Right>", kb_extend_right, "select right");
-    mapv("<S-Up>", kb_extend_up, "extend up");
-    mapv("<S-Down>", kb_extend_down, "extend down");
-    mapv("<S-Left>", kb_extend_left, "extend left");
-    mapv("<S-Right>", kb_extend_right, "extend right");
-    mapi("<C-S-Left>", kb_extend_word_l, "select previous word");
-    mapi("<C-S-Right>", kb_extend_word_r, "select next word");
-    mapv("<C-S-Left>", kb_extend_word_l, "extend previous word");
-    mapv("<C-S-Right>", kb_extend_word_r, "extend next word");
-    mapi("<S-Home>", kb_extend_bol, "select to bol");
-    mapi("<S-End>", kb_extend_eol, "select to eol");
-    mapv("<S-Home>", kb_extend_bol, "extend to bol");
-    mapv("<S-End>", kb_extend_eol, "extend to eol");
+    /* Shift+motion: enter / extend a selection (the :extend command). */
+    cmapi("<S-Up>", "extend up", "select up");
+    cmapi("<S-Down>", "extend down", "select down");
+    cmapi("<S-Left>", "extend left", "select left");
+    cmapi("<S-Right>", "extend right", "select right");
+    cmapv("<S-Up>", "extend up", "extend up");
+    cmapv("<S-Down>", "extend down", "extend down");
+    cmapv("<S-Left>", "extend left", "extend left");
+    cmapv("<S-Right>", "extend right", "extend right");
+    cmapi("<C-S-Left>", "extend b", "select previous word");
+    cmapi("<C-S-Right>", "extend w", "select next word");
+    cmapv("<C-S-Left>", "extend b", "extend previous word");
+    cmapv("<C-S-Right>", "extend w", "extend next word");
+    cmapi("<S-Home>", "extend 0", "select to bol");
+    cmapi("<S-End>", "extend $", "select to eol");
+    cmapv("<S-Home>", "extend 0", "extend to bol");
+    cmapv("<S-End>", "extend $", "extend to eol");
 }
 /* kb_goto_file_start is defined further below (jump-list aware version
  * used by vim's gg). Both keymap plugins reach it through this header. */
