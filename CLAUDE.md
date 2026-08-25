@@ -160,7 +160,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `auto_pair` | Auto-insert `()`/`[]`/`{}`/quotes. |
 | `autosave` | Auto-save functionality |
 | `clipboard` | OSC 52 yank → system clipboard. |
-| `completion` | VSCode-style autocompletion menu (non-focus-stealing anchored popup, live filtering, `CompletionSource` provider API; LSP is the stock source). |
+| `completion` | VSCode-style autocompletion menu (caret-tracking non-focus-stealing popup, live filtering, `CompletionSource` provider API). Built-in buffer-words + filesystem-path sources; LSP plugs in as another source. |
 | `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
 | `copilot` | GitHub Copilot integration |
 | `ctags` | Ctags integration for symbol navigation |

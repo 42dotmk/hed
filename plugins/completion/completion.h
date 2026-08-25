@@ -27,6 +27,8 @@ typedef enum {
     CMP_KIND_TYPE,
     CMP_KIND_SNIP,
     CMP_KIND_CONST,
+    CMP_KIND_FILE,
+    CMP_KIND_DIR,
     CMP_KIND_OTHER,
 } CmpKind;
 
@@ -63,7 +65,11 @@ int completion_source_register(const CompletionSource *src);
 /* Async delivery. The menu takes ownership of items[] (a malloc'd
  * array) and every string inside. A stale token (dismissed, retyped,
  * buffer switched) frees everything and is a no-op. items may be NULL
- * with n == 0 ("no results"). */
+ * with n == 0 ("no results"). Duplicate insert texts across sources
+ * are deduped, keeping the richer item (kind/detail beat plain TEXT).
+ * A source may call this synchronously from request() — but note the
+ * call can create the menu buffer and thus reallocate E.buffers, so
+ * don't touch Buffer pointers afterwards. */
 void completion_provide(unsigned token, CmpItem *items, int n);
 
 /* :complete — open the menu at the cursor without waiting for the

@@ -1,9 +1,9 @@
 # completion
 
-VSCode-style autocompletion menu. A non-focus-stealing popup anchored
-under the word being typed: normal insert-mode editing continues in
-the text window while the menu floats above it, re-filtering live as
-you type.
+VSCode-style autocompletion menu. A non-focus-stealing popup that
+tracks the caret — directly below it (above when there's no room),
+never covering the line being typed — while normal insert-mode
+editing continues in the text window, re-filtering live as you type.
 
 ## Keys
 
@@ -35,7 +35,27 @@ the runtime palette keys `menu.sel`, `menu.kind`, `menu.detail`
 (`theme_palette_set`, weak — works only with the treesitter theme
 registry present).
 
-## Sources
+## Built-in sources
+
+Two editor-native sources ship inside the plugin
+(`completion_sources.c`):
+
+- **words** — identifiers harvested from every open non-readonly
+  buffer that share the typed prefix (case-insensitive; kicks in from
+  the second character; 3+ character words). The fallback that makes
+  completion useful in any buffer, LSP or not.
+- **path** — filesystem entries, triggered by `/`. The token before
+  the cursor is resolved as absolute, `~/`, or relative to the
+  buffer's directory; directories get a trailing `/` and sort first;
+  hidden entries appear only when the basename starts with `.`. A
+  bare `/` only completes at line start or after a quote/`<` (so
+  `a / b` division stays quiet).
+
+Items from different sources with the same insert text are deduped —
+the richer one wins (an LSP function beats the same name as a plain
+buffer word).
+
+## Custom sources
 
 The menu is source-agnostic. A provider registers a
 `CompletionSource` (static lifetime) and delivers items
@@ -61,7 +81,10 @@ completion_source_register(&my_source);
 
 A response arriving after the menu was dismissed (or after further
 typing invalidated the request) is dropped and freed — the `token`
-generation guards it. `plugins/lsp` is the stock source.
+generation guards it. A source may call `completion_provide`
+synchronously from `request()`, but must not touch `Buffer` pointers
+afterwards (the call can reallocate `E.buffers`). `plugins/lsp` is
+the stock external source.
 
 ## Interactions
 

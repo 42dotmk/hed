@@ -13,6 +13,7 @@
  */
 
 #include "completion/completion.h"
+#include "completion/completion_sources.h"
 #include "hed.h"
 #include "select_loop.h"
 #include "treesitter/theme.h"
@@ -104,6 +105,10 @@ static const char *cmp_kind_tag(CmpKind k) {
         return "sn";
     case CMP_KIND_CONST:
         return "cn";
+    case CMP_KIND_FILE:
+        return "fi";
+    case CMP_KIND_DIR:
+        return "di";
     case CMP_KIND_TEXT:
         return "tx";
     default:
@@ -281,10 +286,14 @@ static void cmp_menu_show(void) {
     }
     mb->dirty = 0;
 
+    /* Anchor at the live caret so the popup tracks typing (and
+     * deletes), directly below the caret row — flipping above only
+     * when there's no room. The modal is recreated on every refilter,
+     * so following is free. */
     Window *win = window_cur();
     int ax, ay;
-    win_text_screen_pos(win, M.line, M.word_start, &ax, &ay);
-    int x = ax - 1; /* align labels under the word (1-cell left pad) */
+    win_cursor_screen_pos(win, &ax, &ay);
+    int x = ax - 1; /* align item labels under the caret (1-cell pad) */
     if (x < 1)
         x = 1;
     int h = n > CMP_MAX_VISIBLE ? CMP_MAX_VISIBLE : n;
@@ -293,7 +302,7 @@ static void cmp_menu_show(void) {
         winmodal_destroy(M.modal);
         M.modal = NULL;
     }
-    Window *modal = winmodal_create_anchored(x, ay, M.width, h, WMODAL_AUTO);
+    Window *modal = winmodal_create_anchored(x, ay, M.width, h, WMODAL_BELOW);
     if (!modal) {
         cmp_menu_dismiss();
         return;
@@ -399,20 +408,56 @@ static unsigned cmp_menu_begin(int buf_idx, int line, int word_start) {
     return M.token;
 }
 
+static const char *cmp_item_ins(const CmpItem *it) {
+    return it->insert_text ? it->insert_text : it->label;
+}
+
+/* Richness score for dedupe: a typed item beats a plain buffer word,
+ * an item with a detail column beats one without. */
+static int cmp_item_score(const CmpItem *it) {
+    return (it->kind != CMP_KIND_TEXT) * 2 + (it->detail != NULL);
+}
+
+static void cmp_item_free(CmpItem *it) {
+    free(it->label);
+    free(it->insert_text);
+    free(it->detail);
+    free(it->sort_text);
+}
+
+/* Sources overlap (LSP and buffer-words both know `window_cur`); keep
+ * one item per effective insert text, preferring the richer one. */
+static void cmp_items_dedupe(void) {
+    for (ptrdiff_t i = 0; i < arrlen(M.items); i++) {
+        for (ptrdiff_t j = i + 1; j < arrlen(M.items); j++) {
+            if (strcmp(cmp_item_ins(&M.items[i]), cmp_item_ins(&M.items[j])) !=
+                0)
+                continue;
+            ptrdiff_t drop =
+                cmp_item_score(&M.items[j]) > cmp_item_score(&M.items[i]) ? i
+                                                                          : j;
+            cmp_item_free(&M.items[drop]);
+            arrdel(M.items, drop);
+            if (drop == i) {
+                i--;
+                break;
+            }
+            j--;
+        }
+    }
+}
+
 void completion_provide(unsigned token, CmpItem *items, int n) {
     if (token != M.token || M.buf_idx < 0) {
-        for (int i = 0; i < n; i++) {
-            free(items[i].label);
-            free(items[i].insert_text);
-            free(items[i].detail);
-            free(items[i].sort_text);
-        }
+        for (int i = 0; i < n; i++)
+            cmp_item_free(&items[i]);
         free(items);
         return;
     }
     for (int i = 0; i < n; i++)
         arrput(M.items, items[i]);
     free(items);
+    cmp_items_dedupe();
     cmp_menu_refilter();
 }
 
@@ -450,9 +495,16 @@ static void cmp_request_now(void *ud) {
 
     int ws = cmp_word_start_col(buf, line, cx);
     unsigned token = cmp_menu_begin(buf_idx, line, ws);
-    for (int i = 0; i < g_nsources; i++)
-        if (g_sources[i]->available && g_sources[i]->available(buf))
-            g_sources[i]->request(buf, line, cx, token);
+    for (int i = 0; i < g_nsources; i++) {
+        /* A synchronous source's completion_provide can create the
+         * menu buffer and reallocate E.buffers — re-derive the Buffer
+         * pointer every iteration. */
+        if (buf_idx >= (int)arrlen(E.buffers))
+            break;
+        Buffer *b = &E.buffers[buf_idx];
+        if (g_sources[i]->available && g_sources[i]->available(b))
+            g_sources[i]->request(b, line, cx, token);
+    }
 }
 
 static void cmp_schedule(void) {
@@ -651,6 +703,7 @@ static void cmd_complete(const char *args) {
 }
 
 static int completion_init(void) {
+    completion_sources_register(); /* buffer words + filesystem paths */
     cmd("complete", cmd_complete, "completion menu (manual trigger)");
     /* Ctrl+Space: terminals send \x00; key_to_string encodes "<0>". */
     cmapi("<0>", "complete", "completion menu");
