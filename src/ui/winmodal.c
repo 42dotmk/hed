@@ -110,6 +110,22 @@ void winmodal_show(Window *modal) {
     E.modal_window = modal;
 }
 
+void winmodal_show_nofocus(Window *modal) {
+    if (!modal || !modal->is_modal)
+        return;
+
+    if (E.modal_window && E.modal_window != modal) {
+        winmodal_hide(E.modal_window);
+    }
+
+    /* Visible but unfocused: window_cur() keeps returning the text
+     * window, so editing and the hardware cursor stay in the buffer
+     * while the popup floats above it. */
+    modal->visible = 1;
+    modal->focus = 0;
+    E.modal_window = modal;
+}
+
 void winmodal_hide(Window *modal) {
     if (!modal || !modal->is_modal)
         return;

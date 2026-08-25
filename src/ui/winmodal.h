@@ -49,6 +49,11 @@ Window *winmodal_create_anchored(int anchor_x, int anchor_y, int width,
  */
 void winmodal_show(Window *modal);
 
+/* Show a modal without taking focus: the popup is drawn above the
+ * layout but window_cur() keeps returning the focused text window,
+ * so normal editing continues underneath (completion menu style). */
+void winmodal_show_nofocus(Window *modal);
+
 /**
  * Hide a modal window
  * Hides the modal and restores input to other windows

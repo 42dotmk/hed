@@ -368,6 +368,66 @@ int window_screen_to_buffer(const Window *win, int srow, int scol, int *out_y,
     return 1;
 }
 
+void win_text_screen_pos(const Window *win, int y, int cx, int *out_x,
+                         int *out_y) {
+    int sx = 1, sy = 1;
+    Buffer *buf = NULL;
+    if (win && arrlen(E.buffers) > 0 && win->buffer_index >= 0 &&
+        win->buffer_index < (int)arrlen(E.buffers))
+        buf = &E.buffers[win->buffer_index];
+    if (win) {
+        sy = win->top;
+        sx = win->left;
+    }
+    if (buf && y >= 0 && y < buf->num_rows) {
+        int gutter = window_gutter_width(win, win->height);
+        int margin = gutter ? (gutter + 1) : 0;
+        int content_cols = win->width - margin;
+        if (content_cols < 1)
+            content_cols = 1;
+
+        int rx = buf_row_cx_to_rx(&buf->rows[y], cx);
+        if (rx < 0)
+            rx = 0;
+
+        /* Forward walk of window_screen_to_buffer: visual index of
+         * (y, rx) counts every visible line's wrap sublines plus its
+         * block-below virtual rows, exactly like the draw loop. */
+        int visual = 0;
+        for (int r = 0; r < y; r++) {
+            if (fold_is_line_hidden(&buf->folds, r))
+                continue;
+            visual +=
+                row_visual_height(&buf->rows[r], content_cols, win->wrap) +
+                vtext_block_below_count(buf, r);
+        }
+        int sub = 0;
+        if (win->wrap) {
+            int h = row_visual_height(&buf->rows[y], content_cols, 1);
+            sub = rx / content_cols;
+            if (sub >= h)
+                sub = h - 1;
+        }
+        int vy = visual + sub - win->row_offset;
+        if (vy < 0)
+            vy = 0;
+        if (vy >= win->height)
+            vy = win->height - 1;
+        sy = win->top + vy;
+        sx = win->wrap ? (rx % content_cols) + win->left + margin
+                       : (rx - win->col_offset) + win->left + margin;
+    }
+    if (out_x)
+        *out_x = sx;
+    if (out_y)
+        *out_y = sy;
+}
+
+void win_cursor_screen_pos(const Window *win, int *out_x, int *out_y) {
+    win_text_screen_pos(win, win ? win->cursor.y : 0, win ? win->cursor.x : 0,
+                        out_x, out_y);
+}
+
 /* UTF-8 helpers for render slicing: use wcwidth() for proper wide char support
  */
 static int render_cols_ss(const StrBuf *r) {

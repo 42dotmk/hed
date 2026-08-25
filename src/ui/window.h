@@ -56,9 +56,10 @@ Window *window_cur(void);
 Window *window_find_by_id(int id);
 void win_attach_buf(Window *win, Buffer *buf);
 
-/* Screen cell of `win`'s cursor (accounting for scroll offsets and
- * render column) — where anchored popups attach. NULL-safe: falls
- * back to 1,1. */
+/* Screen cell of `win`'s cursor (gutter-, fold-, wrap- and
+ * virtual-text-aware) — where anchored popups attach. NULL-safe:
+ * falls back to 1,1. Implemented in terminal.c as a wrapper around
+ * win_text_screen_pos (terminal.h). */
 void win_cursor_screen_pos(const Window *win, int *out_x, int *out_y);
 
 /* Simple 2-way splits */

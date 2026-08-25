@@ -43,4 +43,12 @@ void ed_render_frame(void);
 int window_screen_to_buffer(const Window *win, int srow, int scol, int *out_y,
                             int *out_x);
 
+/* Forward counterpart of window_screen_to_buffer: the terminal cell
+ * (1-based) where buffer position (y, cx) of `win` renders, accounting
+ * for the line-number gutter, folds, horizontal scroll, soft wrap and
+ * block-below virtual rows. Off-screen positions clamp to the window's
+ * content area. Anchored popups attach here. */
+void win_text_screen_pos(const Window *win, int y, int cx, int *out_x,
+                         int *out_y);
+
 #endif
