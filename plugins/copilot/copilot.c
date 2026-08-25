@@ -28,6 +28,24 @@ static int g_enabled = 1; /* default on once spawned + signed in */
 /* ----- helpers ----- */
 
 static char *cp_uri_for(const char *filepath) {
+    /* Virtual buffer names ("mail://compose-1", ...) aren't files —
+     * gluing them onto file://$CWD/ makes the server try (and fail)
+     * to resolve them on disk. Present them as untitled documents,
+     * the way editors expose unsaved buffers to Copilot. The name is
+     * flattened so the scheme's ':' and '/' don't nest inside the
+     * untitled: URI; it stays stable per buffer, which is all the
+     * didOpen/didChange correlation needs. */
+    if (strstr(filepath, "://")) {
+        size_t need = strlen("untitled:") + strlen(filepath) + 1;
+        char *uri = malloc(need);
+        if (!uri)
+            return NULL;
+        snprintf(uri, need, "untitled:%s", filepath);
+        for (char *p = uri + strlen("untitled:"); *p; p++)
+            if (*p == ':' || *p == '/')
+                *p = '-';
+        return uri;
+    }
     return fs_path_to_file_uri(filepath, E.cwd);
 }
 
