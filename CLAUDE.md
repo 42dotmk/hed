@@ -160,6 +160,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `auto_pair` | Auto-insert `()`/`[]`/`{}`/quotes. |
 | `autosave` | Auto-save functionality |
 | `clipboard` | OSC 52 yank → system clipboard. |
+| `completion` | VSCode-style autocompletion menu (non-focus-stealing anchored popup, live filtering, `CompletionSource` provider API; LSP is the stock source). |
 | `core` | Default `:` commands + a few editor-wide hooks. Owns `:goto`, `:modeless`, `:plugins`. |
 | `copilot` | GitHub Copilot integration |
 | `ctags` | Ctags integration for symbol navigation |
@@ -170,7 +171,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `git` | Git integration |
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
-| `lsp` | LSP client (WIP). Owns `cJSON`, `:lsp_*` commands. |
+| `lsp` | LSP client: auto-started servers, hover, definition (via `:definition`), diagnostics → quickfix, completion source. Owns `cJSON`, `:lsp_*` commands. |
 | `mail` | Mail integration |
 | `mail_git_patch` | Git patch mail integration |
 | `man` | Manual pages viewer |
@@ -331,7 +332,12 @@ See `plugins/vscode_keybinds/README.md`.
 :plugins             list loaded plugins
 :reload              rebuild and restart
 :tsi <lang>          install tree-sitter grammar
-:lsp_connect / :lsp_hover / :lsp_definition (WIP)
+:definition          goto definition — LSP when a server is attached,
+                     ctags fallback (bound to gd)
+:complete            completion menu (auto-triggers while typing;
+                     Ctrl-Space forces it)
+:lsp_start / :lsp_connect / :lsp_hover / :lsp_definition /
+:lsp_diagnostics / :lsp_status / :lsp_disconnect
 ```
 
 `:keybinds` lists every binding currently registered.
@@ -498,6 +504,7 @@ plugins/                    # Stock set; add dirs with EXTRA_PLUGIN_DIRS,
 ├── clipboard/              # OSC 52 yank
 ├── quickfix_preview/       # Cursor → preview sync
 ├── dired/                  # Directory browser
+├── completion/             # Autocompletion menu + source API
 ├── lsp/                    # LSP client + cJSON
 ├── viewmd/                 # Markdown live preview
 ├── tmux/                   # Runner pane integration
@@ -567,13 +574,13 @@ belong in the core runtime spine (top-level `src/`) instead.
 
 ## Roadmap
 
-- LSP completion / formatting / diagnostics wiring
+- LSP formatting / rename / references wiring; inline diagnostics
+  (virtual text) — completion, definition and quickfix diagnostics
+  are done
 - Plugin `deinit()` actually unregistering hooks/cmds/keybinds (needs
   `hook_unregister`, `command_unregister`, `keybind_unregister` —
-  none exist yet, so disabling a loaded plugin is currently a no-op)
-- Decouple the remaining core ↔ plugin call sites: `lsp_init` in
-  `editor.c` and the LSP fd-pump in `main.c` (would migrate to a
-  generic plugin-driven select-loop registry)
+  only `hook_unregister` exists, so disabling a loaded plugin is
+  still mostly a no-op)
 - More fold methods, more text objects
 - Configurable formatter table (currently hard-coded in
   `plugins/fmt/fmt.c`)
