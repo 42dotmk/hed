@@ -1,74 +1,83 @@
 # lsp
 
-A minimal Language Server Protocol client. Speaks LSP over a TCP
-socket to a running server, integrates hover and goto-definition
-into hed.
-
-> **Status:** work in progress. Hover and goto-definition work for
-> servers that speak LSP-on-TCP. Diagnostics, completion, formatting,
-> and rename are stubs. The plugin works alongside the rest of the
-> editor, not as a critical-path dependency.
+A Language Server Protocol client. Spawns servers from a built-in
+registry (clangd, rust-analyzer, pyright, gopls, typescript-language-
+server, lua-language-server, zls — see `lsp_servers.c`), auto-starting
+on buffer open, and integrates hover, goto-definition, diagnostics and
+completion into hed.
 
 ## Commands
 
 | Command | Action |
 |---|---|
-| `:lsp_connect <host> <port>` | Connect to an LSP server listening on TCP |
-| `:lsp_disconnect` | Tear down the connection |
-| `:lsp_status` | Print connection state to the status line |
-| `:lsp_hover` | Hover info for the symbol under the cursor |
-| `:lsp_definition` | Jump to the definition of the symbol under the cursor |
-| `:lsp_completion` | Trigger completion at the cursor (placeholder) |
+| `:lsp_start [lang]` | Spawn a server from the registry (default: current buffer's filetype). Root is auto-detected from the buffer path via the registry's root markers. |
+| `:lsp_connect <lang> tcp <host>:<port> [root_uri]` | Attach to a server listening on TCP |
+| `:lsp_connect <lang> <to_pipe> <from_pipe> [root_uri]` | Attach via two named pipes (hed writes `to_pipe`, reads `from_pipe`) |
+| `:lsp_disconnect <lang>` | shutdown/exit handshake, then tear down |
+| `:lsp_status` | Per-server state on the status line |
+| `:lsp_hover` | Hover popup for the symbol under the cursor (`K`) |
+| `:lsp_definition` | Jump to the definition under the cursor |
+| `:lsp_diagnostics` | Dump stored diagnostics into the quickfix list |
 
-## Default keybinds
+Servers are keyed by the buffer's `filetype`; one server per language,
+up to 8 concurrently.
 
-The leader cluster maps `K` (NORMAL) to `:lsp_hover` and `gd` to
-`:tag` (which `core` ships) — wire `gd` to `:lsp_definition` instead
-in your `src/config.c` if you prefer LSP over ctags.
+## Goto definition (`gd`)
 
-## Connecting
+`gd` (and F12/`C-t` in the vscode keymap) runs `:definition`, a
+dispatcher owned by the ctags plugin: when a ready LSP server is
+attached to the buffer it asks the server (`lsp_definition_try`, a
+weak symbol so ctags builds without lsp); otherwise it falls back to
+`:tag`. Jumps push the jump list — `<space>jb` goes back — including
+same-file jumps, and center the target line.
 
-Most servers default to stdio; this plugin talks TCP. Either run a
-TCP-mode server directly:
+## Completion
 
-```bash
-clangd --tcp-port=12345
-```
+Completion is served through `plugins/completion`: this plugin
+registers a `CompletionSource` whose trigger characters come from the
+server's `completionProvider.triggerCharacters`. The menu, filtering,
+keys and the accept edit all live in the completion plugin; this
+plugin only converts `textDocument/completion` responses (labels,
+kinds, `textEdit` ranges with UTF-16→byte conversion, snippet
+placeholder stripping) into menu items.
 
-Or wrap a stdio server in `socat`:
+## Document sync
 
-```bash
-socat TCP-LISTEN:12345,reuseaddr,fork EXEC:'pyright-langserver --stdio'
-```
+Full-text `didOpen` on buffer open, `didClose`/`didSave` on close and
+save. `didChange` is sent lazily: before every request (hover,
+definition, completion) and on leaving insert mode, but only when the
+buffer actually changed since the last sync — so the server always
+sees live text without per-keystroke traffic.
 
-Then inside hed:
-
-```
-:lsp_connect 127.0.0.1 12345
-:lsp_hover
-```
+All positions on the wire are UTF-16 code units, converted at the
+boundary from hed's byte columns.
 
 ## Hover display
 
-Hover responses render into a centered modal window. Press
-`q` or `<Esc>` to dismiss; `j`/`k` to scroll.
+Hover responses render into a centered modal. `q`/`<Esc>` dismiss,
+`j`/`k` scroll.
+
+## Lifecycle
+
+The fd of every server is registered on the editor's select loop
+(`ed_loop_register`) — no polling, no core hooks. Server→client
+requests (`workspace/configuration`, `client/registerCapability`,
+`window/workDoneProgress/create`, …) are answered with empty results
+so servers that block on them (rust-analyzer, lua-language-server)
+never stall. On `:lsp_disconnect` and editor exit (plugin deinit +
+`atexit`) each server gets a `shutdown` request and `exit`
+notification before an escalating SIGTERM/SIGKILL reap.
 
 ## Architecture
 
-- `lsp.c` / `lsp_plugin.h` — plugin entry, command registration.
-- `lsp_impl.c` — JSON-RPC framing, request/response correlation, the
-  socket pump (drained from `main.c` via the weak `lsp_fill_fdset` /
-  `lsp_handle_readable` hooks).
-- `cmd_lsp.c` — the user-facing `:lsp_*` commands.
-- `lsp_hooks.c` — buffer/cursor hook handlers (notify the server of
-  open/change/close, sync cursor position).
-- `json_helpers.c` + `cjson/` — JSON encode/decode (vendored cJSON).
-
-## Notes
-
-- TCP only by design — keeps the implementation small and lets you
-  run a server outside the editor process. Stdio servers can be
-  fronted with `socat`.
-- The plugin uses weak references from the editor's `select()` loop,
-  so building hed without the plugin (e.g., a custom `PLUGINS_DIR`)
-  is fine — the editor compiles and runs without the LSP fd-pump.
+- `lsp.c` / `lsp_plugin.h` — plugin entry, command registration,
+  completion-source registration, atexit shutdown.
+- `lsp_impl.c` — protocol state machine: servers, pending-request
+  table, document sync, UTF-16 conversion, response handlers, the
+  completion source, diagnostics store.
+- `cmd_lsp.c` — the user-facing `:lsp_*` command thunks.
+- `lsp_hooks.c` — buffer open/close/save + mode-change sync hooks and
+  hover-popup keys.
+- `lsp_servers.c` — the spawn registry (argv + root markers per lang).
+- `json_helpers.c` + `cjson/` — JSON decode helpers (vendored cJSON).
+- JSON-RPC framing/envelopes are shared: `plugins/jsonrpc/`.

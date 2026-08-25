@@ -17,11 +17,22 @@ void lsp_on_buffer_open(Buffer *buf);
 void lsp_on_buffer_close(Buffer *buf);
 void lsp_on_buffer_save(Buffer *buf);
 void lsp_on_buffer_changed(Buffer *buf);
+/* Send a full-text didChange only if the buffer changed since the last
+ * sync. Called before every request; cheap when clean. */
+void lsp_sync_document(Buffer *buf);
 
-/* User-facing requests */
+/* User-facing requests. Columns are byte offsets; the UTF-16
+ * conversion the protocol wants happens inside. */
 void lsp_request_hover(Buffer *buf, int line, int col);
 void lsp_request_definition(Buffer *buf, int line, int col);
-void lsp_request_completion(Buffer *buf, int line, int col);
+
+/* Probe for the :definition dispatcher (plugins/ctags declares this
+ * weak): request an LSP definition for the current buffer if a ready
+ * server is attached. 0 = request sent, -1 = fall back to ctags. */
+int lsp_definition_try(void);
+
+/* Register the LSP completion source with plugins/completion. */
+void lsp_completion_source_register(void);
 
 /* Connect to a manually-started LSP server.
  *

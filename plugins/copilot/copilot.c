@@ -16,6 +16,7 @@
 #include "buf/virtual_text.h"
 #include "copilot_internal.h"
 #include "hed.h"
+#include "jsonrpc/jsonrpc.h"
 #include "lsp/cjson/cJSON.h"
 #include "lsp/json_helpers.h"
 #include "select_loop.h"
@@ -617,6 +618,16 @@ static void cp_process_notification(cJSON *json) {
     }
 }
 
+/* Server→client requests (id + method) must be answered, not treated
+ * as responses — same routing rule as the lsp plugin. We decline. */
+static void cp_process_server_request(cJSON *json, const cJSON *id,
+                                      const char *method) {
+    (void)json;
+    log_msg("copilot: <-? %s (server request)", method);
+    if (jrpc_send(CP.to_fd, jrpc_error(id, -32601, "method not found")) < 0)
+        log_msg("copilot: write failed: %s", strerror(errno));
+}
+
 void cp_handle_message(const char *json_str, int len) {
     (void)len;
     cJSON *json = json_parse(json_str, (size_t)len);
@@ -625,7 +636,10 @@ void cp_handle_message(const char *json_str, int len) {
         return;
     }
     cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
-    if (id && !cJSON_IsNull(id))
+    const char *method = json_get_string(json, "method");
+    if (id && !cJSON_IsNull(id) && method)
+        cp_process_server_request(json, id, method);
+    else if (id && !cJSON_IsNull(id))
         cp_process_response(json);
     else
         cp_process_notification(json);

@@ -1,3 +1,4 @@
+#include "completion/completion.h"
 #include "hed.h"
 #include "json_helpers.h"
 #include "jsonrpc/jsonrpc.h"
@@ -5,7 +6,6 @@
 #include "lsp_hooks.h"
 #include "lsp_servers.h"
 #include "select_loop.h"
-#include "selectlist/selectlist.h"
 #include "utils/quickfix.h"
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -36,6 +36,8 @@ typedef struct {
     int buf_idx;
     int req_line;
     int req_col;
+    /* Completion-menu generation token (see completion_provide). */
+    unsigned token;
 } LspPending;
 
 struct LspServer {
@@ -48,7 +50,12 @@ struct LspServer {
     int from_fd; /* editor reads from here (server stdout) */
 
     int initialized;
+    int initialize_id; /* request id of the initialize handshake */
     int next_id;
+
+    /* completionProvider.triggerCharacters from the initialize result,
+     * flattened to a set of single bytes ('.', ':', '>', ...). */
+    char trigger_chars[32];
 
     /* Incoming message framing */
     JrpcReader reader;
@@ -106,6 +113,87 @@ static char *lsp_get_file_uri(const char *filepath) {
     return fs_path_to_file_uri(filepath, NULL);
 }
 
+/* ------------------------------------------------- UTF-16 positions
+ * LSP `character` offsets are UTF-16 code units; hed columns are byte
+ * offsets. 1-3 byte UTF-8 sequences are one UTF-16 unit, 4-byte
+ * sequences (astral plane) are a surrogate pair = two units.
+ * Continuation bytes (0x80-0xBF) count zero. */
+
+static int lsp_cx_to_utf16(const char *s, size_t len, int cx) {
+    int u = 0;
+    if (cx > (int)len)
+        cx = (int)len;
+    for (int i = 0; i < cx && s; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c & 0xC0) == 0x80)
+            continue; /* continuation byte */
+        u += (c >= 0xF0) ? 2 : 1;
+    }
+    return u;
+}
+
+static int lsp_utf16_to_cx(const char *s, size_t len, int u16) {
+    int u = 0;
+    int i = 0;
+    while (i < (int)len && s) {
+        unsigned char c = (unsigned char)s[i];
+        int adv = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : (c >= 0xC0) ? 2 : 1;
+        int units = (c >= 0xF0) ? 2 : 1;
+        if (u + units > u16)
+            break;
+        u += units;
+        i += adv;
+        if (u >= u16)
+            break;
+    }
+    return i;
+}
+
+/* ------------------------------------------------- document sync
+ * Full-text didChange, sent lazily: each buffer remembers the undo
+ * generation + dirty counter of its last sync and a fresh didChange
+ * goes out only when either moved (undo/redo bumps dirty but not the
+ * generation). Keyed by filename — buffer indices shift on close. */
+
+typedef struct {
+    char *filename;
+    unsigned long gen;
+    int dirty;
+} LspSyncEnt;
+
+static LspSyncEnt *g_sync = NULL; /* stb_ds */
+
+static LspSyncEnt *lsp_sync_slot(const char *filename, int create) {
+    for (ptrdiff_t i = 0; i < arrlen(g_sync); i++) {
+        if (strcmp(g_sync[i].filename, filename) == 0)
+            return &g_sync[i];
+    }
+    if (!create)
+        return NULL;
+    LspSyncEnt e = {.filename = strdup(filename), .gen = 0, .dirty = -1};
+    arrput(g_sync, e);
+    return &g_sync[arrlen(g_sync) - 1];
+}
+
+static void lsp_sync_forget(const char *filename) {
+    if (!filename)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(g_sync); i++) {
+        if (strcmp(g_sync[i].filename, filename) == 0) {
+            free(g_sync[i].filename);
+            arrdel(g_sync, i);
+            return;
+        }
+    }
+}
+
+static void lsp_sync_free(void) {
+    for (ptrdiff_t i = 0; i < arrlen(g_sync); i++)
+        free(g_sync[i].filename);
+    arrfree(g_sync);
+    g_sync = NULL;
+}
+
 /* -------------------------------------------------- pending request table */
 
 static void lsp_pending_add(LspServer *srv, int id, LspReqKind kind) {
@@ -119,7 +207,7 @@ static void lsp_pending_add(LspServer *srv, int id, LspReqKind kind) {
 }
 
 static void lsp_pending_add_completion(LspServer *srv, int id, int buf_idx,
-                                       int line, int col) {
+                                       int line, int col, unsigned token) {
     for (int i = 0; i < LSP_PENDING_MAX; i++) {
         if (srv->pending[i].kind == LSP_REQ_NONE) {
             srv->pending[i] = (LspPending){
@@ -128,6 +216,7 @@ static void lsp_pending_add_completion(LspServer *srv, int id, int buf_idx,
                 .buf_idx = buf_idx,
                 .req_line = line,
                 .req_col = col,
+                .token = token,
             };
             return;
         }
@@ -217,8 +306,34 @@ static void lsp_send_initialize(LspServer *srv) {
     cJSON_AddItemToObject(params, "capabilities", caps);
 
     int id = srv->next_id++;
-    lsp_pending_add(srv, id, LSP_REQ_NONE); /* initialize has no user action */
+    srv->initialize_id = id;
     lsp_send_request(srv, "initialize", params, id);
+}
+
+/* Pull the bits of ServerCapabilities we act on out of the initialize
+ * result: completion trigger characters (used by the completion
+ * plugin's auto-trigger). */
+static void lsp_parse_capabilities(LspServer *srv, cJSON *result) {
+    srv->trigger_chars[0] = '\0';
+    cJSON *caps = result ? json_get_object(result, "capabilities") : NULL;
+    cJSON *comp = caps ? json_get_object(caps, "completionProvider") : NULL;
+    cJSON *trig = comp ? json_get_array(comp, "triggerCharacters") : NULL;
+    if (!trig)
+        return;
+    size_t w = 0;
+    for (int i = 0; i < cJSON_GetArraySize(trig); i++) {
+        cJSON *t = cJSON_GetArrayItem(trig, i);
+        if (cJSON_IsString(t) && t->valuestring && t->valuestring[0] &&
+            w + 1 < sizeof(srv->trigger_chars)) {
+            /* Multi-byte trigger strings ("->", "::"): their last byte
+             * is the one that arrives right before completion fires. */
+            const char *s = t->valuestring;
+            srv->trigger_chars[w++] = s[strlen(s) - 1];
+        }
+    }
+    srv->trigger_chars[w] = '\0';
+    log_msg("LSP[%s]: completion triggers: \"%s\"", srv->lang,
+            srv->trigger_chars);
 }
 
 static void lsp_send_initialized(LspServer *srv) {
@@ -366,160 +481,156 @@ static void lsp_show_popup(const char *title, const char *text) {
 
 /* ----- completion ------------------------------------------------- */
 
-/* Completion context captured at request time, replayed on pick. The
- * SelectList callback runs after this handler returns, so we stash
- * everything it needs on the heap and free it inside the callback. */
-typedef struct {
-    int buf_idx;
-    int req_line; /* 0-based, LSP coords */
-    int req_col;  /* 0-based, LSP coords */
-    int n;
-    char *insert[]; /* `insertText` (or label) per item, deep-copied */
-} LspComplCtx;
-
-/* Walk back over identifier characters from `(line, cx)` to find the
- * start of the partial word being completed. Returns the column of the
- * first identifier char. cx is a 0-based byte index into the row. */
-static int lsp_word_start_col(Buffer *buf, int line, int cx) {
-    if (!buf || line < 0 || line >= buf->num_rows)
-        return cx;
-    const char *s = buf->rows[line].chars.data;
-    int i = cx;
-    while (i > 0) {
-        unsigned char c = (unsigned char)s[i - 1];
-        if (!(isalnum(c) || c == '_'))
-            break;
-        i--;
+/* LSP CompletionItemKind (1-25) → the menu's coarse kinds. */
+static CmpKind lsp_kind_to_cmp(int k) {
+    switch (k) {
+    case 1:
+        return CMP_KIND_TEXT;
+    case 2: /* Method */
+    case 3: /* Function */
+    case 4: /* Constructor */
+        return CMP_KIND_FN;
+    case 5:  /* Field */
+    case 10: /* Property */
+        return CMP_KIND_FIELD;
+    case 6: /* Variable */
+        return CMP_KIND_VAR;
+    case 7:  /* Class */
+    case 8:  /* Interface */
+    case 13: /* Enum */
+    case 22: /* Struct */
+    case 25: /* TypeParameter */
+        return CMP_KIND_TYPE;
+    case 9: /* Module */
+        return CMP_KIND_MOD;
+    case 14: /* Keyword */
+        return CMP_KIND_KW;
+    case 15: /* Snippet */
+        return CMP_KIND_SNIP;
+    case 20: /* EnumMember */
+    case 21: /* Constant */
+        return CMP_KIND_CONST;
+    default:
+        return CMP_KIND_OTHER;
     }
-    return i;
 }
 
-static void lsp_completion_pick(int idx, const char *item, void *user) {
-    (void)item;
-    LspComplCtx *ctx = user;
-    if (!ctx)
-        return;
-    if (idx < 0 || idx >= ctx->n)
-        goto done;
-    if (ctx->buf_idx < 0 || ctx->buf_idx >= (int)arrlen(E.buffers))
-        goto done;
-
-    Buffer *buf = &E.buffers[ctx->buf_idx];
-    if (!buf->cursor)
-        goto done;
-    int line = ctx->req_line;
-    if (line < 0 || line >= buf->num_rows)
-        goto done;
-
-    /* Replacement range: [word_start, current_cursor) on `line`. */
-    int cur_cx = buf->cursor->x;
-    int word_cx = lsp_word_start_col(buf, line, ctx->req_col);
-    if (cur_cx < word_cx)
-        cur_cx = word_cx;
-
-    Row *row = &buf->rows[line];
-    if (cur_cx > (int)row->chars.len)
-        cur_cx = (int)row->chars.len;
-
-    /* Splice: chars[0..word_cx) + insert + chars[cur_cx..len). Done via
-     * a new StrBuf to avoid an N-call delete/insert loop. */
-    const char *ins = ctx->insert[idx];
-    size_t ilen = strlen(ins);
-    size_t tail = row->chars.len - (size_t)cur_cx;
-    StrBuf fresh = strbuf_new();
-    strbuf_reserve(&fresh, (size_t)word_cx + ilen + tail);
-    strbuf_append(&fresh, row->chars.data, (size_t)word_cx);
-    strbuf_append(&fresh, ins, ilen);
-    strbuf_append(&fresh, row->chars.data + cur_cx, tail);
-    strbuf_free(&row->chars);
-    row->chars = fresh;
-    buf_row_update(row);
-
-    buf->cursor->x = word_cx + (int)ilen;
-    buf->dirty++;
-
-done:
-    for (int i = 0; i < ctx->n; i++)
-        free(ctx->insert[i]);
-    free(ctx);
+/* Strip snippet placeholders in place: "$0" / "$1" drop, "${1:text}"
+ * keeps "text". Good enough for insertTextFormat == 2 servers. */
+static void lsp_strip_snippet(char *s) {
+    char *r = s, *w = s;
+    while (*r) {
+        if (*r != '$') {
+            *w++ = *r++;
+            continue;
+        }
+        r++;
+        if (*r == '{') {
+            r++;
+            while (*r && *r != ':' && *r != '}')
+                r++;
+            if (*r == ':') {
+                r++;
+                while (*r && *r != '}')
+                    *w++ = *r++;
+            }
+            if (*r == '}')
+                r++;
+        } else {
+            while (*r && isdigit((unsigned char)*r))
+                r++;
+        }
+    }
+    *w = '\0';
 }
 
+/* Convert a completion response into CmpItems for the completion
+ * plugin's menu. `pop` carries the request position (for textEdit
+ * range conversion) and the menu token. */
 static void lsp_handle_completion_result(LspServer *srv, const LspPending *pop,
                                          cJSON *result) {
-    if (!result || cJSON_IsNull(result)) {
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
-        return;
+    /* The request row's text, for UTF-16 → byte column conversion of
+     * textEdit ranges. May legitimately be gone (buffer closed). */
+    const char *rowtext = NULL;
+    size_t rowlen = 0;
+    if (pop->buf_idx >= 0 && pop->buf_idx < (int)arrlen(E.buffers)) {
+        Buffer *buf = &E.buffers[pop->buf_idx];
+        if (pop->req_line >= 0 && pop->req_line < buf->num_rows) {
+            rowtext = buf->rows[pop->req_line].chars.data;
+            rowlen = buf->rows[pop->req_line].chars.len;
+        }
     }
-    /* result is either CompletionItem[] or { items: CompletionItem[] }. */
-    cJSON *items =
-        cJSON_IsArray(result) ? result : json_get_array(result, "items");
+
+    cJSON *items = NULL;
+    if (result && !cJSON_IsNull(result))
+        items =
+            cJSON_IsArray(result) ? result : json_get_array(result, "items");
     int n = items ? cJSON_GetArraySize(items) : 0;
-    if (n <= 0) {
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
-        return;
-    }
     if (n > 200)
         n = 200;
-
-    /* Build display labels + the strings to insert. Display = label;
-     * if `detail` is set we append " : detail" so the user sees types. */
-    char **labels = malloc(sizeof(char *) * (size_t)n);
-    LspComplCtx *ctx = malloc(sizeof(LspComplCtx) + sizeof(char *) * (size_t)n);
-    if (!labels || !ctx) {
-        free(labels);
-        free(ctx);
+    if (n <= 0) {
+        completion_provide(pop->token, NULL, 0);
         return;
     }
-    ctx->buf_idx = pop->buf_idx;
-    ctx->req_line = pop->req_line;
-    ctx->req_col = pop->req_col;
-    ctx->n = n;
 
+    CmpItem *out = calloc((size_t)n, sizeof(CmpItem));
+    if (!out)
+        return;
     int kept = 0;
     for (int i = 0; i < n; i++) {
         cJSON *it = cJSON_GetArrayItem(items, i);
         const char *label = json_get_string(it, "label");
-        const char *insert = json_get_string(it, "insertText");
-        const char *detail = json_get_string(it, "detail");
-        if (!insert || !*insert)
-            insert = label;
         if (!label || !*label)
             continue;
+        CmpItem *o = &out[kept];
+        o->label = strdup(label);
+        o->kind = lsp_kind_to_cmp(json_get_int(it, "kind", 0));
+        o->edit_start = -1;
+        o->edit_end = -1;
 
-        char buf[512];
+        const char *detail = json_get_string(it, "detail");
+        if (!detail || !*detail) {
+            cJSON *ld = json_get_object(it, "labelDetails");
+            detail = ld ? json_get_string(ld, "description") : NULL;
+        }
         if (detail && *detail)
-            snprintf(buf, sizeof(buf), "%s : %s", label, detail);
-        else
-            snprintf(buf, sizeof(buf), "%s", label);
-        labels[kept] = strdup(buf);
-        ctx->insert[kept] = strdup(insert);
+            o->detail = strdup(detail);
+
+        const char *sort = json_get_string(it, "sortText");
+        if (sort && *sort)
+            o->sort_text = strdup(sort);
+
+        /* Prefer textEdit.newText + range; fall back to insertText. */
+        const char *ins = NULL;
+        cJSON *edit = json_get_object(it, "textEdit");
+        if (edit) {
+            ins = json_get_string(edit, "newText");
+            cJSON *range = json_get_object(edit, "range");
+            if (!range) /* InsertReplaceEdit */
+                range = json_get_object(edit, "insert");
+            cJSON *start = range ? json_get_object(range, "start") : NULL;
+            cJSON *end = range ? json_get_object(range, "end") : NULL;
+            if (start && end && rowtext &&
+                json_get_int(start, "line", -1) == pop->req_line) {
+                o->edit_start = lsp_utf16_to_cx(
+                    rowtext, rowlen, json_get_int(start, "character", 0));
+                o->edit_end = lsp_utf16_to_cx(
+                    rowtext, rowlen, json_get_int(end, "character", 0));
+            }
+        }
+        if (!ins || !*ins)
+            ins = json_get_string(it, "insertText");
+        if (ins && *ins && strcmp(ins, label) != 0)
+            o->insert_text = strdup(ins);
+        if (json_get_int(it, "insertTextFormat", 1) == 2) {
+            if (!o->insert_text)
+                o->insert_text = strdup(ins && *ins ? ins : label);
+            lsp_strip_snippet(o->insert_text);
+        }
         kept++;
     }
-    if (kept == 0) {
-        free(labels);
-        free(ctx);
-        ed_set_status_message("LSP[%s]: no completions", srv->lang);
-        return;
-    }
-    ctx->n = kept;
-
-    /* Anchor at the buffer's current cursor (in screen cells). */
-    int anchor_x, anchor_y;
-    win_cursor_screen_pos(window_cur(), &anchor_x, &anchor_y);
-
-    int rc = selectlist_open_anchored(anchor_x, anchor_y, 40,
-                                      (const char *const *)labels, kept,
-                                      WMODAL_AUTO, lsp_completion_pick, ctx);
-    for (int i = 0; i < kept; i++)
-        free(labels[i]);
-    free(labels);
-
-    if (rc != 0) {
-        for (int i = 0; i < ctx->n; i++)
-            free(ctx->insert[i]);
-        free(ctx);
-        ed_set_status_message("LSP: completion picker failed");
-    }
+    (void)srv;
+    completion_provide(pop->token, out, kept);
 }
 
 static void lsp_handle_hover_result(cJSON *result) {
@@ -539,13 +650,9 @@ static void lsp_handle_hover_result(cJSON *result) {
         if (val && cJSON_IsString(val))
             text = val->valuestring;
     } else if (cJSON_IsArray(contents)) {
-        /* concatenate all entries */
-        static char combined[4096];
-        combined[0] = '\0';
-        int off = 0;
-        for (int i = 0; i < cJSON_GetArraySize(contents) &&
-                        off < (int)sizeof(combined) - 2;
-             i++) {
+        /* MarkedString[]: concatenate all entries */
+        StrBuf combined = strbuf_new();
+        for (int i = 0; i < cJSON_GetArraySize(contents); i++) {
             cJSON *item = cJSON_GetArrayItem(contents, i);
             const char *v = NULL;
             if (cJSON_IsString(item))
@@ -556,19 +663,17 @@ static void lsp_handle_hover_result(cJSON *result) {
                     v = val->valuestring;
             }
             if (v && *v) {
-                if (off > 0)
-                    combined[off++] = '\n';
-                int rem = (int)sizeof(combined) - off - 1;
-                int len = (int)strlen(v);
-                if (len > rem)
-                    len = rem;
-                memcpy(combined + off, v, (size_t)len);
-                off += len;
-                combined[off] = '\0';
+                if (combined.len > 0)
+                    strbuf_append_char(&combined, '\n');
+                strbuf_append(&combined, v, strlen(v));
             }
         }
-        if (combined[0])
-            text = combined;
+        if (combined.len > 0) {
+            lsp_show_popup("Hover", combined.data);
+            strbuf_free(&combined);
+            return;
+        }
+        strbuf_free(&combined);
     }
 
     if (!text || !*text) {
@@ -615,11 +720,28 @@ static void lsp_handle_definition_result(cJSON *result) {
     const char *path = fs_uri_to_path(uri);
     log_msg("LSP definition: %s:%d:%d", path, line + 1, col + 1);
 
-    buf_open_or_switch(path, true);
+    /* Explicit jump-list push: buf_open_or_switch only records when
+     * switching buffers, which would skip same-file jumps. */
+    kb_jump_save_current();
+    buf_open_or_switch(path, false);
     Buffer *buf = buf_cur();
-    if (buf) {
-        buf->cursor->y = line < buf->num_rows ? line : buf->num_rows - 1;
-        buf->cursor->x = col;
+    Window *win = window_cur();
+    if (buf && buf->num_rows > 0) {
+        if (line >= buf->num_rows)
+            line = buf->num_rows - 1;
+        if (line < 0)
+            line = 0;
+        Row *row = &buf->rows[line];
+        int cx = lsp_utf16_to_cx(row->chars.data, row->chars.len, col);
+        if (cx > (int)row->chars.len)
+            cx = (int)row->chars.len;
+        buf->cursor->y = line;
+        buf->cursor->x = cx;
+        if (win && !win->is_modal) {
+            win->cursor.y = line;
+            win->cursor.x = cx;
+        }
+        buf_center_screen();
     }
     ed_set_status_message("LSP: jumped to %s:%d", path, line + 1);
 }
@@ -633,15 +755,18 @@ static void lsp_process_response(LspServer *srv, cJSON *json) {
         const char *msg = json_get_string(error, "message");
         log_msg("LSP[%s]: error id=%d: %s", srv->lang, id, msg ? msg : "?");
         ed_set_status_message("LSP error: %s", msg ? msg : "unknown");
-        lsp_pending_pop(srv, id);
+        LspPending pop = lsp_pending_pop(srv, id);
+        if (pop.kind == LSP_REQ_COMPLETION)
+            completion_provide(pop.token, NULL, 0); /* release the menu */
         return;
     }
 
     cJSON *result = cJSON_GetObjectItemCaseSensitive(json, "result");
 
     /* initialize response */
-    if (!srv->initialized) {
-        lsp_pending_pop(srv, id);
+    if (!srv->initialized && id == srv->initialize_id) {
+        srv->initialize_id = -1;
+        lsp_parse_capabilities(srv, result);
         lsp_send_initialized(srv);
         lsp_notify_existing_buffers(srv);
         return;
@@ -680,7 +805,9 @@ static LspDiagFile *lsp_diag_slot(const char *uri) {
 static void lsp_diag_clear_slot(LspDiagFile *slot) {
     for (ptrdiff_t i = 0; i < arrlen(slot->items); i++)
         free(slot->items[i].message);
-    arrsetlen(slot->items, 0);
+    /* arrsetlen(a, 0) trips -Wtype-limits; delete instead. */
+    if (arrlen(slot->items))
+        arrdeln(slot->items, 0, arrlen(slot->items));
 }
 
 /* Replace the diagnostics for `uri` with the LSP `diag` array. */
@@ -762,6 +889,35 @@ static void lsp_process_notification(LspServer *srv, cJSON *json) {
     }
 }
 
+/* Server→client REQUESTS (id + method) must be answered or servers
+ * that block on them (rust-analyzer, lua-language-server) stall the
+ * whole session. We decline everything gracefully. */
+static void lsp_process_server_request(LspServer *srv, cJSON *json,
+                                       const cJSON *id, const char *method) {
+    log_msg("LSP[%s]: ←? %s (server request)", srv->lang, method);
+    cJSON *reply;
+    if (strcmp(method, "workspace/configuration") == 0) {
+        /* One null per requested item: "no configuration". */
+        cJSON *result = cJSON_CreateArray();
+        cJSON *params = json_get_object(json, "params");
+        cJSON *items = params ? json_get_array(params, "items") : NULL;
+        int n = items ? cJSON_GetArraySize(items) : 0;
+        for (int i = 0; i < n; i++)
+            cJSON_AddItemToArray(result, cJSON_CreateNull());
+        reply = jrpc_response(id, result);
+    } else if (strcmp(method, "client/registerCapability") == 0 ||
+               strcmp(method, "client/unregisterCapability") == 0 ||
+               strcmp(method, "window/workDoneProgress/create") == 0 ||
+               strcmp(method, "window/showMessageRequest") == 0 ||
+               strcmp(method, "workspace/workspaceFolders") == 0) {
+        reply = jrpc_response(id, cJSON_CreateNull());
+    } else {
+        reply = jrpc_error(id, -32601, "method not found");
+    }
+    if (jrpc_send(srv->to_fd, reply) < 0)
+        log_msg("LSP[%s]: write failed: %s", srv->lang, strerror(errno));
+}
+
 static void lsp_handle_message(LspServer *srv, const char *msg, int len) {
     log_msg("LSP[%s]: message len=%d: %.120s", srv->lang, len, msg);
     cJSON *json = json_parse(msg, (size_t)len);
@@ -771,7 +927,10 @@ static void lsp_handle_message(LspServer *srv, const char *msg, int len) {
     }
 
     cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
-    if (id && !cJSON_IsNull(id))
+    const char *method = json_get_string(json, "method");
+    if (id && !cJSON_IsNull(id) && method)
+        lsp_process_server_request(srv, json, id, method);
+    else if (id && !cJSON_IsNull(id))
         lsp_process_response(srv, json);
     else
         lsp_process_notification(srv, json);
@@ -824,19 +983,58 @@ static void lsp_close_fds(LspServer *srv) {
     lsp_reap_child(srv);
 }
 
+/* The single teardown path: clear the registry slot, close fds (which
+ * unregisters from the select loop and reaps a spawned child), free.
+ * Safe on servers in any state, including half-connected ones. */
+static void lsp_server_remove(LspServer *srv) {
+    if (!srv)
+        return;
+    for (int i = 0; i < LSP_MAX_SERVERS; i++) {
+        if (g_servers[i] == srv) {
+            g_servers[i] = NULL;
+            g_servers_count--;
+            break;
+        }
+    }
+    lsp_close_fds(srv);
+    free(srv->lang);
+    free(srv->root_uri);
+    jrpc_reader_free(&srv->reader);
+    free(srv);
+}
+
+/* Protocol-polite teardown: shutdown request + exit notification, then
+ * remove. We don't wait for the shutdown response — closing stdin plus
+ * lsp_reap_child's escalating SIGTERM/SIGKILL loop bounds the exit. */
+static void lsp_server_disconnect_polite(LspServer *srv) {
+    if (srv->to_fd >= 0 && srv->initialized) {
+        lsp_send_request(srv, "shutdown", NULL, srv->next_id++);
+        lsp_send_notification(srv, "exit", NULL);
+    }
+    lsp_server_remove(srv);
+}
+
+static void lsp_diags_free(void) {
+    for (ptrdiff_t f = 0; f < arrlen(g_diags); f++) {
+        lsp_diag_clear_slot(&g_diags[f]);
+        arrfree(g_diags[f].items);
+        free(g_diags[f].uri);
+    }
+    arrfree(g_diags);
+    g_diags = NULL;
+}
+
+/* Full plugin teardown: polite-disconnect every server, free stores.
+ * Idempotent — runs from plugin deinit and from atexit (cmd_quit exits
+ * the process directly). */
 void lsp_shutdown(void) {
     for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-        if (!g_servers[i])
-            continue;
-        LspServer *srv = g_servers[i];
-        lsp_close_fds(srv);
-        free(srv->lang);
-        free(srv->root_uri);
-        jrpc_reader_free(&srv->reader);
-        free(srv);
-        g_servers[i] = NULL;
+        if (g_servers[i])
+            lsp_server_disconnect_polite(g_servers[i]);
     }
     g_servers_count = 0;
+    lsp_diags_free();
+    lsp_sync_free();
 }
 
 static void lsp_on_readable(int fd, void *ud) {
@@ -853,23 +1051,14 @@ static void lsp_on_readable(int fd, void *ud) {
         char lang_copy[64];
         snprintf(lang_copy, sizeof(lang_copy), "%s", srv->lang);
         int was_spawned = srv->pid > 0;
-        lsp_close_fds(srv);
-        srv->initialized = 0;
         if (was_spawned) {
             /* We owned the child; drop the record so auto-start can retry
              * on the next buffer open. Manually-attached servers (pid==0)
              * stay registered so the user can reconnect to the same one. */
-            for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-                if (g_servers[i] == srv) {
-                    g_servers[i] = NULL;
-                    g_servers_count--;
-                    break;
-                }
-            }
-            free(srv->lang);
-            free(srv->root_uri);
-            jrpc_reader_free(&srv->reader);
-            free(srv);
+            lsp_server_remove(srv);
+        } else {
+            lsp_close_fds(srv);
+            srv->initialized = 0;
         }
         ed_set_status_message("LSP[%s]: disconnected", lang_copy);
         return;
@@ -886,6 +1075,18 @@ static void lsp_on_readable(int fd, void *ud) {
 }
 
 /* ---------------------------------------------------- buffer notifications */
+
+/* Record the just-synced state of `buf` so lsp_sync_document can skip
+ * redundant didChange notifications. */
+static void lsp_sync_mark(Buffer *buf) {
+    if (!buf || !buf->filename)
+        return;
+    LspSyncEnt *e = lsp_sync_slot(buf->filename, 1);
+    if (e) {
+        e->gen = undo_mod_generation();
+        e->dirty = buf->dirty;
+    }
+}
 
 void lsp_on_buffer_open(Buffer *buf) {
     if (!buf || !buf->filename || !buf->filetype)
@@ -922,6 +1123,7 @@ void lsp_on_buffer_open(Buffer *buf) {
     cJSON_AddItemToObject(params, "textDocument", textdoc);
 
     lsp_send_notification(srv, "textDocument/didOpen", params);
+    lsp_sync_mark(buf);
     free(uri);
     free(content);
 }
@@ -929,6 +1131,7 @@ void lsp_on_buffer_open(Buffer *buf) {
 void lsp_on_buffer_close(Buffer *buf) {
     if (!buf || !buf->filename)
         return;
+    lsp_sync_forget(buf->filename);
     LspServer *srv = lsp_server_for_buffer(buf);
     if (!srv || !srv->initialized)
         return;
@@ -964,7 +1167,8 @@ void lsp_on_buffer_save(Buffer *buf) {
     free(uri);
 }
 
-/* Full-document sync — called when leaving INSERT mode. */
+/* Full-document didChange, sent unconditionally. Prefer
+ * lsp_sync_document, which skips when the buffer hasn't changed. */
 void lsp_on_buffer_changed(Buffer *buf) {
     if (!buf || !buf->filename || !buf->filetype)
         return;
@@ -995,110 +1199,149 @@ void lsp_on_buffer_changed(Buffer *buf) {
     cJSON_AddItemToObject(params, "contentChanges", changes);
 
     lsp_send_notification(srv, "textDocument/didChange", params);
+    lsp_sync_mark(buf);
     free(uri);
     free(content);
 }
 
-/* ---------------------------------------------------- user-facing requests */
-
-void lsp_request_hover(Buffer *buf, int line, int col) {
+/* Send a didChange only when the buffer moved since the last sync.
+ * Called before every request so the server always sees the live text
+ * (typing in insert mode doesn't push per-keystroke syncs). */
+void lsp_sync_document(Buffer *buf) {
     if (!buf || !buf->filename)
         return;
+    LspSyncEnt *e = lsp_sync_slot(buf->filename, 0);
+    if (e && e->gen == undo_mod_generation() && e->dirty == buf->dirty)
+        return;
+    lsp_on_buffer_changed(buf);
+}
+
+/* ---------------------------------------------------- user-facing requests */
+
+/* Resolve the ready server for `buf`, with status-line feedback. */
+static LspServer *lsp_server_ready(Buffer *buf, int quiet) {
+    if (!buf || !buf->filename)
+        return NULL;
     LspServer *srv = lsp_server_for_buffer(buf);
     if (!srv) {
-        ed_set_status_message("LSP[%s]: no server (try :lsp_start)",
-                              buf->filetype ? buf->filetype : "?");
-        return;
+        if (!quiet)
+            ed_set_status_message("LSP[%s]: no server (try :lsp_start)",
+                                  buf->filetype ? buf->filetype : "?");
+        return NULL;
     }
     if (!srv->initialized) {
-        ed_set_status_message("LSP[%s]: still initializing, try again",
-                              srv->lang);
-        return;
+        if (!quiet)
+            ed_set_status_message("LSP[%s]: still initializing, try again",
+                                  srv->lang);
+        return NULL;
     }
+    return srv;
+}
+
+/* TextDocumentPositionParams for (buf, line, byte col). Converts the
+ * column to UTF-16 code units. Returns NULL on OOM/bad uri. */
+static cJSON *lsp_textdoc_position(Buffer *buf, int line, int col) {
     char *uri = lsp_get_file_uri(buf->filename);
     if (!uri)
-        return;
-
+        return NULL;
+    int u16 = col;
+    if (line >= 0 && line < buf->num_rows) {
+        Row *row = &buf->rows[line];
+        u16 = lsp_cx_to_utf16(row->chars.data, row->chars.len, col);
+    }
     cJSON *params = cJSON_CreateObject();
     cJSON *textdoc = cJSON_CreateObject();
     cJSON_AddStringToObject(textdoc, "uri", uri);
     cJSON_AddItemToObject(params, "textDocument", textdoc);
     cJSON *pos = cJSON_CreateObject();
     cJSON_AddNumberToObject(pos, "line", line);
-    cJSON_AddNumberToObject(pos, "character", col);
+    cJSON_AddNumberToObject(pos, "character", u16);
     cJSON_AddItemToObject(params, "position", pos);
+    free(uri);
+    return params;
+}
 
+void lsp_request_hover(Buffer *buf, int line, int col) {
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
+        return;
+    lsp_sync_document(buf);
+    cJSON *params = lsp_textdoc_position(buf, line, col);
+    if (!params)
+        return;
     int id = srv->next_id++;
     lsp_pending_add(srv, id, LSP_REQ_HOVER);
     lsp_send_request(srv, "textDocument/hover", params, id);
-    free(uri);
 }
 
 void lsp_request_definition(Buffer *buf, int line, int col) {
-    if (!buf || !buf->filename)
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
         return;
-    LspServer *srv = lsp_server_for_buffer(buf);
-    if (!srv) {
-        ed_set_status_message("LSP[%s]: no server (try :lsp_start)",
-                              buf->filetype ? buf->filetype : "?");
+    lsp_sync_document(buf);
+    cJSON *params = lsp_textdoc_position(buf, line, col);
+    if (!params)
         return;
-    }
-    if (!srv->initialized) {
-        ed_set_status_message("LSP[%s]: still initializing, try again",
-                              srv->lang);
-        return;
-    }
-    char *uri = lsp_get_file_uri(buf->filename);
-    if (!uri)
-        return;
-
-    cJSON *params = cJSON_CreateObject();
-    cJSON *textdoc = cJSON_CreateObject();
-    cJSON_AddStringToObject(textdoc, "uri", uri);
-    cJSON_AddItemToObject(params, "textDocument", textdoc);
-    cJSON *pos = cJSON_CreateObject();
-    cJSON_AddNumberToObject(pos, "line", line);
-    cJSON_AddNumberToObject(pos, "character", col);
-    cJSON_AddItemToObject(params, "position", pos);
-
     int id = srv->next_id++;
     lsp_pending_add(srv, id, LSP_REQ_DEFINITION);
     lsp_send_request(srv, "textDocument/definition", params, id);
-    free(uri);
 }
 
-void lsp_request_completion(Buffer *buf, int line, int col) {
-    if (!buf || !buf->filename)
-        return;
+/* :definition dispatcher probe (see plugins/ctags): issue an LSP
+ * definition request for the current buffer if a ready server is
+ * attached. Returns 0 when the request went out, -1 to fall back. */
+int lsp_definition_try(void) {
+    Buffer *buf = buf_cur();
+    if (!buf)
+        return -1;
+    if (!lsp_server_ready(buf, 1))
+        return -1;
+    Window *win = window_cur();
+    int line = win && !win->is_modal ? win->cursor.y : buf->cursor->y;
+    int col = win && !win->is_modal ? win->cursor.x : buf->cursor->x;
+    lsp_request_definition(buf, line, col);
+    return 0;
+}
+
+/* ------------------------------------------------ completion source
+ * The completion plugin owns the menu; this source feeds it. */
+
+static int lsp_cmp_available(Buffer *buf) {
+    return lsp_server_ready(buf, 1) != NULL;
+}
+
+static int lsp_cmp_is_trigger(Buffer *buf, int c) {
     LspServer *srv = lsp_server_for_buffer(buf);
+    if (!srv || !srv->initialized || c <= 0 || c >= 128)
+        return 0;
+    return strchr(srv->trigger_chars, c) != NULL;
+}
+
+static void lsp_cmp_request(Buffer *buf, int line, int col, unsigned token) {
+    LspServer *srv = lsp_server_ready(buf, 1);
     if (!srv) {
-        ed_set_status_message("LSP[%s]: no server (try :lsp_start)",
-                              buf->filetype ? buf->filetype : "?");
+        completion_provide(token, NULL, 0);
         return;
     }
-    if (!srv->initialized) {
-        ed_set_status_message("LSP[%s]: still initializing, try again",
-                              srv->lang);
+    lsp_sync_document(buf);
+    cJSON *params = lsp_textdoc_position(buf, line, col);
+    if (!params)
         return;
-    }
-    char *uri = lsp_get_file_uri(buf->filename);
-    if (!uri)
-        return;
-
-    cJSON *params = cJSON_CreateObject();
-    cJSON *textdoc = cJSON_CreateObject();
-    cJSON_AddStringToObject(textdoc, "uri", uri);
-    cJSON_AddItemToObject(params, "textDocument", textdoc);
-    cJSON *pos = cJSON_CreateObject();
-    cJSON_AddNumberToObject(pos, "line", line);
-    cJSON_AddNumberToObject(pos, "character", col);
-    cJSON_AddItemToObject(params, "position", pos);
-
     int buf_idx = (int)(buf - E.buffers);
     int id = srv->next_id++;
-    lsp_pending_add_completion(srv, id, buf_idx, line, col);
+    lsp_pending_add_completion(srv, id, buf_idx, line, col, token);
     lsp_send_request(srv, "textDocument/completion", params, id);
-    free(uri);
+}
+
+static const CompletionSource lsp_cmp_source = {
+    .name = "lsp",
+    .available = lsp_cmp_available,
+    .is_trigger_char = lsp_cmp_is_trigger,
+    .request = lsp_cmp_request,
+};
+
+void lsp_completion_source_register(void) {
+    completion_source_register(&lsp_cmp_source);
 }
 
 /* ------------------------------------------------ connect / disconnect */
@@ -1114,6 +1357,7 @@ static LspServer *lsp_server_alloc(const char *lang, const char *root_uri) {
     srv->to_fd = -1;
     srv->from_fd = -1;
     srv->initialized = 0;
+    srv->initialize_id = -1;
     srv->next_id = 1;
     jrpc_reader_init(&srv->reader);
     for (int i = 0; i < LSP_MAX_SERVERS; i++) {
@@ -1251,16 +1495,7 @@ int lsp_cmd_start(const char *lang, const char *hint_path) {
     if (lsp_spawn_process(srv, def->argv) < 0) {
         ed_set_status_message("LSP[%s]: spawn '%s' failed (is it installed?)",
                               lang, def->argv[0]);
-        for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-            if (g_servers[i] == srv) {
-                g_servers[i] = NULL;
-                g_servers_count--;
-                break;
-            }
-        }
-        free(srv->lang);
-        free(srv->root_uri);
-        free(srv);
+        lsp_server_remove(srv);
         return -1;
     }
 
@@ -1353,17 +1588,7 @@ int lsp_cmd_connect(const char *lang, const char *to_addr,
     return 0;
 
 fail:
-    for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-        if (g_servers[i] == srv) {
-            g_servers[i] = NULL;
-            g_servers_count--;
-            break;
-        }
-    }
-    lsp_close_fds(srv);
-    free(srv->lang);
-    free(srv->root_uri);
-    free(srv);
+    lsp_server_remove(srv);
     return -1;
 }
 
@@ -1380,18 +1605,7 @@ int lsp_cmd_disconnect(const char *lang) {
 
     char lang_copy[64];
     snprintf(lang_copy, sizeof(lang_copy), "%s", srv->lang);
-    lsp_close_fds(srv);
-    free(srv->lang);
-    free(srv->root_uri);
-    jrpc_reader_free(&srv->reader);
-    free(srv);
-    for (int i = 0; i < LSP_MAX_SERVERS; i++) {
-        if (g_servers[i] == srv) {
-            g_servers[i] = NULL;
-            g_servers_count--;
-            break;
-        }
-    }
+    lsp_server_disconnect_polite(srv);
     ed_set_status_message("LSP[%s]: disconnected", lang_copy);
     return 0;
 }

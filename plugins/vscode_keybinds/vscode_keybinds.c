@@ -87,8 +87,8 @@ static int vscode_keybinds_init(void) {
     cmapi("<C-g>", "prompt goto", "go to line");
     cmapi("<M-Left>", "jump_back", "navigate back");
     cmapi("<M-Right>", "jump_forward", "navigate forward");
-    cmapi("<F12>", "tag", "go to definition (ctags)");
-    cmapi("<C-t>", "tag", "go to symbol (ctags)");
+    cmapi("<F12>", "definition", "go to definition (LSP/ctags)");
+    cmapi("<C-t>", "definition", "go to symbol (LSP/ctags)");
     cmapi("<F8>", "cnext", "next problem (quickfix)");
     cmapi("<S-F8>", "cprev", "previous problem (quickfix)");
     cmapi("<M-m>", "ctoggle", "toggle problems panel (quickfix)");

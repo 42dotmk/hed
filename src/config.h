@@ -7,6 +7,7 @@
 #include "auto_pair/auto_pair.h"
 #include "autosave/autosave.h"
 #include "clipboard/clipboard.h"
+#include "completion/completion.h"
 #include "copilot/copilot.h"
 #include "core/core.h"
 #include "ctags/ctags.h"
@@ -60,6 +61,8 @@ static void config_load_default_plugins(void) {
     plugin_load(&plugin_quickfix_preview, 1);
     plugin_load(&plugin_dired, 1);
     plugin_load(&plugin_repeat_last, 1);
+    plugin_load(&plugin_completion, 1); /* before lsp: lsp registers its
+                                         * completion source at init */
     plugin_load(&plugin_lsp, 1);
     plugin_load(&plugin_viewmd, 1);
     plugin_load(&plugin_auto_pair, 1);
@@ -155,7 +158,7 @@ static void config_load_defaults(void) {
     cmapn("gn", "cnext", "quickfix next");
     cmapn("gp", "cprev", "quickfix prev");
     cmapn("gr", "rgword", "rg word under cursor");
-    cmapn("gd", "tag", "goto tag");
+    cmapn("gd", "definition", "goto definition");
     cmapn("K", "lsp_hover", "lsp hover");
     cmapn(" fh", "hfzf", "history fzf");
     cmapn(" fj", "jfzf", "jump-list fzf");

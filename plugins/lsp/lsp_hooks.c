@@ -23,14 +23,15 @@ static void lsp_hook_buffer_save(HookBufferEvent *event) {
         lsp_on_buffer_save(event->buf);
 }
 
-/* Send didChange when leaving INSERT mode — batches all edits into one sync. */
+/* Sync when leaving INSERT mode — batches all edits into one didChange
+ * (requests made mid-insert sync on demand via lsp_sync_document). */
 static void lsp_hook_mode_change(const HookModeEvent *event) {
     if (!event)
         return;
     if (event->old_mode == MODE_INSERT && event->new_mode == MODE_NORMAL) {
         Buffer *buf = buf_cur();
         if (buf)
-            lsp_on_buffer_changed(buf);
+            lsp_sync_document(buf);
     }
 }
 
