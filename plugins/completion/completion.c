@@ -262,6 +262,11 @@ static void cmp_menu_show(void) {
     M.width = width;
 
     Buffer *mb = &E.buffers[M.menu_buf_idx];
+    /* No bottom label on the popup — the border renders buf->title as
+     * "[ title ]", which is noise on a completion menu. The buffer is
+     * only found by title on creation, and we cache the index. */
+    free(mb->title);
+    mb->title = NULL;
     buf_special_clear(mb);
     cmp_arr_clear(M.meta);
     for (int i = 0; i < n; i++) {
