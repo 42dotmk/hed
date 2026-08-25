@@ -594,6 +594,15 @@ static void jump_go(int direction) {
     char *filename = NULL;
     int success;
 
+    /* Starting to navigate backward from a live position: push it, so
+     * the walk lands on the spot the last jump left (not one before
+     * it) and jump_forward can return here. Without this, the first
+     * `jb` after a gd/tag jump skips its own source — or fails
+     * outright when that source is the only entry. Vim does the same.
+     * Deduped by jump_list_add when we're already on the top entry. */
+    if (direction < 0 && E.jump_list.current == -1)
+        kb_jump_save_current();
+
     if (direction < 0)
         success =
             jump_list_backward(&E.jump_list, &filename, &cursor_x, &cursor_y);
