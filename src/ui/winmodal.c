@@ -58,10 +58,14 @@ Window *winmodal_create(int x, int y, int width, int height) {
 
 Window *winmodal_create_anchored(int anchor_x, int anchor_y, int width,
                                  int height, WModalAnchor prefer) {
-    int below_y = anchor_y + 1;
+    /* win_draw_modal_border paints OUTSIDE the modal's rectangle (at
+     * top-1 / bottom+1), so leave one extra row between the anchor and
+     * the content — otherwise the border overwrites the anchor row,
+     * i.e. the very line the user is typing on. */
+    int below_y = anchor_y + 2;
     int space_below =
         E.screen_rows - below_y + 1; /* rows from below_y inclusive */
-    int space_above = anchor_y - 1;  /* rows above anchor_y */
+    int space_above = anchor_y - 2;  /* rows above anchor_y, sans border */
 
     int place_below;
     if (prefer == WMODAL_ABOVE) {
@@ -85,7 +89,7 @@ Window *winmodal_create_anchored(int anchor_x, int anchor_y, int width,
     } else {
         if (height > space_above)
             height = space_above > 0 ? space_above : 1;
-        y = anchor_y - height;
+        y = anchor_y - 1 - height;
         if (y < 1)
             y = 1;
     }
