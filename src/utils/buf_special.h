@@ -67,10 +67,12 @@ Window *buf_special_show_modal(int idx, int anchor_x, int anchor_y);
  * the step every modal site used to have to remember by hand. */
 void buf_special_close(int idx);
 
-/* Standard read-only-popup keys on `modal`: j/k/arrows scroll and,
- * when allow_close, q/<Esc> close via buf_special_close. Returns 2
- * when the modal was closed, 1 when the key scrolled, 0 when it isn't
- * one of the standard keys. Callers swallow the event themselves. */
+/* Standard read-only-popup keys on `modal`: j/k/arrows move the
+ * modal's cursor line by line (the render loop's scroll-follow does
+ * the scrolling), g/G jump to the ends and, when allow_close,
+ * q/<Esc> close via buf_special_close. Returns 2 when the modal was
+ * closed, 1 when the key navigated, 0 when it isn't one of the
+ * standard keys. Callers swallow the event themselves. */
 int buf_special_modal_key(Window *modal, int key, int allow_close);
 
 #endif /* BUF_SPECIAL_H */

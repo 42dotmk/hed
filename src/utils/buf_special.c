@@ -182,17 +182,27 @@ int buf_special_modal_key(Window *modal, int key, int allow_close) {
         buf_special_close(modal->buffer_index);
         return 2;
     }
+    /* Navigate by moving the modal's cursor, not row_offset: the
+     * render loop runs window_scroll() on the focused modal every
+     * frame, which snaps row_offset back to the cursor — a raw
+     * row_offset bump is undone before it's ever drawn. Cursor moves
+     * scroll naturally through that same path. */
     if (key == 'j' || key == KEY_ARROW_DOWN) {
-        int max_off = b->num_rows - modal->height;
-        if (max_off < 0)
-            max_off = 0;
-        if (modal->row_offset < max_off)
-            modal->row_offset++;
+        if (modal->cursor.y < b->num_rows - 1)
+            modal->cursor.y++;
         return 1;
     }
     if (key == 'k' || key == KEY_ARROW_UP) {
-        if (modal->row_offset > 0)
-            modal->row_offset--;
+        if (modal->cursor.y > 0)
+            modal->cursor.y--;
+        return 1;
+    }
+    if (key == 'g') {
+        modal->cursor.y = 0;
+        return 1;
+    }
+    if (key == 'G') {
+        modal->cursor.y = b->num_rows > 0 ? b->num_rows - 1 : 0;
         return 1;
     }
     return 0;
