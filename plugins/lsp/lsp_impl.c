@@ -1088,16 +1088,23 @@ static void lsp_sync_mark(Buffer *buf) {
     }
 }
 
+/* LSP is opt-in: nothing is spawned until :lsp_start (or :lsp_connect),
+ * unless the user turns auto-start on (:lsp_autostart / config). */
+static int g_autostart = 0;
+
+void lsp_set_autostart(int on) { g_autostart = on ? 1 : 0; }
+int lsp_get_autostart(void) { return g_autostart; }
+
 void lsp_on_buffer_open(Buffer *buf) {
     if (!buf || !buf->filename || !buf->filetype)
         return;
     LspServer *srv = lsp_server_for_buffer(buf);
 
-    /* Auto-start: if no server is running for this filetype but the
-     * registry has an entry, spawn it. The initialize-response handler
-     * will replay didOpen for this buffer once the handshake completes,
-     * so we just return here. */
-    if (!srv && lsp_servers_lookup(buf->filetype)) {
+    /* Auto-start (opt-in): if no server is running for this filetype
+     * but the registry has an entry, spawn it. The initialize-response
+     * handler will replay didOpen for this buffer once the handshake
+     * completes, so we just return here. */
+    if (!srv && g_autostart && lsp_servers_lookup(buf->filetype)) {
         log_msg("LSP: auto-start triggered for %s (file=%s)", buf->filetype,
                 buf->filename);
         lsp_cmd_start(buf->filetype, buf->filename);

@@ -55,6 +55,13 @@ int lsp_cmd_start(const char *lang, const char *hint_path);
 int lsp_cmd_disconnect(const char *lang);
 void lsp_cmd_status(void);
 
+/* Auto-start on buffer open (spawn the registry server for the
+ * buffer's filetype). Off by default — LSP is opt-in via :lsp_start;
+ * flip from user config with lsp_set_autostart(1) or at runtime with
+ * :lsp_autostart on|off|toggle. */
+void lsp_set_autostart(int on);
+int lsp_get_autostart(void);
+
 /* Dump all stored diagnostics into E.qf and open the quickfix pane. */
 void lsp_cmd_diagnostics(void);
 

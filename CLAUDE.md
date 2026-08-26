@@ -171,7 +171,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `git` | Git integration |
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
-| `lsp` | LSP client: auto-started servers, hover, definition (via `:definition`), diagnostics → quickfix, completion source. Owns `cJSON`, `:lsp_*` commands. |
+| `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |
 | `mail` | Mail integration |
 | `mail_git_patch` | Git patch mail integration |
 | `man` | Manual pages viewer |

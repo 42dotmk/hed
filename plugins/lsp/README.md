@@ -2,15 +2,22 @@
 
 A Language Server Protocol client. Spawns servers from a built-in
 registry (clangd, rust-analyzer, pyright, gopls, typescript-language-
-server, lua-language-server, zls — see `lsp_servers.c`), auto-starting
-on buffer open, and integrates hover, goto-definition, diagnostics and
-completion into hed.
+server, lua-language-server, zls — see `lsp_servers.c`) and integrates
+hover, goto-definition, diagnostics and completion into hed.
+
+**Opt-in:** nothing runs until you say so. `:lsp_start` spawns the
+server for the current buffer's filetype; `:lsp_autostart on` makes
+buffer opens spawn registry servers automatically (put
+`lsp_set_autostart(1);` in `~/.config/hed/config.c` to make that the
+default). Without a server, `gd` falls back to ctags and completion
+to the built-in buffer-word/path sources.
 
 ## Commands
 
 | Command | Action |
 |---|---|
 | `:lsp_start [lang]` | Spawn a server from the registry (default: current buffer's filetype). Root is auto-detected from the buffer path via the registry's root markers. |
+| `:lsp_autostart [on\|off\|toggle]` | Spawn registry servers automatically on buffer open (default off) |
 | `:lsp_connect <lang> tcp <host>:<port> [root_uri]` | Attach to a server listening on TCP |
 | `:lsp_connect <lang> <to_pipe> <from_pipe> [root_uri]` | Attach via two named pipes (hed writes `to_pipe`, reads `from_pipe`) |
 | `:lsp_disconnect <lang>` | shutdown/exit handshake, then tear down |

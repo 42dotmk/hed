@@ -85,6 +85,17 @@ void cmd_lsp_status(const char *args) {
     lsp_cmd_status();
 }
 
+/* :lsp_autostart [on|off|toggle] */
+void cmd_lsp_autostart(const char *args) {
+    int v = args_tristate(args, lsp_get_autostart());
+    if (v < 0) {
+        ed_set_status_message("usage: lsp_autostart on|off|toggle");
+        return;
+    }
+    lsp_set_autostart(v);
+    ed_set_status_message("LSP auto-start %s", v ? "on" : "off");
+}
+
 /* :lsp_hover */
 void cmd_lsp_hover(const char *args) {
     (void)args;
