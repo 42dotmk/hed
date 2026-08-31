@@ -36,7 +36,8 @@ void mail_render_free(MailRender *r) {
     memset(r, 0, sizeof(*r));
 }
 
-/* Parse `key: value` out of one of the inline notmuch marker lines.
+/* Parse `key: value` out of one of the inline marker lines (notmuch's
+ * text format, as printed by `hml show --format=text`).
  * `comma_sep` controls termination:
  *   1 — comma-separated (\fpart{, \fattachment{): value runs until ", "
  *   0 — space-separated (\fmessage{): value runs until next space */
@@ -237,7 +238,7 @@ static void msg_save(MsgState *m, MsgState **saved, int attach_total) {
     memset(m, 0, sizeof(*m));
 }
 
-void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
+void mail_render_show_text(MailRender *r, char **raw, int raw_count) {
     MsgState msg;
     memset(&msg, 0, sizeof(msg));
     int in_message = 0;
@@ -254,7 +255,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
      * but its children may. We only track via the per-level mode. */
 
     /* Attachment context: filename/type discovered at \fattachment{.
-     * notmuch closes the block with \fpart} (0.40 observed), so the
+     * notmuch 0.40 closes the block with \fpart} (hml with \fattachment}), so the
      * attachment opens a part-stack level like any other part and is
      * registered when its level closes; \fattachment} is accepted too
      * for versions that emit it. */
@@ -372,7 +373,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
         }
 
         if (in_attachment) {
-            /* notmuch emits a "Non-text part: …" placeholder we don't want. */
+            /* the "Non-text part: …" placeholder line — not wanted. */
             continue;
         }
 
@@ -394,7 +395,7 @@ void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count) {
     if (in_message)
         msg_save(&msg, &saved, (int)arrlen(r->attaches));
 
-    /* Emit messages newest-first. notmuch outputs the thread in
+    /* Emit messages newest-first. hml show outputs the thread in
      * arrival/depth order (root → replies), which is oldest-first;
      * reversing puts the most recent message at the top of the
      * buffer — what the reader actually wants to see. */

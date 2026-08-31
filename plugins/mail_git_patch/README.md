@@ -42,14 +42,14 @@ what `git format-patch` + `git send-email` produces.
 
 The reverse direction. Three call shapes:
 
-- **No args, viewing a patch email** — pipes the current notmuch
+- **No args, viewing a patch email** — pipes the current mail
   thread as mbox into `git am`. Works for a single patch email and
   for a thread that *is* a patch series (the thread mbox contains
   every message in order; `git am` applies the patch ones and barfs
   on the others, which is when you reach for `--abort` / `--skip`).
 - **`:mail-git-am --3way` / `--continue` / `--abort` / `--skip` /
   `--quit`** — flags forward to `git am`. If the buffer is a mail-
-  message we still feed the notmuch mbox on stdin; otherwise (e.g.
+  message we still feed the thread's mbox (`hml show --format=mbox`) on stdin; otherwise (e.g.
   while you're resolving a conflict in the worktree) `git am` runs
   standalone, so `:mail-git-am --continue` works from any buffer.
 - **`:mail-git-am /path/to/foo.patch`** — apply a file (or pass any

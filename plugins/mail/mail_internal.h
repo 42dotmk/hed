@@ -8,6 +8,10 @@
  * mail_get_dir()). */
 void mail_open_mailboxes(void);
 
+/* Open the sidebar with the cursor on the "── Tags ──" section (the
+ * active tag if the base query is one, else the first tag). */
+void mail_open_tags(void);
+
 /* Register HOOK_RENDER_PRE handlers for the mail filetypes.
  * Called once from mail_plugin_init. */
 void mail_register_render_hooks(void);
@@ -36,16 +40,16 @@ void mail_open_thread(const char *tid);
 void mail_next_message(void);
 void mail_prev_message(void);
 
-/* Apply notmuch tags to the thread(s) under the cursor or visual selection.
+/* Apply tags to the thread(s) under the cursor or visual selection.
  * `args` is a whitespace-separated list of tags; tokens without a leading
  * +/- get a + prefix. */
 void mail_apply_tags(const char *args);
 
-/* Apply notmuch tags to every thread matching the current base + filter
+/* Apply tags to every thread matching the current base + filter
  * query (i.e. everything currently listed). */
 void mail_apply_tags_query(const char *args);
 
-/* Run the configured sync command + notmuch new asynchronously, then
+/* Run the configured sync command + hml new asynchronously, then
  * refresh the list. */
 void mail_sync(void);
 

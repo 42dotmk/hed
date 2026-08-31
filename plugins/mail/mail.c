@@ -1,16 +1,19 @@
-/* mail plugin: notmuch-backed mail reader.
+/* mail plugin: hml-backed mail reader.
  *
  * :mail               open mail list (default query: tag:inbox)
  * :mail-refresh       clear filter and reload
  * :mail-filter [q]    filter by extra query terms (prompt if no args)
  * :mail-query [q]     replace the base query entirely
- * :mail-sync          run the sync command + notmuch new, then reload
+ * :mail-sync          run the sync command + hml new, then reload
+ * :mail-tags          open the sidebar on the tag list
  *
  * Inside a mail list buffer:
  *   <CR>  open the selected thread
  *   /     open filter prompt
  *   r     refresh (clear filter)
- *   R     sync (sync command + notmuch new)
+ *   R     sync (sync command + hml new)
+ *   b     mailbox sidebar (views / tags / folders)
+ *   t     same, cursor on the tag list
  *
  * Override base query or sync command in config.c:
  *   mail_set_query("tag:inbox AND NOT tag:muted");
@@ -85,6 +88,12 @@ static void cmd_mail_mailbox(const char *args) {
 static void cmd_mail_mailboxes(const char *args) {
     (void)args;
     mail_open_mailboxes();
+    ed_render_frame();
+}
+
+static void cmd_mail_tags(const char *args) {
+    (void)args;
+    mail_open_tags();
     ed_render_frame();
 }
 
@@ -190,20 +199,22 @@ static void mail_open_pre(HookBufferEvent *ev) {
 }
 
 static int mail_plugin_init(void) {
-    cmd("mail", cmd_mail, "open notmuch mail list");
+    cmd("mail", cmd_mail, "open the mail list");
     cmd("mail-refresh", cmd_mail_refresh, "clear filter and refresh mail list");
     cmd("mail-filter", cmd_mail_filter, "filter mail (appended to base query)");
-    cmd("mail-query", cmd_mail_query, "set base notmuch query");
+    cmd("mail-query", cmd_mail_query, "set base mail query");
     cmd("mail-sync", cmd_mail_sync,
-        "run the sync command + notmuch new, then refresh");
-    cmd("mail-tag", cmd_mail_tag, "apply notmuch tags to thread under cursor");
+        "run the sync command + hml new, then refresh");
+    cmd("mail-tag", cmd_mail_tag, "apply tags to thread under cursor");
     cmd("mail-tag-all", cmd_mail_tag_all,
-        "apply notmuch tags to every thread in the current query");
+        "apply tags to every thread in the current query");
     cmd("mail-compose", cmd_mail_compose, "open a new compose buffer");
     cmd("mail-send", cmd_mail_send, "send the current compose buffer");
     cmd("mail-mailbox", cmd_mail_mailbox,
-        "scope listing to a notmuch subquery (empty = all)");
+        "scope listing to a subquery (empty = all)");
     cmd("mail-mailboxes", cmd_mail_mailboxes, "open the mailbox sidebar");
+    cmd("mail-tags", cmd_mail_tags,
+        "open the mailbox sidebar on the tag list");
     cmd("mail-delete", cmd_mail_delete,
         "mark thread(s) under cursor/selection as deleted");
     cmd("mail-reply", cmd_mail_reply,
@@ -234,7 +245,7 @@ static int mail_plugin_init(void) {
     cmapn_ft("mail", "<CR>", "mail-open", "open selected thread");
     cmapn_ft("mail", "/", "mail-filter", "open filter prompt");
     cmapn_ft("mail", "r", "mail-refresh", "refresh (clear filter)");
-    cmapn_ft("mail", "R", "mail-sync", "sync mail + notmuch new");
+    cmapn_ft("mail", "R", "mail-sync", "sync mail + hml new");
     cmapn_ft("mail", "<C-r>", "mail-read", "mark thread under cursor as read");
     cmapv_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
     cmapvl_ft("mail", "<C-r>", "mail-read", "mark selected threads as read");
@@ -242,6 +253,7 @@ static int mail_plugin_init(void) {
              "mark all threads in current query as read");
 
     cmapn_ft("mail", "b", "mail-mailboxes", "open mailbox sidebar");
+    cmapn_ft("mail", "t", "mail-tags", "pick a tag to view");
     cmapn_ft("mail", "C", "mail-compose", "start a new compose buffer");
     cmapn_ft("mail", "D", "mail-delete", "mark thread under cursor as deleted");
     cmapv_ft("mail", "D", "mail-delete", "mark selected threads as deleted");
@@ -291,7 +303,7 @@ static int mail_plugin_init(void) {
 
 const Plugin plugin_mail = {
     .name = "mail",
-    .desc = "notmuch mail reader with mbsync sync",
+    .desc = "hml-backed mail reader (search, tags, show, reply, send)",
     .init = mail_plugin_init,
     .deinit = NULL,
 };

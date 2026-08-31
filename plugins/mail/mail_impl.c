@@ -16,7 +16,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* Listing cap handed to `notmuch search --limit`. */
+/* Listing cap handed to `hml search --limit`. */
 #define MAIL_MAX 500
 #define MAIL_LIST_BUF "mail://list"
 #define MAIL_MBOX_BUF "mail://mailboxes"
@@ -36,7 +36,7 @@ static size_t view_html_len = 0;
 
 typedef struct {
     char thread_id[128]; /* "thread:0000000000001234" */
-    char display[512];   /* rest of the notmuch summary line */
+    char display[512];   /* rest of the hml summary line */
     int is_unread;       /* 1 if the "unread" tag is present */
 } MailEntry;
 
@@ -70,6 +70,7 @@ static char mail_dir[512] = ""; /* lazily initialised to $HOME/.mail */
 typedef enum {
     MBE_ALL,     /* "[All mail]" — clears both base and mailbox */
     MBE_VIEW,    /* saved view — sets base_query */
+    MBE_TAG,     /* hml tag — sets base_query to tag:<name> */
     MBE_MAILBOX, /* account/folder — sets mailbox_query */
     MBE_HEADER,  /* visual separator, not selectable */
 } MailboxKind;
@@ -123,7 +124,7 @@ void mail_set_filter(const char *f) {
     snprintf(filter_query, sizeof(filter_query), "%s", f ? f : "");
 }
 
-/* notmuch's `*` is a match-all that can't be combined with AND, so we
+/* the query language's `*` is a match-all that can't be combined with AND, so we
  * treat it (and an empty string) as "no constraint" and skip it. */
 static int q_is_wild(const char *q) {
     return !q || !q[0] || (q[0] == '*' && q[1] == '\0');
@@ -224,6 +225,74 @@ static void free_names(char **names) {
     arrfree(names);
 }
 
+/* Append a "── Tags ──" section: every tag in the hml index with
+ * unread/total counts. The tag list comes from `hml search
+ * --output=tags`; counts from one `hml count --batch` run fed two
+ * queries per tag (total, unread) so the whole thing is two hml
+ * invocations regardless of tag count. Counts are omitted (display is
+ * just the name) if the batch output doesn't line up. */
+static void tags_scan(void) {
+    char **tags = NULL;
+    int ntags = 0;
+    term_cmd_capture("hml search --output=tags -- '*' 2>/dev/null", &tags,
+                     &ntags);
+    if (ntags <= 0) {
+        term_cmd_free(tags, ntags);
+        return;
+    }
+
+    /* Batch count queries: for each tag, `tag:"<t>"` then
+     * `tag:"<t>" and tag:unread`. A tag containing a double quote
+     * can't be quoted this way; it's listed without counts. */
+    char **counts = NULL;
+    int ncounts = 0;
+    {
+        char *batch = NULL;
+        size_t blen = 0;
+        FILE *bf = open_memstream(&batch, &blen);
+        int ok = bf != NULL;
+        if (ok) {
+            fputs("printf '%s' '", bf);
+            for (int i = 0; i < ntags; i++) {
+                const char *t = tags[i];
+                if (!t || !*t || strchr(t, '"') || strchr(t, '\''))
+                    continue;
+                fprintf(bf, "tag:\"%s\"\ntag:\"%s\" and tag:unread\n", t, t);
+            }
+            fputs("' | hml count --batch 2>/dev/null", bf);
+            fclose(bf);
+            term_cmd_capture(batch, &counts, &ncounts);
+        }
+        free(batch);
+    }
+
+    mbox_add("── Tags ──", "", MBE_HEADER);
+    int ci = 0;
+    for (int i = 0; i < ntags; i++) {
+        const char *t = tags[i];
+        if (!t || !*t)
+            continue;
+        int quotable = !strchr(t, '"') && !strchr(t, '\'');
+        char query[256], disp[256];
+        snprintf(query, sizeof(query), "tag:%s", t);
+        if (quotable && ci + 1 < ncounts) {
+            long total = strtol(counts[ci], NULL, 10);
+            long unread = strtol(counts[ci + 1], NULL, 10);
+            ci += 2;
+            if (unread > 0)
+                snprintf(disp, sizeof(disp), "%-20s %ld/%ld", t, unread, total);
+            else
+                snprintf(disp, sizeof(disp), "%-20s %ld", t, total);
+        } else {
+            snprintf(disp, sizeof(disp), "%s", t);
+        }
+        mbox_add(disp, query, MBE_TAG);
+    }
+
+    term_cmd_free(counts, ncounts);
+    term_cmd_free(tags, ntags);
+}
+
 /* Scan the maildir root. Two layouts supported:
  *   ~/.mail/cur,new                 — single maildir
  *   ~/.mail/<account>/...           — collection; each account may be a
@@ -237,6 +306,8 @@ static void mailboxes_scan(void) {
         for (ptrdiff_t i = 0; i < arrlen(views); i++)
             mbox_add(views[i].name, views[i].query, MBE_VIEW);
     }
+
+    tags_scan();
 
     const char *root = resolve_mail_dir();
 
@@ -292,7 +363,7 @@ void mail_set_sync_cmd(const char *cmd) {
              (cmd && *cmd) ? cmd : "hml recv");
 }
 
-/* :mail-sync runs `<sync_cmd> && notmuch new` in a background child so
+/* :mail-sync runs `<sync_cmd> && hml new` in a background child so
  * the editor stays responsive; the list refreshes when it exits. */
 static struct {
     Proc pr;
@@ -334,7 +405,7 @@ void mail_sync(void) {
         return;
     }
     char cmd[512];
-    snprintf(cmd, sizeof(cmd), "{ %s; } && notmuch new", sync_cmd);
+    snprintf(cmd, sizeof(cmd), "{ %s; } && hml new", sync_cmd);
     const char *argv[] = {"sh", "-c", cmd, NULL};
     if (proc_spawn(argv, 0, &sync_job.pr) != 0) {
         ed_set_status_message("mail: failed to run %s", sync_cmd);
@@ -523,7 +594,7 @@ static void mail_msg_render_hook(const HookRenderEvent *e) {
 }
 
 /* ------------------------------------------------------------------ */
-/* notmuch query → entries                                             */
+/* hml query → entries                                                 */
 /* ------------------------------------------------------------------ */
 
 static void mail_run_query(void) {
@@ -534,7 +605,7 @@ static void mail_run_query(void) {
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[2400];
     snprintf(cmd, sizeof(cmd),
-             "notmuch search --sort=newest-first --limit=%d --output=summary "
+             "hml search --sort=newest-first --limit=%d --output=summary "
              "-- %s 2>/dev/null",
              MAIL_MAX, qq);
 
@@ -628,7 +699,7 @@ void mail_open_list(void) {
 /* Open thread on <CR>                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Drop the "unread" tag (via notmuch) and update the in-memory state +
+/* Drop the "unread" tag (via hml) and update the in-memory state +
  * the "U " prefix on the mail-list row. No-op if the thread isn't
  * unread. */
 static void mark_thread_read(int row) {
@@ -644,7 +715,7 @@ static void mark_thread_read(int row) {
     char tidq[256];
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[512];
-    snprintf(cmd, sizeof(cmd), "notmuch tag -unread -- %s 2>/dev/null", tidq);
+    snprintf(cmd, sizeof(cmd), "hml tag -unread -- %s 2>/dev/null", tidq);
     if (term_cmd_system(cmd) != 0)
         return;
 
@@ -698,7 +769,7 @@ static void open_thread_tid(const char *tid, const char *title) {
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[600];
     snprintf(cmd, sizeof(cmd),
-             "notmuch show --format=text --include-html -- %s 2>/dev/null",
+             "hml show --format=text --include-html -- %s 2>/dev/null",
              tidq);
 
     char **lines = NULL;
@@ -707,7 +778,7 @@ static void open_thread_tid(const char *tid, const char *title) {
 
     MailRender mr;
     mail_render_init(&mr);
-    mail_render_notmuch_text(&mr, lines, count);
+    mail_render_show_text(&mr, lines, count);
     term_cmd_free(lines, count);
 
     buf_special_clear(tbuf);
@@ -1007,11 +1078,11 @@ void mail_apply_tags(const char *args) {
     char qq[8200];
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[8800];
-    snprintf(cmd, sizeof(cmd), "notmuch tag %s -- %s 2>/dev/null", tag_args,
+    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args,
              qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
-        ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
+        ed_set_status_message("mail-tag: hml tag exited %d", rc);
         return;
     }
 
@@ -1045,11 +1116,11 @@ void mail_apply_tags_query(const char *args) {
     char qq[2300];
     shell_escape_single(full_query, qq, sizeof(qq));
     char cmd[3000];
-    snprintf(cmd, sizeof(cmd), "notmuch tag %s -- %s 2>/dev/null", tag_args,
+    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args,
              qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
-        ed_set_status_message("mail-tag: notmuch tag exited %d", rc);
+        ed_set_status_message("mail-tag: hml tag exited %d", rc);
         return;
     }
 
@@ -1109,7 +1180,7 @@ static void mailbox_render_hook(const HookRenderEvent *ev) {
             const MailboxEntry *e = &mailbox_entries[row];
             if (e->kind == MBE_MAILBOX)
                 active = strcmp(e->query, mailbox_query) == 0;
-            else if (e->kind == MBE_VIEW)
+            else if (e->kind == MBE_VIEW || e->kind == MBE_TAG)
                 active = strcmp(e->query, base_query) == 0;
             else if (e->kind == MBE_ALL)
                 active = !mailbox_query[0] && q_is_wild(base_query);
@@ -1124,6 +1195,8 @@ static void mailbox_render_hook(const HookRenderEvent *ev) {
             sgr = MC_READ_SUBJECT; /* normal  */
         else if (kind == MBE_VIEW)
             sgr = MC_UNREAD_FLAG; /* bold accent */
+        else if (kind == MBE_TAG)
+            sgr = COLOR_STRING; /* green   */
         else if (indented)
             sgr = MC_META; /* dim     */
         else
@@ -1160,7 +1233,8 @@ void mail_open_mailboxes(void) {
             buf_special_addf(buf, "%s", e->display);
             if (e->kind == MBE_MAILBOX && strcmp(e->query, mailbox_query) == 0)
                 active_row = (int)i;
-            else if (e->kind == MBE_VIEW && strcmp(e->query, base_query) == 0)
+            else if ((e->kind == MBE_VIEW || e->kind == MBE_TAG) &&
+                     strcmp(e->query, base_query) == 0)
                 active_row = (int)i;
         }
     }
@@ -1171,6 +1245,31 @@ void mail_open_mailboxes(void) {
 
     ed_set_status_message("mailboxes: %d entries  (root: %s)",
                           (int)arrlen(mailbox_entries), resolve_mail_dir());
+}
+
+void mail_open_tags(void) {
+    mail_open_mailboxes();
+    Window *win = window_cur();
+    if (!win)
+        return;
+    /* Keep the cursor if it already sits on the active tag; otherwise
+     * land on the first tag row. */
+    int cur = win->cursor.y;
+    if (cur >= 0 && cur < arrlen(mailbox_entries) &&
+        mailbox_entries[cur].kind == MBE_TAG)
+        return;
+    int ntags = 0;
+    for (ptrdiff_t i = 0; i < arrlen(mailbox_entries); i++) {
+        if (mailbox_entries[i].kind != MBE_TAG)
+            continue;
+        if (ntags++ == 0)
+            win->cursor.y = (int)i;
+    }
+    if (ntags == 0)
+        ed_set_status_message("mail-tags: no tags in the hml index");
+    else
+        ed_set_status_message("mail-tags: %d tags  (<CR> selects, q closes)",
+                              ntags);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1224,7 +1323,7 @@ static int extract_attachment(const MailAttachInfo *a, const char *dest_dir) {
 
     char cmd[3072];
     snprintf(cmd, sizeof(cmd),
-             "notmuch show --part=%d --format=raw -- %s > %s 2>/dev/null",
+             "hml show --part=%d --format=raw -- %s > %s 2>/dev/null",
              a->part_id, qq, pq);
     int rc = term_cmd_system(cmd);
     if (rc != 0)
@@ -1366,7 +1465,7 @@ void mail_attach_action(int att_no, const char *dest_dir) {
     /* Direct path: act on one attachment by its 1-based number (as
      * shown in the rendered Attachments: line), no fzf. Numbers are
      * thread-wide, so they stay unambiguous even when several
-     * messages reuse the same notmuch part id. */
+     * messages reuse the same part id. */
     if (att_no >= 0) {
         if (att_no < 1 || att_no > n_att) {
             ed_set_status_message("mail-attach: no attachment %d (1..%d)",
@@ -1469,6 +1568,7 @@ void mail_handle_mailbox_enter(void) {
         mail_set_query("*");
         break;
     case MBE_VIEW:
+    case MBE_TAG:
         mail_set_query(e->query);
         break;
     case MBE_MAILBOX:

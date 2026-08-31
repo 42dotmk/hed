@@ -181,12 +181,12 @@ static int looks_like_flag(const char *s) {
 
 /* :mail-git-am [args]
  *
- * No args, in a mail-message buffer → pipe the current notmuch thread
+ * No args, in a mail-message buffer → pipe the current mail thread
  *   as mbox into `git am` (the natural way to apply a patch email or
  *   patch-series email you're reading).
  * Args starting with `-` (e.g. `--3way`, `--abort`, `--continue`,
  *   `--skip`) → flags are forwarded to git am; if the buffer is a
- *   mail-message we still feed the notmuch mbox on stdin, otherwise
+ *   mail-message we still feed the thread's mbox (hml show) on stdin, otherwise
  *   git am runs standalone (for `--continue` / `--abort` after a
  *   conflict).
  * Anything else → treated as a path / extra git-am positional arg
@@ -226,10 +226,10 @@ static void cmd_mail_git_am(const char *args) {
     char cmd[1024];
     int n;
     if (use_buffer_mbox) {
-        /* Thread ids from notmuch are alnum + ':' — safe to single-
+        /* Thread ids from hml are alnum + ':' — safe to single-
          * quote without further escaping. */
         n = snprintf(cmd, sizeof(cmd),
-                     "notmuch show --format=mbox -- '%s' | git am%s%s", tid,
+                     "hml show --format=mbox -- '%s' | git am%s%s", tid,
                      *arg ? " " : "", arg);
     } else {
         n = snprintf(cmd, sizeof(cmd), "git am%s%s", *arg ? " " : "", arg);

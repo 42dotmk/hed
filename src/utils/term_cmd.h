@@ -85,7 +85,7 @@ int term_cmd_filter(const char *cmd, const char *in, size_t in_len, char **out,
 void term_cmd_free(char **lines, int count);
 
 /* Run a background command and capture its output WITHOUT touching raw mode.
- * Use this for silent data-gathering commands (e.g. notmuch, ripgrep piped
+ * Use this for silent data-gathering commands (e.g. hml, ripgrep piped
  * output) where the child process writes only to the pipe and never to the
  * terminal.  Leaves the editor's raw mode and terminal state untouched.
  * Same return convention and out_lines ownership as term_cmd_run(). */

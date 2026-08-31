@@ -1,14 +1,16 @@
 # mail
 
-A notmuch-backed mail reader for hed. Sync with a configurable
+An hml-backed mail reader for hed. Sync with a configurable
 command (`hml recv` by default; `mbsync` works too), index with
-`notmuch`, browse threads in a list buffer, read messages in a clean
+`hml new`, browse threads in a list buffer, read messages in a clean
 rendered view, reply / forward / send via `msmtp` (or any sendmail-
 compatible binary that reads RFC 822 on stdin).
 
 ## Requirements
 
-- `notmuch` — search, tagging, message extraction
+- `hml` — sync, search index, tagging (read/flagged state is mirrored into
+  the maildir and pushed to the server on the next sync), message
+  extraction, reply templates
 - `hml` or `mbsync` (optional) — `:mail-sync` (see `mail_set_sync_cmd`)
 - `msmtp` or compatible (optional) — `:mail-send`
 - `w3m` or `lynx` (optional) — HTML-only message rendering
@@ -34,11 +36,12 @@ the current listing. `mailto:` URIs route to compose the same way.
 |---|---|
 | `:mail` | Open / refresh the mail list |
 | `:mail-refresh` | Clear extra filter and reload |
-| `:mail-query <q>` | Replace the base notmuch query (e.g. `tag:inbox`) |
+| `:mail-query <q>` | Replace the base query (e.g. `tag:inbox`) |
 | `:mail-filter [q]` | Append a filter to the base query (prompts if empty) |
 | `:mail-mailbox [q]` | Scope listing to `folder:…` / `path:…` (empty = all) |
-| `:mail-mailboxes` | Open the mailbox sidebar (accounts + folders + saved views) |
-| `:mail-sync` | Run the sync command then `notmuch new` (async), then reload |
+| `:mail-mailboxes` | Open the mailbox sidebar (saved views + tags + accounts/folders) |
+| `:mail-tags` | Open the same sidebar with the cursor on the tag list |
+| `:mail-sync` | Run the sync command then `hml new` (async), then reload |
 | `:mail-tag <±tags>` | Apply tags to thread under cursor (or visual selection) |
 | `:mail-tag-all <±tags>` | Apply tags to every thread in the current query |
 | `:mail-delete` | Shorthand for `+deleted -unread -inbox` on the current thread |
@@ -63,11 +66,12 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `<CR>` | Open the selected thread |
 | `/` | Filter prompt |
 | `r` | Refresh (clears filter) |
-| `R` | Sync (sync command + `notmuch new`) |
+| `R` | Sync (sync command + `hml new`) |
 | `<C-r>` | Mark thread(s) under cursor / selection as read |
 | `<C-S-r>` | Mark every thread in the current query as read |
 | `D` | Mark thread(s) as deleted |
 | `b` | Open mailbox sidebar |
+| `t` | Open mailbox sidebar on the tag list |
 | `q` | Close the mail list |
 
 ### In the message view (`mail-message` filetype)
@@ -98,7 +102,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 
 ## Message rendering
 
-`mail_parse.{c,h}` consumes the output of `notmuch show --format=text`
+`mail_parse.{c,h}` consumes the output of `hml show --format=text` (notmuch's text framing)
 and produces a clean per-message section:
 
 ```
@@ -116,7 +120,7 @@ Attachments:  [2] notes.pdf  [3] chart.png
   are simply omitted.
 - The `Attachments:` line appears right below `Date:` only when the
   message has attachments. Each entry is `[<n>] <name>` where `n` is
-  a 1-based number that is unique across the whole thread (notmuch
+  a 1-based number that is unique across the whole thread (MIME
   part ids restart per message, so they can't address an attachment
   unambiguously) — it's what `:mail-attach <n>` takes.
 - Multi-message threads render every message as its own section with
@@ -127,7 +131,7 @@ Attachments:  [2] notes.pdf  [3] chart.png
   `[1]`, `[2]`, … with the URL list appended under `References:`.
   With neither available, a placeholder line is shown. Either way,
   `o` / `:mail-open-html` opens the real HTML in the system browser.
-- `\fmessage{`, `\fheader{`, `\fpart{` and other notmuch framing
+- `\fmessage{`, `\fheader{`, `\fpart{` and the other framing
   markers never reach the buffer.
 
 The highlighter (`mail_msg_hl`) styles header keys, header values,
@@ -165,6 +169,12 @@ shows:
 - `[All mail]` — clears both the base query and the mailbox scope.
 - `── Views ──` — every entry registered with `mail_add_view`. Selecting
   one sets the base query.
+- `── Tags ──` — every tag in the hml index, as
+  `<tag>  <unread>/<total>` (just `<total>` when nothing is unread).
+  Selecting one sets the base query to `tag:<tag>`, so new tags
+  created by hooks or `:mail-tag` show up here without any config.
+  `t` from the list (or `:mail-tags`) opens the sidebar straight onto
+  this section, on the active tag if the current query is one.
 - `── Mailboxes ──` — accounts (top-level dirs under the maildir root)
   and their folders. Selecting one sets a `folder:…` or `path:…` scope
   that is ANDed with the base query.
@@ -180,9 +190,9 @@ pipes the buffer (validated to have non-empty `To:` and `Subject:`) to
 the configured send command via a temp file, so msmtp/sendmail still
 inherit a controlling terminal for password prompts.
 
-`:mail-reply` / `:mail-reply-all` use `notmuch reply` to generate the
+`:mail-reply` / `:mail-reply-all` use `hml reply` to generate the
 quoted draft; the configured `mail_set_from` (if any) overrides the
-`From:` line produced by notmuch.
+`From:` line produced by hml.
 
 `:mail-forward` builds a clean compose: `From: <your address>`,
 `To: ` (left empty for you to fill), `Cc: ` empty, and
@@ -211,10 +221,10 @@ message-mode convention), equivalent to `:mail-send`.
 
 ## Attachments
 
-Attachments are detected at parse time from the notmuch text stream —
+Attachments are detected at parse time from the `hml show` text stream —
 no second pass over the buffer. `:mail-attach` (or `a` in a message
 buffer) extracts each part with
-`notmuch show --part=<part> --format=raw` into a private temp dir
+`hml show --part=<part> --format=raw` into a private temp dir
 (keeping the real filename, whose extension picks the opener) and
 opens it via the `open` plugin. With multiple attachments, an fzf
 picker shows `[n] name` for each part — `Tab` toggles a row, `<C-a>`
@@ -233,6 +243,6 @@ plugins/mail/
 ├── mail.h          # public configuration API
 ├── mail_internal.h # cross-file plumbing between the .c files
 ├── mail_impl.c     # query, list/sidebar/message buffers, highlighter
-├── mail_parse.{c,h}# notmuch text → clean display lines + attachments
+├── mail_parse.{c,h}# show text → clean display lines + attachments
 └── mail_send.c     # compose / send / reply / forward
 ```

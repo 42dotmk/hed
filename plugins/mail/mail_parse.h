@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 typedef struct {
-    int part_id; /* notmuch part id — unique per message, not per thread */
+    int part_id; /* MIME part id (notmuch numbering) — unique per message, not per thread */
     char filename[256];
     char content_type[128];
     char msg_id[256];
@@ -24,7 +24,8 @@ typedef struct {
 void mail_render_init(MailRender *r);
 void mail_render_free(MailRender *r);
 
-/* Parse the output of `notmuch show --format=text` into clean display
+/* Parse the output of `hml show --format=text` (notmuch's text
+ * framing) into clean display
  * lines. Each message in the thread is rendered as:
  *
  *     From:    ...
@@ -39,8 +40,8 @@ void mail_render_free(MailRender *r);
  * Messages after the first are preceded by a one-line divider.
  * Attachments collected across all messages land in `r->attaches`;
  * the [n] labels are 1-based indices into that array (stable across
- * the whole thread, unlike notmuch part ids which restart per
+ * the whole thread, unlike MIME part ids which restart per
  * message). */
-void mail_render_notmuch_text(MailRender *r, char **raw, int raw_count);
+void mail_render_show_text(MailRender *r, char **raw, int raw_count);
 
 #endif

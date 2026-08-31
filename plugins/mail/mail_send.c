@@ -693,19 +693,19 @@ void mail_reply(int reply_all) {
     char qq[512];
     shell_escape_single(tid, qq, sizeof(qq));
     char cmd[600];
-    snprintf(cmd, sizeof(cmd), "notmuch reply --reply-to=%s -- %s 2>/dev/null",
+    snprintf(cmd, sizeof(cmd), "hml reply --reply-to=%s -- %s 2>/dev/null",
              reply_all ? "all" : "sender", qq);
 
     char **lines = NULL;
     int count = 0;
     term_cmd_capture(cmd, &lines, &count);
     if (count == 0) {
-        ed_set_status_message("mail-reply: notmuch reply produced no output");
+        ed_set_status_message("mail-reply: hml reply produced no output");
         term_cmd_free(lines, count);
         return;
     }
 
-    /* If a from_addr is configured, override notmuch's From: line. */
+    /* If a from_addr is configured, override hml's From: line. */
     if (from_addr[0]) {
         for (int i = 0; i < count; i++) {
             if (lines[i] && strncasecmp(lines[i], "From:", 5) == 0) {

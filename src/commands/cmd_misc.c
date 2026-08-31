@@ -2,6 +2,7 @@
 #include "buf/buf_helpers.h"
 #include "commands/registry.h"
 #include "editor.h"
+#include "hooks.h"
 #include "input/keybinds.h"
 #include "input/keybinds_builtins.h"
 #include "input/macros.h"
@@ -369,8 +370,10 @@ void cmd_new_line(const char *args) {
             (win->cursor.y < buf->num_rows) ? &buf->rows[win->cursor.y] : NULL;
         win->cursor.x = row ? (int)row->chars.len : 0;
     }
-    buf_insert_newline_in(buf);
+    /* Enter insert mode before the newline so MODE_INSERT char hooks
+     * (smart_indent) see it. */
     ed_set_mode(MODE_INSERT);
+    kb_insert_newline();
 }
 
 void cmd_new_line_above(const char *args) {
@@ -383,10 +386,14 @@ void cmd_new_line_above(const char *args) {
         return;
 
     win->cursor.x = 0;
+    ed_set_mode(MODE_INSERT);
     buf_insert_newline_in(buf);
     win->cursor.y--;
-    /* Cursor should now be on the new blank line above */
-    ed_set_mode(MODE_INSERT);
+    /* Cursor is on the new blank line above; fire the '\n' char hook
+     * here (not kb_insert_newline, which would leave the cursor below)
+     * so smart_indent indents the opened line. */
+    HookCharEvent ev = {buf, win->cursor.y, win->cursor.x, '\n'};
+    hook_fire_char(HOOK_CHAR_INSERT, &ev);
 }
 
 void cmd_modal_from_current(const char *args) {

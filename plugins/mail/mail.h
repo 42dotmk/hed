@@ -9,7 +9,7 @@ extern const Plugin plugin_mail;
  * config_user_init. The plugin's own cross-file plumbing lives in
  * mail_internal.h. */
 
-/* Set the base notmuch query (default: "tag:inbox"). */
+/* Set the base query (hml / notmuch syntax; default: "tag:inbox"). */
 void mail_set_query(const char *q);
 const char *mail_get_query(void);
 
@@ -20,7 +20,7 @@ void mail_set_filter(const char *filter);
 void mail_set_dir(const char *dir);
 const char *mail_get_dir(void);
 
-/* Restrict the listing to a notmuch sub-query, e.g. `folder:work/Inbox`
+/* Restrict the listing to a sub-query, e.g. `folder:work/Inbox`
  * or `path:work/...`. Empty string clears the scope (all mailboxes). */
 void mail_set_mailbox(const char *q);
 const char *mail_get_mailbox(void);
@@ -32,7 +32,7 @@ const char *mail_get_mailbox(void);
  * ones. Pass NULL/empty `query` to remove. */
 void mail_add_view(const char *name, const char *query);
 
-/* Set the shell command :mail-sync runs before `notmuch new`
+/* Set the shell command :mail-sync runs before `hml new`
  * (default: "hml recv"; e.g. "mbsync -a" to use mbsync instead). */
 void mail_set_sync_cmd(const char *cmd);
 
