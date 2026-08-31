@@ -87,7 +87,7 @@ static void config_load_default_plugins(void) {
     plugin_load(&plugin_mouse, 1);
     plugin_load(&plugin_whichkey, 1);
     plugin_load(&plugin_yazi, 1);
-    plugin_load(&plugin_copilot, 1);
+    plugin_load(&plugin_copilot, 0);
     plugin_load(&plugin_autosave, 1);
     plugin_load(&plugin_ctags, 1);
     plugin_load(&plugin_git, 1);

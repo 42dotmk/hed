@@ -204,13 +204,14 @@ void mail_attach_add(const char *path) {
         ed_set_status_message("mail-attach-add: attached %d file(s)", ok);
 }
 
-/* Find the first header line "<Name>: <value>" in buf (headers stop at
- * the first blank line) and copy the value, trimmed of leading
- * whitespace, into out. Returns 1 on hit (out may still be "" for an
- * empty value). */
-static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
+/* Find the first header line "<Name>: <value>" in buf at or after row
+ * `start` (headers stop at the first blank line) and copy the value,
+ * trimmed of leading whitespace, into out. Returns 1 on hit (out may
+ * still be "" for an empty value). */
+static int header_value_from(Buffer *buf, int start, const char *name,
+                             char *out, size_t cap) {
     size_t nlen = strlen(name);
-    for (int i = 0; i < buf->num_rows; i++) {
+    for (int i = start; i < buf->num_rows; i++) {
         StrBuf *s = &buf->rows[i].chars;
         if (s->len == 0)
             return 0; /* end of headers */
@@ -231,6 +232,10 @@ static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
         return 1;
     }
     return 0;
+}
+
+static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
+    return header_value_from(buf, 0, name, out, cap);
 }
 
 /* ------------------------------------------------------------------ */
@@ -373,10 +378,36 @@ static int write_multipart(Buffer *buf, FILE *fp, char **att_paths,
         FILE *af = fopen(path, "rb");
         if (!af)
             return 1;
-        char mime[128];
-        sniff_mime_type(path, mime, sizeof(mime));
         const char *base = path_basename(path);
         fprintf(fp, "--%s\n", boundary);
+        if (str_ends_with(base, ".eml")) {
+            /* A forwarded message travels as message/rfc822, which
+             * RFC 2046 allows only in 7bit/8bit/binary — copied
+             * through verbatim, never base64. */
+            fprintf(fp, "Content-Type: message/rfc822; name=\"%s\"\n", base);
+            fprintf(fp, "Content-Disposition: attachment; filename=\"%s\"\n",
+                    base);
+            fprintf(fp, "Content-Transfer-Encoding: 8bit\n\n");
+            char chunk[8192];
+            size_t got;
+            int last = '\n';
+            while ((got = fread(chunk, 1, sizeof(chunk), af)) > 0) {
+                if (fwrite(chunk, 1, got, fp) != got) {
+                    fclose(af);
+                    return 1;
+                }
+                last = chunk[got - 1];
+            }
+            int rc = ferror(af);
+            fclose(af);
+            if (rc)
+                return rc;
+            if (last != '\n')
+                fputc('\n', fp);
+            continue;
+        }
+        char mime[128];
+        sniff_mime_type(path, mime, sizeof(mime));
         fprintf(fp, "Content-Type: %s; name=\"%s\"\n", mime, base);
         fprintf(fp, "Content-Disposition: attachment; filename=\"%s\"\n", base);
         fprintf(fp, "Content-Transfer-Encoding: base64\n\n");
@@ -690,8 +721,17 @@ void mail_reply(int reply_all) {
         return;
     }
 
+    /* Answer the message under the cursor, not the thread's newest
+     * (which is what a thread: query would give hml reply). */
+    int midx = 0, mcount = 0;
+    const MailMsgSpan *m = mail_cursor_msg(&midx, &mcount);
+    char query[400];
+    if (m && m->msg_id[0])
+        snprintf(query, sizeof(query), "id:%s", m->msg_id);
+    else
+        snprintf(query, sizeof(query), "%s", tid);
     char qq[512];
-    shell_escape_single(tid, qq, sizeof(qq));
+    shell_escape_single(query, qq, sizeof(qq));
     char cmd[600];
     snprintf(cmd, sizeof(cmd), "hml reply --reply-to=%s -- %s 2>/dev/null",
              reply_all ? "all" : "sender", qq);
@@ -722,63 +762,86 @@ void mail_reply(int reply_all) {
     mail_compose_with_lines(reply_all ? "Reply-All" : "Reply", lines, count);
     term_cmd_free(lines, count);
     ed_set_status_message(
-        "mail-reply: %s — edit body, C-c C-c or :mail-send to send",
-        reply_all ? "reply-all" : "sender");
+        "mail-reply: %s to message %d/%d — edit body, C-c C-c or :mail-send "
+        "to send",
+        reply_all ? "reply-all" : "sender", mcount - midx, mcount);
+}
+
+/* The cursor message of the viewed thread, or NULL with a status
+ * message. `*midx`/`*mcount` as in mail_cursor_msg. */
+static const MailMsgSpan *forward_source(const char *what, int *midx,
+                                         int *mcount) {
+    Buffer *src = buf_cur();
+    if (!current_thread_id(src)) {
+        ed_set_status_message("%s: open a message first", what);
+        return NULL;
+    }
+    const MailMsgSpan *m = mail_cursor_msg(midx, mcount);
+    if (!m) {
+        ed_set_status_message("%s: no message under the cursor", what);
+        return NULL;
+    }
+    return m;
+}
+
+/* "Fwd: <subject>" without double-prefixing. */
+static void fwd_subject(const char *orig, char *out, size_t cap) {
+    int already =
+        (strncasecmp(orig, "Fwd:", 4) == 0 || strncasecmp(orig, "Fw:", 3) == 0);
+    snprintf(out, cap, "%s%s", already ? "" : "Fwd: ", orig);
 }
 
 void mail_forward(void) {
-    Buffer *src = buf_cur();
-    const char *tid = current_thread_id(src);
-    if (!tid) {
-        ed_set_status_message("mail-forward: open a message first");
+    int midx = 0, mcount = 0;
+    const MailMsgSpan *m = forward_source("mail-forward", &midx, &mcount);
+    if (!m)
         return;
-    }
+    Buffer *src = buf_cur();
 
     /* Pull the original headers (From / Date / Subject / To / Cc)
      * directly from the rendered message buffer — same source the
-     * user is reading. */
+     * user is reading — starting at this message's header block. */
     char orig_from[512] = "", orig_date[256] = "", orig_subj[512] = "";
     char orig_to[512] = "", orig_cc[512] = "";
-    header_value(src, "From", orig_from, sizeof(orig_from));
-    header_value(src, "Date", orig_date, sizeof(orig_date));
-    header_value(src, "Subject", orig_subj, sizeof(orig_subj));
-    header_value(src, "To", orig_to, sizeof(orig_to));
-    header_value(src, "Cc", orig_cc, sizeof(orig_cc));
+    int h = m->hdr_row;
+    header_value_from(src, h, "From", orig_from, sizeof(orig_from));
+    header_value_from(src, h, "Date", orig_date, sizeof(orig_date));
+    header_value_from(src, h, "Subject", orig_subj, sizeof(orig_subj));
+    header_value_from(src, h, "To", orig_to, sizeof(orig_to));
+    header_value_from(src, h, "Cc", orig_cc, sizeof(orig_cc));
 
-    /* Find the body of the first message in the buffer: everything
-     * after the first blank line (which separates headers from body)
-     * and before either EOF or the section divider mail_parse inserts
-     * between messages in a thread. */
+    /* Body: everything after the blank line that ends this message's
+     * headers, up to the next message block (or EOF), minus trailing
+     * blank lines. */
     int body_start = -1;
-    for (int i = 0; i < src->num_rows; i++) {
+    for (int i = h; i < src->num_rows; i++) {
         if (src->rows[i].chars.len == 0) {
             body_start = i + 1;
             break;
         }
     }
     int body_end = src->num_rows;
-    if (body_start >= 0) {
-        for (int i = body_start; i < src->num_rows; i++) {
-            const StrBuf *s = &src->rows[i].chars;
-            /* mail_parse uses a long "─" run as the per-message divider. */
-            if (s->len >= 3 && (unsigned char)s->data[0] == 0xE2 &&
-                (unsigned char)s->data[1] == 0x94 &&
-                (unsigned char)s->data[2] == 0x80) {
-                body_end = i;
-                break;
-            }
-        }
+    {
+        int cnt = 0;
+        const MailMsgSpan *next = NULL;
+        mail_cursor_msg(NULL, &cnt);
+        if (midx + 1 < cnt)
+            next = m + 1;
+        if (next)
+            body_end = next->row;
     }
+    while (body_end > body_start && body_end > 0 &&
+           src->rows[body_end - 1].chars.len == 0)
+        body_end--;
 
-    /* Extract any attachments into /tmp; each becomes an `Attach:`
-     * pseudo-header that mail_send_current converts into a real
-     * multipart MIME part at send time. */
-    char **att_paths = mail_extract_attachments_to_tmp();
+    /* Extract this message's attachments into /tmp; each becomes an
+     * `Attach:` pseudo-header that mail_send_current converts into a
+     * real multipart MIME part at send time. */
+    char **att_paths = mail_extract_attachments_to_tmp(m);
     int att_count = (int)arrlen(att_paths);
 
-    /* Don't double-prefix "Fwd: " if the source subject already has it. */
-    int already_fwd = (strncasecmp(orig_subj, "Fwd:", 4) == 0 ||
-                       strncasecmp(orig_subj, "Fw:", 3) == 0);
+    char subj[600];
+    fwd_subject(orig_subj, subj, sizeof(subj));
 
     /* Compose layout:
      *   From / To / Cc / Subject
@@ -792,7 +855,7 @@ void mail_forward(void) {
     pushf(&lines, "From: %s", from_addr);
     pushf(&lines, "To: ");
     pushf(&lines, "Cc: ");
-    pushf(&lines, "Subject: %s%s", already_fwd ? "" : "Fwd: ", orig_subj);
+    pushf(&lines, "Subject: %s", subj);
     for (int i = 0; i < att_count; i++)
         pushf(&lines, "Attach: %s", att_paths[i]);
     arrput(lines, strdup(""));
@@ -825,12 +888,46 @@ void mail_forward(void) {
     free_lines(lines);
     free_lines(att_paths);
 
-    if (att_count > 0)
-        ed_set_status_message(
-            "mail-forward: edit To: and body — %d attachment(s) cached, "
-            "C-c C-c or :mail-send to send",
-            att_count);
-    else
-        ed_set_status_message(
-            "mail-forward: edit To: and body, C-c C-c or :mail-send to send");
+    ed_set_status_message("mail-forward: message %d/%d, %d attachment(s) — "
+                          "edit To: and body, C-c C-c or :mail-send to send",
+                          mcount - midx, mcount, att_count);
+}
+
+void mail_forward_eml(void) {
+    int midx = 0, mcount = 0;
+    const MailMsgSpan *m = forward_source("mail-forward-eml", &midx, &mcount);
+    if (!m)
+        return;
+    Buffer *src = buf_cur();
+
+    char orig_subj[512] = "";
+    header_value_from(src, m->hdr_row, "Subject", orig_subj, sizeof(orig_subj));
+
+    char *eml = mail_extract_raw_to_tmp(m, orig_subj);
+    if (!eml) {
+        ed_set_status_message("mail-forward-eml: hml show produced no output");
+        return;
+    }
+
+    char subj[600];
+    fwd_subject(orig_subj, subj, sizeof(subj));
+
+    /* The original rides along whole as a message/rfc822 part (see
+     * write_multipart); the body is yours to write. */
+    char **lines = NULL;
+    pushf(&lines, "From: %s", from_addr);
+    pushf(&lines, "To: ");
+    pushf(&lines, "Cc: ");
+    pushf(&lines, "Subject: %s", subj);
+    pushf(&lines, "Attach: %s", eml);
+    arrput(lines, strdup(""));
+    arrput(lines, strdup(""));
+
+    mail_compose_with_lines("Forward", lines, (int)arrlen(lines));
+    free_lines(lines);
+    free(eml);
+
+    ed_set_status_message("mail-forward-eml: message %d/%d attached as .eml — "
+                          "edit To: and body, C-c C-c or :mail-send to send",
+                          mcount - midx, mcount);
 }

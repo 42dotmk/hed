@@ -47,11 +47,12 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-delete` | Shorthand for `+deleted -unread -inbox` on the current thread |
 | `:mail-compose` | Open a fresh compose buffer |
 | `:mail-send` | Send the current compose/reply/forward buffer |
-| `:mail-reply` / `:mail-reply-all` | Reply to the message being viewed |
-| `:mail-forward` | Forward the message being viewed |
+| `:mail-reply` / `:mail-reply-all` | Reply to the message under the cursor |
+| `:mail-forward` | Forward the message under the cursor inline, with its attachments re-attached |
+| `:mail-forward-eml` | Forward the message under the cursor verbatim, as one `.eml` (`message/rfc822`) attachment |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
-| `:mail-attach [n]` | Open attachment(s) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
-| `:mail-attach save [n] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
+| `:mail-attach [n\|all]` | Open attachment(s) of the message under the cursor (whole thread with `all`, or when that message has none) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
+| `:mail-attach save [n\|all] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 | `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
 
 Tag tokens without a leading `+`/`-` get `+` prefixed, so
@@ -78,10 +79,11 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 
 | Key | Action |
 |---|---|
-| `r` / `R` | Reply / Reply-all |
-| `f` | Forward |
-| `a` | Open attachment(s) — auto if one, fzf multi-pick if many |
-| `A` | Save attachment(s) to `~/Downloads` (fzf multi-pick if many) |
+| `r` / `R` | Reply / Reply-all to the message under the cursor |
+| `f` | Forward the message under the cursor (inline + its attachments) |
+| `F` | Forward the message under the cursor verbatim as a `.eml` attachment |
+| `a` | Open attachment(s) of the message under the cursor — auto if one, fzf multi-pick if many |
+| `A` | Save attachment(s) of the message under the cursor to `~/Downloads` (fzf multi-pick if many) |
 | `o` | Open the message's HTML body in the system browser |
 | `q` | Close the message |
 
@@ -190,9 +192,15 @@ pipes the buffer (validated to have non-empty `To:` and `Subject:`) to
 the configured send command via a temp file, so msmtp/sendmail still
 inherit a controlling terminal for password prompts.
 
-`:mail-reply` / `:mail-reply-all` use `hml reply` to generate the
-quoted draft; the configured `mail_set_from` (if any) overrides the
-`From:` line produced by hml.
+A thread buffer holds every message of the thread (newest first);
+reply, forward and the attachment commands all act on **the message
+under the cursor** — the renderer records where each message starts
+(`MailRender.msgs`), and the cursor row picks one. The status line
+names it (`message 2/5`) so you know what you answered or forwarded.
+
+`:mail-reply` / `:mail-reply-all` use `hml reply -- id:<Message-ID>`
+to generate the quoted draft; the configured `mail_set_from` (if any)
+overrides the `From:` line produced by hml.
 
 `:mail-forward` builds a clean compose: `From: <your address>`,
 `To: ` (left empty for you to fill), `Cc: ` empty, and
@@ -200,13 +208,23 @@ quoted draft; the configured `mail_set_from` (if any) overrides the
 with `Fwd:`/`Fw:`). Below the blank line goes a
 `---------- Forwarded message ----------` block with the original
 `From` / `Date` / `Subject` / `To` / `Cc` headers and the body lines
-copied straight out of the message buffer the user is reading. Any
-attachments on the source message are extracted to a per-forward
-`/tmp/hed-mail-fwd-…/` directory and listed as `Attach:` pseudo-
-headers in the compose buffer; `:mail-send` consumes those at send
-time and emits a real `multipart/mixed` MIME message (text body part +
-base64-encoded attachment parts, with mime type sniffed via the
-`file` command, falling back to `application/octet-stream`).
+copied straight out of the message buffer the user is reading. The
+attachments of that message (only those) are extracted to a
+per-forward `/tmp/hed-mail-fwd-…/` directory and listed as `Attach:`
+pseudo-headers in the compose buffer; `:mail-send` consumes those at
+send time and emits a real `multipart/mixed` MIME message (text body
+part + base64-encoded attachment parts, with mime type sniffed via
+the `file` command, falling back to `application/octet-stream`).
+
+`:mail-forward-eml` (`F`) forwards the original as it is: the raw
+message (`hml show --format=raw`) is written to `<subject>.eml` in
+the same kind of temp dir and attached as the single `Attach:` line,
+with an empty body for your note. `:mail-send` recognises the `.eml`
+suffix and emits that part as `message/rfc822` with an 8bit transfer
+encoding (RFC 2046 forbids base64 there), copying the file through
+verbatim — HTML, inline images and attachments arrive exactly as the
+original had them. This is the one to use when the inline rendering
+would lose something.
 
 You can delete `Attach:` lines from the compose to drop individual
 attachments, or add new `Attach: /path/to/file` lines anywhere in the
@@ -226,10 +244,13 @@ no second pass over the buffer. `:mail-attach` (or `a` in a message
 buffer) extracts each part with
 `hml show --part=<part> --format=raw` into a private temp dir
 (keeping the real filename, whose extension picks the opener) and
-opens it via the `open` plugin. With multiple attachments, an fzf
-picker shows `[n] name` for each part — `Tab` toggles a row, `<C-a>`
-selects all; every picked part is opened. You can still bypass the
-picker by passing an explicit number (`:mail-attach 3`).
+opens it via the `open` plugin. The candidates are the attachments of
+the message under the cursor; `:mail-attach all` widens that to the
+whole thread (as does a message without attachments of its own). With
+multiple candidates, an fzf picker shows `[n] name` for each part —
+`Tab` toggles a row, `<C-a>` selects all; every picked part is opened.
+The numbers are thread-wide, so you can still bypass the picker by
+passing an explicit one (`:mail-attach 3`) from anywhere in the thread.
 
 `:mail-attach save [n] [dir]` (or `A` in a message buffer) goes
 through the same picker but writes the picked parts into `dir`

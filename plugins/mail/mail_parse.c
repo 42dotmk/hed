@@ -32,6 +32,7 @@ void mail_render_free(MailRender *r) {
         free(r->lines[i]);
     arrfree(r->lines);
     arrfree(r->attaches);
+    arrfree(r->msgs);
     free(r->html);
     memset(r, 0, sizeof(*r));
 }
@@ -142,11 +143,19 @@ static int span_blank(const char *s, size_t len) {
 }
 
 static void emit_msg(MailRender *r, MsgState *m, int is_first) {
+    MailMsgSpan span;
+    memset(&span, 0, sizeof(span));
+    span.row = (int)arrlen(r->lines);
     if (!is_first) {
         lines_pushz(r, "");
         lines_pushz(r, "──────────────────────────────────────────");
         lines_pushz(r, "");
     }
+    span.hdr_row = (int)arrlen(r->lines);
+    snprintf(span.msg_id, sizeof(span.msg_id), "%s", m->msg_id);
+    span.attach_start = m->attach_start;
+    span.attach_count = m->attach_count;
+    arrput(r->msgs, span);
 
     char line[1024];
     if (m->from[0]) {
@@ -255,8 +264,8 @@ void mail_render_show_text(MailRender *r, char **raw, int raw_count) {
      * but its children may. We only track via the per-level mode. */
 
     /* Attachment context: filename/type discovered at \fattachment{.
-     * notmuch 0.40 closes the block with \fpart} (hml with \fattachment}), so the
-     * attachment opens a part-stack level like any other part and is
+     * notmuch 0.40 closes the block with \fpart} (hml with \fattachment}), so
+     * the attachment opens a part-stack level like any other part and is
      * registered when its level closes; \fattachment} is accepted too
      * for versions that emit it. */
     MailAttachInfo cur_att;

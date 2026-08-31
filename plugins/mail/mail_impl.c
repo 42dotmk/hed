@@ -25,6 +25,10 @@
  * numbering order (stb_ds; taken over from the last MailRender). */
 static MailAttachInfo *attachments = NULL;
 
+/* Where each message of the viewed thread starts (display order,
+ * newest first) and which of `attachments` are its own. */
+static MailMsgSpan *msgs = NULL;
+
 /* Raw text/html of the viewed thread's newest HTML-bearing message,
  * cached at open like the attachments above. NULL when none. */
 static char *view_html = NULL;
@@ -124,8 +128,8 @@ void mail_set_filter(const char *f) {
     snprintf(filter_query, sizeof(filter_query), "%s", f ? f : "");
 }
 
-/* the query language's `*` is a match-all that can't be combined with AND, so we
- * treat it (and an empty string) as "no constraint" and skip it. */
+/* the query language's `*` is a match-all that can't be combined with AND, so
+ * we treat it (and an empty string) as "no constraint" and skip it. */
 static int q_is_wild(const char *q) {
     return !q || !q[0] || (q[0] == '*' && q[1] == '\0');
 }
@@ -769,8 +773,7 @@ static void open_thread_tid(const char *tid, const char *title) {
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[600];
     snprintf(cmd, sizeof(cmd),
-             "hml show --format=text --include-html -- %s 2>/dev/null",
-             tidq);
+             "hml show --format=text --include-html -- %s 2>/dev/null", tidq);
 
     char **lines = NULL;
     int count = 0;
@@ -801,6 +804,9 @@ static void open_thread_tid(const char *tid, const char *title) {
     arrfree(attachments);
     attachments = mr.attaches;
     mr.attaches = NULL;
+    arrfree(msgs);
+    msgs = mr.msgs;
+    mr.msgs = NULL;
 
     /* Cache the raw HTML for :mail-open-html, stealing it from the
      * render so mail_render_free doesn't drop it. */
@@ -1078,8 +1084,7 @@ void mail_apply_tags(const char *args) {
     char qq[8200];
     shell_escape_single(query, qq, sizeof(qq));
     char cmd[8800];
-    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args,
-             qq);
+    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args, qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: hml tag exited %d", rc);
@@ -1116,8 +1121,7 @@ void mail_apply_tags_query(const char *args) {
     char qq[2300];
     shell_escape_single(full_query, qq, sizeof(qq));
     char cmd[3000];
-    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args,
-             qq);
+    snprintf(cmd, sizeof(cmd), "hml tag %s -- %s 2>/dev/null", tag_args, qq);
     int rc = term_cmd_system(cmd);
     if (rc != 0) {
         ed_set_status_message("mail-tag: hml tag exited %d", rc);
@@ -1377,11 +1381,37 @@ void mail_open_html(void) {
     open_path(path);
 }
 
-char **mail_extract_attachments_to_tmp(void) {
+const MailMsgSpan *mail_cursor_msg(int *idx, int *count) {
     Buffer *buf = buf_cur();
     if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0)
         return NULL;
-    if (arrlen(attachments) == 0)
+    int n = (int)arrlen(msgs);
+    if (count)
+        *count = n;
+    if (n == 0)
+        return NULL;
+    Window *win = window_cur();
+    int y = win ? win->cursor.y : 0;
+    int i = 0;
+    while (i + 1 < n && msgs[i + 1].row <= y)
+        i++;
+    if (idx)
+        *idx = i;
+    return &msgs[i];
+}
+
+char **mail_extract_attachments_to_tmp(const MailMsgSpan *m) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0)
+        return NULL;
+    int lo = 0, hi = (int)arrlen(attachments);
+    if (m) {
+        lo = m->attach_start;
+        hi = m->attach_start + m->attach_count;
+        if (hi > (int)arrlen(attachments))
+            hi = (int)arrlen(attachments);
+    }
+    if (lo >= hi)
         return NULL;
 
     char dir[256];
@@ -1389,7 +1419,7 @@ char **mail_extract_attachments_to_tmp(void) {
         return NULL;
 
     char **paths = NULL;
-    for (ptrdiff_t i = 0; i < arrlen(attachments); i++) {
+    for (int i = lo; i < hi; i++) {
         if (extract_attachment(&attachments[i], dir) != 0)
             continue;
         char safe[256];
@@ -1403,6 +1433,38 @@ char **mail_extract_attachments_to_tmp(void) {
             arrput(paths, dup);
     }
     return paths;
+}
+
+char *mail_extract_raw_to_tmp(const MailMsgSpan *m, const char *subject) {
+    if (!m || !m->msg_id[0])
+        return NULL;
+
+    char dir[256];
+    if (fs_temp_dir("hed-mail-fwd", dir, sizeof(dir)) != ED_OK)
+        return NULL;
+
+    /* "<subject>.eml", sanitized like attachment names; the Fwd:
+     * prefix is the compose's, not the file's. */
+    char safe[200];
+    sanitize_name(subject && *subject ? subject : "message", safe,
+                  sizeof(safe));
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s.eml", dir, safe);
+
+    char idq[300];
+    snprintf(idq, sizeof(idq), "id:%s", m->msg_id);
+    char qq[400];
+    shell_escape_single(idq, qq, sizeof(qq));
+    char pq[1280];
+    shell_escape_single(path, pq, sizeof(pq));
+    char cmd[3072];
+    snprintf(cmd, sizeof(cmd), "hml show --format=raw -- %s > %s 2>/dev/null",
+             qq, pq);
+    if (term_cmd_system(cmd) != 0) {
+        fs_unlink(path);
+        return NULL;
+    }
+    return strdup(path);
 }
 
 /* Run the picked attachments through extract_attachment. Reports
@@ -1436,8 +1498,22 @@ void mail_attach_action(int att_no, const char *dest_dir) {
 
     int n_att = (int)arrlen(attachments);
     if (n_att == 0) {
-        ed_set_status_message("mail-attach: no attachments in this message");
+        ed_set_status_message("mail-attach: no attachments in this thread");
         return;
+    }
+
+    /* The candidate slice: the cursor message's own attachments by
+     * default, the whole thread when asked for or when that message
+     * has none. Numbers stay thread-wide either way. */
+    int lo = 0, hi = n_att;
+    if (att_no == MAIL_ATT_CURSOR) {
+        const MailMsgSpan *m = mail_cursor_msg(NULL, NULL);
+        if (m && m->attach_count > 0) {
+            lo = m->attach_start;
+            hi = m->attach_start + m->attach_count;
+            if (hi > n_att)
+                hi = n_att;
+        }
     }
 
     /* Resolve / create dest dir up front so we fail fast. */
@@ -1479,9 +1555,10 @@ void mail_attach_action(int att_no, const char *dest_dir) {
         return;
     }
 
-    /* Auto-pick when there is only one attachment. */
-    if (n_att == 1) {
-        const MailAttachInfo *one[1] = {&attachments[0]};
+    /* Auto-pick when there is only one candidate. */
+    int n_cand = hi - lo;
+    if (n_cand == 1) {
+        const MailAttachInfo *one[1] = {&attachments[lo]};
         act_on_attachments(one, 1, resolved_dir);
         free(resolved_dir);
         return;
@@ -1489,8 +1566,8 @@ void mail_attach_action(int att_no, const char *dest_dir) {
 
     /* Multiple attachments: fzf with multi=1. Tab toggles, <C-a>
      * select-all. Items are "[<number>] <filename>". */
-    const char **items = malloc(sizeof(char *) * (size_t)n_att);
-    char **labels = malloc(sizeof(char *) * (size_t)n_att);
+    const char **items = malloc(sizeof(char *) * (size_t)n_cand);
+    char **labels = malloc(sizeof(char *) * (size_t)n_cand);
     if (!items || !labels) {
         free(items);
         free(labels);
@@ -1498,18 +1575,18 @@ void mail_attach_action(int att_no, const char *dest_dir) {
         ed_set_status_message("mail-attach: out of memory");
         return;
     }
-    for (int i = 0; i < n_att; i++) {
+    for (int i = 0; i < n_cand; i++) {
         char tmp[320];
-        snprintf(tmp, sizeof(tmp), "[%d] %s", i + 1,
-                 attachments[i].filename[0] ? attachments[i].filename
-                                            : "(unnamed)");
+        snprintf(tmp, sizeof(tmp), "[%d] %s", lo + i + 1,
+                 attachments[lo + i].filename[0] ? attachments[lo + i].filename
+                                                 : "(unnamed)");
         labels[i] = strdup(tmp);
         items[i] = labels[i];
     }
     char **sel = NULL;
     int cnt = 0;
-    int ok = picker_list(items, n_att, 1, &sel, &cnt);
-    for (int i = 0; i < n_att; i++)
+    int ok = picker_list(items, n_cand, 1, &sel, &cnt);
+    for (int i = 0; i < n_cand; i++)
         free(labels[i]);
     free(labels);
     free(items);
@@ -1532,7 +1609,7 @@ void mail_attach_action(int att_no, const char *dest_dir) {
     int picked = 0;
     for (int i = 0; i < cnt; i++) {
         int no = 0;
-        if (!sel[i] || sscanf(sel[i], "[%d]", &no) != 1 || no < 1 || no > n_att)
+        if (!sel[i] || sscanf(sel[i], "[%d]", &no) != 1 || no <= lo || no > hi)
             continue;
         picks[picked++] = &attachments[no - 1];
     }

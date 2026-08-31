@@ -1,6 +1,8 @@
 #ifndef MAIL_INTERNAL_H
 #define MAIL_INTERNAL_H
 
+#include "mail_parse.h"
+
 /* Cross-file plumbing shared by mail.c / mail_impl.c / mail_send.c.
  * The user-facing configuration API is mail.h. */
 
@@ -81,8 +83,21 @@ void mail_compose_uri(const char *uri);
 void mail_reply(int reply_all);
 
 /* Open a compose buffer pre-filled with a forward of the message
- * being viewed (raw original inlined after a separator). */
+ * under the cursor (headers + body inlined after a separator, its
+ * attachments re-attached). */
 void mail_forward(void);
+
+/* Open a compose buffer that forwards the message under the cursor
+ * verbatim, as a single message/rfc822 (.eml) attachment — HTML,
+ * inline images and attachments all travel untouched. */
+void mail_forward_eml(void);
+
+/* The message under the cursor in the viewed thread (the rendered
+ * buffer is newest-first; the cursor belongs to the last message
+ * block starting at or above it). Returns NULL when the current
+ * buffer is not a mail-message. `*idx` gets the 0-based display index
+ * and `*count` the number of messages, when non-NULL. */
+const MailMsgSpan *mail_cursor_msg(int *idx, int *count);
 
 /* Open the viewed message's HTML body in the system browser (written
  * to /tmp, handed to open_path). Status note when there is none. */
@@ -95,14 +110,25 @@ void mail_open_html(void);
  * Selection:
  *   att_no >= 0 → act on that attachment, 1-based as numbered in the
  *                 rendered "Attachments:" line (thread-wide).
- *   att_no <  0 → 1 attachment auto-acts; many → fzf multi-select
- *                 (Tab to pick multiple, <C-a> to select all). */
+ *   MAIL_ATT_CURSOR → the attachments of the message under the
+ *                 cursor (the whole thread's when it has none);
+ *   MAIL_ATT_ALL → the whole thread's.
+ *                 Either way: 1 attachment auto-acts; many → fzf
+ *                 multi-select (Tab to pick multiple, <C-a> for all). */
+#define MAIL_ATT_CURSOR (-1)
+#define MAIL_ATT_ALL (-2)
 void mail_attach_action(int att_no, const char *dest_dir);
 
-/* Extract every cached attachment of the currently-viewed mail-message
- * into a fresh /tmp dir. Returns an stb_ds array of malloc'd paths
- * (caller frees each entry, then arrfree), or NULL if the current
- * buffer is not a mail-message or has no attachments. */
-char **mail_extract_attachments_to_tmp(void);
+/* Extract the cached attachments of message `m` of the currently-viewed
+ * thread (NULL → every message) into a fresh /tmp dir. Returns an
+ * stb_ds array of malloc'd paths (caller frees each entry, then
+ * arrfree), or NULL if the current buffer is not a mail-message or
+ * there are no attachments. */
+char **mail_extract_attachments_to_tmp(const MailMsgSpan *m);
+
+/* Write message `m` of the currently-viewed thread verbatim (`hml show
+ * --format=raw`) to a fresh /tmp dir as `<subject>.eml`. Returns the
+ * malloc'd path, or NULL on failure. */
+char *mail_extract_raw_to_tmp(const MailMsgSpan *m, const char *subject);
 
 #endif

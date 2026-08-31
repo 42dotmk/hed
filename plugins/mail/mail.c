@@ -129,6 +129,10 @@ static void cmd_mail_forward(const char *args) {
     (void)args;
     mail_forward();
 }
+static void cmd_mail_forward_eml(const char *args) {
+    (void)args;
+    mail_forward_eml();
+}
 static void cmd_mail_open_html(const char *args) {
     (void)args;
     mail_open_html();
@@ -136,14 +140,17 @@ static void cmd_mail_open_html(const char *args) {
 
 static void cmd_mail_attach(const char *args) {
     /* Forms:
-     *   :mail-attach                  → open (multi fzf if >1)
+     *   :mail-attach                  → open (multi fzf if >1) from the
+     *                                   message under the cursor
+     *   :mail-attach all              → same, over the whole thread
      *   :mail-attach <n>              → open attachment n (1-based, as
      *                                   numbered in the Attachments: line)
      *   :mail-attach save [dir]       → save (multi fzf if >1) to dir
      *                                   (default ~/Downloads)
+     *   :mail-attach save all [dir]   → same, over the whole thread
      *   :mail-attach save <n> [dir]   → save attachment n to dir
      */
-    int id = -1;
+    int id = MAIL_ATT_CURSOR;
     const char *dest = NULL;
     int saving = 0;
 
@@ -152,13 +159,18 @@ static void cmd_mail_attach(const char *args) {
 
     if (strcmp(verb, "save") == 0) {
         saving = 1;
-        /* Optional id (digits) then optional dir. */
+        /* Optional id (digits) or "all", then optional dir. */
         if (*p >= '0' && *p <= '9') {
             char num[16];
             p = args_skip_ws(args_next_token(p, num, sizeof(num)));
             id = atoi(num);
+        } else if (strncmp(p, "all", 3) == 0 && (p[3] == '\0' || p[3] == ' ')) {
+            p = args_skip_ws(p + 3);
+            id = MAIL_ATT_ALL;
         }
         dest = *p ? p : "~/Downloads";
+    } else if (strcmp(verb, "all") == 0) {
+        id = MAIL_ATT_ALL;
     } else if (verb[0]) {
         id = atoi(verb);
     }
@@ -213,20 +225,22 @@ static int mail_plugin_init(void) {
     cmd("mail-mailbox", cmd_mail_mailbox,
         "scope listing to a subquery (empty = all)");
     cmd("mail-mailboxes", cmd_mail_mailboxes, "open the mailbox sidebar");
-    cmd("mail-tags", cmd_mail_tags,
-        "open the mailbox sidebar on the tag list");
+    cmd("mail-tags", cmd_mail_tags, "open the mailbox sidebar on the tag list");
     cmd("mail-delete", cmd_mail_delete,
         "mark thread(s) under cursor/selection as deleted");
     cmd("mail-reply", cmd_mail_reply,
         "reply to the message being viewed (sender only)");
     cmd("mail-reply-all", cmd_mail_reply_all,
         "reply-all to the message being viewed");
-    cmd("mail-forward", cmd_mail_forward, "forward the message being viewed");
+    cmd("mail-forward", cmd_mail_forward,
+        "forward the message under the cursor (inline + its attachments)");
+    cmd("mail-forward-eml", cmd_mail_forward_eml,
+        "forward the message under the cursor verbatim as a .eml attachment");
     cmd("mail-open-html", cmd_mail_open_html,
         "open the viewed message's HTML body in the system browser");
     cmd("mail-attach", cmd_mail_attach,
-        "open/save attachment(s) (no args: open, fzf multi-pick if >1; [n]; "
-        "'save [n] [dir]')");
+        "open/save attachment(s) of the message under the cursor (no args: "
+        "open, fzf multi-pick if >1; [n]; 'all'; 'save [n|all] [dir]')");
     cmd("mail-attach-add", cmd_mail_attach_add,
         "attach file(s) to the compose buffer ([path]; no arg: fzf "
         "multi-pick)");
@@ -265,6 +279,8 @@ static int mail_plugin_init(void) {
     cmapn_ft("mail-message", "R", "mail-reply-all",
              "reply-all to this message");
     cmapn_ft("mail-message", "f", "mail-forward", "forward this message");
+    cmapn_ft("mail-message", "F", "mail-forward-eml",
+             "forward this message verbatim as .eml");
     cmapn_ft("mail-message", "o", "mail-open-html",
              "open HTML body in system browser");
     cmapn_ft("mail-message", "a", "mail-attach",
