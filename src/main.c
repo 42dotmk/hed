@@ -23,13 +23,11 @@
 
 /* Internal helper from buf/buffer.c, not exposed in buffer.h. */
 void buf_row_insert_in(Buffer *buf, int at, const char *s, size_t len);
-
 typedef struct {
     const char *startup_cmd; /* -c argument; not owned */
     char **files;            /* heap array of argv pointers */
     int file_count;
 } CliArgs;
-
 /* ------------------------------------------------------------------------- */
 /* Argument parsing                                                          */
 

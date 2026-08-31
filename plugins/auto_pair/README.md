@@ -8,9 +8,9 @@ the close character if you're already sitting on it.
 
 | You type | Result |
 |---|---|
-| `(` `[` `{` | Inserts pair, cursor between |
+| `(` `[` `{` `<` | Inserts pair, cursor between |
 | `"` `'` `` ` `` (and you're not on a matching close) | Inserts pair, cursor between |
-| `"` `'` `` ` `` (and the next char already matches) | Cursor steps over the existing close |
+| Any closer (and the next char already matches it) | Cursor steps over the existing close |
 | `<BS>` on an opener whose close is to the right | Deletes both halves |
 
 Active in INSERT mode only. Policy-free: no special handling for

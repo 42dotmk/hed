@@ -50,6 +50,8 @@ void ts_on_buffer_close(struct HookBufferEvent *e);
 int ts_buffer_load_language(Buffer *buf, const char *lang_name);
 /* Attempt autoload by filename/filetype */
 int ts_buffer_autoload(Buffer *buf);
+/* Grammar name → editor filetype string ("c-sharp" → "csharp") */
+const char *ts_filetype_for_grammar(const char *lang);
 
 /* HOOK_RENDER_PRE handler: walks the whole-buffer tree-sitter parse,
  * splits each query capture by line, and pushes one AttrSpan per

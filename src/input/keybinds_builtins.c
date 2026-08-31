@@ -355,7 +355,7 @@ void kb_insert_newline(void) {
     /* Fire char-insert hook for '\n' so plugins like smart_indent run.
      * The non-newline insert path in editor.c skips control chars, so
      * '\n' would otherwise never reach HOOK_CHAR_INSERT. */
-    HookCharEvent ev = {buf, win->cursor.x, win->cursor.y, '\n'};
+    HookCharEvent ev = {buf, win->cursor.y, win->cursor.x, '\n'};
     hook_fire_char(HOOK_CHAR_INSERT, &ev);
 }
 

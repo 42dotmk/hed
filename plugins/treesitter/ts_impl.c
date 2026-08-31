@@ -485,6 +485,19 @@ static const char *ts_grammar_for_filetype(const char *ft) {
     return ft;
 }
 
+/* Inverse of ts_grammar_for_filetype: grammar name → the filetype
+ * string the rest of the editor keys on (filetype keybinds, folds,
+ * :fmt, smart_indent). */
+const char *ts_filetype_for_grammar(const char *lang) {
+    if (strcmp(lang, "c-sharp") == 0)
+        return "csharp";
+    if (strcmp(lang, "bash") == 0)
+        return "shell";
+    if (strcmp(lang, "make") == 0)
+        return "Makefile";
+    return lang;
+}
+
 int ts_buffer_autoload(Buffer *buf) {
     if (!buf || !buf->filename)
         return 0;

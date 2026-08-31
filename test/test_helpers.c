@@ -13,7 +13,6 @@ Ed E = {.screen_rows = 24};
 TestData *parse_test_string(const char *marked_text) {
     if (!marked_text)
         return NULL;
-
     TestData *data = calloc(1, sizeof(TestData));
     if (!data)
         return NULL;

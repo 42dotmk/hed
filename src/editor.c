@@ -288,7 +288,7 @@ static void handle_edit_mode_keypress(int c) {
         if (!iscntrl(c)) {
             BUFWIN(buf, win);
             buf_insert_char_in(buf, c);
-            HookCharEvent event = {buf, win->cursor.x, win->cursor.y, c};
+            HookCharEvent event = {buf, win->cursor.y, win->cursor.x, c};
             hook_fire_char(HOOK_CHAR_INSERT, &event);
         }
         return;

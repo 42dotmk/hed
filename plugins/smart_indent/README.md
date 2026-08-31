@@ -1,30 +1,55 @@
 # smart_indent
 
-Carries indentation onto new lines. When you press `<Enter>` in
-INSERT mode, the new line starts with the same leading whitespace
-(spaces and tabs) as the line you came from.
+Carries indentation onto new lines, adds a level after filetype-
+specific openers, and dedents when a closer starts a line.
 
 ## Behavior
 
-- Mirrors leading whitespace exactly — if the previous line started
-  with two tabs and four spaces, the new line does too.
-- After `{`, `[`, `(` at the end of the previous line: adds one
-  level of additional indent on top of the carried indent.
-- After a closing brace at the start of the new line (e.g., you type
-  `}` on a freshly auto-indented line): nothing — current behavior
-  doesn't dedent. Type `<BS>` to clean up.
+- **Carry-over**: pressing `<Enter>` (or opening a line with `o`/`O`)
+  copies the previous line's leading whitespace verbatim — a
+  tab-indented line yields a tab-indented continuation, a
+  space-indented one keeps its spaces.
+- **Bracket balance**: the carried indent shifts by the previous
+  line's net bracket count, clamped to one level. `x = [`<Enter>
+  goes one level deeper; `    2]`<Enter> comes one level back;
+  `foo(x);`<Enter> (balanced) carries unchanged. A trailing `:`
+  counts as an opener in python and yaml. A closer that *starts* the
+  line is not counted (a standalone `}` already sits at the dedented
+  level), and `"…"`/`` `…` `` string contents are skipped.
+- **Electric pair**: `<Enter>` with the cursor between a pair
+  (`{|}`, as auto_pair leaves it) puts the closer on its own line at
+  the base indent and leaves the cursor on the indented middle line.
+- **Dedent on closers**: typing `}`, `)`, or `]` as the first
+  non-whitespace char on a line removes one indent level, vim
+  cindent-style.
 
-## Notes
+One level is a tab, or `E.tab_size` spaces when `E.expand_tab` is
+set. Bracketed paste never triggers any of this — pasted text lands
+verbatim.
 
-The indent unit is a single tab character. If you use spaces, the
-carry-over still works (it copies whatever was there) but the extra
-level after `{`/`[`/`(` is a tab. If you want spaces-only, edit
-`plugins/smart_indent/smart_indent.c`.
+## Per-filetype rules
 
-The plugin hooks `HOOK_LINE_INSERT` (newline) — it does not run for
-re-indenting on `<Tab>` mid-line, paste, or block edits.
+Rules are `(filetype, indent_after, dedent_of)` with `"*"` as the
+fallback; registering a filetype again replaces its rule
+(last-write-wins). Defaults:
+
+| filetype | indent after | dedent on |
+|----------|--------------|-----------|
+| `*`      | `{ ( [`      | `} ) ]`   |
+| `python` | `{ ( [ :`    | `} ) ]`   |
+| `yaml`   | `{ ( [ :`    | `} ) ]`   |
+
+Add your own from `~/.config/hed/config.c`:
+
+```c
+#include "smart_indent/smart_indent.h"
+
+void config_user_init(void) {
+    smart_indent_register("lua", "{(", "})");
+}
+```
 
 ## Disable
 
-Set `plugin_load(&plugin_smart_indent, …)` to `0` in `src/config.c`
+Set `plugin_load(&plugin_smart_indent, …)` to `0` in `src/config.h`
 and `:reload`.

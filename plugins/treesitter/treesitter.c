@@ -74,6 +74,19 @@ static void cmd_tslang(const char *args) {
         ed_set_status_message("tslang: failed for %s", args);
         return;
     }
+    /* Adopt the language as the buffer's filetype too, so filetype
+     * keybinds, folds, :fmt and smart_indent follow the picked lang.
+     * Re-announce like :ftmap does; autoload inside the hook may flip
+     * the grammar back to the extension default, so the explicit load
+     * is re-asserted after. */
+    const char *ft = ts_filetype_for_grammar(args);
+    if (!b->filetype || strcmp(b->filetype, ft) != 0) {
+        free(b->filetype);
+        b->filetype = strdup(ft);
+        HookBufferEvent ev = {.buf = b, .filename = b->filename};
+        hook_fire_buffer(HOOK_BUFFER_OPEN, &ev);
+        ts_buffer_load_language(b, args);
+    }
     ts_buffer_reparse(b);
     ed_set_status_message("tslang: %s", args);
 }
