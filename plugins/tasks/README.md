@@ -73,6 +73,7 @@ Two tiers, both plain markdown:
 | `:task_prio <A\|B\|C>` | Set/clear `prio::` (also accepts `1`/`2`/`3`). |
 | `:task_field <key> [value]` | Upsert any field; empty value clears it. Dates/priorities are normalized. |
 | `:task_note <text>` | Append a dated log bullet to the section. |
+| `:task_new` | Start a new `[TODO]` heading right after the current section (a sibling: same level, `#` when there is no heading above) and enter insert mode with the cursor on the title. |
 | `:task_agenda [path]` | All open tasks across `*.md` → quickfix, sorted by deadline (overdue first) then priority. Scans the org root if set, else the cwd; a path argument overrides both. |
 | `:task_agenda_ignore [glob]` | Blacklist files/dirs from the agenda and `:org-files`. A glob adds an entry, no argument lists them, `clear` resets. Session-only; use `task_agenda_ignore()` in config for persistence. |
 | `:task_org_root [path]` | Set/show the org root; `clear` reverts to the cwd. Session-only; use `task_org_root()` in config. |
@@ -92,6 +93,7 @@ removes the field.
 ```
 <space>mc   :task_cycle           (acts immediately)
 <space>ma   :task_agenda          (acts immediately)
+<space>mm   :task_new             (new [TODO] heading, insert mode)
 <space>mn   :task_note ▏          (opens the : prompt pre-filled)
 <space>md   :task_deadline ▏
 <space>ms   :task_schedule ▏

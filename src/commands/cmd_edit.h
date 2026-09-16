@@ -75,4 +75,9 @@ void cmd_select(const char *args);
 void cmd_select_line(const char *args);
 void cmd_extend(const char *args);
 
+/* gg / G target row with vim count semantics (count = absolute line,
+ * a pending keybind prefix counts too); -1 for any other motion. */
+int edit_file_edge_target(const char *motion, int num_rows, int has_count,
+                          int count);
+
 #endif /* CMD_EDIT_H */

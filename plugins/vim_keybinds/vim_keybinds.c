@@ -95,6 +95,15 @@ static int vim_keybinds_init(void) {
     cmapv("j", "extend down", "down");
     cmapv("k", "extend up", "up");
     cmapv("l", "extend right", "right");
+    /* Multi-key / cmap'd motions don't reach the textobj fallback that
+     * extends single unmapped keys, and normal-mode "goto" drops the
+     * selection — so bind the extending form here. */
+    cmapv("gg", "extend gg", "start of file (or line N with count)");
+    cmapv("G", "extend G", "end of file (or line N with count)");
+    cmapv("{", "extend {", "prev paragraph");
+    cmapv("}", "extend }", "next paragraph");
+    cmapv("<C-b>", "extend pageup", "page up");
+    cmapv("<C-f>", "extend pagedown", "page down");
     /* VL/VB dispatch falls through to MODE_VISUAL bindings, so one
      * cmapv covers all three visual modes. */
     cmapv("y", "yank", "yank");

@@ -33,6 +33,10 @@
  *   :task_prio <A|B|C>    set/clear prio::.
  *   :task_field k [v]     upsert any field k (empty v clears it).
  *   :task_note <text>     append a dated log bullet to the section.
+ *   :task_new             start a new [TODO] task after the current
+ *                         section (same heading level; h1 when there is
+ *                         none) and drop into insert mode to type the
+ *                         title.                             <space>mm
  *   :task_agenda [path]   open tasks across the tree -> quickfix,
  *                         sorted by deadline+prio, overdue flagged. <space>ma
  *                         Scans the org root (task_org_root) or cwd; an
@@ -556,6 +560,20 @@ static void cmd_task_field(const char *args) {
     ed_set_status_message("task: %s set", key);
 }
 
+/* End of the section rooted at heading `hy`: the next heading whose level
+ * is <= this heading's, or end-of-buffer. Includes nested sub-headings. */
+static int section_extent(Buffer *buf, int hy) {
+    Heading h;
+    parse_heading(&buf->rows[hy], &h);
+    int r = hy + 1;
+    for (; r < buf->num_rows; r++) {
+        Heading hh;
+        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level)
+            break;
+    }
+    return r;
+}
+
 /* Insert position for a new log bullet: just after the last non-blank
  * line in the section (before the next same-or-shallower heading). */
 static int section_log_pos(Buffer *buf, int hy) {
@@ -588,6 +606,43 @@ static void cmd_task_note(const char *args) {
         n = (int)sizeof(line) - 1;
     buf_row_insert_in(buf, section_log_pos(buf, hy), line, (size_t)n);
     ed_set_status_message("task: note added");
+}
+
+/* :task_new — open a fresh "[TODO] " heading right after the section the
+ * cursor is in (a sibling: same level; h1 at end-of-buffer when there is
+ * no heading above), separated by a blank line, and enter insert mode
+ * with the cursor where the title goes. */
+static void cmd_task_new(const char *args) {
+    (void)args;
+    Buffer *buf = buf_cur();
+    Window *win = window_cur();
+    if (!buf || !win)
+        return;
+
+    int lvl = 1, at = buf->num_rows;
+    int hy = heading_at_or_above(buf, win->cursor.y);
+    if (hy >= 0) {
+        Heading h;
+        parse_heading(&buf->rows[hy], &h);
+        lvl = h.level;
+        at = section_extent(buf, hy);
+    }
+
+    char head[16];
+    memset(head, '#', (size_t)lvl);
+    snprintf(head + lvl, sizeof(head) - (size_t)lvl, " [TODO] ");
+
+    undo_begin(buf, "task_new");
+    if (at > 0 && buf->rows[at - 1].chars.len > 0)
+        buf_row_insert_in(buf, at++, "", 0);
+    buf_row_insert_in(buf, at, head, strlen(head));
+    if (at + 1 < buf->num_rows && buf->rows[at + 1].chars.len > 0)
+        buf_row_insert_in(buf, at + 1, "", 0);
+    undo_end(buf);
+
+    win->cursor.y = at;
+    win->cursor.x = (int)strlen(head);
+    ed_set_mode(MODE_INSERT);
 }
 
 /* --- org tree configuration ------------------------------------------- */
@@ -1116,20 +1171,6 @@ static void cmd_org_files(const char *args) {
  * `foo.md_archive`, stamping `archived:: <date>`. The source buffer is
  * saved so disk and buffer stay consistent — archiving is a durable move. */
 
-/* End of the section rooted at heading `hy`: the next heading whose level
- * is <= this heading's, or end-of-buffer. Includes nested sub-headings. */
-static int section_extent(Buffer *buf, int hy) {
-    Heading h;
-    parse_heading(&buf->rows[hy], &h);
-    int r = hy + 1;
-    for (; r < buf->num_rows; r++) {
-        Heading hh;
-        if (parse_heading(&buf->rows[r], &hh) && hh.level <= h.level)
-            break;
-    }
-    return r;
-}
-
 /* Common precheck: resolve the archive path and reject buffers that can't
  * be archived (no file, the quickfix buffer, or an archive file itself). */
 static int archive_precheck(Buffer **out, char *ap, size_t apcap) {
@@ -1319,6 +1360,8 @@ static int tasks_init(void) {
         "upsert any field: :task_field <key> [value]");
     cmd("task_note", cmd_task_note,
         "append a dated log bullet to the task section");
+    cmd("task_new", cmd_task_new,
+        "new [TODO] heading after the current section, then insert mode");
     cmd("task_agenda", cmd_task_agenda,
         "open tasks across the tree -> quickfix, sorted by deadline+prio");
     cmd("task_agenda_ignore", cmd_task_agenda_ignore,
@@ -1344,6 +1387,7 @@ static int tasks_init(void) {
      * invisible everywhere else. */
     cmapn_ft("markdown", " mc", "task_cycle", "task: cycle status");
     cmapn_ft("markdown", " ma", "task_agenda", "task: agenda");
+    cmapn_ft("markdown", " mm", "task_new", "task: new task");
     cmapn_ft("markdown", " mn", "prompt task_note", "task: add dated note");
     cmapn_ft("markdown", " md", "prompt task_deadline", "task: set deadline");
     cmapn_ft("markdown", " ms", "prompt task_schedule", "task: set schedule");

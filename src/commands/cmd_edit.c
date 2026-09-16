@@ -129,6 +129,27 @@ void cmd_delete_word_right(const char *args) {
     delete_obj_or_selection(textobj_word_run_fwd);
 }
 
+/* gg / G with vim count semantics, shared by :goto and :extend. A count
+ * means an absolute line — an explicit argument (":goto G 42") or a
+ * pending keybind prefix (42G; consuming it also stops keybind_invoke's
+ * repeat loop). Without a count: first / last line. Returns the target
+ * row, or -1 when `motion` is neither gg nor G. */
+int edit_file_edge_target(const char *motion, int num_rows, int has_count,
+                          int count) {
+    if (strcmp(motion, "gg") != 0 && strcmp(motion, "G") != 0)
+        return -1;
+    if (!has_count && keybind_has_pending_count()) {
+        count = keybind_get_and_clear_pending_count();
+        has_count = 1;
+    }
+    int target = has_count ? count - 1 : (motion[0] == 'G' ? num_rows - 1 : 0);
+    if (target > num_rows - 1)
+        target = num_rows - 1;
+    if (target < 0)
+        target = 0;
+    return target;
+}
+
 /* :extend <motion> [count] — enter visual mode if needed (anchor at
  * the cursor), then move, growing the selection: the command form of
  * Shift+motion in the modeless keymaps. <motion> is any registered
@@ -146,18 +167,27 @@ void cmd_extend(const char *args) {
         ed_set_status_message("Usage: :extend <motion> [count]");
         return;
     }
-    int count = 1;
+    int count = 1, has_count = 0;
     if (*args) {
         char *end;
         long c = strtol(args, &end, 10);
-        if (end != args && c >= 1)
+        if (end != args && c >= 1) {
             count = (int)c;
+            has_count = 1;
+        }
     }
 
     int began = 0;
     if (!kb_in_visual()) {
         kb_visual_begin(0);
         began = 1;
+    }
+
+    int edge = edit_file_edge_target(motion, buf->num_rows, has_count, count);
+    if (edge >= 0) {
+        win->cursor.y = edge;
+        win->cursor.x = 0;
+        return;
     }
 
     int ty = win->cursor.y, tx = win->cursor.x;

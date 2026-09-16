@@ -78,23 +78,11 @@ static void cmd_goto(const char *args) {
             has_count = 1;
         }
     }
-    /* gg / G: vim semantics. A count means an absolute line — either
-     * an explicit argument (":goto G 42") or a pending keybind prefix
-     * (42G; consuming it also stops keybind_invoke's repeat loop).
-     * Without a count: first / last line, column 0. */
-    if (strcmp(motion, "gg") == 0 || strcmp(motion, "G") == 0) {
-        if (!has_count && keybind_has_pending_count()) {
-            count = keybind_get_and_clear_pending_count();
-            has_count = 1;
-        }
-        int target =
-            has_count ? count - 1 : (motion[0] == 'G' ? buf->num_rows - 1 : 0);
-        if (target > buf->num_rows - 1)
-            target = buf->num_rows - 1;
-        if (target < 0)
-            target = 0;
-        goto_jump_save(buf, win, target);
-        win->cursor.y = target;
+    /* gg / G: vim count semantics (see edit_file_edge_target). */
+    int edge = edit_file_edge_target(motion, buf->num_rows, has_count, count);
+    if (edge >= 0) {
+        goto_jump_save(buf, win, edge);
+        win->cursor.y = edge;
         win->cursor.x = 0;
         return;
     }
