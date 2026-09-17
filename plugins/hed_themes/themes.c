@@ -14,7 +14,8 @@ static void apply_tokyo_night(void) {
     theme_palette_set("keyword", "\x1b[38;2;187;154;247m");
     theme_palette_set("type", "\x1b[38;2;42;195;222m");
     theme_palette_set("function", "\x1b[38;2;122;162;247m");
-    theme_palette_set("attribute", "\x1b[38;2;187;154;247m");
+    theme_palette_set("attribute", "\x1b[38;2;125;207;255m");
+    theme_palette_set("property", "\x1b[38;2;115;218;202m");
     theme_palette_set("label", "\x1b[38;2;224;108;117m");
     theme_palette_set("operator", "\x1b[38;2;144;153;174m");
     theme_palette_set("punctuation", "\x1b[38;2;65;72;104m");
@@ -35,6 +36,7 @@ static void apply_gruvbox(void) {
     theme_palette_set("type", "\x1b[38;2;250;189;47m");
     theme_palette_set("function", "\x1b[38;2;184;187;38m");
     theme_palette_set("attribute", "\x1b[38;2;142;192;124m");
+    theme_palette_set("property", "\x1b[38;2;131;165;152m");
     theme_palette_set("label", "\x1b[38;2;254;128;25m");
     theme_palette_set("operator", "\x1b[38;2;168;153;132m");
     theme_palette_set("punctuation", "\x1b[38;2;124;111;100m");
@@ -55,6 +57,7 @@ static void apply_dracula(void) {
     theme_palette_set("type", "\x1b[38;2;139;233;253m");
     theme_palette_set("function", "\x1b[38;2;80;250;123m");
     theme_palette_set("attribute", "\x1b[38;2;255;121;198m");
+    theme_palette_set("property", "\x1b[38;2;255;184;108m");
     theme_palette_set("label", "\x1b[38;2;255;184;108m");
     theme_palette_set("operator", "\x1b[38;2;255;121;198m");
     theme_palette_set("punctuation", "\x1b[38;2;98;114;164m");
@@ -74,7 +77,8 @@ static void apply_catppuccin_mocha(void) {
     theme_palette_set("keyword", "\x1b[38;2;203;166;247m");
     theme_palette_set("type", "\x1b[38;2;249;226;175m");
     theme_palette_set("function", "\x1b[38;2;137;180;250m");
-    theme_palette_set("attribute", "\x1b[38;2;203;166;247m");
+    theme_palette_set("attribute", "\x1b[38;2;245;194;231m");
+    theme_palette_set("property", "\x1b[38;2;180;190;254m");
     theme_palette_set("label", "\x1b[38;2;243;139;168m");
     theme_palette_set("operator", "\x1b[38;2;148;226;213m");
     theme_palette_set("punctuation", "\x1b[38;2;108;112;134m");
@@ -94,7 +98,8 @@ static void apply_nord(void) {
     theme_palette_set("keyword", "\x1b[38;2;129;161;193m");
     theme_palette_set("type", "\x1b[38;2;143;188;187m");
     theme_palette_set("function", "\x1b[38;2;136;192;208m");
-    theme_palette_set("attribute", "\x1b[38;2;129;161;193m");
+    theme_palette_set("attribute", "\x1b[38;2;208;135;112m");
+    theme_palette_set("property", "\x1b[38;2;216;222;233m");
     theme_palette_set("label", "\x1b[38;2;191;97;106m");
     theme_palette_set("operator", "\x1b[38;2;216;222;233m");
     theme_palette_set("punctuation", "\x1b[38;2;76;86;106m");
@@ -115,6 +120,7 @@ static void apply_rose_pine(void) {
     theme_palette_set("type", "\x1b[38;2;196;167;231m");
     theme_palette_set("function", "\x1b[38;2;156;207;216m");
     theme_palette_set("attribute", "\x1b[38;2;196;167;231m");
+    theme_palette_set("property", "\x1b[38;2;235;188;186m");
     theme_palette_set("label", "\x1b[38;2;235;111;146m");
     theme_palette_set("operator", "\x1b[38;2;144;140;170m");
     theme_palette_set("punctuation", "\x1b[38;2;82;79;103m");

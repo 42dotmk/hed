@@ -78,6 +78,12 @@ void draw_status_bar(Abuf *ab, const Layout *lo) {
     int rlen =
         snprintf(rstatus, sizeof(rstatus), "%d:%d ",
                  cwin ? cwin->cursor.y + 1 : 1, cwin ? cwin->cursor.x + 1 : 1);
+    /* snprintf reports the untruncated length; clamp to what's in the
+     * buffer before appending (long absolute paths after an LSP jump). */
+    if (len >= (int)sizeof(status))
+        len = (int)sizeof(status) - 1;
+    if (rlen >= (int)sizeof(rstatus))
+        rlen = (int)sizeof(rstatus) - 1;
     if (len > lo->term_cols)
         len = lo->term_cols;
     ansi_move(ab, lo->status_row, 1);

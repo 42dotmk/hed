@@ -1,6 +1,5 @@
 build/
 vendor/build/
-queries
 ts/tsi
 ts-langs
 .hedlog

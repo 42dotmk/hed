@@ -24,6 +24,8 @@ static const LspServerDef SERVERS[] = {
      ROOTS("tsconfig.json", "package.json", ".git")},
     {"lua", ARGV("lua-language-server"), ROOTS(".luarc.json", ".git")},
     {"zig", ARGV("zls"), ROOTS("build.zig", ".git")},
+    /* dotnet tool install -g csharp-ls */
+    {"csharp", ARGV("csharp-ls"), ROOTS("*.sln", "*.csproj", ".git")},
 };
 
 const LspServerDef *lsp_servers_lookup(const char *lang) {

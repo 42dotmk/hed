@@ -2,6 +2,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fnmatch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -281,6 +282,19 @@ char *fs_path_detect_filetype(const char *path) {
     return strdup(ext);
 }
 
+/* True if any entry of `dir` matches the shell glob `pat` (*.sln). */
+static bool dir_has_glob(const char *dir, const char *pat) {
+    DIR *d = opendir(dir);
+    if (!d)
+        return false;
+    bool hit = false;
+    struct dirent *de;
+    while (!hit && (de = readdir(d)))
+        hit = fnmatch(pat, de->d_name, 0) == 0;
+    closedir(d);
+    return hit;
+}
+
 bool fs_find_root_marker(const char *start, const char *const *markers,
                          char *out, size_t out_sz) {
     if (!start || !markers || !out || out_sz == 0)
@@ -303,8 +317,10 @@ bool fs_find_root_marker(const char *start, const char *const *markers,
     for (;;) {
         for (int i = 0; markers[i]; i++) {
             char probe[PATH_MAX];
-            if (fs_path_join(probe, sizeof(probe), dir, markers[i]) &&
-                fs_exists(probe)) {
+            if (strpbrk(markers[i], "*?[")
+                    ? dir_has_glob(dir, markers[i])
+                    : fs_path_join(probe, sizeof(probe), dir, markers[i]) &&
+                          fs_exists(probe)) {
                 snprintf(out, out_sz, "%s", dir);
                 return true;
             }

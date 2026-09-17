@@ -4,6 +4,7 @@
 #include "ts.h"
 #include <dlfcn.h>
 #include <limits.h>
+#include <regex.h>
 #include <tree_sitter/api.h>
 
 /*
@@ -44,6 +45,9 @@ typedef struct {
     void *dl_handle;
     char lang_name[32];
     int parsed_dirty; /* last buf->dirty value parsed; -1 = needs parse */
+    char *src;        /* text the trees were parsed from (node byte
+                         offsets index into it); predicates read it */
+    size_t src_len;
 
     TSInjectionRange *injections;
     int num_injections;
@@ -128,6 +132,7 @@ static void ts_state_destroy(Buffer *buf) {
     if (st) {
         if (st->tree)
             ts_tree_delete(st->tree);
+        free(st->src);
         if (st->parser)
             ts_parser_delete(st->parser);
         if (st->query)
@@ -260,8 +265,13 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
         return 0;
     }
 
+    /* Grammar names may carry '-' (c-sharp); the exported symbol
+     * uses '_' (tree_sitter_c_sharp). */
     char sym[64];
     snprintf(sym, sizeof(sym), "tree_sitter_%s", lang_name);
+    for (char *c = sym; *c; c++)
+        if (*c == '-')
+            *c = '_';
     /* dlsym returns void*; converting to a function pointer is POSIX-blessed
      * but ISO C forbids it. The cast is required by the ABI we're calling. */
 #pragma GCC diagnostic push
@@ -269,6 +279,8 @@ static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
     TSLanguage *(*langfn)(void) = (TSLanguage * (*)(void)) dlsym(h, sym);
 #pragma GCC diagnostic pop
     if (!langfn) {
+        log_msg("TS dlsym failed for lang %s: no %s in %s", lang_name, sym,
+                path);
         dlclose(h);
         return 0;
     }
@@ -352,14 +364,16 @@ static TSQuery *parse_query_string(TSLanguage *lang, const char *src,
  *   1. <base>/queries.local/<lang>/<qname>   — user override (handwritten)
  *   2. plugin-registered embedded string      — enhanced defaults shipped
  *                                               by a plugin (e.g. markdown)
- *   3. <base>/queries/<lang>/<qname>          — tsi-installed defaults from
- *                                               upstream nvim-treesitter
- *   4. ./queries/<lang>/<qname>               — cwd-local (development)
+ *   3. HED_SRC_DIR/queries/<lang>/<qname>     — enhanced defaults shipped
+ *                                               in-tree (e.g. c-sharp)
+ *   4. <base>/queries/<lang>/<qname>          — tsi-installed defaults from
+ *                                               the upstream grammar
+ *   5. ./queries/<lang>/<qname>               — cwd-local (development)
  *
  * Rationale: tsi-installed XDG queries are just bundled upstream defaults
- * and shouldn't beat a plugin shipping enhanced defaults at the editor
- * level. Users who want to override a plugin's queries drop their file in
- * <base>/queries.local/, which wins over everything. */
+ * and shouldn't beat enhanced defaults shipped at the editor level (by a
+ * plugin or in-tree). Users who want to override those drop their file
+ * in <base>/queries.local/, which wins over everything. */
 static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
                                 const char *qname) {
     char base[PATH_MAX];
@@ -388,7 +402,21 @@ static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
             return q;
     }
 
-    /* 3. tsi-installed defaults */
+    /* 3. in-tree enhanced defaults */
+#ifdef HED_SRC_DIR
+    {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+        snprintf(qpath, sizeof(qpath), HED_SRC_DIR "/queries/%s/%s", lang_name,
+                 qname);
+#pragma GCC diagnostic pop
+        TSQuery *q = load_query_file(lang, qpath);
+        if (q)
+            return q;
+    }
+#endif
+
+    /* 4. tsi-installed defaults */
     if (base[0]) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
@@ -400,7 +428,7 @@ static TSQuery *load_lang_query(TSLanguage *lang, const char *lang_name,
             return q;
     }
 
-    /* 4. cwd-local */
+    /* 5. cwd-local */
     snprintf(qpath, sizeof(qpath), "queries/%s/%s", lang_name, qname);
     return load_query_file(lang, qpath);
 }
@@ -434,6 +462,9 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
         ts_tree_delete(st->tree);
         st->tree = NULL;
     }
+    free(st->src);
+    st->src = NULL;
+    st->src_len = 0;
     if (st->query) {
         ts_query_delete(st->query);
         st->query = NULL;
@@ -620,6 +651,179 @@ static int find_set_string_value(const TSQuery *q, uint32_t pattern_idx,
         i = j + 1;
     }
     return 0;
+}
+
+/* ===================================================================
+ * Predicate evaluation: #eq? #not-eq? #match? #not-match? #any-of?
+ *
+ * tree-sitter's C API hands back every match regardless of predicates;
+ * evaluating them is the caller's job. Directives (#set!) and unknown
+ * predicates are ignored, i.e. the pattern matches.
+ * =================================================================== */
+
+typedef struct {
+    char *key; /* regex source */
+    regex_t *value;
+} RegexEntry;
+
+static RegexEntry *g_regex_cache = NULL; /* stb_ds string map */
+
+/* Upstream queries are written for Rust's regex crate; POSIX ERE lacks
+ * the \d \w \s classes, so rewrite those (bare inside a bracket
+ * expression, bracketed outside). Everything else passes through. */
+static void regex_to_ere(const char *in, size_t in_len, char *out,
+                         size_t out_sz) {
+    size_t o = 0;
+    int in_bracket = 0;
+    for (size_t i = 0; i < in_len && o + 16 < out_sz; i++) {
+        const char *rep = NULL;
+        if (in[i] == '\\' && i + 1 < in_len) {
+            switch (in[i + 1]) {
+            case 'd':
+                rep = in_bracket ? "0-9" : "[0-9]";
+                break;
+            case 'w':
+                rep = in_bracket ? "A-Za-z0-9_" : "[A-Za-z0-9_]";
+                break;
+            case 's':
+                rep = in_bracket ? "[:space:]" : "[[:space:]]";
+                break;
+            default:
+                /* keep the escape pair verbatim so a "\[" doesn't
+                 * start a bracket expression below */
+                out[o++] = in[i];
+                out[o++] = in[i + 1];
+                i++;
+                continue;
+            }
+        }
+        if (rep) {
+            size_t rl = strlen(rep);
+            memcpy(out + o, rep, rl);
+            o += rl;
+            i++;
+            continue;
+        }
+        if (in[i] == '[' && !in_bracket)
+            in_bracket = 1;
+        else if (in[i] == ']' && in_bracket)
+            in_bracket = 0;
+        out[o++] = in[i];
+    }
+    out[o] = '\0';
+}
+
+static regex_t *regex_cached(const char *pat, uint32_t pat_len) {
+    char key[256];
+    if (pat_len >= sizeof(key))
+        return NULL;
+    memcpy(key, pat, pat_len);
+    key[pat_len] = '\0';
+    if (!g_regex_cache)
+        sh_new_strdup(g_regex_cache);
+    RegexEntry *e = shgetp_null(g_regex_cache, key);
+    if (e)
+        return e->value; /* NULL if it failed to compile once */
+    char ere[512];
+    regex_to_ere(pat, pat_len, ere, sizeof(ere));
+    regex_t *re = malloc(sizeof(*re));
+    if (re && regcomp(re, ere, REG_EXTENDED | REG_NOSUB) != 0) {
+        log_msg("TS: bad #match? regex '%s'", key);
+        free(re);
+        re = NULL;
+    }
+    shput(g_regex_cache, key, re);
+    return re;
+}
+
+/* Text of the first captured node with capture index `id`, or NULL. */
+static const char *match_capture_text(const TSQueryMatch *m, uint32_t id,
+                                      const char *src, size_t src_len,
+                                      uint32_t *len_out) {
+    for (uint32_t i = 0; i < m->capture_count; i++) {
+        if (m->captures[i].index != id)
+            continue;
+        uint32_t s = ts_node_start_byte(m->captures[i].node);
+        uint32_t e = ts_node_end_byte(m->captures[i].node);
+        if (e > src_len || s > e)
+            return NULL;
+        *len_out = e - s;
+        return src + s;
+    }
+    return NULL;
+}
+
+static int match_predicates_ok(const TSQuery *q, const TSQueryMatch *m,
+                               const char *src, size_t src_len) {
+    uint32_t step_count = 0;
+    const TSQueryPredicateStep *steps =
+        ts_query_predicates_for_pattern(q, m->pattern_index, &step_count);
+    if (!steps || step_count == 0 || !src)
+        return 1;
+
+    uint32_t i = 0;
+    while (i < step_count) {
+        uint32_t j = i;
+        while (j < step_count && steps[j].type != TSQueryPredicateStepTypeDone)
+            j++;
+        /* Predicate occupies [i, j): name, then arguments. */
+        uint32_t nlen = 0;
+        const char *name =
+            steps[i].type == TSQueryPredicateStepTypeString
+                ? ts_query_string_value_for_id(q, steps[i].value_id, &nlen)
+                : NULL;
+        int negate = name && nlen > 4 && memcmp(name, "not-", 4) == 0;
+        const char *op = negate ? name + 4 : name;
+        uint32_t olen = negate ? nlen - 4 : nlen;
+        int is_eq = name && olen == 3 && memcmp(op, "eq?", 3) == 0;
+        int is_match = name && olen == 6 && memcmp(op, "match?", 6) == 0;
+        int is_any =
+            name && !negate && olen == 7 && memcmp(op, "any-of?", 7) == 0;
+
+        if ((is_eq || is_match || is_any) && j >= i + 3 &&
+            steps[i + 1].type == TSQueryPredicateStepTypeCapture) {
+            uint32_t tlen = 0;
+            const char *text = match_capture_text(m, steps[i + 1].value_id, src,
+                                                  src_len, &tlen);
+            int ok = 0;
+            if (text && is_match) {
+                uint32_t plen = 0;
+                const char *pat = ts_query_string_value_for_id(
+                    q, steps[i + 2].value_id, &plen);
+                regex_t *re = pat ? regex_cached(pat, plen) : NULL;
+                if (re) {
+                    char tmp[512];
+                    if (tlen < sizeof(tmp)) {
+                        memcpy(tmp, text, tlen);
+                        tmp[tlen] = '\0';
+                        ok = regexec(re, tmp, 0, NULL, 0) == 0;
+                    }
+                } else {
+                    ok = !negate; /* unusable regex: don't filter */
+                }
+            } else if (text) {
+                /* eq? against a string or a second capture; any-of?
+                 * against each remaining string. */
+                for (uint32_t k = i + 2; k < j && !ok; k++) {
+                    uint32_t olen2 = 0;
+                    const char *other =
+                        steps[k].type == TSQueryPredicateStepTypeCapture
+                            ? match_capture_text(m, steps[k].value_id, src,
+                                                 src_len, &olen2)
+                            : ts_query_string_value_for_id(q, steps[k].value_id,
+                                                           &olen2);
+                    ok = other && olen2 == tlen &&
+                         memcmp(other, text, tlen) == 0;
+                }
+            }
+            if (negate)
+                ok = !ok;
+            if (!ok)
+                return 0;
+        }
+        i = j + 1;
+    }
+    return 1;
 }
 
 static TSPoint byte_to_point(const char *src, uint32_t byte) {
@@ -867,7 +1071,9 @@ void ts_buffer_reparse(Buffer *buf) {
     collect_injections(st, src, len);
     reparse_sub_langs(st, src, len);
 
-    free(src);
+    free(st->src);
+    st->src = src;
+    st->src_len = len;
 }
 
 /* ===================================================================
@@ -892,6 +1098,7 @@ void ts_seed_default_theme(void) {
     theme_palette_set("type", COLOR_TYPE);
     theme_palette_set("function", COLOR_FUNCTION);
     theme_palette_set("attribute", COLOR_ATTRIBUTE);
+    theme_palette_set("property", COLOR_PROPERTY);
     theme_palette_set("label", COLOR_LABEL);
     theme_palette_set("operator", COLOR_OPERATOR);
     theme_palette_set("punctuation", COLOR_PUNCT);
@@ -918,7 +1125,7 @@ void ts_seed_default_theme(void) {
     highlight_set("module", "type");
     highlight_set("constructor", "type");
     highlight_set("function", "function");
-    highlight_set("property", "attribute");
+    highlight_set("property", "property");
     highlight_set("attribute", "attribute");
     highlight_set("label", "label");
     highlight_set("operator", "operator");
@@ -946,10 +1153,10 @@ static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
 /* Push spans for one (tree, query) over a byte range, splitting each
  * query capture by line boundaries. `line_starts[r]` is the chars-
  * space byte offset where row r begins. */
-static void push_spans_from_tree(TSTree *tree, TSQuery *query,
-                                 uint32_t range_start, uint32_t range_end,
-                                 uint32_t clip_start, uint32_t clip_end,
-                                 const uint32_t *line_starts,
+static void push_spans_from_tree(TSTree *tree, TSQuery *query, const char *src,
+                                 size_t src_len, uint32_t range_start,
+                                 uint32_t range_end, uint32_t clip_start,
+                                 uint32_t clip_end, const uint32_t *line_starts,
                                  const int *line_lens, int num_rows,
                                  AttrSpans *spans) {
     if (!tree || !query)
@@ -959,10 +1166,19 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query,
     ts_query_cursor_exec(cur, query, root);
     ts_query_cursor_set_byte_range(cur, range_start, range_end);
 
+    /* Iterate captures, not matches: next_capture yields them ordered
+     * by node start byte, ties by pattern index. Pushed in that order,
+     * the span tiebreak (later push wins) gives the nvim-treesitter
+     * semantics every upstream query is written against — a later
+     * pattern overrides an earlier one on the same node, and an inner
+     * node overrides the outer one enclosing it. */
     TSQueryMatch m;
-    while (ts_query_cursor_next_match(cur, &m)) {
-        for (uint32_t i = 0; i < m.capture_count; i++) {
-            TSQueryCapture c = m.captures[i];
+    uint32_t ci;
+    while (ts_query_cursor_next_capture(cur, &m, &ci)) {
+        if (!match_predicates_ok(query, &m, src, src_len))
+            continue;
+        {
+            TSQueryCapture c = m.captures[ci];
             const char *name;
             uint32_t nlen;
             name = ts_query_capture_name_for_id(query, c.index, &nlen);
@@ -1047,8 +1263,8 @@ void ts_render_pre_hook(const struct HookRenderEvent *event) {
     uint32_t total = off > 0 ? off - 1 : 0;
 
     /* Host segments over the whole buffer. */
-    push_spans_from_tree(st->tree, st->query, 0, total, 0, total, line_starts,
-                         line_lens, n, event->spans);
+    push_spans_from_tree(st->tree, st->query, st->src, st->src_len, 0, total, 0,
+                         total, line_starts, line_lens, n, event->spans);
 
     /* Sub-language segments for each injection range. */
     for (int j = 0; j < st->num_injections; j++) {
@@ -1056,9 +1272,10 @@ void ts_render_pre_hook(const struct HookRenderEvent *event) {
         TSSubLang *sub = find_sub_lang(st, ir->lang_name);
         if (!sub || !sub->tree || !sub->query)
             continue;
-        push_spans_from_tree(sub->tree, sub->query, ir->start_byte,
-                             ir->end_byte, ir->start_byte, ir->end_byte,
-                             line_starts, line_lens, n, event->spans);
+        push_spans_from_tree(sub->tree, sub->query, st->src, st->src_len,
+                             ir->start_byte, ir->end_byte, ir->start_byte,
+                             ir->end_byte, line_starts, line_lens, n,
+                             event->spans);
     }
 
     free(line_starts);

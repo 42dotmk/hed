@@ -25,7 +25,8 @@ typedef struct {
     int col_start;   /* inclusive, in chars-space byte offset */
     int col_end;     /* exclusive */
     const char *sgr; /* borrowed; lifetime must outlive the frame */
-    int priority;    /* higher wins on overlap; ties: insertion order */
+    int priority;    /* higher wins on overlap; ties: later push wins */
+    int seq;         /* push order within the frame (set by push) */
 } AttrSpan;
 
 typedef struct {
@@ -59,7 +60,9 @@ void attrspan_push(AttrSpans *s, int row, int col_start, int col_end,
 void attrspan_sort(AttrSpans *s);
 
 /* Find the span covering (row, col) with the highest priority among
- * those that match. Returns NULL if no span covers it. O(log n + k)
+ * those that match; on equal priority the later push wins (layered
+ * paint — how tree-sitter queries expect overlapping captures to
+ * resolve). Returns NULL if no span covers it. O(log n + k)
  * once `s` is sorted; otherwise linear. */
 const AttrSpan *attrspan_at(const AttrSpans *s, int row, int col);
 

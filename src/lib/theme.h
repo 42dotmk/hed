@@ -18,14 +18,14 @@
 #define COLOR_KEYWORD RGBC(187, 154, 247)  /* #bb9af7 */
 #define COLOR_TYPE RGBC(42, 195, 222)      /* #2ac3de */
 #define COLOR_FUNCTION RGBC(122, 162, 247) /* #7aa2f7 */
-#define COLOR_PROPERTY RGBC(192, 202, 245) /* reuse fg for properties */
+#define COLOR_PROPERTY RGBC(115, 218, 202) /* members, fields, properties */
 #define COLOR_LABEL RGBC(224, 108, 117)    /* ~#e06c75 */
 #define COLOR_OPERATOR RGBC(144, 153, 174) /* #9099ae-ish */
 #define COLOR_DELIMITER RGBC(65, 72, 104)  /* #414868 */
 
 /* Special categories */
 #define COLOR_BUILTIN RGBC(255, 158, 100)   /* builtins, macros */
-#define COLOR_ATTRIBUTE RGBC(187, 154, 247) /* attributes/annotations */
+#define COLOR_ATTRIBUTE RGBC(125, 207, 255) /* attributes/annotations */
 #define COLOR_PUNCT COLOR_DELIMITER         /* alias for punctuation.* */
 
 /* Diagnostics / messages */

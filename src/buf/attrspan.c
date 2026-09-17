@@ -50,6 +50,7 @@ void attrspan_push(AttrSpans *s, int row, int col_start, int col_end,
         .col_end = col_end,
         .sgr = sgr,
         .priority = priority,
+        .seq = s->items ? (int)arrlen(s->items) : 0,
     };
     arrput(s->items, span);
     s->sorted = 0;
@@ -63,7 +64,8 @@ static int span_cmp(const void *a, const void *b) {
         return x->col_start < y->col_start ? -1 : 1;
     if (x->priority != y->priority)
         return x->priority > y->priority ? -1 : 1;
-    return 0;
+    /* qsort is not stable; seq keeps overlap resolution deterministic. */
+    return x->seq < y->seq ? -1 : 1;
 }
 
 void attrspan_sort(AttrSpans *s) {
@@ -116,7 +118,8 @@ const AttrSpan *attrspan_at(const AttrSpans *s, int row, int col) {
                 break; /* sorted by col_start asc */
             if (col >= sp->col_end)
                 continue;
-            if (!best || sp->priority > best->priority)
+            if (!best || sp->priority > best->priority ||
+                (sp->priority == best->priority && sp->seq > best->seq))
                 best = sp;
         }
         return best;
@@ -130,7 +133,8 @@ const AttrSpan *attrspan_at(const AttrSpans *s, int row, int col) {
             continue;
         if (col < sp->col_start || col >= sp->col_end)
             continue;
-        if (!best || sp->priority > best->priority)
+        if (!best || sp->priority > best->priority ||
+            (sp->priority == best->priority && sp->seq > best->seq))
             best = sp;
     }
     return best;

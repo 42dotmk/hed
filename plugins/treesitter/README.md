@@ -56,11 +56,22 @@ shipped in the editor binary.
 
 ## Highlight queries
 
-Color decisions come from the queries under
-[`queries/<lang>/highlights.scm`](../../queries/) in this repository
-— the same files used by neovim's tree-sitter plugin. If you write
-your own queries, drop them at `~/.config/hed/ts/queries/<lang>/`
-and they take precedence.
+Colour decisions come from a `highlights.scm` per language. Lookup
+order, first hit wins:
+
+1. `~/.config/hed/ts/queries.local/<lang>/` — your handwritten override
+2. a query registered by a plugin (`ts_register_query`, e.g. markdown)
+3. [`queries/<lang>/`](../../queries/) in this repository — enhanced
+   defaults shipped in-tree (c-sharp so far)
+4. `~/.config/hed/ts/queries/<lang>/` — the upstream grammar's own
+   queries, copied by `tsi`
+5. `./queries/<lang>/` relative to the cwd (development)
+
+Queries are written nvim-treesitter style: on the same node a later
+pattern wins, an inner node wins over the outer one enclosing it, and
+the `#eq?` / `#not-eq?` / `#match?` / `#not-match?` / `#any-of?`
+predicates are evaluated (`#match?` regexes are translated from Rust
+syntax to POSIX ERE — `\d`, `\w`, `\s` are rewritten).
 
 ## Notes
 

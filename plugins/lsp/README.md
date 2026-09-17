@@ -2,7 +2,8 @@
 
 A Language Server Protocol client. Spawns servers from a built-in
 registry (clangd, rust-analyzer, pyright, gopls, typescript-language-
-server, lua-language-server, zls — see `lsp_servers.c`) and integrates
+server, lua-language-server, zls, csharp-ls — see `lsp_servers.c`) and
+integrates
 hover, goto-definition, diagnostics and completion into hed.
 
 **Opt-in:** nothing runs until you say so. `:lsp_start` spawns the

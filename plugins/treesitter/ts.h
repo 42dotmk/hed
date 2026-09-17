@@ -25,8 +25,9 @@ void ts_seed_default_theme(void);
  * Lookup order during ts_buffer_load_language:
  *   1. ~/.config/hed/ts/queries.local/<lang>/<qname>  (handwritten override)
  *   2. plugin-registered string for (lang, qname)      (this registry)
- *   3. ~/.config/hed/ts/queries/<lang>/<qname>         (tsi-installed)
- *   4. ./queries/<lang>/<qname>                        (cwd-local, dev)
+ *   3. HED_SRC_DIR/queries/<lang>/<qname>              (in-tree defaults)
+ *   4. ~/.config/hed/ts/queries/<lang>/<qname>         (tsi-installed)
+ *   5. ./queries/<lang>/<qname>                        (cwd-local, dev)
  *
  * Returns 0 on success. Declared weak so plugins outside the treesitter
  * plugin can guard their calls. */
