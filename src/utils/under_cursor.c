@@ -180,6 +180,12 @@ int buf_get_path_under_cursor(StrBuf *out, int *out_line, int *out_col) {
         return 0;
     }
 
+    /* Windows-style separators (samples\Web\Web.csproj in .sln and
+     * .csproj files) are meant as directories, not as part of the name. */
+    for (size_t i = 0; i < out->len; i++)
+        if (out->data[i] == '\\')
+            out->data[i] = '/';
+
     /* URI-shaped tokens (mail://thread:…, http://…) stay verbatim —
      * their trailing :digits belong to the target, not a position. */
     if (!strstr(out->data, "://"))
