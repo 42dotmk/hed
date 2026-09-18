@@ -593,12 +593,32 @@ int ts_buffer_autoload(Buffer *buf) {
             want = "ini";
         else if (strcmp(ext, "md") == 0 || strcmp(ext, "markdown") == 0)
             want = "markdown";
+        else if (strcmp(ext, "xml") == 0 || strcmp(ext, "csproj") == 0 ||
+                 strcmp(ext, "props") == 0 || strcmp(ext, "targets") == 0 ||
+                 strcmp(ext, "nuspec") == 0 || strcmp(ext, "resx") == 0 ||
+                 strcmp(ext, "xaml") == 0 || strcmp(ext, "svg") == 0 ||
+                 strcmp(ext, "xsd") == 0 || strcmp(ext, "xsl") == 0 ||
+                 strcmp(ext, "xslt") == 0 || strcmp(ext, "plist") == 0)
+            want = "xml";
     }
 
     if (!want) {
         const char *base = fs_path_basename(buf->filename);
         if (strcmp(base, "makefile") == 0 || strcmp(base, "Makefile") == 0)
             want = "make";
+    }
+
+    /* Anything else: a grammar installed under the extension's own name
+     * (`tsi zig` → zig.so for .zig) works without a table entry. */
+    if (!want && *ext) {
+        char base[PATH_MAX], path[PATH_MAX];
+        ts_default_base(base, sizeof(base));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+        snprintf(path, sizeof(path), "%s/%s.so", base[0] ? base : "ts", ext);
+#pragma GCC diagnostic pop
+        if (access(path, R_OK) == 0)
+            want = ext;
     }
 
     if (!want)

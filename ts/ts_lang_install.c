@@ -142,12 +142,20 @@ static int copy_file(const char *src, const char *dst) {
     return 0;
 }
 
-/* Install a single query file from <build_dir>/queries/<qname> to
- * <install_base>/queries/<lang>/<qname>. Missing source is not an error. */
-static int install_query(const char *build_dir, const char *install_base,
-                         const char *lang, const char *qname) {
+/* Install a single query file to <install_base>/queries/<lang>/<qname>.
+ * Looked up in the grammar dir (<build_dir>/queries/<qname>), then in a
+ * multi-grammar repo's root (<repo_root>/queries/<lang>/<qname>, as in
+ * tree-sitter-xml), then <repo_root>/queries/<qname>. Missing source is
+ * not an error. */
+static int install_query(const char *build_dir, const char *repo_root,
+                         const char *install_base, const char *lang,
+                         const char *qname) {
     char src[1024];
     snprintf(src, sizeof(src), "%s/queries/%s", build_dir, qname);
+    if (!file_exists(src))
+        snprintf(src, sizeof(src), "%s/queries/%s/%s", repo_root, lang, qname);
+    if (!file_exists(src))
+        snprintf(src, sizeof(src), "%s/queries/%s", repo_root, qname);
     if (!file_exists(src)) {
         fprintf(stderr, "  (no %s)\n", qname);
         return 0;
@@ -294,12 +302,17 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Some grammars (e.g. markdown) nest the actual parser under a
-     * subdirectory named tree-sitter-<lang>/ instead of src/ at the root.
-     * Detect this and descend into the subdirectory. */
+    /* Multi-grammar repos nest the actual parser under a subdirectory
+     * instead of src/ at the root: tree-sitter-<lang>/ (markdown) or
+     * <lang>/ (xml, dtd). Detect this and descend into it; the repo
+     * root is kept for queries that live there (queries/<lang>/). */
+    char repo_root[1024];
+    snprintf(repo_root, sizeof(repo_root), "%s", build_dir);
     if (!file_exists("src/parser.c")) {
         char subdir[256];
         snprintf(subdir, sizeof(subdir), "tree-sitter-%s", lang);
+        if (!file_exists(subdir))
+            snprintf(subdir, sizeof(subdir), "%s", lang);
         if (file_exists(subdir)) {
             fprintf(stderr, "Detected nested layout, entering %s/\n", subdir);
             if (chdir(subdir) != 0) {
@@ -381,11 +394,11 @@ int main(int argc, char **argv) {
     }
 
     /* Install query files (highlights, injections, locals) if present. */
-    if (install_query(build_dir, base, lang, "highlights.scm") < 0)
+    if (install_query(build_dir, repo_root, base, lang, "highlights.scm") < 0)
         return 1;
-    if (install_query(build_dir, base, lang, "injections.scm") < 0)
+    if (install_query(build_dir, repo_root, base, lang, "injections.scm") < 0)
         return 1;
-    if (install_query(build_dir, base, lang, "locals.scm") < 0)
+    if (install_query(build_dir, repo_root, base, lang, "locals.scm") < 0)
         return 1;
 
     fprintf(stderr, "Done. Language '%s' installed.\n", lang);
