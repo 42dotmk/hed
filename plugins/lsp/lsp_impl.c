@@ -3,11 +3,14 @@
 #include "json_helpers.h"
 #include "jsonrpc/jsonrpc.h"
 #include "lsp.h"
+#include "lsp_edit.h"
 #include "lsp_hooks.h"
 #include "lsp_servers.h"
 #include "select_loop.h"
+#include "utils/buf_special.h"
 #include "utils/quickfix.h"
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <netdb.h>
 #include <poll.h>
 #include <signal.h>
@@ -25,6 +28,13 @@ typedef enum {
     LSP_REQ_HOVER,
     LSP_REQ_DEFINITION,
     LSP_REQ_COMPLETION,
+    LSP_REQ_METADATA, /* csharp/metadata: fetch decompiled source */
+    LSP_REQ_CODE_ACTION,
+    LSP_REQ_CODE_ACTION_RESOLVE,
+    LSP_REQ_EXECUTE_COMMAND,
+    LSP_REQ_RENAME,
+    LSP_REQ_FORMATTING,
+    LSP_REQ_REFERENCES,
 } LspReqKind;
 
 typedef struct {
@@ -38,6 +48,15 @@ typedef struct {
     int req_col;
     /* Completion-menu generation token (see completion_provide). */
     unsigned token;
+    /* For LSP_REQ_METADATA: the virtual document URI the definition
+     * pointed into (heap, owned; freed by the response handler) and the
+     * position to land on once its source arrives (req_line/req_col).
+     * For LSP_REQ_FORMATTING: the document the edits apply to. */
+    char *uri;
+    /* For LSP_REQ_CODE_ACTION: 1 when the request carried a kind
+     * filter (`:lsp_code_action <kind>`), so a lone result is applied
+     * without asking. */
+    int auto_apply;
 } LspPending;
 
 struct LspServer {
@@ -56,6 +75,14 @@ struct LspServer {
     /* completionProvider.triggerCharacters from the initialize result,
      * flattened to a set of single bytes ('.', ':', '>', ...). */
     char trigger_chars[32];
+
+    /* ServerCapabilities we gate requests on (0/1). */
+    int cap_code_action;
+    int cap_code_action_resolve;
+    int cap_rename;
+    int cap_formatting;
+    int cap_range_formatting;
+    int cap_references;
 
     /* Incoming message framing */
     JrpcReader reader;
@@ -86,6 +113,7 @@ typedef struct {
 typedef struct {
     char *uri;
     LspDiag *items; /* stb_ds */
+    cJSON *raw;     /* the Diagnostic[] as published, for codeAction context */
 } LspDiagFile;
 
 static LspDiagFile *g_diags = NULL; /* stb_ds */
@@ -102,6 +130,10 @@ static LspServer *lsp_server_for_lang(const char *lang) {
     return NULL;
 }
 
+int lsp_server_running(const char *lang) {
+    return lsp_server_for_lang(lang) != NULL;
+}
+
 static LspServer *lsp_server_for_buffer(Buffer *buf) {
     if (!buf || !buf->filetype)
         return NULL;
@@ -109,44 +141,23 @@ static LspServer *lsp_server_for_buffer(Buffer *buf) {
 }
 
 /* Build full document text from buffer rows (not from disk). */
+/* Buffers backed by a server-owned virtual document rather than a
+ * file on disk keep the server's URI as their filename (e.g. csharp-ls
+ * decompiled metadata: "csharp:/metadata/…"). Such buffers are never
+ * synced via didOpen/didChange — the server already holds their text. */
+static int lsp_is_virtual_uri(const char *path) {
+    if (!path || !isalpha((unsigned char)path[0]))
+        return 0;
+    const char *p = path + 1;
+    while (isalnum((unsigned char)*p) || *p == '+' || *p == '-' || *p == '.')
+        p++;
+    return p[0] == ':' && p[1] == '/' && strncmp(path, "file:", 5) != 0;
+}
+
 static char *lsp_get_file_uri(const char *filepath) {
+    if (lsp_is_virtual_uri(filepath))
+        return strdup(filepath);
     return fs_path_to_file_uri(filepath, NULL);
-}
-
-/* ------------------------------------------------- UTF-16 positions
- * LSP `character` offsets are UTF-16 code units; hed columns are byte
- * offsets. 1-3 byte UTF-8 sequences are one UTF-16 unit, 4-byte
- * sequences (astral plane) are a surrogate pair = two units.
- * Continuation bytes (0x80-0xBF) count zero. */
-
-static int lsp_cx_to_utf16(const char *s, size_t len, int cx) {
-    int u = 0;
-    if (cx > (int)len)
-        cx = (int)len;
-    for (int i = 0; i < cx && s; i++) {
-        unsigned char c = (unsigned char)s[i];
-        if ((c & 0xC0) == 0x80)
-            continue; /* continuation byte */
-        u += (c >= 0xF0) ? 2 : 1;
-    }
-    return u;
-}
-
-static int lsp_utf16_to_cx(const char *s, size_t len, int u16) {
-    int u = 0;
-    int i = 0;
-    while (i < (int)len && s) {
-        unsigned char c = (unsigned char)s[i];
-        int adv = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : (c >= 0xC0) ? 2 : 1;
-        int units = (c >= 0xF0) ? 2 : 1;
-        if (u + units > u16)
-            break;
-        u += units;
-        i += adv;
-        if (u >= u16)
-            break;
-    }
-    return i;
 }
 
 /* ------------------------------------------------- document sync
@@ -302,7 +313,68 @@ static void lsp_send_initialize(LspServer *srv) {
     cJSON_AddBoolToObject(comp, "dynamicRegistration", 0);
     cJSON_AddItemToObject(tdoc, "completion", comp);
 
+    /* Code actions as literals (not bare commands), every kind, and
+     * lazy `edit` via codeAction/resolve (rust-analyzer needs it). */
+    cJSON *ca = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ca, "dynamicRegistration", 0);
+    cJSON *lit = cJSON_CreateObject();
+    cJSON *cak = cJSON_CreateObject();
+    cJSON *kinds = cJSON_CreateArray();
+    static const char *const kind_names[] = {
+        "",
+        "quickfix",
+        "refactor",
+        "refactor.extract",
+        "refactor.inline",
+        "refactor.rewrite",
+        "source",
+        "source.organizeImports",
+        "source.fixAll",
+    };
+    for (size_t i = 0; i < sizeof(kind_names) / sizeof(kind_names[0]); i++)
+        cJSON_AddItemToArray(kinds, cJSON_CreateString(kind_names[i]));
+    cJSON_AddItemToObject(cak, "valueSet", kinds);
+    cJSON_AddItemToObject(lit, "codeActionKind", cak);
+    cJSON_AddItemToObject(ca, "codeActionLiteralSupport", lit);
+    cJSON_AddBoolToObject(ca, "dataSupport", 1);
+    cJSON *rs = cJSON_CreateObject();
+    cJSON *rsp = cJSON_CreateArray();
+    cJSON_AddItemToArray(rsp, cJSON_CreateString("edit"));
+    cJSON_AddItemToObject(rs, "properties", rsp);
+    cJSON_AddItemToObject(ca, "resolveSupport", rs);
+    cJSON_AddItemToObject(tdoc, "codeAction", ca);
+
+    cJSON *ren = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ren, "dynamicRegistration", 0);
+    cJSON_AddBoolToObject(ren, "prepareSupport", 0);
+    cJSON_AddItemToObject(tdoc, "rename", ren);
+
+    cJSON *refs = cJSON_CreateObject();
+    cJSON_AddBoolToObject(refs, "dynamicRegistration", 0);
+    cJSON_AddItemToObject(tdoc, "references", refs);
+
+    cJSON *fmt = cJSON_CreateObject();
+    cJSON_AddBoolToObject(fmt, "dynamicRegistration", 0);
+    cJSON_AddItemToObject(tdoc, "formatting", fmt);
+    cJSON *rfmt = cJSON_CreateObject();
+    cJSON_AddBoolToObject(rfmt, "dynamicRegistration", 0);
+    cJSON_AddItemToObject(tdoc, "rangeFormatting", rfmt);
+
     cJSON_AddItemToObject(caps, "textDocument", tdoc);
+
+    /* workspace/applyEdit + documentChanges-shaped WorkspaceEdits. No
+     * resourceOperations: servers then never ask us to create, rename
+     * or delete files. */
+    cJSON *ws = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ws, "applyEdit", 1);
+    cJSON *wse = cJSON_CreateObject();
+    cJSON_AddBoolToObject(wse, "documentChanges", 1);
+    cJSON_AddItemToObject(ws, "workspaceEdit", wse);
+    cJSON *ec = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ec, "dynamicRegistration", 0);
+    cJSON_AddItemToObject(ws, "executeCommand", ec);
+    cJSON_AddItemToObject(caps, "workspace", ws);
+
     cJSON_AddItemToObject(params, "capabilities", caps);
 
     int id = srv->next_id++;
@@ -310,12 +382,35 @@ static void lsp_send_initialize(LspServer *srv) {
     lsp_send_request(srv, "initialize", params, id);
 }
 
+/* A *Provider capability is either a bool or an options object. */
+static int lsp_cap_flag(cJSON *caps, const char *name) {
+    cJSON *v = caps ? cJSON_GetObjectItemCaseSensitive(caps, name) : NULL;
+    if (!v)
+        return 0;
+    if (cJSON_IsBool(v))
+        return cJSON_IsTrue(v);
+    return cJSON_IsObject(v);
+}
+
 /* Pull the bits of ServerCapabilities we act on out of the initialize
  * result: completion trigger characters (used by the completion
- * plugin's auto-trigger). */
+ * plugin's auto-trigger) and the provider flags the request commands
+ * are gated on. */
 static void lsp_parse_capabilities(LspServer *srv, cJSON *result) {
     srv->trigger_chars[0] = '\0';
     cJSON *caps = result ? json_get_object(result, "capabilities") : NULL;
+    srv->cap_code_action = lsp_cap_flag(caps, "codeActionProvider");
+    cJSON *cap = caps ? json_get_object(caps, "codeActionProvider") : NULL;
+    srv->cap_code_action_resolve =
+        cap && json_get_bool(cap, "resolveProvider", 0);
+    srv->cap_rename = lsp_cap_flag(caps, "renameProvider");
+    srv->cap_formatting = lsp_cap_flag(caps, "documentFormattingProvider");
+    srv->cap_range_formatting =
+        lsp_cap_flag(caps, "documentRangeFormattingProvider");
+    srv->cap_references = lsp_cap_flag(caps, "referencesProvider");
+    log_msg("LSP[%s]: caps: codeAction=%d(resolve=%d) rename=%d fmt=%d/%d",
+            srv->lang, srv->cap_code_action, srv->cap_code_action_resolve,
+            srv->cap_rename, srv->cap_formatting, srv->cap_range_formatting);
     cJSON *comp = caps ? json_get_object(caps, "completionProvider") : NULL;
     cJSON *trig = comp ? json_get_array(comp, "triggerCharacters") : NULL;
     if (!trig)
@@ -684,7 +779,11 @@ static void lsp_handle_hover_result(cJSON *result) {
     lsp_show_popup("Hover", text);
 }
 
-static void lsp_handle_definition_result(cJSON *result) {
+static void lsp_place_cursor(int line, int col);
+static void lsp_request_metadata(LspServer *srv, const char *uri, int line,
+                                 int col);
+
+static void lsp_handle_definition_result(LspServer *srv, cJSON *result) {
     if (!result || cJSON_IsNull(result)) {
         ed_set_status_message("LSP: definition not found");
         return;
@@ -717,6 +816,11 @@ static void lsp_handle_definition_result(cJSON *result) {
         }
     }
 
+    if (lsp_is_virtual_uri(uri)) {
+        lsp_request_metadata(srv, uri, line, col);
+        return;
+    }
+
     const char *path = fs_uri_to_path(uri);
     log_msg("LSP definition: %s:%d:%d", path, line + 1, col + 1);
 
@@ -724,6 +828,12 @@ static void lsp_handle_definition_result(cJSON *result) {
      * switching buffers, which would skip same-file jumps. */
     kb_jump_save_current();
     buf_open_or_switch(path, false);
+    lsp_place_cursor(line, col);
+    ed_set_status_message("LSP: jumped to %s:%d", path, line + 1);
+}
+
+/* Move the current buffer/window cursor to an LSP (line, utf16 col). */
+static void lsp_place_cursor(int line, int col) {
     Buffer *buf = buf_cur();
     Window *win = window_cur();
     if (buf && buf->num_rows > 0) {
@@ -743,7 +853,331 @@ static void lsp_handle_definition_result(cJSON *result) {
         }
         buf_center_screen();
     }
-    ed_set_status_message("LSP: jumped to %s:%d", path, line + 1);
+}
+
+/* ------------------------------------------- decompiled metadata sources
+ * csharp-ls answers go-to-definition into a referenced assembly with a
+ * "csharp:/metadata/…" URI and hands out the decompiled source on a
+ * custom csharp/metadata request. The source lands in a read-only
+ * buffer whose filename is that URI, so further definition/hover
+ * requests from inside it resolve against the same virtual document. */
+
+static void lsp_request_metadata(LspServer *srv, const char *uri, int line,
+                                 int col) {
+    int idx = buf_special_find(uri);
+    if (idx >= 0) {
+        kb_jump_save_current();
+        buf_special_show(idx);
+        lsp_place_cursor(line, col);
+        ed_set_status_message("LSP: jumped to %s:%d", E.buffers[idx].title,
+                              line + 1);
+        return;
+    }
+    cJSON *params = cJSON_CreateObject();
+    cJSON *textdoc = cJSON_CreateObject();
+    cJSON_AddStringToObject(textdoc, "uri", uri);
+    cJSON_AddItemToObject(params, "textDocument", textdoc);
+    int id = srv->next_id++;
+    for (int i = 0; i < LSP_PENDING_MAX; i++) {
+        if (srv->pending[i].kind == LSP_REQ_NONE) {
+            srv->pending[i] = (LspPending){
+                .id = id,
+                .kind = LSP_REQ_METADATA,
+                .req_line = line,
+                .req_col = col,
+                .uri = strdup(uri),
+            };
+            lsp_send_request(srv, "csharp/metadata", params, id);
+            ed_set_status_message("LSP: decompiling…");
+            return;
+        }
+    }
+    cJSON_Delete(params);
+    log_msg("LSP: pending table full, dropping request id=%d", id);
+}
+
+static void lsp_handle_metadata_result(LspPending *pend, cJSON *result) {
+    char *uri = pend->uri;
+    pend->uri = NULL;
+    const char *source = result ? json_get_string(result, "source") : NULL;
+    if (!uri || !source || !*source) {
+        ed_set_status_message("LSP: no decompiled source available");
+        free(uri);
+        return;
+    }
+    const char *assembly = json_get_string(result, "assemblyName");
+    const char *symbol = json_get_string(result, "symbolName");
+    char title[256];
+    snprintf(title, sizeof(title), "[%s] %s", assembly ? assembly : "metadata",
+             symbol ? symbol : uri);
+
+    BufSpecial spec = {.name = uri,
+                       .title = title,
+                       .filetype = "csharp",
+                       .readonly = 1,
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
+        ed_set_status_message("LSP: could not open decompiled buffer");
+        free(uri);
+        return;
+    }
+    Buffer *b = &E.buffers[idx];
+    buf_special_clear(b);
+    const char *p = source;
+    while (*p) {
+        const char *nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        if (len && p[len - 1] == '\r')
+            len--;
+        buf_special_add(b, p, len);
+        if (!nl)
+            break;
+        p = nl + 1;
+    }
+    kb_jump_save_current();
+    buf_special_show(idx);
+    lsp_place_cursor(pend->req_line, pend->req_col);
+    ed_set_status_message("LSP: decompiled %s", title);
+    free(uri);
+}
+
+/* ----- code actions / rename / formatting ---------------------------
+ * Every server-supplied edit goes through lsp_edit.c; these handlers
+ * only pick the action and route its parts. */
+
+static void lsp_execute_command(LspServer *srv, cJSON *cmd) {
+    const char *name = json_get_string(cmd, "command");
+    if (!name || !*name)
+        return;
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddStringToObject(params, "command", name);
+    cJSON *args = json_get_array(cmd, "arguments");
+    if (args)
+        cJSON_AddItemToObject(params, "arguments", cJSON_Duplicate(args, 1));
+    int id = srv->next_id++;
+    lsp_pending_add(srv, id, LSP_REQ_EXECUTE_COMMAND);
+    lsp_send_request(srv, "workspace/executeCommand", params, id);
+}
+
+/* Run one CodeAction | Command: apply its edit, then run its command
+ * (spec order). An action with neither is resolved first when the
+ * server offers codeAction/resolve; `resolved` stops that recursing. */
+static void lsp_run_code_action(LspServer *srv, cJSON *action, int resolved) {
+    const char *title = json_get_string(action, "title");
+    if (!title)
+        title = "code action";
+    cJSON *cmd = cJSON_GetObjectItemCaseSensitive(action, "command");
+    cJSON *edit = json_get_object(action, "edit");
+    if (cJSON_IsString(cmd)) { /* bare Command object */
+        lsp_execute_command(srv, action);
+        ed_set_status_message("LSP: %s", title);
+        return;
+    }
+    if (!edit && !cJSON_IsObject(cmd)) {
+        if (!resolved && srv->cap_code_action_resolve) {
+            int id = srv->next_id++;
+            lsp_pending_add(srv, id, LSP_REQ_CODE_ACTION_RESOLVE);
+            lsp_send_request(srv, "codeAction/resolve",
+                             cJSON_Duplicate(action, 1), id);
+            return;
+        }
+        ed_set_status_message("LSP: '%s' has nothing to apply", title);
+        return;
+    }
+    if (edit) {
+        int files = 0;
+        int n = lsp_apply_workspace_edit(edit, title, &files);
+        ed_set_status_message("LSP: %s — %d edit(s) in %d file(s)", title, n,
+                              files);
+    }
+    if (cJSON_IsObject(cmd))
+        lsp_execute_command(srv, cmd);
+}
+
+static void lsp_handle_code_action_result(LspServer *srv, const LspPending *pop,
+                                          cJSON *result) {
+    int n = (result && cJSON_IsArray(result)) ? cJSON_GetArraySize(result) : 0;
+    if (n <= 0) {
+        ed_set_status_message("LSP: no code actions here");
+        return;
+    }
+    if (n == 1 && pop->auto_apply) {
+        lsp_run_code_action(srv, cJSON_GetArrayItem(result, 0), 0);
+        return;
+    }
+
+    /* "N: title  [kind]" — the index survives fzf's reordering. */
+    char **items = calloc((size_t)n, sizeof(char *));
+    if (!items)
+        return;
+    for (int i = 0; i < n; i++) {
+        cJSON *a = cJSON_GetArrayItem(result, i);
+        const char *title = json_get_string(a, "title");
+        const char *kind = json_get_string(a, "kind");
+        char line[512];
+        snprintf(line, sizeof(line), "%d: %s%s%s%s", i + 1,
+                 title ? title : "(untitled)", kind && *kind ? "  [" : "",
+                 kind ? kind : "", kind && *kind ? "]" : "");
+        for (char *c = line; *c; c++)
+            if (*c == '\n' || *c == '\r')
+                *c = ' ';
+        items[i] = strdup(line);
+    }
+    char **sel = NULL;
+    int cnt = 0;
+    int ok = picker_list((const char **)items, n, 0, &sel, &cnt);
+    for (int i = 0; i < n; i++)
+        free(items[i]);
+    free(items);
+    if (!ok) {
+        ed_set_status_message("LSP: %d code action(s), no picker loaded", n);
+        return;
+    }
+    if (cnt <= 0 || !sel[0]) {
+        picker_list_free(sel, cnt);
+        return;
+    }
+    int pick = (int)strtol(sel[0], NULL, 10) - 1;
+    picker_list_free(sel, cnt);
+    if (pick < 0 || pick >= n)
+        return;
+    lsp_run_code_action(srv, cJSON_GetArrayItem(result, pick), 0);
+}
+
+static void lsp_handle_rename_result(cJSON *result) {
+    if (!result || cJSON_IsNull(result)) {
+        ed_set_status_message("LSP: rename produced no edits");
+        return;
+    }
+    int files = 0;
+    int n = lsp_apply_workspace_edit(result, "rename", &files);
+    ed_set_status_message("LSP: renamed — %d edit(s) in %d file(s)", n, files);
+}
+
+static void lsp_handle_formatting_result(LspPending *pend, cJSON *result) {
+    char *uri = pend->uri;
+    pend->uri = NULL;
+    int n = (result && cJSON_IsArray(result)) ? cJSON_GetArraySize(result) : 0;
+    if (n <= 0) {
+        ed_set_status_message("LSP: already formatted");
+        free(uri);
+        return;
+    }
+    int idx = lsp_buffer_for_uri(uri, 0);
+    free(uri);
+    if (idx < 0) {
+        ed_set_status_message("LSP: buffer gone, format dropped");
+        return;
+    }
+    int applied = lsp_apply_text_edits(idx, result, "lsp format");
+    ed_set_status_message("LSP: formatted (%d edit(s))", applied);
+}
+
+/* Diagnostics the server published for `uri` whose range touches
+ * [sl:sc, el:ec] (UTF-16 columns) — the codeAction context. */
+static cJSON *lsp_diags_in_range(const char *uri, int sl, int sc, int el,
+                                 int ec) {
+    cJSON *out = cJSON_CreateArray();
+    LspDiagFile *slot = NULL;
+    for (ptrdiff_t i = 0; i < arrlen(g_diags); i++) {
+        if (strcmp(g_diags[i].uri, uri) == 0) {
+            slot = &g_diags[i];
+            break;
+        }
+    }
+    if (!slot || !slot->raw)
+        return out;
+    for (int i = 0; i < cJSON_GetArraySize(slot->raw); i++) {
+        cJSON *d = cJSON_GetArrayItem(slot->raw, i);
+        cJSON *range = json_get_object(d, "range");
+        cJSON *ds = range ? json_get_object(range, "start") : NULL;
+        cJSON *de = range ? json_get_object(range, "end") : NULL;
+        if (!ds || !de)
+            continue;
+        int dsl = json_get_int(ds, "line", 0),
+            dsc = json_get_int(ds, "character", 0);
+        int del = json_get_int(de, "line", 0),
+            dec = json_get_int(de, "character", 0);
+        int before = del < sl || (del == sl && dec < sc);
+        int after = dsl > el || (dsl == el && dsc > ec);
+        if (!before && !after)
+            cJSON_AddItemToArray(out, cJSON_Duplicate(d, 1));
+    }
+    return out;
+}
+
+/* ----- references ------------------------------------------------- */
+
+/* Quickfix display path: relative to the editor cwd when inside it. */
+static const char *lsp_qf_path(const char *path) {
+    size_t n = strlen(E.cwd);
+    if (n > 1 && strncmp(path, E.cwd, n) == 0 && path[n] == '/')
+        return path + n + 1;
+    return path;
+}
+
+/* Text of 0-based `line` in `path`: from the open buffer when there is
+ * one (live, possibly unsaved), else from disk. */
+static void lsp_line_text(const char *uri, const char *path, int line,
+                          char *out, size_t sz) {
+    out[0] = '\0';
+    int idx = lsp_buffer_for_uri(uri, 0);
+    if (idx >= 0) {
+        Buffer *b = &E.buffers[idx];
+        if (line >= 0 && line < b->num_rows)
+            snprintf(out, sz, "%.*s", (int)b->rows[line].chars.len,
+                     b->rows[line].chars.data);
+        return;
+    }
+    FsLines *r = NULL;
+    if (fs_lines_open(&r, path) != ED_OK)
+        return;
+    const char *l;
+    size_t len;
+    for (int i = 0; fs_lines_next(r, &l, &len); i++) {
+        if (i == line) {
+            snprintf(out, sz, "%.*s", (int)len, l);
+            break;
+        }
+    }
+    fs_lines_close(r);
+}
+
+/* Location[] → quickfix, one entry per reference with the source line
+ * as its text (leading whitespace trimmed). */
+static void lsp_handle_references_result(cJSON *result) {
+    int n = (result && cJSON_IsArray(result)) ? cJSON_GetArraySize(result) : 0;
+    if (n <= 0) {
+        ed_set_status_message("LSP: no references found");
+        return;
+    }
+    qf_clear(&E.qf);
+    int added = 0;
+    for (int i = 0; i < n; i++) {
+        cJSON *loc = cJSON_GetArrayItem(result, i);
+        const char *uri = json_get_string(loc, "uri");
+        cJSON *range = json_get_object(loc, "range");
+        cJSON *start = range ? json_get_object(range, "start") : NULL;
+        if (!uri || !start)
+            continue;
+        int line = json_get_int(start, "line", 0);
+        int col = json_get_int(start, "character", 0);
+        const char *path = fs_uri_to_path(uri);
+        char text[512];
+        lsp_line_text(uri, path, line, text, sizeof(text));
+        const char *t = text;
+        while (*t == ' ' || *t == '\t')
+            t++;
+        qf_add(&E.qf, lsp_qf_path(path), line + 1, col + 1, t);
+        added++;
+    }
+    if (!added) {
+        ed_set_status_message("LSP: no references found");
+        return;
+    }
+    qf_open(&E.qf, E.qf.height > 0 ? E.qf.height : 8);
+    ed_set_status_message("LSP: %d reference(s)", added);
 }
 
 static void lsp_process_response(LspServer *srv, cJSON *json) {
@@ -758,6 +1192,7 @@ static void lsp_process_response(LspServer *srv, cJSON *json) {
         LspPending pop = lsp_pending_pop(srv, id);
         if (pop.kind == LSP_REQ_COMPLETION)
             completion_provide(pop.token, NULL, 0); /* release the menu */
+        free(pop.uri);
         return;
     }
 
@@ -779,10 +1214,34 @@ static void lsp_process_response(LspServer *srv, cJSON *json) {
         lsp_handle_hover_result(result);
         break;
     case LSP_REQ_DEFINITION:
-        lsp_handle_definition_result(result);
+        lsp_handle_definition_result(srv, result);
         break;
     case LSP_REQ_COMPLETION:
         lsp_handle_completion_result(srv, &pop, result);
+        break;
+    case LSP_REQ_METADATA:
+        lsp_handle_metadata_result(&pop, result);
+        break;
+    case LSP_REQ_CODE_ACTION:
+        lsp_handle_code_action_result(srv, &pop, result);
+        break;
+    case LSP_REQ_CODE_ACTION_RESOLVE:
+        if (result && cJSON_IsObject(result))
+            lsp_run_code_action(srv, result, 1);
+        else
+            ed_set_status_message("LSP: could not resolve code action");
+        break;
+    case LSP_REQ_EXECUTE_COMMAND:
+        /* Effects arrive as workspace/applyEdit; the result is opaque. */
+        break;
+    case LSP_REQ_RENAME:
+        lsp_handle_rename_result(result);
+        break;
+    case LSP_REQ_FORMATTING:
+        lsp_handle_formatting_result(&pop, result);
+        break;
+    case LSP_REQ_REFERENCES:
+        lsp_handle_references_result(result);
         break;
     default:
         log_msg("LSP[%s]: untracked response id=%d", srv->lang, id);
@@ -805,6 +1264,8 @@ static LspDiagFile *lsp_diag_slot(const char *uri) {
 static void lsp_diag_clear_slot(LspDiagFile *slot) {
     for (ptrdiff_t i = 0; i < arrlen(slot->items); i++)
         free(slot->items[i].message);
+    cJSON_Delete(slot->raw);
+    slot->raw = NULL;
     /* arrsetlen(a, 0) trips -Wtype-limits; delete instead. */
     if (arrlen(slot->items))
         arrdeln(slot->items, 0, arrlen(slot->items));
@@ -814,6 +1275,7 @@ static void lsp_diag_clear_slot(LspDiagFile *slot) {
 static void lsp_diag_replace(const char *uri, cJSON *diag, int n) {
     LspDiagFile *slot = lsp_diag_slot(uri);
     lsp_diag_clear_slot(slot);
+    slot->raw = diag ? cJSON_Duplicate(diag, 1) : NULL;
     for (int i = 0; i < n; i++) {
         cJSON *d = cJSON_GetArrayItem(diag, i);
         cJSON *range = json_get_object(d, "range");
@@ -847,7 +1309,7 @@ void lsp_cmd_diagnostics(void) {
                                                    : "H";
             char text[1024];
             snprintf(text, sizeof(text), "[%s] %s", sev, d->message);
-            qf_add(&E.qf, fp, d->line + 1, d->col + 1, text);
+            qf_add(&E.qf, lsp_qf_path(fp), d->line + 1, d->col + 1, text);
             total++;
         }
     }
@@ -904,6 +1366,23 @@ static void lsp_process_server_request(LspServer *srv, cJSON *json,
         int n = items ? cJSON_GetArraySize(items) : 0;
         for (int i = 0; i < n; i++)
             cJSON_AddItemToArray(result, cJSON_CreateNull());
+        reply = jrpc_response(id, result);
+    } else if (strcmp(method, "workspace/applyEdit") == 0) {
+        cJSON *params = json_get_object(json, "params");
+        cJSON *edit = params ? json_get_object(params, "edit") : NULL;
+        const char *label = params ? json_get_string(params, "label") : NULL;
+        cJSON *result = cJSON_CreateObject();
+        if (edit) {
+            int files = 0;
+            int n = lsp_apply_workspace_edit(edit, label ? label : "lsp edit",
+                                             &files);
+            ed_set_status_message("LSP: %s — %d edit(s) in %d file(s)",
+                                  label ? label : "applied edit", n, files);
+            cJSON_AddBoolToObject(result, "applied", 1);
+        } else {
+            cJSON_AddBoolToObject(result, "applied", 0);
+            cJSON_AddStringToObject(result, "failureReason", "no edit");
+        }
         reply = jrpc_response(id, result);
     } else if (strcmp(method, "client/registerCapability") == 0 ||
                strcmp(method, "client/unregisterCapability") == 0 ||
@@ -1098,6 +1577,8 @@ int lsp_get_autostart(void) { return g_autostart; }
 void lsp_on_buffer_open(Buffer *buf) {
     if (!buf || !buf->filename || !buf->filetype)
         return;
+    if (lsp_is_virtual_uri(buf->filename))
+        return;
     LspServer *srv = lsp_server_for_buffer(buf);
 
     /* Auto-start (opt-in): if no server is running for this filetype
@@ -1178,6 +1659,8 @@ void lsp_on_buffer_save(Buffer *buf) {
  * lsp_sync_document, which skips when the buffer hasn't changed. */
 void lsp_on_buffer_changed(Buffer *buf) {
     if (!buf || !buf->filename || !buf->filetype)
+        return;
+    if (lsp_is_virtual_uri(buf->filename))
         return;
     LspServer *srv = lsp_server_for_buffer(buf);
     if (!srv || !srv->initialized)
@@ -1292,6 +1775,170 @@ void lsp_request_definition(Buffer *buf, int line, int col) {
     int id = srv->next_id++;
     lsp_pending_add(srv, id, LSP_REQ_DEFINITION);
     lsp_send_request(srv, "textDocument/definition", params, id);
+}
+
+/* Position JSON for (buf, line, byte col), column converted to UTF-16.
+ * *out_u16 (optional) receives the converted column. */
+static cJSON *lsp_position_json(Buffer *buf, int line, int col, int *out_u16) {
+    int u16 = col;
+    if (line >= 0 && line < buf->num_rows) {
+        Row *row = &buf->rows[line];
+        u16 = lsp_cx_to_utf16(row->chars.data, row->chars.len, col);
+    }
+    if (out_u16)
+        *out_u16 = u16;
+    cJSON *pos = cJSON_CreateObject();
+    cJSON_AddNumberToObject(pos, "line", line);
+    cJSON_AddNumberToObject(pos, "character", u16);
+    return pos;
+}
+
+static cJSON *lsp_textdoc_json(const char *uri) {
+    cJSON *textdoc = cJSON_CreateObject();
+    cJSON_AddStringToObject(textdoc, "uri", uri);
+    return textdoc;
+}
+
+void lsp_request_code_action(Buffer *buf, int sl, int sc, int el, int ec,
+                             const char *only) {
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
+        return;
+    if (!srv->cap_code_action) {
+        ed_set_status_message("LSP[%s]: server has no code actions", srv->lang);
+        return;
+    }
+    lsp_sync_document(buf);
+    char *uri = lsp_get_file_uri(buf->filename);
+    if (!uri)
+        return;
+    int su16 = 0, eu16 = 0;
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddItemToObject(params, "textDocument", lsp_textdoc_json(uri));
+    cJSON *range = cJSON_CreateObject();
+    cJSON_AddItemToObject(range, "start",
+                          lsp_position_json(buf, sl, sc, &su16));
+    cJSON_AddItemToObject(range, "end", lsp_position_json(buf, el, ec, &eu16));
+    cJSON_AddItemToObject(params, "range", range);
+    cJSON *ctx = cJSON_CreateObject();
+    cJSON_AddItemToObject(ctx, "diagnostics",
+                          lsp_diags_in_range(uri, sl, su16, el, eu16));
+    if (only && *only) {
+        cJSON *arr = cJSON_CreateArray();
+        cJSON_AddItemToArray(arr, cJSON_CreateString(only));
+        cJSON_AddItemToObject(ctx, "only", arr);
+    }
+    cJSON_AddItemToObject(params, "context", ctx);
+    free(uri);
+
+    int id = srv->next_id++;
+    for (int i = 0; i < LSP_PENDING_MAX; i++) {
+        if (srv->pending[i].kind == LSP_REQ_NONE) {
+            srv->pending[i] = (LspPending){
+                .id = id,
+                .kind = LSP_REQ_CODE_ACTION,
+                .auto_apply = only && *only,
+            };
+            lsp_send_request(srv, "textDocument/codeAction", params, id);
+            return;
+        }
+    }
+    cJSON_Delete(params);
+    log_msg("LSP: pending table full, dropping request id=%d", id);
+}
+
+void lsp_request_rename(Buffer *buf, int line, int col, const char *new_name) {
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
+        return;
+    if (!srv->cap_rename) {
+        ed_set_status_message("LSP[%s]: server has no rename", srv->lang);
+        return;
+    }
+    if (!new_name || !*new_name) {
+        ed_set_status_message("LSP: rename needs a new name");
+        return;
+    }
+    lsp_sync_document(buf);
+    cJSON *params = lsp_textdoc_position(buf, line, col);
+    if (!params)
+        return;
+    cJSON_AddStringToObject(params, "newName", new_name);
+    int id = srv->next_id++;
+    lsp_pending_add(srv, id, LSP_REQ_RENAME);
+    lsp_send_request(srv, "textDocument/rename", params, id);
+}
+
+void lsp_request_formatting(Buffer *buf, int sl, int el) {
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
+        return;
+    int ranged = sl >= 0 && el >= 0;
+    if (ranged ? !srv->cap_range_formatting : !srv->cap_formatting) {
+        ed_set_status_message("LSP[%s]: server has no %sformatting", srv->lang,
+                              ranged ? "range " : "");
+        return;
+    }
+    lsp_sync_document(buf);
+    char *uri = lsp_get_file_uri(buf->filename);
+    if (!uri)
+        return;
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddItemToObject(params, "textDocument", lsp_textdoc_json(uri));
+    if (ranged) {
+        if (el >= buf->num_rows)
+            el = buf->num_rows - 1;
+        int elen = el >= 0 ? (int)buf->rows[el].chars.len : 0;
+        cJSON *range = cJSON_CreateObject();
+        cJSON_AddItemToObject(range, "start",
+                              lsp_position_json(buf, sl, 0, NULL));
+        cJSON_AddItemToObject(range, "end",
+                              lsp_position_json(buf, el, elen, NULL));
+        cJSON_AddItemToObject(params, "range", range);
+    }
+    cJSON *opts = cJSON_CreateObject();
+    cJSON_AddNumberToObject(opts, "tabSize", E.tab_size > 0 ? E.tab_size : 4);
+    cJSON_AddBoolToObject(opts, "insertSpaces", E.expand_tab);
+    cJSON_AddItemToObject(params, "options", opts);
+
+    int id = srv->next_id++;
+    for (int i = 0; i < LSP_PENDING_MAX; i++) {
+        if (srv->pending[i].kind == LSP_REQ_NONE) {
+            srv->pending[i] = (LspPending){
+                .id = id,
+                .kind = LSP_REQ_FORMATTING,
+                .uri = uri,
+            };
+            lsp_send_request(srv,
+                             ranged ? "textDocument/rangeFormatting"
+                                    : "textDocument/formatting",
+                             params, id);
+            return;
+        }
+    }
+    free(uri);
+    cJSON_Delete(params);
+    log_msg("LSP: pending table full, dropping request id=%d", id);
+}
+
+void lsp_request_references(Buffer *buf, int line, int col) {
+    LspServer *srv = lsp_server_ready(buf, 0);
+    if (!srv)
+        return;
+    if (!srv->cap_references) {
+        ed_set_status_message("LSP[%s]: server has no references", srv->lang);
+        return;
+    }
+    lsp_sync_document(buf);
+    cJSON *params = lsp_textdoc_position(buf, line, col);
+    if (!params)
+        return;
+    cJSON *ctx = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ctx, "includeDeclaration", 1);
+    cJSON_AddItemToObject(params, "context", ctx);
+    int id = srv->next_id++;
+    lsp_pending_add(srv, id, LSP_REQ_REFERENCES);
+    lsp_send_request(srv, "textDocument/references", params, id);
 }
 
 /* :definition dispatcher probe (see plugins/ctags): issue an LSP

@@ -47,12 +47,12 @@ static void lsp_hook_keypress(HookKeyEvent *event) {
 }
 
 void lsp_hooks_init(void) {
-    hook_register_buffer(HOOK_BUFFER_OPEN, MODE_NORMAL, "*",
-                         lsp_hook_buffer_open);
-    hook_register_buffer(HOOK_BUFFER_CLOSE, MODE_NORMAL, "*",
-                         lsp_hook_buffer_close);
-    hook_register_buffer(HOOK_BUFFER_SAVE, MODE_NORMAL, "*",
-                         lsp_hook_buffer_save);
+    /* Mode -1: `:e`, `:w`, `:bd` run in command mode, and edits applied
+     * from a server response open files in whatever mode the user is
+     * in — a MODE_NORMAL filter would silently skip the didOpen. */
+    hook_register_buffer(HOOK_BUFFER_OPEN, -1, "*", lsp_hook_buffer_open);
+    hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", lsp_hook_buffer_close);
+    hook_register_buffer(HOOK_BUFFER_SAVE, -1, "*", lsp_hook_buffer_save);
     hook_register_mode(HOOK_MODE_CHANGE, lsp_hook_mode_change);
     hook_register_key(HOOK_KEYPRESS, lsp_hook_keypress);
 }

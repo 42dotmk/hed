@@ -24,8 +24,13 @@ static const LspServerDef SERVERS[] = {
      ROOTS("tsconfig.json", "package.json", ".git")},
     {"lua", ARGV("lua-language-server"), ROOTS(".luarc.json", ".git")},
     {"zig", ARGV("zls"), ROOTS("build.zig", ".git")},
-    /* dotnet tool install -g csharp-ls */
-    {"csharp", ARGV("csharp-ls"), ROOTS("*.sln", "*.csproj", ".git")},
+    /* dotnet tool install -g csharp-ls
+     * metadata-uris: go-to-definition into referenced assemblies answers
+     * with a "csharp:/…" URI whose decompiled source the LSP plugin
+     * fetches via csharp/metadata (without it the server returns
+     * nothing for such symbols). */
+    {"csharp", ARGV("csharp-ls", "--features", "metadata-uris"),
+     ROOTS("*.sln", "*.csproj", ".git")},
 };
 
 const LspServerDef *lsp_servers_lookup(const char *lang) {

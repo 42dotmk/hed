@@ -50,6 +50,9 @@ void prompt_close(bool submitted) {
 }
 
 bool prompt_active(void) { return g_prompt.vt != NULL; }
+
+static bool g_in_submit = false;
+bool prompt_in_submit(void) { return g_in_submit; }
 Prompt *prompt_current(void) { return g_prompt.vt ? &g_prompt : NULL; }
 
 void prompt_keep_open(void) { g_prompt.stay_open = true; }
@@ -97,8 +100,10 @@ void prompt_handle_key(int key) {
          * auto-close it. */
         const PromptVTable *vt_before = g_prompt.vt;
         g_prompt.stay_open = false;
+        g_in_submit = true;
         if (vt_before->on_submit)
             vt_before->on_submit(&g_prompt, g_prompt.buf, g_prompt.len);
+        g_in_submit = false;
         if (g_prompt.vt == vt_before && !g_prompt.stay_open)
             prompt_close(true);
         return;

@@ -57,6 +57,9 @@ pre-load it in `src/config.c` by setting
 | `Alt+M` | Toggle problems panel (quickfix) |
 | `Alt+L` | Select all occurrences (`:mc_match_all`) |
 | `Ctrl+K Ctrl+I` | Show hover (`:lsp_hover`) |
+| `F2` | Rename symbol (`:lsp_rename`) |
+| `Shift+F12` | Go to references (`:lsp_references`, quickfix) |
+| `:lsp_code_action` | Quick fix / code action — terminals can't deliver `Ctrl+.`, so run it from the palette (`F1`) |
 | `Ctrl+K V` | Markdown preview (`:viewmd`) |
 | `Ctrl+Up` / `Ctrl+Down` | Scroll one line without moving the cursor |
 

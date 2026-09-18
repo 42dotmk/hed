@@ -13,7 +13,8 @@
  *
  * Only one prompt may be active at a time (the prompt module
  * enforces this); a second ask() while one is open is a no-op
- * with a status message. */
+ * with a status message — except from inside a submit handler,
+ * where a `:` command may chain a follow-up question. */
 
 typedef void (*AskCallback)(const char *answer, void *ud);
 

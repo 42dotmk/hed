@@ -56,7 +56,9 @@ static const PromptVTable ask_vt = {
 };
 
 void ask(const char *question, const char *initial, AskCallback cb, void *ud) {
-    if (prompt_active()) {
+    /* A prompt that is mid-submit (a `:` command asking a follow-up
+     * question) may be replaced; an idle open prompt may not. */
+    if (prompt_active() && !prompt_in_submit()) {
         ed_set_status_message("ask: a prompt is already open");
         if (cb)
             cb(NULL, ud);

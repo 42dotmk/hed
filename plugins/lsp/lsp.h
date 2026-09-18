@@ -26,6 +26,22 @@ void lsp_sync_document(Buffer *buf);
 void lsp_request_hover(Buffer *buf, int line, int col);
 void lsp_request_definition(Buffer *buf, int line, int col);
 
+/* Code actions for the range [sl:sc, el:ec] (a point when equal). The
+ * matching diagnostics go along as context. `only` (NULL or a
+ * CodeActionKind such as "source.organizeImports") filters server-
+ * side; with a filter a single result is applied without a picker,
+ * otherwise the actions are offered through picker_list. */
+void lsp_request_code_action(Buffer *buf, int sl, int sc, int el, int ec,
+                             const char *only);
+/* Rename the symbol at (line, col) to `new_name` across the workspace;
+ * the resulting WorkspaceEdit is applied to every affected buffer. */
+void lsp_request_rename(Buffer *buf, int line, int col, const char *new_name);
+/* Format rows sl..el, or the whole document when either is < 0. */
+void lsp_request_formatting(Buffer *buf, int sl, int el);
+/* References to the symbol at (line, col), declaration included, into
+ * the quickfix list. */
+void lsp_request_references(Buffer *buf, int line, int col);
+
 /* Probe for the :definition dispatcher (plugins/ctags declares this
  * weak): request an LSP definition for the current buffer if a ready
  * server is attached. 0 = request sent, -1 = fall back to ctags. */
@@ -54,6 +70,8 @@ int lsp_cmd_start(const char *lang, const char *hint_path);
 
 int lsp_cmd_disconnect(const char *lang);
 void lsp_cmd_status(void);
+/* 1 if a server record exists for `lang` (spawned or attached). */
+int lsp_server_running(const char *lang);
 
 /* Auto-start on buffer open (spawn the registry server for the
  * buffer's filetype). Off by default — LSP is opt-in via :lsp_start;

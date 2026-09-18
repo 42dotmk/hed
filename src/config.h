@@ -160,6 +160,11 @@ static void config_load_defaults(void) {
     cmapn("gr", "rgword", "rg word under cursor");
     cmapn("gd", "definition", "goto definition");
     cmapn("K", "lsp_hover", "lsp hover");
+    cmapn(" ca", "lsp_code_action", "code action");
+    cmapv(" ca", "lsp_code_action", "code action on selection");
+    cmapn(" cr", "lsp_rename", "rename symbol");
+    cmapn(" cu", "lsp_references", "references (usages) -> quickfix");
+    cmapn(" cl", "lsp_toggle", "lsp start/stop for this filetype");
     cmapn(" fh", "hfzf", "history fzf");
     cmapn(" fj", "jfzf", "jump-list fzf");
     cmapn(" fy", "yazi", "pick file with yazi");

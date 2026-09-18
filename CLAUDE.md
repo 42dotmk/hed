@@ -171,7 +171,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `git` | Git integration |
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
-| `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |
+| `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source, code actions (`:lsp_code_action`, picker + `codeAction/resolve` + `executeCommand`/`applyEdit`), rename, formatting, references → quickfix — every server edit lands through one undo-grouped `WorkspaceEdit` applier. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |
 | `mail` | Mail integration |
 | `mail_git_patch` | Git patch mail integration |
 | `man` | Manual pages viewer |
@@ -255,6 +255,10 @@ Defined in `src/config.h` (defaults) and extendable from
 <space>fc/c     command picker
 <space>ft       tree-sitter language picker (:tslang)
 <space>sd/sa/ss rg / rgword / ssearch in file
+<space>ca       lsp code action (cursor / selection)
+<space>cr       lsp rename symbol
+<space>cu       lsp references (usages) → quickfix
+<space>cl       lsp start/stop for this filetype
 <space>ts       send paragraph to tmux
 <space>tt/tT    tmux toggle / kill
 <space>tq       toggle quickfix
@@ -337,7 +341,11 @@ See `plugins/vscode_keybinds/README.md`.
 :complete            completion menu (auto-triggers while typing;
                      Ctrl-Space forces it)
 :lsp_start / :lsp_connect / :lsp_hover / :lsp_definition /
-:lsp_diagnostics / :lsp_status / :lsp_disconnect
+:lsp_diagnostics / :lsp_status / :lsp_disconnect / :lsp_toggle
+:lsp_code_action [kind] / :lsp_rename [name] / :lsp_format /
+:lsp_references      code actions (picker; a kind filter auto-applies a
+                     lone match), workspace rename, document / range
+                     formatting, references → quickfix
 ```
 
 `:keybinds` lists every binding currently registered.
@@ -574,9 +582,9 @@ belong in the core runtime spine (top-level `src/`) instead.
 
 ## Roadmap
 
-- LSP formatting / rename / references wiring; inline diagnostics
-  (virtual text) — completion, definition and quickfix diagnostics
-  are done
+- LSP inline diagnostics (virtual text) — completion, definition,
+  references, quickfix diagnostics, code actions, rename and
+  formatting are done
 - Plugin `deinit()` actually unregistering hooks/cmds/keybinds (needs
   `hook_unregister`, `command_unregister`, `keybind_unregister` —
   only `hook_unregister` exists, so disabling a loaded plugin is

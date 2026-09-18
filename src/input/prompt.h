@@ -93,6 +93,9 @@ PromptResult prompt_default_on_key(Prompt *p, int key);
 /* Helpers usable from on_submit handlers and the commands those
  * handlers run. */
 void prompt_keep_open(void); /* don't auto-close */
+/* True while a submit handler runs — the window in which a command
+ * may chain a new prompt (`:shell` → `!`, `:lsp_rename` → ask). */
+bool prompt_in_submit(void);
 void prompt_set_text(Prompt *p, const char *s, int len);
 
 /* Set/clear a hint line rendered just above the prompt input. Lives in

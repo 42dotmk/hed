@@ -118,6 +118,8 @@ static int vscode_keybinds_init(void) {
 
     /* Language niceties (Ctrl+K chords, matching VSCode). */
     cmapi("<C-k><C-i>", "lsp_hover", "show hover (lsp)");
+    cmapi("<F2>", "lsp_rename", "rename symbol (lsp)");
+    cmapi("<S-F12>", "lsp_references", "go to references (lsp)");
     cmapi("<C-k>v", "viewmd", "markdown preview");
 
     /* Scrolling: VSCode Ctrl+Up/Down scrolls without moving the

@@ -26,6 +26,8 @@ static int lsp_plugin_init(void) {
         "spawn an LSP server (auto-detects from filetype)");
     cmd("lsp_connect", cmd_lsp_connect, "connect to a running LSP server");
     cmd("lsp_disconnect", cmd_lsp_disconnect, "disconnect LSP server");
+    cmd("lsp_toggle", cmd_lsp_toggle,
+        "start or stop the server for the buffer's filetype");
     cmd("lsp_status", cmd_lsp_status, "show LSP server status");
     cmd("lsp_autostart", cmd_lsp_autostart,
         "auto-start servers on buffer open (default off)");
@@ -33,6 +35,12 @@ static int lsp_plugin_init(void) {
     cmd("lsp_definition", cmd_lsp_definition, "LSP goto definition");
     cmd("lsp_diagnostics", cmd_lsp_diagnostics,
         "list LSP diagnostics in quickfix");
+    cmd("lsp_code_action", cmd_lsp_code_action,
+        "pick a code action for the cursor/selection ([kind] filters)");
+    cmd("lsp_rename", cmd_lsp_rename, "rename symbol under cursor [new_name]");
+    cmd("lsp_format", cmd_lsp_format, "format document (or selection) via LSP");
+    cmd("lsp_references", cmd_lsp_references,
+        "references to symbol under cursor -> quickfix");
 
     return 0;
 }
