@@ -169,6 +169,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `example` | Starter template — copy and rename to make your own. |
 | `fmt` | `:fmt` runs an external formatter by filetype. |
 | `git` | Git integration |
+| `hai` | hai's conversations over mail: sessions list, agent tree (jump into an agent's live conversation), chat view with the streamed reply (watches the session Maildir and `tmp/reply`), send a selection / paragraph into a session (`hml send -t`). Reads hai's Maildirs directly — no socket, no index. |
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
 | `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source, code actions (`:lsp_code_action`, picker + `codeAction/resolve` + `executeCommand`/`applyEdit`), rename, formatting, references → quickfix — every server edit lands through one undo-grouped `WorkspaceEdit` applier. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |

@@ -16,6 +16,7 @@
 #include "fmt/fmt.h"
 #include "folds/folds.h"
 #include "git/git.h"
+#include "hai/hai.h"
 #include "hed_themes/hed_themes.h"
 #include "keymap/keymap.h"
 #include "lsp/lsp_plugin.h"
@@ -94,6 +95,7 @@ static void config_load_default_plugins(void) {
     plugin_load(&plugin_pickers, 1);
     plugin_load(&plugin_mail, 1);
     plugin_load(&plugin_mail_git_patch, 1);
+    plugin_load(&plugin_hai, 1);
     plugin_load(&plugin_man, 1);
     plugin_load(&plugin_mcp_server, 1);
     plugin_load(&plugin_open, 1);
