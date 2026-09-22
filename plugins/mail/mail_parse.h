@@ -14,11 +14,19 @@ typedef struct {
 /* One rendered message of the thread: where it starts in the display
  * lines and which slice of `attaches` belongs to it. */
 typedef struct {
-    int row;     /* first display row of the block (divider, if any) */
-    int hdr_row; /* row of the first header line */
+    int row;      /* first display row of the block (divider, if any) */
+    int hdr_row;  /* row of the first header line */
+    int body_row; /* first body row (as displayed; chat view strips) */
     char msg_id[256];
     int attach_start; /* index into MailRender.attaches */
     int attach_count;
+    /* The headers as parsed, whichever way the view renders them —
+     * what reply/forward read instead of scraping the buffer. */
+    char from[512];
+    char to[512];
+    char cc[512];
+    char subject[512];
+    char date[256];
 } MailMsgSpan;
 
 typedef struct {
@@ -26,7 +34,8 @@ typedef struct {
 
     MailAttachInfo *attaches; /* stb_ds array, whole-thread order */
 
-    /* stb_ds array, one per message in display order (newest first). */
+    /* stb_ds array, one per message in display order (newest first in
+     * the full view, oldest first in the chat view). */
     MailMsgSpan *msgs;
 
     /* Raw text/html source of the newest message that carries one.
@@ -39,8 +48,8 @@ void mail_render_init(MailRender *r);
 void mail_render_free(MailRender *r);
 
 /* Parse the output of `hml show --format=text` (notmuch's text
- * framing) into clean display
- * lines. Each message in the thread is rendered as:
+ * framing) into clean display lines. With `chat == 0` each message in
+ * the thread is rendered newest-first as:
  *
  *     From:    ...
  *     To:      ...
@@ -52,12 +61,27 @@ void mail_render_free(MailRender *r);
  *     <body, text/plain when available, w3m-rendered HTML otherwise>
  *
  * Messages after the first are preceded by a one-line divider.
+ *
+ * With `chat != 0` the thread reads like a conversation: the subject
+ * once at the top, then the messages oldest-first, each as
+ *
+ *     ● Sender — 18 May 2026 10:14
+ *     Attachments: [1] a.pdf                 (omitted when none)
+ *     <body>
+ *
+ * where the sender is the display name only ("You" when the address
+ * is `self`, if given) and the body is stripped of quoted replies and
+ * their "On … wrote:" attribution, forwarded/original-message header
+ * blocks, signatures (after "-- "), mobile footers and w3m's link
+ * list; blank runs collapse to one line.
+ *
  * Attachments collected across all messages land in `r->attaches`;
  * the [n] labels are 1-based indices into that array (stable across
  * the whole thread, unlike MIME part ids which restart per
  * message). `r->msgs` records where each message starts and which
  * attachments are its own, so callers can map a cursor row back to
  * one message. */
-void mail_render_show_text(MailRender *r, char **raw, int raw_count);
+void mail_render_show_text(MailRender *r, char **raw, int raw_count, int chat,
+                           const char *self);
 
 #endif

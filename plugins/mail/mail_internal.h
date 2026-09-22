@@ -36,6 +36,10 @@ void mail_handle_enter(void);
  * is, it's also marked read. */
 void mail_open_thread(const char *tid);
 
+/* :mail-chat [on|off|toggle] — switch between the full and the chat
+ * thread view (session-wide) and re-render the viewed thread, if any. */
+void mail_chat_view(const char *args);
+
 /* Open the next/previous thread in the current listing while viewing a
  * mail-message buffer. No-op (with status message) if not viewing one
  * or if already at the end/beginning. */
@@ -98,6 +102,11 @@ void mail_forward_eml(void);
  * buffer is not a mail-message. `*idx` gets the 0-based display index
  * and `*count` the number of messages, when non-NULL. */
 const MailMsgSpan *mail_cursor_msg(int *idx, int *count);
+
+/* 1-based number of display index `idx` counting from the oldest
+ * message (the full view shows newest first, the chat view oldest
+ * first) — for "message 2/5" status lines. */
+int mail_msg_number(int idx, int count);
 
 /* Open the viewed message's HTML body in the system browser (written
  * to /tmp, handed to open_path). Status note when there is none. */

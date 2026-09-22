@@ -136,6 +136,7 @@ static void config_load_defaults(void) {
     cmapn(" tT", "tmux_kill", "kill tmux pane");
     cmapn(" gg", "git", "lazygit");
     cmapn(" tl", "ln", "toggle line numbers");
+    cmapn(" tc", "mail-chat toggle", "toggle mail chat view");
     cmapn(" wd", "wclose", "close window");
     cmapn(" ws", "split", "split horizontal");
     cmapn(" wo", "wonly", "close other windows");

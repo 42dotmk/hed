@@ -51,6 +51,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-forward` | Forward the message under the cursor inline, with its attachments re-attached |
 | `:mail-forward-eml` | Forward the message under the cursor verbatim, as one `.eml` (`message/rfc822`) attachment |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
+| `:mail-chat [on\|off\|toggle]` | Switch the thread view between full and chat style (see below); re-renders the viewed thread. Session-wide |
 | `:mail-attach [n\|all]` | Open attachment(s) of the message under the cursor (whole thread with `all`, or when that message has none) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
 | `:mail-attach save [n\|all] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 | `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
@@ -85,6 +86,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `a` | Open attachment(s) of the message under the cursor — auto if one, fzf multi-pick if many |
 | `A` | Save attachment(s) of the message under the cursor to `~/Downloads` (fzf multi-pick if many) |
 | `o` | Open the message's HTML body in the system browser |
+| `c` | Toggle the chat-style thread view |
 | `q` | Close the message |
 
 ### In the mailbox sidebar (`mail-mailboxes` filetype)
@@ -140,6 +142,49 @@ The highlighter (`mail_msg_hl`) styles header keys, header values,
 quoted lines (`>`), the `Attachments:` pseudo-header, and the
 section divider.
 
+### Chat view
+
+`c` in a thread (or `:mail-chat`) re-renders it as a conversation:
+
+```
+Subject: Quarterly review
+
+● Alice Smith — 18 May 2026 10:14
+Hi Bob, here are the notes.
+
+● You — 18 May 2026 11:02
+Attachments:  [1] chart.png
+Thanks — one question about slide 3.
+```
+
+- Messages run oldest-first, sorted by their `Date:` (hml's tree
+  order breaks ties and stands in for unparseable dates), with the
+  time shown in your local zone; the cursor starts on the newest one
+  at the bottom.
+- One header line per message: the sender's display name (`You` for
+  the address set with `mail_set_from`) and the timestamp. `To:`/`Cc:`
+  are not shown; the subject appears once at the top.
+- Bodies lose everything that repeats the thread or says nothing:
+  `>`-quoted lines and their `On … wrote:` attribution (wrapped ones
+  too), the tail after an attribution when the mail has no `>` quotes
+  (HTML replies rendered by w3m), Outlook `-----Original Message-----`
+  / `_____` dividers and pasted `From:`/`Sent:`/`To:`/`Subject:`
+  header blocks, forwarded-message banners, `-- ` signatures, a
+  trailing signature block that opens with the sender's own name
+  (mail-client-generated: name, title, company, phone, links), mobile
+  `Sent from my …` footers and w3m's link list. Blank runs collapse
+  to one. A message left with nothing shows `(quoted text only)`.
+- Reply, forward, `a`/`A` and `o` work on the message under the cursor
+  as in the full view. Inline forward copies the body *as shown*, so
+  from the chat view it goes out stripped — switch back (`c`) or use
+  `F` for a verbatim `.eml` forward.
+
+The view is remembered for the session; a thread buffer reopened
+after a toggle is re-rendered in the current view. `<space>tc` (the
+leader toggle cluster in `src/config.h`) flips it from anywhere, so
+the next thread you open already comes up as a chat. Start in chat
+view from config with `mail_set_chat(1)`.
+
 ## Configuration
 
 All knobs live in `mail.h` and go in your user config
@@ -156,6 +201,7 @@ mail_set_query("tag:inbox AND NOT tag:muted"); /* default base query  */
 mail_set_sync_cmd("mbsync personal");          /* default: "hml recv" */
 mail_set_send_cmd("msmtp -t -a personal");     /* default: "msmtp -t" */
 mail_set_from("Me <me@example.com>");          /* From: in compose    */
+mail_set_chat(1);                              /* threads open as chat */
 
 /* Saved views shown at the top of the mailbox sidebar. */
 mail_add_view("Unread",      "tag:unread");

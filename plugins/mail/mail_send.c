@@ -204,14 +204,12 @@ void mail_attach_add(const char *path) {
         ed_set_status_message("mail-attach-add: attached %d file(s)", ok);
 }
 
-/* Find the first header line "<Name>: <value>" in buf at or after row
- * `start` (headers stop at the first blank line) and copy the value,
- * trimmed of leading whitespace, into out. Returns 1 on hit (out may
- * still be "" for an empty value). */
-static int header_value_from(Buffer *buf, int start, const char *name,
-                             char *out, size_t cap) {
+/* Find the header line "<Name>: <value>" in buf (headers stop at the
+ * first blank line) and copy the value, trimmed of leading whitespace,
+ * into out. Returns 1 on hit (out may still be "" for an empty value). */
+static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
     size_t nlen = strlen(name);
-    for (int i = start; i < buf->num_rows; i++) {
+    for (int i = 0; i < buf->num_rows; i++) {
         StrBuf *s = &buf->rows[i].chars;
         if (s->len == 0)
             return 0; /* end of headers */
@@ -232,10 +230,6 @@ static int header_value_from(Buffer *buf, int start, const char *name,
         return 1;
     }
     return 0;
-}
-
-static int header_value(Buffer *buf, const char *name, char *out, size_t cap) {
-    return header_value_from(buf, 0, name, out, cap);
 }
 
 /* ------------------------------------------------------------------ */
@@ -764,7 +758,8 @@ void mail_reply(int reply_all) {
     ed_set_status_message(
         "mail-reply: %s to message %d/%d — edit body, C-c C-c or :mail-send "
         "to send",
-        reply_all ? "reply-all" : "sender", mcount - midx, mcount);
+        reply_all ? "reply-all" : "sender", mail_msg_number(midx, mcount),
+        mcount);
 }
 
 /* The cursor message of the viewed thread, or NULL with a status
@@ -798,28 +793,15 @@ void mail_forward(void) {
         return;
     Buffer *src = buf_cur();
 
-    /* Pull the original headers (From / Date / Subject / To / Cc)
-     * directly from the rendered message buffer — same source the
-     * user is reading — starting at this message's header block. */
-    char orig_from[512] = "", orig_date[256] = "", orig_subj[512] = "";
-    char orig_to[512] = "", orig_cc[512] = "";
-    int h = m->hdr_row;
-    header_value_from(src, h, "From", orig_from, sizeof(orig_from));
-    header_value_from(src, h, "Date", orig_date, sizeof(orig_date));
-    header_value_from(src, h, "Subject", orig_subj, sizeof(orig_subj));
-    header_value_from(src, h, "To", orig_to, sizeof(orig_to));
-    header_value_from(src, h, "Cc", orig_cc, sizeof(orig_cc));
-
-    /* Body: everything after the blank line that ends this message's
-     * headers, up to the next message block (or EOF), minus trailing
-     * blank lines. */
-    int body_start = -1;
-    for (int i = h; i < src->num_rows; i++) {
-        if (src->rows[i].chars.len == 0) {
-            body_start = i + 1;
-            break;
-        }
-    }
+    /* The original headers (From / Date / Subject / To / Cc) come
+     * from the parsed message span — the same in either thread view.
+     * The body is what the user is reading: this message's rows from
+     * its first body row up to the next message block (or EOF), minus
+     * trailing blank lines. In the chat view that is the stripped
+     * body (no quotes / signature). */
+    const char *orig_from = m->from, *orig_date = m->date;
+    const char *orig_subj = m->subject, *orig_to = m->to, *orig_cc = m->cc;
+    int body_start = m->body_row;
     int body_end = src->num_rows;
     {
         int cnt = 0;
@@ -890,7 +872,7 @@ void mail_forward(void) {
 
     ed_set_status_message("mail-forward: message %d/%d, %d attachment(s) — "
                           "edit To: and body, C-c C-c or :mail-send to send",
-                          mcount - midx, mcount, att_count);
+                          mail_msg_number(midx, mcount), mcount, att_count);
 }
 
 void mail_forward_eml(void) {
@@ -898,10 +880,8 @@ void mail_forward_eml(void) {
     const MailMsgSpan *m = forward_source("mail-forward-eml", &midx, &mcount);
     if (!m)
         return;
-    Buffer *src = buf_cur();
 
-    char orig_subj[512] = "";
-    header_value_from(src, m->hdr_row, "Subject", orig_subj, sizeof(orig_subj));
+    const char *orig_subj = m->subject;
 
     char *eml = mail_extract_raw_to_tmp(m, orig_subj);
     if (!eml) {
@@ -929,5 +909,5 @@ void mail_forward_eml(void) {
 
     ed_set_status_message("mail-forward-eml: message %d/%d attached as .eml — "
                           "edit To: and body, C-c C-c or :mail-send to send",
-                          mcount - midx, mcount);
+                          mail_msg_number(midx, mcount), mcount);
 }

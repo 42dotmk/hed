@@ -34,6 +34,19 @@ static MailMsgSpan *msgs = NULL;
 static char *view_html = NULL;
 static size_t view_html_len = 0;
 
+/* Which thread the three caches above describe, and in which view it
+ * was rendered — a thread buffer found open is only reused as-is when
+ * both still match. */
+static char rendered_tid[128] = "";
+static int rendered_chat = 0;
+
+/* Chat view on/off for thread buffers (session-wide; see
+ * mail_set_chat / :mail-chat). */
+static int chat_view = 0;
+
+void mail_set_chat(int on) { chat_view = on ? 1 : 0; }
+int mail_get_chat(void) { return chat_view; }
+
 /* ------------------------------------------------------------------ */
 /* State                                                               */
 /* ------------------------------------------------------------------ */
@@ -436,10 +449,13 @@ void mail_sync(void) {
 #define MC_META COLOR_COMMENT                        /* date / tags / dim   */
 
 /* Colors for the mail message view. */
-#define MC_MSG_MARKER COLOR_DELIMITER /* section dividers    */
-#define MC_MSG_HDR_KEY COLOR_KEYWORD  /* From: / Subject: …  */
-#define MC_MSG_HDR_VAL COLOR_VARIABLE /* header value        */
-#define MC_MSG_QUOTE COLOR_COMMENT    /* > quoted lines      */
+#define MC_MSG_MARKER COLOR_DELIMITER          /* section dividers    */
+#define MC_MSG_HDR_KEY COLOR_KEYWORD           /* From: / Subject: …  */
+#define MC_MSG_HDR_VAL COLOR_VARIABLE          /* header value        */
+#define MC_MSG_QUOTE COLOR_COMMENT             /* > quoted lines      */
+#define MC_CHAT_WHO "\x1b[1;38;2;122;162;247m" /* chat sender, bold blue  */
+#define MC_CHAT_ME "\x1b[1;38;2;158;206;106m"  /* chat "You", bold green  */
+#define MC_CHAT_WHEN COLOR_COMMENT             /* chat timestamp, dim     */
 
 /* A coloured span: [s, e) bytes in the row → SGR escape. */
 typedef struct {
@@ -544,6 +560,28 @@ static int parse_msg_spans(const char *raw, int len, MailSpan *sp, int max) {
         (unsigned char)raw[1] == 0x94 && (unsigned char)raw[2] == 0x80) {
         if (n < max)
             sp[n++] = (MailSpan){0, len, MC_MSG_MARKER};
+        return n;
+    }
+
+    /* Chat view message header: "● Sender — 18 May 2026 10:14". */
+    if (len >= 4 && (unsigned char)raw[0] == 0xE2 &&
+        (unsigned char)raw[1] == 0x97 && (unsigned char)raw[2] == 0x8F &&
+        raw[3] == ' ') {
+        int who_end = len;
+        for (int i = 4; i + 4 < len; i++) {
+            if (raw[i] == ' ' && (unsigned char)raw[i + 1] == 0xE2 &&
+                (unsigned char)raw[i + 2] == 0x80 &&
+                (unsigned char)raw[i + 3] == 0x94 && raw[i + 4] == ' ') {
+                who_end = i;
+                break;
+            }
+        }
+        int me = (who_end - 4 == 3 && strncmp(raw + 4, "You", 3) == 0);
+        if (n + 1 < max) {
+            sp[n++] = (MailSpan){0, who_end, me ? MC_CHAT_ME : MC_CHAT_WHO};
+            if (who_end < len)
+                sp[n++] = (MailSpan){who_end, len, MC_CHAT_WHEN};
+        }
         return n;
     }
 
@@ -736,39 +774,10 @@ static void mark_thread_read(int row) {
     }
 }
 
-/* Open (or focus) the thread buffer for `tid` ("thread:…"). `title` is
- * the mail-list display line, or NULL when the thread isn't in the
- * current listing (e.g. followed from a mail:// link) — then the
- * rendered Subject: header stands in. */
-static void open_thread_tid(const char *tid, const char *title) {
-    if (!tid || !*tid)
-        return;
-
-    /* Reuse an already-open thread buffer if present. */
-    char bufname[256];
-    snprintf(bufname, sizeof(bufname), "mail://%s", tid);
-
-    int existing = buf_find_by_filename(bufname);
-    if (existing >= 0) {
-        buf_switch(existing);
-        if (title)
-            ed_set_status_message("%s", title);
-        return;
-    }
-
-    /* Highlighting via mail_msg_render_hook (registered in
-     * mail_plugin_init, filtered on filetype). */
-    BufSpecial spec = {.name = bufname,
-                       .filetype = "mail-message",
-                       .readonly = 1,
-                       .as_filename = 1};
-    int idx = buf_special_get(&spec, NULL);
-    if (idx < 0) {
-        ed_set_status_message("mail: failed to open thread buffer");
-        return;
-    }
-    Buffer *tbuf = &E.buffers[idx];
-
+/* (Re)render thread `tid` into `tbuf` in the current view, taking over
+ * the attachment / message / HTML caches. `title` (the mail-list
+ * display line) wins over the thread subject when given. */
+static void render_thread(Buffer *tbuf, const char *tid, const char *title) {
     char tidq[512];
     shell_escape_single(tid, tidq, sizeof(tidq));
     char cmd[600];
@@ -781,21 +790,14 @@ static void open_thread_tid(const char *tid, const char *title) {
 
     MailRender mr;
     mail_render_init(&mr);
-    mail_render_show_text(&mr, lines, count);
+    mail_render_show_text(&mr, lines, count, chat_view, mail_get_from());
     term_cmd_free(lines, count);
 
     buf_special_clear(tbuf);
     buf_special_add_lines(tbuf, mr.lines, (int)arrlen(mr.lines));
 
-    if (!title) {
-        for (ptrdiff_t i = 0; i < arrlen(mr.lines) && i < 20; i++) {
-            const char *l = mr.lines[i];
-            if (l && strncmp(l, "Subject: ", 9) == 0 && l[9]) {
-                title = l + 9;
-                break;
-            }
-        }
-    }
+    if (!title && arrlen(mr.msgs) > 0 && mr.msgs[0].subject[0])
+        title = mr.msgs[0].subject;
     free(tbuf->title);
     tbuf->title = strdup(title ? title : tid);
 
@@ -817,9 +819,84 @@ static void open_thread_tid(const char *tid, const char *title) {
 
     mail_render_free(&mr);
 
+    snprintf(rendered_tid, sizeof(rendered_tid), "%s", tid);
+    rendered_chat = chat_view;
+}
+
+/* Where the cursor lands on a fresh render: the top in the full view
+ * (newest message first), the end in the chat view (newest last). */
+static void thread_cursor_home(const Buffer *tbuf) {
+    Window *win = window_cur();
+    if (!win)
+        return;
+    win->cursor.x = 0;
+    win->cursor.y = chat_view && tbuf->num_rows > 0 ? tbuf->num_rows - 1 : 0;
+}
+
+/* Open (or focus) the thread buffer for `tid` ("thread:…"). `title` is
+ * the mail-list display line, or NULL when the thread isn't in the
+ * current listing (e.g. followed from a mail:// link) — then the
+ * rendered Subject: header stands in. */
+static void open_thread_tid(const char *tid, const char *title) {
+    if (!tid || !*tid)
+        return;
+
+    /* Reuse an already-open thread buffer if present — as-is when the
+     * caches still describe it in the current view, re-rendered
+     * otherwise (another thread was viewed since, or the view
+     * changed). */
+    char bufname[256];
+    snprintf(bufname, sizeof(bufname), "mail://%s", tid);
+
+    int existing = buf_find_by_filename(bufname);
+    if (existing >= 0) {
+        buf_switch(existing);
+        Buffer *tbuf = &E.buffers[existing];
+        if (strcmp(rendered_tid, tid) != 0 || rendered_chat != chat_view) {
+            render_thread(tbuf, tid, title);
+            thread_cursor_home(tbuf);
+        }
+        ed_set_status_message("%s", title ? title : tbuf->title);
+        return;
+    }
+
+    /* Highlighting via mail_msg_render_hook (registered in
+     * mail_plugin_init, filtered on filetype). */
+    BufSpecial spec = {.name = bufname,
+                       .filetype = "mail-message",
+                       .readonly = 1,
+                       .as_filename = 1};
+    int idx = buf_special_get(&spec, NULL);
+    if (idx < 0) {
+        ed_set_status_message("mail: failed to open thread buffer");
+        return;
+    }
+    Buffer *tbuf = &E.buffers[idx];
+    render_thread(tbuf, tid, title);
     buf_special_show(idx);
+    thread_cursor_home(tbuf);
 
     ed_set_status_message("%s", tbuf->title);
+}
+
+void mail_chat_view(const char *args) {
+    int on = args_tristate(args, chat_view);
+    if (on < 0) {
+        ed_set_status_message("usage: mail-chat [on|off|toggle]");
+        return;
+    }
+    chat_view = on;
+
+    Buffer *buf = buf_cur();
+    if (buf && buf->filetype && strcmp(buf->filetype, "mail-message") == 0 &&
+        buf->filename && strncmp(buf->filename, "mail://", 7) == 0) {
+        const char *tid = buf->filename + 7;
+        if (rendered_chat != chat_view || strcmp(rendered_tid, tid) != 0) {
+            render_thread(buf, tid, NULL);
+            thread_cursor_home(buf);
+        }
+    }
+    ed_set_status_message("mail: %s view", chat_view ? "chat" : "full");
 }
 
 static void open_thread_row(int row) {
@@ -1398,6 +1475,10 @@ const MailMsgSpan *mail_cursor_msg(int *idx, int *count) {
     if (idx)
         *idx = i;
     return &msgs[i];
+}
+
+int mail_msg_number(int idx, int count) {
+    return rendered_chat ? idx + 1 : count - idx;
 }
 
 char **mail_extract_attachments_to_tmp(const MailMsgSpan *m) {

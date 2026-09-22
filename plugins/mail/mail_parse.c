@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #define PART_DEPTH_MAX 8
 
@@ -116,6 +117,8 @@ typedef struct {
     char date[256];
     char msg_id[256];
     int depth;
+    int order;   /* position in hml show's output */
+    time_t when; /* Date: as an epoch (see msg_save for unparseable) */
 
     StrBuf plain; /* text/plain body accumulator */
     StrBuf html;  /* fallback text/html accumulator */
@@ -142,65 +145,73 @@ static int span_blank(const char *s, size_t len) {
     return 1;
 }
 
-static void emit_msg(MailRender *r, MsgState *m, int is_first) {
-    MailMsgSpan span;
-    memset(&span, 0, sizeof(span));
-    span.row = (int)arrlen(r->lines);
-    if (!is_first) {
-        lines_pushz(r, "");
-        lines_pushz(r, "──────────────────────────────────────────");
-        lines_pushz(r, "");
+/* RFC 2822 "Tue, 18 May 2026 10:14:00 +0200" → epoch; -1 when it
+ * doesn't parse. A zone that isn't numeric counts as UTC. */
+static time_t parse_rfc2822(const char *s) {
+    while (*s == ' ' || *s == '\t')
+        s++;
+    if (strlen(s) > 5 && s[3] == ',')
+        s += 4;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    const char *p = strptime(s, "%d %b %Y %H:%M", &tm);
+    if (!p)
+        return -1;
+    if (*p == ':') {
+        int sec = 0;
+        p++;
+        while (*p >= '0' && *p <= '9')
+            sec = sec * 10 + (*p++ - '0');
+        tm.tm_sec = sec;
     }
-    span.hdr_row = (int)arrlen(r->lines);
-    snprintf(span.msg_id, sizeof(span.msg_id), "%s", m->msg_id);
-    span.attach_start = m->attach_start;
-    span.attach_count = m->attach_count;
-    arrput(r->msgs, span);
+    while (*p == ' ' || *p == '\t')
+        p++;
+    long off = 0;
+    if ((*p == '+' || *p == '-') && strlen(p) >= 5) {
+        int sign = *p == '-' ? -1 : 1;
+        int hh = (p[1] - '0') * 10 + (p[2] - '0');
+        int mm = (p[3] - '0') * 10 + (p[4] - '0');
+        off = sign * (hh * 3600L + mm * 60L);
+    }
+    time_t t = timegm(&tm);
+    return t == (time_t)-1 ? -1 : t - off;
+}
 
-    char line[1024];
-    if (m->from[0]) {
-        snprintf(line, sizeof(line), "From:    %s", m->from);
-        lines_pushz(r, line);
-    }
-    if (m->to[0]) {
-        snprintf(line, sizeof(line), "To:      %s", m->to);
-        lines_pushz(r, line);
-    }
-    if (m->cc[0]) {
-        snprintf(line, sizeof(line), "Cc:      %s", m->cc);
-        lines_pushz(r, line);
-    }
-    if (m->subject[0]) {
-        snprintf(line, sizeof(line), "Subject: %s", m->subject);
-        lines_pushz(r, line);
-    }
-    if (m->date[0]) {
-        snprintf(line, sizeof(line), "Date:    %s", m->date);
-        lines_pushz(r, line);
-    }
+static void span_fill(MailMsgSpan *span, const MsgState *m) {
+    snprintf(span->msg_id, sizeof(span->msg_id), "%s", m->msg_id);
+    span->attach_start = m->attach_start;
+    span->attach_count = m->attach_count;
+    snprintf(span->from, sizeof(span->from), "%s", m->from);
+    snprintf(span->to, sizeof(span->to), "%s", m->to);
+    snprintf(span->cc, sizeof(span->cc), "%s", m->cc);
+    snprintf(span->subject, sizeof(span->subject), "%s", m->subject);
+    snprintf(span->date, sizeof(span->date), "%s", m->date);
+}
 
+/* "Attachments:  [n] name  [n] name" — the numbers are 1-based,
+ * thread-wide (what :mail-attach <n> takes). Nothing when none. */
+static void emit_attachments(MailRender *r, const MsgState *m) {
     int n_att = m->attach_count;
-    if (n_att > 0) {
-        size_t cap = 32 + (size_t)n_att * 80;
-        char *al = malloc(cap);
-        if (al) {
-            size_t off = (size_t)snprintf(al, cap, "Attachments:");
-            for (int i = 0; i < n_att; i++) {
-                const MailAttachInfo *a = &r->attaches[m->attach_start + i];
-                /* 1-based whole-thread attachment number — what
-                 * :mail-attach <n> takes. */
-                off += (size_t)snprintf(
-                    al + off, cap - off, "  [%d] %s", m->attach_start + i + 1,
-                    a->filename[0] ? a->filename : "(unnamed)");
-            }
-            lines_pushz(r, al);
-            free(al);
-        }
+    if (n_att <= 0)
+        return;
+    size_t cap = 32 + (size_t)n_att * 80;
+    char *al = malloc(cap);
+    if (!al)
+        return;
+    size_t off = (size_t)snprintf(al, cap, "Attachments:");
+    for (int i = 0; i < n_att; i++) {
+        const MailAttachInfo *a = &r->attaches[m->attach_start + i];
+        off += (size_t)snprintf(al + off, cap - off, "  [%d] %s",
+                                m->attach_start + i + 1,
+                                a->filename[0] ? a->filename : "(unnamed)");
     }
+    lines_pushz(r, al);
+    free(al);
+}
 
-    lines_pushz(r, "");
-
-    /* Body: prefer plain. Fall back to html via w3m/lynx. */
+/* Body: prefer plain (minus leading/trailing blank lines). Fall back
+ * to html via w3m/lynx. */
+static void emit_body(MailRender *r, const MsgState *m) {
     if (m->have_plain && m->plain.len > 0) {
         const char *body = m->plain.data;
         size_t body_len = m->plain.len;
@@ -235,19 +246,401 @@ static void emit_msg(MailRender *r, MsgState *m, int is_first) {
     }
 }
 
+static void emit_msg(MailRender *r, MsgState *m, int is_first) {
+    MailMsgSpan span;
+    memset(&span, 0, sizeof(span));
+    span.row = (int)arrlen(r->lines);
+    if (!is_first) {
+        lines_pushz(r, "");
+        lines_pushz(r, "──────────────────────────────────────────");
+        lines_pushz(r, "");
+    }
+    span.hdr_row = (int)arrlen(r->lines);
+    span_fill(&span, m);
+
+    char line[1024];
+    if (m->from[0]) {
+        snprintf(line, sizeof(line), "From:    %s", m->from);
+        lines_pushz(r, line);
+    }
+    if (m->to[0]) {
+        snprintf(line, sizeof(line), "To:      %s", m->to);
+        lines_pushz(r, line);
+    }
+    if (m->cc[0]) {
+        snprintf(line, sizeof(line), "Cc:      %s", m->cc);
+        lines_pushz(r, line);
+    }
+    if (m->subject[0]) {
+        snprintf(line, sizeof(line), "Subject: %s", m->subject);
+        lines_pushz(r, line);
+    }
+    if (m->date[0]) {
+        snprintf(line, sizeof(line), "Date:    %s", m->date);
+        lines_pushz(r, line);
+    }
+    emit_attachments(r, m);
+    lines_pushz(r, "");
+    span.body_row = (int)arrlen(r->lines);
+    arrput(r->msgs, span);
+
+    emit_body(r, m);
+}
+
+/* ------------------------------------------------------------------ */
+/* Chat view                                                           */
+/* ------------------------------------------------------------------ */
+
+static const char *rtrim_end(const char *s) {
+    const char *e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r'))
+        e--;
+    return e;
+}
+
+static const char *ltrim(const char *s) {
+    while (*s == ' ' || *s == '\t')
+        s++;
+    return s;
+}
+
+static int line_blank(const char *s) { return *ltrim(s) == '\0'; }
+
+/* "On Tue, 18 May 2026, Alice wrote:" and its translations — the line
+ * that introduces a quoted reply. */
+static int is_attribution(const char *line) {
+    const char *s = ltrim(line);
+    const char *e = rtrim_end(s);
+    if (e == s || e[-1] != ':')
+        return 0;
+    static const char *const verbs[] = {"wrote",   "writes", "schrieb", "écrit",
+                                        "escribi", "napisa", "scritto", NULL};
+    for (int i = 0; verbs[i]; i++)
+        if (strcasestr(s, verbs[i]))
+            return 1;
+    return 0;
+}
+
+/* First line of a wrapped attribution ("On Tue, 18 May 2026 at 10:14
+ * Alice Smith" / "Le mar. 18 mai …" / "Am 18.05.2026 um …"). */
+static int is_attribution_head(const char *line) {
+    const char *s = ltrim(line);
+    static const char *const heads[] = {"On ", "Le ", "Am ",
+                                        "El ", "Il ", NULL};
+    for (int i = 0; heads[i]; i++)
+        if (strncmp(s, heads[i], strlen(heads[i])) == 0)
+            return 1;
+    return 0;
+}
+
+/* A line after which nothing of the writer's own text follows:
+ * signature separator, Outlook's original-message divider, forwarded-
+ * message banners, mobile footers. */
+static int is_cut_marker(const char *line) {
+    const char *s = ltrim(line);
+    const char *e = rtrim_end(s);
+    size_t n = (size_t)(e - s);
+    if (n == 2 && s[0] == '-' && s[1] == '-')
+        return 1; /* "-- " (RFC 3676) */
+    if (n >= 20) {
+        size_t i = 0;
+        while (i < n && s[i] == '_')
+            i++;
+        if (i == n)
+            return 1; /* Outlook's ______ rule */
+    }
+    if (n > 10 && strncmp(s, "-----", 5) == 0 &&
+        strncmp(e - 5, "-----", 5) == 0)
+        return 1; /* -----Original Message----- (any language) */
+    static const char *const heads[] = {
+        "---------- Forwarded message", "Begin forwarded message",
+        "Sent from my ", "Get Outlook for ", NULL};
+    for (int i = 0; heads[i]; i++)
+        if (strncasecmp(s, heads[i], strlen(heads[i])) == 0)
+            return 1;
+    return 0;
+}
+
+static int starts_with_ci(const char *s, const char *p) {
+    return strncasecmp(s, p, strlen(p)) == 0;
+}
+
+/* Outlook-style reply header pasted without a divider: a "From:" line
+ * followed within a few lines by "Subject:" and "To:"/"Sent:"/"Date:". */
+static int is_header_block(char **lines, int i, int end) {
+    if (!starts_with_ci(ltrim(lines[i]), "From:"))
+        return 0;
+    int subj = 0, other = 0;
+    for (int k = i + 1; k < end && k <= i + 5; k++) {
+        const char *s = ltrim(lines[k]);
+        if (starts_with_ci(s, "Subject:"))
+            subj = 1;
+        else if (starts_with_ci(s, "To:") || starts_with_ci(s, "Sent:") ||
+                 starts_with_ci(s, "Date:"))
+            other = 1;
+    }
+    return subj && other;
+}
+
+/* w3m's trailing link list: "References:" then "[1] http…" lines. */
+static int is_w3m_refs(char **lines, int i, int end) {
+    if (strncmp(lines[i], "References:", 11) != 0 || !line_blank(lines[i] + 11))
+        return 0;
+    for (int k = i + 1; k < end; k++) {
+        if (line_blank(lines[k]))
+            continue;
+        return ltrim(lines[k])[0] == '[';
+    }
+    return 0;
+}
+
+/* Trimmed line text with any *…* / _…_ emphasis (w3m, markdown-ish
+ * mail) peeled off — what a signature line compares as. */
+static void plain_text(const char *line, char *out, size_t cap) {
+    const char *s = ltrim(line);
+    const char *e = rtrim_end(s);
+    while (s < e && (*s == '*' || *s == '_'))
+        s++;
+    while (e > s && (e[-1] == '*' || e[-1] == '_'))
+        e--;
+    size_t n = (size_t)(e - s);
+    if (n >= cap)
+        n = cap - 1;
+    memcpy(out, s, n);
+    out[n] = '\0';
+}
+
+/* A signature without the "-- " separator: a short trailing block
+ * (≤ 15 lines of ≤ 80 chars) that opens with the sender's display name
+ * on a line of its own — the mail-client-generated kind (name, title,
+ * company, phone, links). Returns the row it starts at, or `end`. */
+static int sig_start(char **ln, int from, int end, const char *name) {
+    if (!name || strlen(name) < 3)
+        return end;
+    for (int i = from + 1; i < end; i++) {
+        char t[256];
+        plain_text(ln[i], t, sizeof(t));
+        if (strcasecmp(t, name) != 0)
+            continue;
+        if (end - i > 15)
+            continue;
+        int ok = 1;
+        for (int k = i; k < end && ok; k++)
+            ok = strlen(ln[k]) <= 80;
+        if (ok)
+            return i;
+    }
+    return end;
+}
+
+/* Chat view: drop what the thread already shows or that says nothing —
+ * quoted lines and their attribution, everything from a cut marker
+ * down, a trailing signature block — then collapse blank runs. Works
+ * on r->lines[from..]. */
+static void chat_strip(MailRender *r, int from, const char *name) {
+    int n = (int)arrlen(r->lines);
+    if (from >= n)
+        return;
+    char **ln = r->lines;
+
+    /* With ">" quotes the message may interleave answers between
+     * quoted chunks, so attributions are dropped line-wise; without
+     * them (HTML rendered by w3m) the attribution begins the quoted
+     * tail and everything after it goes. */
+    int has_quote = 0;
+    for (int i = from; i < n; i++)
+        if (ln[i][0] == '>')
+            has_quote = 1;
+
+    char *drop = calloc((size_t)n, 1);
+    if (!drop)
+        return;
+    int end = n;
+    for (int i = from; i < end; i++) {
+        const char *l = ln[i];
+        if (is_cut_marker(l) || is_header_block(ln, i, end) ||
+            is_w3m_refs(ln, i, end)) {
+            end = i;
+            break;
+        }
+        if (l[0] == '>') {
+            drop[i] = 1;
+            continue;
+        }
+        if (is_attribution(l)) {
+            int j = i;
+            /* A wrapped attribution: back up to its "On …" head, at
+             * most two lines above and only through non-blank text. */
+            if (!is_attribution_head(l)) {
+                for (int k = i - 1; k >= from && k >= i - 2; k--) {
+                    if (drop[k] || line_blank(ln[k]))
+                        break;
+                    if (is_attribution_head(ln[k])) {
+                        j = k;
+                        break;
+                    }
+                }
+            }
+            if (!has_quote) {
+                end = j;
+                break;
+            }
+            for (int k = j; k <= i; k++)
+                drop[k] = 1;
+        }
+    }
+
+    /* Compact in place: skip dropped lines, collapse blank runs. */
+    int out = from;
+    for (int i = from; i < end; i++) {
+        if (drop[i] ||
+            (line_blank(ln[i]) && (out == from || line_blank(ln[out - 1])))) {
+            free(ln[i]);
+            continue;
+        }
+        ln[out++] = ln[i];
+    }
+    for (int i = end; i < n; i++)
+        free(ln[i]);
+    int sig = sig_start(ln, from, out, name);
+    while (out > sig)
+        free(ln[--out]);
+    while (out > from && line_blank(ln[out - 1]))
+        free(ln[--out]);
+    arrsetlen(ln, out);
+    r->lines = ln;
+    free(drop);
+
+    if (out == from)
+        lines_pushz(r, "(quoted text only)");
+}
+
+/* The address part of "Name <addr>" (or a bare address). */
+static const char *from_addr(const char *from, size_t *len) {
+    const char *lt = strchr(from, '<');
+    const char *addr = lt ? lt + 1 : from;
+    *len = lt ? strcspn(addr, ">") : strlen(addr);
+    return addr;
+}
+
+static int is_self(const char *from, const char *self) {
+    if (!self || !*self)
+        return 0;
+    size_t alen, slen;
+    const char *addr = from_addr(from, &alen);
+    const char *saddr = from_addr(self, &slen);
+    return slen && slen == alen && strncasecmp(saddr, addr, alen) == 0;
+}
+
+/* Display name out of "Alice Smith <alice@example.com>", the bare
+ * address when there is none. */
+static void from_name(const char *from, char *out, size_t cap) {
+    const char *lt = strchr(from, '<');
+    size_t alen;
+    const char *addr = from_addr(from, &alen);
+
+    const char *s = from;
+    const char *e = lt ? lt : from + strlen(from);
+    while (s < e && (*s == ' ' || *s == '"'))
+        s++;
+    while (e > s && (e[-1] == ' ' || e[-1] == '"'))
+        e--;
+    if (e == s) {
+        s = addr;
+        e = addr + alen;
+    }
+    size_t n = (size_t)(e - s);
+    if (n >= cap)
+        n = cap - 1;
+    memcpy(out, s, n);
+    out[n] = '\0';
+}
+
+/* "Tue, 18 May 2026 10:14:00 +0200" → "18 May 2026 10:14", in local
+ * time when the date parses (senders write theirs in their own zone;
+ * a conversation reads in one). */
+static void chat_date(const char *date, char *out, size_t cap) {
+    time_t when = parse_rfc2822(date);
+    if (when != -1) {
+        struct tm lt;
+        if (localtime_r(&when, &lt) &&
+            strftime(out, cap, "%d %b %Y %H:%M", &lt))
+            return;
+    }
+    const char *s = ltrim(date);
+    if (strlen(s) > 5 && s[3] == ',')
+        s = ltrim(s + 4);
+    size_t n = 0;
+    while (*s && n + 1 < cap) {
+        /* Cut inside the time token after HH:MM. */
+        if (*s == ':' && n >= 2 && s[1] >= '0' && s[1] <= '9' && s[2] >= '0' &&
+            s[2] <= '9' && (s[3] == ':' || s[3] == ' ' || s[3] == '\0')) {
+            out[n++] = ':';
+            out[n++] = s[1];
+            out[n++] = s[2];
+            break;
+        }
+        out[n++] = *s++;
+    }
+    while (n > 0 && out[n - 1] == ' ')
+        n--;
+    out[n] = '\0';
+}
+
+static void emit_chat_msg(MailRender *r, MsgState *m, const char *self) {
+    MailMsgSpan span;
+    memset(&span, 0, sizeof(span));
+    span.row = (int)arrlen(r->lines);
+    if (arrlen(r->msgs) > 0)
+        lines_pushz(r, "");
+    span.hdr_row = (int)arrlen(r->lines);
+    span_fill(&span, m);
+
+    char name[256], when[128], line[512];
+    from_name(m->from[0] ? m->from : "(unknown)", name, sizeof(name));
+    const char *who = is_self(m->from, self) ? "You" : name;
+    chat_date(m->date, when, sizeof(when));
+    if (when[0])
+        snprintf(line, sizeof(line), "● %s — %s", who, when);
+    else
+        snprintf(line, sizeof(line), "● %s", who);
+    lines_pushz(r, line);
+    emit_attachments(r, m);
+
+    span.body_row = (int)arrlen(r->lines);
+    arrput(r->msgs, span);
+
+    emit_body(r, m);
+    chat_strip(r, span.body_row, name);
+}
+
+static int by_date(const void *a, const void *b) {
+    const MsgState *x = a, *y = b;
+    if (x->when != y->when)
+        return x->when < y->when ? -1 : 1;
+    return x->order - y->order;
+}
+
 /* Push the current MsgState onto saved[] (taking ownership of its
  * heap buffers) and reset the working copy. The actual emit happens
  * at the end of parsing in reverse order so the newest message lands
  * at the top of the rendered buffer. */
 static void msg_save(MsgState *m, MsgState **saved, int attach_total) {
     m->attach_count = attach_total - m->attach_start;
+    m->order = (int)arrlen(*saved);
+    m->when = parse_rfc2822(m->date);
+    /* An unparseable date keeps its thread-order slot: inherit the
+     * previous message's time so the sort stays consistent. */
+    if (m->when == -1)
+        m->when = m->order ? (*saved)[m->order - 1].when : 0;
     arrput(*saved, *m);
     /* Ownership of plain/html moved into the saved entry — wipe the
      * working copy so it isn't double-freed. */
     memset(m, 0, sizeof(*m));
 }
 
-void mail_render_show_text(MailRender *r, char **raw, int raw_count) {
+void mail_render_show_text(MailRender *r, char **raw, int raw_count, int chat,
+                           const char *self) {
     MsgState msg;
     memset(&msg, 0, sizeof(msg));
     int in_message = 0;
@@ -404,12 +797,31 @@ void mail_render_show_text(MailRender *r, char **raw, int raw_count) {
     if (in_message)
         msg_save(&msg, &saved, (int)arrlen(r->attaches));
 
-    /* Emit messages newest-first. hml show outputs the thread in
+    /* Full view: newest-first. hml show outputs the thread in
      * arrival/depth order (root → replies), which is oldest-first;
      * reversing puts the most recent message at the top of the
-     * buffer — what the reader actually wants to see. */
-    for (ptrdiff_t i = arrlen(saved) - 1; i >= 0; i--) {
-        emit_msg(r, &saved[i], i == arrlen(saved) - 1);
+     * buffer — what the reader actually wants to see. The chat view
+     * keeps the conversation order and reads top to bottom. */
+    ptrdiff_t cnt = arrlen(saved);
+    if (chat && cnt > 0) {
+        /* hml show walks the reply tree, not the clock: a conversation
+         * reads by date (thread order breaks ties, and stands in for
+         * unparseable dates). */
+        qsort(saved, (size_t)cnt, sizeof(*saved), by_date);
+        char line[600];
+        snprintf(line, sizeof(line), "Subject: %s", saved[0].subject);
+        lines_pushz(r, line);
+        lines_pushz(r, "");
+    }
+    for (ptrdiff_t k = 0; k < cnt; k++) {
+        ptrdiff_t i = chat ? k : cnt - 1 - k;
+        if (chat)
+            emit_chat_msg(r, &saved[i], self);
+        else
+            emit_msg(r, &saved[i], k == 0);
+    }
+    /* The newest message's HTML is the one :mail-open-html shows. */
+    for (ptrdiff_t i = cnt - 1; i >= 0; i--) {
         if (!r->html && saved[i].html.len > 0) {
             r->html = saved[i].html.data;
             r->html_len = saved[i].html.len;

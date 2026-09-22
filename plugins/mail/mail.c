@@ -1,6 +1,7 @@
 /* mail plugin: hml-backed mail reader.
  *
  * :mail               open mail list (default query: tag:inbox)
+ * :mail-chat [on|off] chat-style thread view (c in a thread toggles)
  * :mail-refresh       clear filter and reload
  * :mail-filter [q]    filter by extra query terms (prompt if no args)
  * :mail-query [q]     replace the base query entirely
@@ -185,6 +186,8 @@ static void cmd_mail_attach_add(const char *args) {
     mail_attach_add(*p ? p : NULL);
 }
 
+static void cmd_mail_chat(const char *args) { mail_chat_view(args); }
+
 static void cmd_mail_next(const char *args) {
     (void)args;
     mail_next_message();
@@ -244,6 +247,9 @@ static int mail_plugin_init(void) {
     cmd("mail-attach-add", cmd_mail_attach_add,
         "attach file(s) to the compose buffer ([path]; no arg: fzf "
         "multi-pick)");
+    cmd("mail-chat", cmd_mail_chat,
+        "chat-style thread view: on|off|toggle (oldest first, quotes and "
+        "signatures stripped)");
 
     cmd_ft("mail", "mail-open", cmd_mail_open_entry,
            "open the thread under the cursor");
@@ -287,6 +293,8 @@ static int mail_plugin_init(void) {
              "open attachment (1: direct; many: fzf multi-pick)");
     cmapn_ft("mail-message", "A", "mail-attach save",
              "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
+    cmapn_ft("mail-message", "c", "mail-chat toggle",
+             "toggle chat-style thread view");
     cmapn_ft("mail-message", "<C-n>", "mail-next", "open next message in list");
     cmapn_ft("mail-message", "<C-p>", "mail-prev",
              "open previous message in list");
