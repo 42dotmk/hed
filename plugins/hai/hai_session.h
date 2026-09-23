@@ -52,6 +52,18 @@ void hai_session_at(HaiSession *s, const char *mailbox, const char *domain,
  * call it for a session built with hai_session_at. */
 void hai_session_workdir(const HaiSession *s, char *out, size_t cap);
 
+/* Modification time of `path` in milliseconds; 0 when it is not there. */
+long hai_mtime(const char *path);
+
+/* The reply a run is streaming into <dir>/tmp/reply — the file hai
+ * writes token by token while the model talks — or NULL when no run
+ * is on. malloc'd; `*started` (optional) gets the run's start. */
+char *hai_session_preview(const HaiSession *s, time_t *started);
+
+/* The length of an assistant message's own text: the body minus the
+ * "-> name args" lines hai appends for its tool calls. */
+size_t hai_msg_content(const HaiMsg *m);
+
 /* The messages of a session in file-name order — the order hai loads
  * them (stb_ds array; hai_msgs_free it). Returns -1 when the
  * directory cannot be read. */

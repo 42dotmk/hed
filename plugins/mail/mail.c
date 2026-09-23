@@ -188,6 +188,12 @@ static void cmd_mail_attach_add(const char *args) {
 
 static void cmd_mail_chat(const char *args) { mail_chat_view(args); }
 
+static void cmd_mail_thread_refresh(const char *args) {
+    (void)args;
+    mail_thread_refresh();
+    ed_render_frame();
+}
+
 static void cmd_mail_next(const char *args) {
     (void)args;
     mail_next_message();
@@ -247,6 +253,8 @@ static int mail_plugin_init(void) {
     cmd("mail-attach-add", cmd_mail_attach_add,
         "attach file(s) to the compose buffer ([path]; no arg: fzf "
         "multi-pick)");
+    cmd("mail-thread-refresh", cmd_mail_thread_refresh,
+        "re-render the thread being read (it may have grown)");
     cmd("mail-chat", cmd_mail_chat,
         "chat-style thread view: on|off|toggle (oldest first, quotes and "
         "signatures stripped)");
@@ -295,6 +303,8 @@ static int mail_plugin_init(void) {
              "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     cmapn_ft("mail-message", "c", "mail-chat toggle",
              "toggle chat-style thread view");
+    cmapn_ft("mail-message", "<C-r>", "mail-thread-refresh",
+             "re-read this thread (it may have grown)");
     cmapn_ft("mail-message", "<C-n>", "mail-next", "open next message in list");
     cmapn_ft("mail-message", "<C-p>", "mail-prev",
              "open previous message in list");
@@ -314,6 +324,7 @@ static int mail_plugin_init(void) {
     hook_register_buffer(HOOK_BUFFER_OPEN_PRE, -1, "*", mail_open_pre);
 
     mail_register_render_hooks();
+    mail_complete_register();
 
     /* q closes the current mail buffer in normal mode, for any of the
      * mail filetypes (list, message, mailbox sidebar, compose). */

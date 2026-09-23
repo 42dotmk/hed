@@ -14,6 +14,10 @@ void mail_open_mailboxes(void);
  * active tag if the base query is one, else the first tag). */
 void mail_open_tags(void);
 
+/* Register the To:/Cc:/Bcc: address completion source (hml address).
+ * Called once from mail_plugin_init. */
+void mail_complete_register(void);
+
 /* Register HOOK_RENDER_PRE handlers for the mail filetypes.
  * Called once from mail_plugin_init. */
 void mail_register_render_hooks(void);

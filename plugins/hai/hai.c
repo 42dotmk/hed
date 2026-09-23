@@ -23,6 +23,7 @@
 #include "hai_session.h"
 #include "hed.h"
 #include "input/keybinds_builtins.h"
+#include "select_loop.h"
 #include "ui/ask.h"
 #include "utils/buf_special.h"
 #include "utils/term_cmd.h"
@@ -42,8 +43,10 @@ extern void mail_compose_with_lines(const char *title, char **lines, int count)
     __attribute__((weak));
 extern void mail_add_view(const char *name, const char *query)
     __attribute__((weak));
+extern void mail_thread_refresh(void) __attribute__((weak));
 
 #define HAI_AGENTS_BUF "hai://agents"
+#define HAI_TAIL_MS 400
 
 /* ------------------------------------------------------------------ */
 /* Configuration                                                       */
@@ -260,6 +263,248 @@ static void open_in_mail(const HaiSession *s) {
     else
         ed_set_status_message("hai: no thread for %s yet", id);
     term_cmd_free(lines, count);
+}
+
+/* ------------------------------------------------------------------ */
+/* The live tail: the reply a run is streaming                         */
+/* ------------------------------------------------------------------ */
+
+/* A mail thread buffer that shows a hai session. While a run is on,
+ * hai writes the reply into <session>/tmp/reply token by token; that
+ * file is not mail and hml never sees it, so the thread view stops at
+ * the last stored turn. This appends the streamed text under the
+ * conversation and takes it away again when the turn lands as a real
+ * message. Ordinary mail has no such file: nothing is appended, and
+ * the buffer is left exactly as the mail plugin rendered it. */
+typedef struct {
+    char bufname[256]; /* mail://thread:... */
+    HaiSession s;      /* the session behind it; dir "" = not one */
+    long cur;          /* the session's cur/ mtime: a turn landing */
+    long reply;        /* mtime of tmp/reply: the stream moving */
+    int rows;          /* rows appended below the render */
+    int base;          /* rows the mail plugin rendered */
+} Tail;
+
+static Tail *tails = NULL; /* stb_ds; one per thread buffer seen */
+static int watching = 0;
+
+/* The session a thread belongs to, from the files hml has for it: a
+ * hai session's messages live under <mailbox>/s/[<agent>/]<id>/. */
+static int session_of_thread(const char *tid, HaiSession *out) {
+    char q[600], cmd[900];
+    shell_escape_single(tid, q, sizeof(q));
+    snprintf(cmd, sizeof(cmd),
+             "hml search --output=files -- %s 2>/dev/null | grep '/s/' | "
+             "tail -1",
+             q);
+    char **lines = NULL;
+    int count = 0;
+    term_cmd_capture(cmd, &lines, &count);
+    int found = 0;
+    if (count > 0 && lines[0] && lines[0][0]) {
+        /* <mailbox>/s/<id>/cur/<file>, or <mailbox>/s/<name>/<id>/… */
+        char path[HAI_PATH];
+        snprintf(path, sizeof(path), "%s", lines[0]);
+        char *slash = strrchr(path, '/'); /* the file */
+        if (slash)
+            *slash = '\0';
+        slash = strrchr(path, '/'); /* cur / new */
+        if (slash)
+            *slash = '\0';
+        const char *mailbox = hai_get_mailbox();
+        size_t mlen = strlen(mailbox);
+        if (strncmp(path, mailbox, mlen) == 0 &&
+            strncmp(path + mlen, "/s/", 3) == 0) {
+            const char *rel = path + mlen + 3;
+            const char *sep = strchr(rel, '/');
+            if (sep) {
+                char name[128];
+                size_t n = (size_t)(sep - rel);
+                if (n >= sizeof(name))
+                    n = sizeof(name) - 1;
+                memcpy(name, rel, n);
+                name[n] = '\0';
+                hai_session_at(out, mailbox, agent_domain(), name, sep + 1);
+            } else {
+                hai_session_at(out, mailbox, agent_domain(), "main", rel);
+            }
+            found = 1;
+        }
+    }
+    term_cmd_free(lines, count);
+    return found;
+}
+
+/* What the stream has that the buffer does not: the reply file holds
+ * every fragment of the run, and an assistant message with tool calls
+ * lands in cur/ while the run goes on, so the text already stored is
+ * dropped from the front. */
+static char *tail_text(const Tail *t) {
+    time_t started = 0;
+    char *preview = hai_session_preview(&t->s, &started);
+    if (!preview)
+        return NULL;
+    HaiMsg *msgs = NULL;
+    hai_session_load(&t->s, &msgs);
+    const char *p = preview;
+    for (ptrdiff_t i = 0; i < arrlen(msgs); i++) {
+        const HaiMsg *m = &msgs[i];
+        if (m->when + 1 < started || strcmp(m->role, "assistant") != 0)
+            continue;
+        size_t n = hai_msg_content(m);
+        if (n > 0 && strncmp(p, m->body, n) == 0)
+            p += n;
+    }
+    hai_msgs_free(msgs);
+    while (*p == '\n')
+        p++;
+    char *out = strdup(p);
+    free(preview);
+    return out;
+}
+
+/* Put the tail back under the rendered thread. */
+static void tail_draw(Tail *t, Buffer *buf, const char *text) {
+    if (t->rows == 0 || buf->num_rows < t->base + t->rows)
+        t->base = buf->num_rows - t->rows; /* re-rendered under us */
+    if (t->base < 0)
+        t->base = 0;
+    buf_special_trim(buf, t->base);
+    t->rows = 0;
+    if (!text)
+        return;
+
+    int before = buf->num_rows;
+    buf_special_add(buf, "", 0);
+    buf_special_addf(buf, "● %s — %s", t->s.agent,
+                     *text ? "writing…" : "working…");
+    for (const char *p = text; *p;) {
+        const char *e = strchr(p, '\n');
+        size_t len = e ? (size_t)(e - p) : strlen(p);
+        buf_special_add(buf, p, len);
+        if (!e)
+            break;
+        p = e + 1;
+    }
+    t->rows = buf->num_rows - before;
+}
+
+/* Follow the conversation when the cursor sits at its end. */
+static void tail_follow(int idx, int was_last) {
+    Buffer *buf = &E.buffers[idx];
+    for (ptrdiff_t i = 0; i < arrlen(E.windows); i++) {
+        Window *w = &E.windows[i];
+        if (w->buffer_index != idx)
+            continue;
+        if (was_last || w->cursor.y >= buf->num_rows)
+            w->cursor.y = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+        int len = buf->num_rows ? (int)buf->rows[w->cursor.y].chars.len : 0;
+        if (w->cursor.x > len)
+            w->cursor.x = len;
+    }
+}
+
+static void tail_tick(void *ud);
+
+static void tail_arm(void) {
+    ed_loop_timer_after("hai-tail", HAI_TAIL_MS, tail_tick, NULL);
+    watching = 1;
+}
+
+static void tail_tick(void *ud) {
+    (void)ud;
+    int drew = 0;
+    for (ptrdiff_t i = 0; i < arrlen(tails);) {
+        Tail *t = &tails[i];
+        int idx = buf_find_by_filename(t->bufname);
+        if (idx < 0) { /* the buffer went away */
+            arrdel(tails, i);
+            continue;
+        }
+        if (!t->s.dir[0]) { /* an ordinary mail thread */
+            i++;
+            continue;
+        }
+        char path[HAI_PATH + 16];
+        snprintf(path, sizeof(path), "%s/cur", t->s.dir);
+        long cur = hai_mtime(path);
+        snprintf(path, sizeof(path), "%s/tmp/reply", t->s.dir);
+        long reply = hai_mtime(path);
+        if (cur == t->cur && reply == t->reply) {
+            i++;
+            continue;
+        }
+
+        Buffer *buf = &E.buffers[idx];
+        Window *win = window_cur();
+        int was_last = win && win->buffer_index == idx && buf->num_rows > 0 &&
+                       win->cursor.y >= buf->num_rows - 1;
+
+        if (cur != t->cur) { /* a turn landed: it is mail now */
+            t->cur = cur;
+            index_refresh();
+            if (idx == E.current_buffer && mail_thread_refresh) {
+                mail_thread_refresh();
+                t->rows = 0;
+                t->base = buf->num_rows;
+            }
+        }
+        t->reply = reply;
+        char *text = reply ? tail_text(t) : NULL;
+        tail_draw(t, buf, text);
+        free(text);
+        tail_follow(idx, was_last);
+        drew = 1;
+        i++;
+    }
+    if (drew)
+        ed_render_frame();
+    if (arrlen(tails) > 0)
+        tail_arm();
+    else
+        watching = 0;
+}
+
+/* Every thread buffer is looked at once: is it a hai session? The
+ * answer (yes, with its directory, or no) is kept, so the question
+ * costs one hml lookup per thread opened. */
+static void tail_track(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0 ||
+        !buf->filename || strncmp(buf->filename, "mail://", 7) != 0)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(tails); i++)
+        if (strcmp(tails[i].bufname, buf->filename) == 0)
+            return;
+
+    Tail t;
+    memset(&t, 0, sizeof(t));
+    snprintf(t.bufname, sizeof(t.bufname), "%s", buf->filename);
+    t.base = buf->num_rows;
+    if (session_of_thread(buf->filename + 7, &t.s)) {
+        char path[HAI_PATH + 8];
+        snprintf(path, sizeof(path), "%s/cur", t.s.dir);
+        t.cur = hai_mtime(path);
+    }
+    arrput(tails, t);
+    if (!watching)
+        tail_arm();
+}
+
+static void tail_on_dispatch(HookKeyEvent *e) {
+    (void)e;
+    tail_track();
+}
+
+static void tail_on_close(HookBufferEvent *ev) {
+    if (!ev || !ev->filename)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(tails); i++) {
+        if (strcmp(tails[i].bufname, ev->filename) == 0) {
+            arrdel(tails, i);
+            return;
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -702,6 +947,13 @@ static int hai_init(void) {
     cmapn(" ac", "hai-compose", "compose to hai");
 
     hook_register_render(HOOK_RENDER_PRE, -1, "hai-agents", agents_render_hook);
+
+    /* The live tail on thread buffers. The command boundary is the
+     * trigger: whatever opened the thread — <CR> in the mail list, gf
+     * on a mail:// link, :e — the buffer is there by the time the key
+     * is done, and one lookup decides whether it is a hai session. */
+    hook_register_key(HOOK_DISPATCH_POST, tail_on_dispatch);
+    hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", tail_on_close);
 
     /* The mailbox sidebar's Views section (b in the mail list). */
     if (mail_add_view) {

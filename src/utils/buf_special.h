@@ -50,6 +50,13 @@ void buf_special_addf(Buffer *b, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 void buf_special_add_lines(Buffer *b, char **lines, int n);
 
+/* Drop every row past `keep`, dirty flag preserved as in
+ * buf_special_add. For a display buffer whose tail is re-rendered on
+ * its own — a live log, a reply still being streamed — without
+ * rebuilding what is above it. No-op when the buffer is that short
+ * already. */
+void buf_special_trim(Buffer *b, int keep);
+
 /* Presentation. All mark the buffer non-dirty first.
  *   show        — attach in the current window, cursor to 0,0.
  *   show_split  — focus the window already showing it, else open a

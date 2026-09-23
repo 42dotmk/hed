@@ -95,6 +95,15 @@ void buf_special_addf(Buffer *b, const char *fmt, ...) {
     buf_special_add(b, line, strnlen(line, sizeof(line)));
 }
 
+void buf_special_trim(Buffer *b, int keep) {
+    if (!b || keep < 0)
+        return;
+    int dirty = b->dirty;
+    while (b->num_rows > keep)
+        buf_row_del_in(b, b->num_rows - 1);
+    b->dirty = dirty;
+}
+
 void buf_special_add_lines(Buffer *b, char **lines, int n) {
     for (int i = 0; i < n; i++)
         if (lines && lines[i])

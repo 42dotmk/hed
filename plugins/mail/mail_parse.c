@@ -145,38 +145,6 @@ static int span_blank(const char *s, size_t len) {
     return 1;
 }
 
-/* RFC 2822 "Tue, 18 May 2026 10:14:00 +0200" → epoch; -1 when it
- * doesn't parse. A zone that isn't numeric counts as UTC. */
-static time_t parse_rfc2822(const char *s) {
-    while (*s == ' ' || *s == '\t')
-        s++;
-    if (strlen(s) > 5 && s[3] == ',')
-        s += 4;
-    struct tm tm;
-    memset(&tm, 0, sizeof(tm));
-    const char *p = strptime(s, "%d %b %Y %H:%M", &tm);
-    if (!p)
-        return -1;
-    if (*p == ':') {
-        int sec = 0;
-        p++;
-        while (*p >= '0' && *p <= '9')
-            sec = sec * 10 + (*p++ - '0');
-        tm.tm_sec = sec;
-    }
-    while (*p == ' ' || *p == '\t')
-        p++;
-    long off = 0;
-    if ((*p == '+' || *p == '-') && strlen(p) >= 5) {
-        int sign = *p == '-' ? -1 : 1;
-        int hh = (p[1] - '0') * 10 + (p[2] - '0');
-        int mm = (p[3] - '0') * 10 + (p[4] - '0');
-        off = sign * (hh * 3600L + mm * 60L);
-    }
-    time_t t = timegm(&tm);
-    return t == (time_t)-1 ? -1 : t - off;
-}
-
 static void span_fill(MailMsgSpan *span, const MsgState *m) {
     snprintf(span->msg_id, sizeof(span->msg_id), "%s", m->msg_id);
     span->attach_start = m->attach_start;
@@ -560,7 +528,7 @@ static void from_name(const char *from, char *out, size_t cap) {
  * time when the date parses (senders write theirs in their own zone;
  * a conversation reads in one). */
 static void chat_date(const char *date, char *out, size_t cap) {
-    time_t when = parse_rfc2822(date);
+    time_t when = str_parse_rfc2822(date);
     if (when != -1) {
         struct tm lt;
         if (localtime_r(&when, &lt) &&
@@ -628,7 +596,7 @@ static int by_date(const void *a, const void *b) {
 static void msg_save(MsgState *m, MsgState **saved, int attach_total) {
     m->attach_count = attach_total - m->attach_start;
     m->order = (int)arrlen(*saved);
-    m->when = parse_rfc2822(m->date);
+    m->when = str_parse_rfc2822(m->date);
     /* An unparseable date keeps its thread-order slot: inherit the
      * previous message's time so the sort stays consistent. */
     if (m->when == -1)

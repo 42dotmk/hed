@@ -104,6 +104,13 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `<C-c><C-a>` | Attach file(s) via fzf (same as `:mail-attach-add`) |
 | `q` | Close the compose buffer (normal mode) |
 
+Addresses complete on the `To:`, `Cc:` and `Bcc:` headers (and their
+folded continuation lines) through the `completion` plugin: typing a
+name or part of an address — or `Ctrl-Space` after a comma — asks
+`hml address` for the matching correspondents, people you have written
+to first. `Tab`/`Enter` inserts the whole `Name <address>` mailbox.
+The query runs async and a newer one kills the one in flight.
+
 ## Message rendering
 
 `mail_parse.{c,h}` consumes the output of `hml show --format=text` (notmuch's text framing)

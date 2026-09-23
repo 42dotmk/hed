@@ -880,6 +880,28 @@ static void open_thread_tid(const char *tid, const char *title) {
     ed_set_status_message("%s", tbuf->title);
 }
 
+/* Re-render the thread being read, from hml, keeping the cursor
+ * where it is (or at the end when it was already there). For a
+ * conversation that is still growing — a hai session mid-run, a
+ * thread someone replies to while it is open. */
+void mail_thread_refresh(void) {
+    Buffer *buf = buf_cur();
+    if (!buf || !buf->filetype || strcmp(buf->filetype, "mail-message") != 0 ||
+        !buf->filename || strncmp(buf->filename, "mail://", 7) != 0)
+        return;
+    Window *win = window_cur();
+    int y = win ? win->cursor.y : 0;
+    int at_end = buf->num_rows > 0 && y >= buf->num_rows - 1;
+
+    render_thread(buf, buf->filename + 7, buf->title);
+    buf->dirty = 0;
+    if (!win)
+        return;
+    int last = buf->num_rows > 0 ? buf->num_rows - 1 : 0;
+    win->cursor.y = (at_end || y > last) ? last : y;
+    win->cursor.x = 0;
+}
+
 void mail_chat_view(const char *args) {
     int on = args_tristate(args, chat_view);
     if (on < 0) {

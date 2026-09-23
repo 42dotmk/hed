@@ -318,6 +318,53 @@ static char **session_files(const HaiSession *s, int *exists) {
     return all;
 }
 
+/* Modification time in milliseconds — a directory written twice in
+ * one second still reads as changed. 0 when there is no such path. */
+long hai_mtime(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0)
+        return 0;
+    return (long)st.st_mtim.tv_sec * 1000 + st.st_mtim.tv_nsec / 1000000;
+}
+
+/* The reply a run is streaming into <dir>/tmp/reply, or NULL when no
+ * run is on. malloc'd; `*started` gets the moment the file appeared. */
+char *hai_session_preview(const HaiSession *s, time_t *started) {
+    char path[HAI_PATH + 16];
+    snprintf(path, sizeof(path), "%s/tmp/reply", s->dir);
+    struct stat st;
+    if (stat(path, &st) != 0)
+        return NULL;
+    if (started)
+        *started = st.st_ctime;
+    char *text = read_file(path, NULL);
+    return text ? text : strdup("");
+}
+
+/* Content of an assistant message as the wire carried it: the text
+ * part minus the "-> name args" lines hai appends per call, and the
+ * newline between. Returns its length. */
+size_t hai_msg_content(const HaiMsg *m) {
+    const char *b = m->body ? m->body : "";
+    size_t n = strlen(b);
+    if (strcmp(m->intent, "tool-call") != 0)
+        return n;
+    for (;;) { /* drop the trailing call lines */
+        size_t e = n;
+        while (e > 0 && b[e - 1] == '\n')
+            e--;
+        size_t st = e;
+        while (st > 0 && b[st - 1] != '\n')
+            st--;
+        if (e == st || strncmp(b + st, "-> ", 3) != 0)
+            break;
+        n = st;
+    }
+    while (n > 0 && b[n - 1] == '\n')
+        n--;
+    return n;
+}
+
 int hai_session_load(const HaiSession *s, HaiMsg **out) {
     int exists = 0;
     char **all = session_files(s, &exists);

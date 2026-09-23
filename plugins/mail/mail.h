@@ -59,6 +59,14 @@ int mail_get_chat(void);
  * next mail_set_from call. */
 const char *mail_get_from(void);
 
+/* Re-render the thread buffer being read, from hml, in the current
+ * view. What `:mail-thread-refresh` runs: for a conversation that is
+ * still growing (a hai session mid-run, a thread someone is replying
+ * to) the buffer catches up without closing and reopening it. The
+ * cursor keeps its row, or follows the end when it was already there.
+ * No-op unless the current buffer is a thread view. */
+void mail_thread_refresh(void);
+
 /* Open a compose buffer pre-filled from a flat array of header+body
  * lines (one row per line, the first empty line marks the start of
  * the body). Used by external producers like the git-patch plugin
