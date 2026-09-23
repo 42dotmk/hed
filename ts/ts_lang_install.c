@@ -22,15 +22,15 @@
  *
  * This will:
  *   - Clone https://github.com/tree-sitter/tree-sitter-<lang>.git
- *     into ./ts/build/<lang>
+ *     into ~/.cache/hed/ts/<lang> ($XDG_CACHE_HOME honored)
  *   - Build <lang>.so from parser.c (+ scanner.c if present)
- *   - Copy the .so to ./ts/<lang>.so
+ *   - Copy the .so to ~/.config/hed/ts/<lang>.so
  *   - Copy queries/highlights.scm (if present) to
- *       ./ts-langs/queries/<lang>/highlights.scm
+ *       ~/.config/hed/ts/queries/<lang>/highlights.scm
  *   - Copy queries/injections.scm and queries/locals.scm if present
  *
- * Run this from the hed repo root so that ts-langs/ and queries/
- * are created in the place hed expects.
+ * Nothing is written to the current directory, so it is safe to run
+ * (and hed's :tsi runs it) from any cwd.
  */
 
 static int file_exists(const char *path) {
@@ -100,6 +100,23 @@ static void default_install_base(char *out, size_t out_sz) {
     }
     /* Fallback: in-tree directory. */
     snprintf(out, out_sz, "ts-langs");
+}
+
+/* Scratch dir for clones and objects: ~/.cache/hed/ts, or
+ * $XDG_CACHE_HOME/hed/ts. Kept across runs so a re-install of the same
+ * language rebuilds without re-cloning. */
+static void default_build_root(char *out, size_t out_sz) {
+    const char *xdg_cache = getenv("XDG_CACHE_HOME");
+    if (xdg_cache && *xdg_cache) {
+        snprintf(out, out_sz, "%s/hed/ts", xdg_cache);
+        return;
+    }
+    const char *home = getenv("HOME");
+    if (home && *home) {
+        snprintf(out, out_sz, "%s/.cache/hed/ts", home);
+        return;
+    }
+    snprintf(out, out_sz, "/tmp/hed-ts");
 }
 
 static int run_cmd(const char *cmd) {
@@ -183,7 +200,7 @@ void print_help(const char *prog_name) {
     fprintf(stderr, "\n");
     fprintf(stderr, "Installs Tree-sitter language parser for <lang>.\n");
     fprintf(stderr, "Clones the grammar from GitHub, builds the parser,\n");
-    fprintf(stderr, "and installs it into ts-langs/ directory.\n");
+    fprintf(stderr, "and installs it into ~/.config/hed/ts/.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  --help       Print this help message\n");
@@ -238,14 +255,15 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Prepare build directory: ./ts/build/<lang> */
-    if (mkdir_if_needed("ts") != 0)
-        return 1;
-    if (mkdir_if_needed("ts/build") != 0)
+    /* Prepare build directory: <cache>/<lang> (absolute, so it stays
+     * valid after the chdir below). */
+    char build_root[1024];
+    default_build_root(build_root, sizeof(build_root));
+    if (mkdir_p(build_root) != 0)
         return 1;
 
     char build_dir[1024];
-    snprintf(build_dir, sizeof(build_dir), "ts/build/%s", lang);
+    snprintf(build_dir, sizeof(build_dir), "%s/%s", build_root, lang);
 
     if (!file_exists(build_dir)) {
         char repo_url[512];
