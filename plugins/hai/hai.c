@@ -327,7 +327,6 @@ static void chat_render(Chat *c, Buffer *buf) {
         free(preview);
     }
 
-    buf->dirty = 0;
     free(buf->title);
     char title[1024];
     snprintf(title, sizeof(title), "%s: %s", c->s.agent,

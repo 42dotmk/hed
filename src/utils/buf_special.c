@@ -72,8 +72,16 @@ void buf_special_clear(Buffer *b) {
 }
 
 void buf_special_add(Buffer *b, const char *line, size_t len) {
-    if (b && line)
-        buf_row_insert_in(b, b->num_rows, line, len);
+    if (!b || !line)
+        return;
+    /* Rows a plugin renders are not the user's edits: keep the dirty
+     * flag as it was, so re-filling a buffer that is already on screen
+     * (a mail thread toggled to the chat view, a hai chat the watcher
+     * re-renders, a refreshed listing) doesn't come out "modified" and
+     * refuse to close. buf_special_show* clears it on first display. */
+    int dirty = b->dirty;
+    buf_row_insert_in(b, b->num_rows, line, len);
+    b->dirty = dirty;
 }
 
 void buf_special_addf(Buffer *b, const char *fmt, ...) {
