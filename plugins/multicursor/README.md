@@ -143,6 +143,23 @@ is off, or when a single global UI is active:
 The same bail-out triggers inside Phase 2 if a Phase 1 dispatch
 opens a prompt or modal mid-sequence (e.g. `:` from normal mode).
 
+## Yank, delete and paste
+
+A yank or delete at N cursors is one register write, not N: the
+replay is bracketed with `yank_batch_begin/slot/end` (core,
+`utils/yank.h`), so each cursor's text lands in its own **part** of
+the unnamed register, joined by newlines as the register's text. That
+gives VSCode / vim-visual-multi semantics:
+
+- `p` at the same N cursors pastes each cursor its own part (core's
+  `paste_from_register` matches parts to cursors by `(y, x)` rank).
+- `p` with a different cursor count — after `'c`, `Q`, or in another
+  buffer — pastes the joined text, so yanking three words and pasting
+  once gives you three lines.
+- A delete rotates the numbered registers once, with the joined text
+  in `1`; `HOOK_YANK` (the OSC 52 clipboard mirror) fires once.
+- The parts live only on `"`. A later single-cursor yank drops them.
+
 ## Limitations
 
 - Visual-block mode interactions are minimal — the plugin treats
@@ -150,8 +167,8 @@ opens a prompt or modal mid-sequence (e.g. `:` from normal mode).
   driven by the renderer, not by per-cursor objects.
 - `:mc_next_match` only supports single-line visual selections;
   multi-line selections report "multi-line selection not supported".
-- Operations that read/modify a single global selection (yank
-  registers, search, fzf) still happen once per replay rather than
-  being merged. Useful in practice; surprising in edge cases.
+- Operations that read/modify global state other than the registers
+  (search, fzf) still happen once per replay rather than being
+  merged. Useful in practice; surprising in edge cases.
 - `deinit` is a no-op (the editor doesn't yet support unregistering
   hooks), so toggling this plugin off requires a `:reload`.

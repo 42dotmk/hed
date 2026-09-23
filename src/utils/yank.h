@@ -46,7 +46,18 @@ EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl);
 EdError yank_block_as_delete(Buffer *buf, int sy, int ey, int start_rx,
                              int end_rx_excl);
 
-/* Paste operations */
+/* Multicursor yank/delete: bracket the per-cursor dispatches so the N
+ * register writes become one multi-part write (see regs_batch_* in
+ * input/registers.h). HOOK_YANK fires once, at yank_batch_end, when
+ * the batch was a yank. */
+void yank_batch_begin(int ncursors);
+void yank_batch_slot(int idx);
+void yank_batch_end(void);
+
+/* Paste operations. With several cursors in `buf` and a register that
+ * carries one part per cursor (a multicursor yank), the part matching
+ * this cursor's rank in (y, x) order is pasted; otherwise the whole
+ * register is. */
 EdError paste_from_register(Buffer *buf, char reg_name, bool after);
 void yank_data_free(YankData *yd);
 YankData yank_data_new(Buffer *buf, const TextSelection *sel);

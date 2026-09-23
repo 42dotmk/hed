@@ -17,10 +17,34 @@ typedef struct {
     RegType t_yank0;
     RegType t_num[9];
     RegType t_named[26];
+
+    /* Per-cursor parts of the unnamed register (see regs_batch_*). */
+    StrBuf *parts;
+    int nparts;
 } Registers;
 
 static Registers R;
 extern Ed E;
+
+/* An open batch: recorded writes land in B.parts[B.slot] instead of the
+ * registers; the last write decides the type and yank-vs-delete. */
+static struct {
+    int active;
+    StrBuf *parts;
+    int nparts;
+    int slot;
+    int wrote;
+    int as_delete;
+    RegType type;
+} B;
+
+static void parts_free(StrBuf **parts, int *n) {
+    for (int i = 0; i < *n; i++)
+        strbuf_free(&(*parts)[i]);
+    free(*parts);
+    *parts = NULL;
+    *n = 0;
+}
 
 static void rs_assign(StrBuf *dst, const char *data, size_t len) {
     strbuf_free(dst);
@@ -29,6 +53,26 @@ static void rs_assign(StrBuf *dst, const char *data, size_t len) {
     } else {
         *dst = strbuf_from(data, len);
     }
+    /* Every write to the unnamed register replaces its parts; batch_end
+     * re-attaches the batch's parts after its own write. */
+    if (dst == &R.unnamed)
+        parts_free(&R.parts, &R.nparts);
+}
+
+/* Record a batched write into the current slot. Returns 0 when no batch
+ * is open, so the caller applies the write for real. */
+static int batch_record(const char *data, size_t len, RegType type,
+                        int as_delete) {
+    if (!B.active)
+        return 0;
+    if (B.slot >= 0 && B.slot < B.nparts) {
+        strbuf_free(&B.parts[B.slot]);
+        B.parts[B.slot] = data && len ? strbuf_from(data, len) : strbuf_new();
+    }
+    B.wrote = 1;
+    B.type = type;
+    B.as_delete = as_delete;
+    return 1;
 }
 
 void regs_init(void) {
@@ -43,6 +87,9 @@ void regs_init(void) {
 }
 
 void regs_free(void) {
+    parts_free(&R.parts, &R.nparts);
+    parts_free(&B.parts, &B.nparts);
+    B.active = 0;
     strbuf_free(&R.unnamed);
     strbuf_free(&R.yank0);
     for (int i = 0; i < 9; i++)
@@ -64,6 +111,8 @@ void regs_set_unnamed_typed(const char *data, size_t len, RegType type) {
 }
 
 void regs_set_yank_typed(const char *data, size_t len, RegType type) {
+    if (batch_record(data, len, type, 0))
+        return;
     rs_assign(&R.yank0, data, len);
     rs_assign(&R.unnamed, data, len);
     R.t_yank0 = type;
@@ -79,6 +128,8 @@ void regs_set_yank(const char *data, size_t len) {
 }
 
 void regs_push_delete_typed(const char *data, size_t len, RegType type) {
+    if (batch_record(data, len, type, 1))
+        return;
     /* Rotate '9' <- '8' <- ... <- '1' (types ride along with contents) */
     strbuf_free(&R.num[8]);
     for (int i = 8; i >= 1; i--) {
@@ -169,6 +220,69 @@ const StrBuf *regs_get(char name) {
     if (name == '.')
         return &R.dot;
     return &R.unnamed;
+}
+
+void regs_batch_begin(int nslots) {
+    if (B.active)
+        regs_batch_end();
+    if (nslots < 1)
+        nslots = 1;
+    B.parts = calloc((size_t)nslots, sizeof(StrBuf));
+    if (!B.parts)
+        return;
+    for (int i = 0; i < nslots; i++)
+        B.parts[i] = strbuf_new();
+    B.nparts = nslots;
+    B.slot = 0;
+    B.wrote = 0;
+    B.active = 1;
+}
+
+void regs_batch_slot(int idx) { B.slot = idx; }
+
+int regs_batch_active(void) { return B.active; }
+
+int regs_batch_end(void) {
+    if (!B.active)
+        return 0;
+    B.active = 0;
+    if (!B.wrote) {
+        parts_free(&B.parts, &B.nparts);
+        return 0;
+    }
+
+    /* Join: parts separated by '\n'; linewise parts each end in one
+     * '\n' so the joined text is a well-formed run of lines (paste
+     * strips at most one trailing newline). */
+    StrBuf joined = strbuf_new();
+    for (int i = 0; i < B.nparts; i++) {
+        StrBuf *p = &B.parts[i];
+        strbuf_append(&joined, p->data, p->len);
+        int nl_terminated = p->len > 0 && p->data[p->len - 1] == '\n';
+        if (B.type == REG_LINEWISE ? !nl_terminated : i < B.nparts - 1)
+            strbuf_append_char(&joined, '\n');
+    }
+
+    if (B.as_delete)
+        regs_push_delete_typed(joined.data, joined.len, B.type);
+    else
+        regs_set_yank_typed(joined.data, joined.len, B.type);
+    strbuf_free(&joined);
+
+    /* The write above dropped any old parts; attach ours. */
+    R.parts = B.parts;
+    R.nparts = B.nparts;
+    B.parts = NULL;
+    B.nparts = 0;
+    return !B.as_delete;
+}
+
+const StrBuf *regs_get_part(char name, int idx, int nparts) {
+    if (name != '"' || !R.parts || R.nparts != nparts)
+        return NULL;
+    if (idx < 0 || idx >= R.nparts)
+        return NULL;
+    return &R.parts[idx];
 }
 
 RegType regs_get_type(char name) {

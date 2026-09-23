@@ -62,6 +62,14 @@ static int cursor_pos_cmp_asc(const void *a, const void *b) {
     return ca->x - cb->x;
 }
 
+/* Index of c in an ascending-sorted cursor array (its (y, x) rank). */
+static int cursor_rank_in(Cursor **asc, int n, const Cursor *c) {
+    for (int i = 0; i < n; i++)
+        if (asc[i] == c)
+            return i;
+    return 0;
+}
+
 /* Per-cursor replay of one keypress.
  *
  * Two-phase: first dispatch at the original active cursor (with
@@ -111,10 +119,29 @@ static void on_keypress(HookKeyEvent *event) {
     for (int i = 0; i < n; i++)
         all[i] = buf->all_cursors[i];
 
+    /* Ascending (y, x) order gives each cursor its rank — the register
+     * part slot a yank at that cursor fills, and the part a paste there
+     * reads back (paste_from_register ranks the same way). Ranks are
+     * fixed from the pre-dispatch positions: replays run descending, so
+     * no edit moves a cursor that hasn't been processed yet. */
+    Cursor **asc = malloc(sizeof(Cursor *) * (size_t)n);
+    if (!asc) {
+        free(all);
+        return;
+    }
+    memcpy(asc, all, sizeof(Cursor *) * (size_t)n);
+    qsort(asc, (size_t)n, sizeof(Cursor *), cursor_pos_cmp_asc);
+
     KeybindState saved_kb;
     keybind_state_save(&saved_kb);
     int saved_mode = E.mode;
     int c = event->key;
+
+    /* One multi-part register write for the whole key instead of N
+     * overwrites (and N delete-register rotations); a no-op for keys
+     * that don't yank. */
+    yank_batch_begin(n);
+    yank_batch_slot(cursor_rank_in(asc, n, original_active));
 
     if (mc_debug)
         log_msg("mc: keypress c=%d (0x%x) n=%d mode=%d", c, c, n, saved_mode);
@@ -175,6 +202,8 @@ static void on_keypress(HookKeyEvent *event) {
      * exactly one dispatch is the right amount. Don't replay. Leave
      * buf->cursor wherever the operation pointed it. */
     if ((int)arrlen(buf->all_cursors) != n) {
+        yank_batch_end();
+        free(asc);
         free(all);
         event->consumed = 1;
         return;
@@ -184,6 +213,8 @@ static void on_keypress(HookKeyEvent *event) {
      * here instead of replaying the toggle at every cursor, which
      * would flip it right back. */
     if (!mc_sync) {
+        yank_batch_end();
+        free(asc);
         free(all);
         event->consumed = 1;
         return;
@@ -193,6 +224,8 @@ static void on_keypress(HookKeyEvent *event) {
      * would re-anchor the global selection at every extra cursor (see
      * the bail-out above). One anchor at the active cursor is right. */
     if (mode_is_visual(E.mode)) {
+        yank_batch_end();
+        free(asc);
         free(all);
         event->consumed = 1;
         return;
@@ -214,6 +247,7 @@ static void on_keypress(HookKeyEvent *event) {
 
         keybind_state_load(&saved_kb);
         E.mode = saved_mode;
+        yank_batch_slot(cursor_rank_in(asc, n, all[i]));
 
         buf->cursor = all[i];
         Window *w = window_cur();
@@ -245,6 +279,7 @@ static void on_keypress(HookKeyEvent *event) {
                     all[i]->x, E.mode);
     }
     in_replay = 0;
+    yank_batch_end();
 
     /* Restore the user's primary cursor as visually active. */
     if (active_still_in_list) {
@@ -263,6 +298,7 @@ static void on_keypress(HookKeyEvent *event) {
         }
     }
 
+    free(asc);
     free(all);
     event->consumed = 1;
 }

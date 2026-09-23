@@ -197,7 +197,7 @@ static EdError selection_to_registers(const TextSelection *sel,
 
 EdError yank_selection(const TextSelection *sel) {
     EdError e = selection_to_registers(sel, false);
-    if (e == ED_OK)
+    if (e == ED_OK && !regs_batch_active())
         hook_fire_simple(HOOK_YANK);
     return e;
 }
@@ -247,9 +247,32 @@ static EdError block_to_registers(Buffer *buf, int sy, int ey, int start_rx,
 
 EdError yank_block(Buffer *buf, int sy, int ey, int start_rx, int end_rx_excl) {
     EdError e = block_to_registers(buf, sy, ey, start_rx, end_rx_excl, false);
-    if (e == ED_OK)
+    if (e == ED_OK && !regs_batch_active())
         hook_fire_simple(HOOK_YANK);
     return e;
+}
+
+void yank_batch_begin(int ncursors) { regs_batch_begin(ncursors); }
+
+void yank_batch_slot(int idx) { regs_batch_slot(idx); }
+
+void yank_batch_end(void) {
+    if (regs_batch_end())
+        hook_fire_simple(HOOK_YANK);
+}
+
+/* Rank of the paste point among the buffer's cursors in (y, x) order:
+ * the number of other cursors positioned before it. */
+static int cursor_rank(const Buffer *buf, int y, int x) {
+    int rank = 0;
+    for (ptrdiff_t i = 0; i < arrlen(buf->all_cursors); i++) {
+        const Cursor *c = buf->all_cursors[i];
+        if (c == buf->cursor)
+            continue;
+        if (c->y < y || (c->y == y && c->x < x))
+            rank++;
+    }
+    return rank;
 }
 
 EdError yank_block_as_delete(Buffer *buf, int sy, int ey, int start_rx,
@@ -271,6 +294,21 @@ EdError paste_from_register(Buffer *buf, char reg_name, bool after) {
     const StrBuf *reg = regs_get(reg_name);
     if (!reg || reg->len == 0) {
         return ED_OK; /* Nothing to paste */
+    }
+
+    /* A multicursor yank left one part per cursor: paste this cursor's
+     * own part when the cursor count still matches, else the joined
+     * text (also what a single cursor gets). An empty part is a no-op
+     * at that cursor. */
+    int ncur = buf_cursor_count(buf);
+    if (ncur > 1) {
+        const StrBuf *part = regs_get_part(
+            reg_name, cursor_rank(buf, win->cursor.y, win->cursor.x), ncur);
+        if (part) {
+            if (part->len == 0)
+                return ED_OK;
+            reg = part;
+        }
     }
 
     /* Decide the paste shape from the register's recorded type, falling

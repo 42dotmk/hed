@@ -56,4 +56,29 @@ void regs_set_dot(const char *data, size_t len);
 /* Get register by name: '"', '0', '1'..'9', 'a'..'z', ':', '.' */
 const StrBuf *regs_get(char name);
 
+/*
+ * Multi-part writes (multicursor yank/delete).
+ *
+ * Between regs_batch_begin(n) and regs_batch_end(), every yank
+ * (regs_set_yank*) and delete (regs_push_delete*) is recorded into the
+ * part selected by regs_batch_slot() instead of being applied. At
+ * batch_end one real write happens — the parts joined by '\n' (each
+ * linewise part newline-terminated) — and the parts stay attached to
+ * the unnamed register, so a paste at N cursors can hand each cursor
+ * its own part (regs_get_part) while a single-cursor paste, or any
+ * other reader, sees the joined text. Slots never written are empty
+ * parts. Any later plain write to the unnamed register drops the
+ * parts. batch_end is a no-op when nothing was recorded.
+ */
+void regs_batch_begin(int nslots);
+void regs_batch_slot(int idx);
+int regs_batch_active(void);
+/* Returns 1 when the batch wrote a yank (not a delete) — the caller
+ * fires HOOK_YANK once for the whole batch. */
+int regs_batch_end(void);
+
+/* Part idx of the unnamed register, if it carries exactly nparts parts
+ * (the caller's cursor count); NULL otherwise. Only '"' has parts. */
+const StrBuf *regs_get_part(char name, int idx, int nparts);
+
 #endif /* REGISTERS_H */
