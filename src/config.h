@@ -1,7 +1,9 @@
 #ifndef HED_CONFIG_H
 #define HED_CONFIG_H
+#include "fs/fs.h"
 #include "input/keybinds.h"
 #include "input/keybinds_builtins.h"
+#include "lib/path_limits.h"
 
 #include "aishell/aishell.h"
 #include "auto_pair/auto_pair.h"
@@ -184,5 +186,12 @@ void config_init(void) {
     config_load_defaults();
     if (config_user_init)
         config_user_init();
+
+    /* ~/.config/hed/filetypes: "<ext|basename> <filetype>" per line.
+     * Loaded last so it needs no recompile to override anything above
+     * (:ftmap is the session-only equivalent). */
+    char ft_path[PATH_MAX];
+    if (fs_path_config("filetypes", ft_path, sizeof(ft_path)))
+        fs_filetype_load_file(ft_path);
 }
 #endif

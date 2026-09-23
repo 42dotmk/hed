@@ -8,13 +8,20 @@
 #include "hed.h"
 #include "session/session.h"
 
+#ifndef HED_SRC_DIR
+#define HED_SRC_DIR "."
+#endif
+
 static void cmd_reload(const char *args) {
     (void)args;
 
-    /* `make install` depends on $(TARGET), so this builds and refreshes
-     * the ~/.local/bin/hed symlink in one step — subsequent shell
-     * invocations of `hed` pick up the new binary too. */
-    int status = term_cmd_run_interactive("make -j16 install", true);
+    /* Build in the source tree the binary was compiled from, not the
+     * cwd — hed is usually editing some other project. `make install`
+     * depends on $(TARGET), so this builds and refreshes ~/.local/bin/hed
+     * in one step — subsequent shell invocations pick up the new binary
+     * too. */
+    int status = term_cmd_run_interactive(
+        "make -C '" HED_SRC_DIR "' -j16 install", true);
     if (status != 0) {
         ed_set_status_message("reload: build failed (status %d)", status);
         return;
@@ -28,7 +35,7 @@ static void cmd_reload(const char *args) {
 
     disable_raw_mode();
 
-    const char *exe = "./build/hed";
+    const char *exe = HED_SRC_DIR "/build/hed";
     execl(exe, exe, (char *)NULL);
 
     /* exec failed */

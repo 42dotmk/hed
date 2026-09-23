@@ -87,6 +87,15 @@ static void cmd_tslang(const char *args) {
         hook_fire_buffer(HOOK_BUFFER_OPEN, &ev);
         ts_buffer_load_language(b, args);
     }
+    /* Remember the choice for files like this one (by extension, or
+     * by basename when there is none) in ~/.config/hed/filetypes. */
+    if (b->filename) {
+        const char *ext = fs_path_extension(b->filename);
+        const char *key = *ext ? ext : fs_path_basename(b->filename);
+        char path[PATH_MAX];
+        if (fs_path_config("filetypes", path, sizeof(path)))
+            fs_filetype_remember(path, key, ft);
+    }
     ts_buffer_reparse(b);
     ed_set_status_message("tslang: %s", args);
 }

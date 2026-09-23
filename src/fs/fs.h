@@ -82,6 +82,22 @@ void fs_filetype_register(const char *key, const char *filetype);
  * the registry — do not free. */
 const char *fs_filetype_registered(const char *path);
 
+/* "$XDG_CONFIG_HOME/hed/<name>" (falls back to ~/.config/hed/<name>).
+ * Does not create anything. */
+bool fs_path_config(const char *name, char *out, size_t out_sz);
+
+/* Register every "<ext|basename> <filetype>" pair in `path`, one per
+ * line; blank lines and lines starting with '#' are skipped. Returns
+ * the number of mappings registered (0 if the file is missing). */
+int fs_filetype_load_file(const char *path);
+
+/* fs_filetype_register + persist: rewrites `path` so it carries
+ * "<key> <filetype>" — replacing an existing line for `key`, else
+ * appending (the file and its directory are created as needed). Other
+ * lines, comments included, are kept verbatim. */
+EdError fs_filetype_remember(const char *path, const char *key,
+                             const char *filetype);
+
 /* Walk upward from `start` looking for a directory that contains any of
  * the NULL-terminated `markers` (e.g. {".git", "Cargo.toml", NULL}).
  * A marker containing `*`, `?` or `[` is a shell glob matched against

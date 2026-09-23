@@ -108,7 +108,7 @@ active visual selection when one exists.
 | `:logclear` | Clear `.hedlog` |
 | `:echo <text>` | Print to status line |
 | `:modeless on\|off\|toggle` | Toggle the always-insert redirect |
-| `:ftmap <ext> <filetype>` | Map an extension or basename to a filetype (session only; persistent via `fs_filetype_register()` in config) |
+| `:ftmap <ext> <filetype>` | Map an extension or basename to a filetype; persisted to `~/.config/hed/filetypes` |
 
 ## Hooks
 

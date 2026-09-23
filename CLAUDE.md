@@ -143,10 +143,31 @@ void config_user_init(void) {
 }
 ```
 
-After editing either config, run `:reload` from inside hed to
-rebuild and restart. Note: `:reload` runs plain `make`, so
-`EXTRA_PLUGIN_DIRS` must come from the environment (it is `?=` in
-the Makefile), not the command line, to survive reloads.
+After editing either config, run `:reload` (`<space>rr`) from inside
+hed to rebuild and restart. It runs `make install` in the source
+tree the binary was built from (baked in as `HED_SRC_DIR`), so it
+works from any cwd. Note: `EXTRA_PLUGIN_DIRS` must come from the
+environment (it is `?=` in the Makefile), not the command line, to
+survive reloads.
+
+**Filetypes without a rebuild** — `~/.config/hed/filetypes` (or
+`$XDG_CONFIG_HOME/hed/filetypes`) is read at startup, one
+`<ext|basename> <filetype>` pair per line, `#` comments allowed:
+
+```
+# ext or exact basename → filetype
+zig             zig
+jsx             javascript
+CMakeLists.txt  cmake
+```
+
+It is loaded after the compiled config, so it overrides both the
+built-in table and `config.c` registrations. The file is also written
+for you: `:ftmap <ext> <ft>` and `:tslang` (`<space>ft`, keyed on the
+current file's extension or basename) add or replace the line for that
+key, so a filetype picked once sticks for every later hed. Filetype
+names are free-form tags — an unknown one just has no grammar until
+`:tsi <lang>` installs it.
 
 ---
 

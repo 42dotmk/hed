@@ -285,19 +285,24 @@ static void cmd_modeless(const char *args) {
     ed_set_status_message("modeless: %s", target ? "on" : "off");
 }
 
-/* :ftmap <ext|basename> <filetype> — session-only extension → filetype
- * mapping (last-write-wins over the built-in table). Open buffers whose
- * detected filetype changes are re-announced via HOOK_BUFFER_OPEN so
- * highlighters and fold defaults pick up the new filetype. For a
- * persistent mapping, call fs_filetype_register() from
- * ~/.config/hed/config.c instead. */
+/* :ftmap <ext|basename> <filetype> — extension → filetype mapping
+ * (last-write-wins over the built-in table), persisted to
+ * ~/.config/hed/filetypes so the next hed maps it too. Open buffers
+ * whose detected filetype changes are re-announced via
+ * HOOK_BUFFER_OPEN so highlighters and fold defaults pick up the new
+ * filetype. */
 static void cmd_ftmap(const char *args) {
     char key[64], ft[64];
     if (!args || sscanf(args, "%63s %63s", key, ft) != 2) {
         ed_set_status_message("Usage: :ftmap <ext|basename> <filetype>");
         return;
     }
-    fs_filetype_register(key, ft);
+    char path[PATH_MAX];
+    if (!fs_path_config("filetypes", path, sizeof(path)) ||
+        fs_filetype_remember(path, key, ft) != ED_OK) {
+        fs_filetype_register(key, ft); /* at least this session */
+        ed_set_status_message("ftmap: could not write %s", path);
+    }
     int updated = 0;
     for (int i = 0; i < (int)arrlen(E.buffers); i++) {
         Buffer *buf = &E.buffers[i];

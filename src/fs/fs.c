@@ -235,6 +235,106 @@ const char *fs_filetype_registered(const char *path) {
     return by_ext;
 }
 
+bool fs_path_config(const char *name, char *out, size_t out_sz) {
+    if (!out || out_sz == 0 || !name)
+        return false;
+    out[0] = '\0';
+    const char *xdg = getenv("XDG_CONFIG_HOME");
+    int n;
+    if (xdg && *xdg) {
+        n = snprintf(out, out_sz, "%s/hed/%s", xdg, name);
+    } else {
+        const char *home = getenv("HOME");
+        if (!home || !*home)
+            return false;
+        n = snprintf(out, out_sz, "%s/.config/hed/%s", home, name);
+    }
+    return n > 0 && (size_t)n < out_sz;
+}
+
+int fs_filetype_load_file(const char *path) {
+    if (!path)
+        return 0;
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return 0;
+    int count = 0;
+    char line[256], key[64], ft[64];
+    while (fgets(line, sizeof(line), fp)) {
+        const char *p = line;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (*p == '#' || *p == '\n' || *p == '\0')
+            continue;
+        if (sscanf(p, "%63s %63s", key, ft) != 2)
+            continue;
+        fs_filetype_register(key, ft);
+        count++;
+    }
+    fclose(fp);
+    return count;
+}
+
+EdError fs_filetype_remember(const char *path, const char *key,
+                             const char *filetype) {
+    if (!path || !key || !filetype || !*filetype)
+        return ED_ERR_INVALID_ARG;
+    if (key[0] == '.')
+        key++;
+    if (!*key)
+        return ED_ERR_INVALID_ARG;
+    fs_filetype_register(key, filetype);
+
+    char *old = NULL;
+    size_t old_len = 0;
+    fs_file_read(path, &old, &old_len); /* missing file: start empty */
+
+    char entry[160];
+    int n = snprintf(entry, sizeof(entry), "%s %s\n", key, filetype);
+    if (n <= 0 || (size_t)n >= sizeof(entry)) {
+        free(old);
+        return ED_ERR_INVALID_ARG;
+    }
+
+    /* Copy line by line, swapping the line whose first token is `key`. */
+    StrBuf out = strbuf_new();
+    bool replaced = false;
+    size_t klen = strlen(key);
+    const char *p = old ? old : "";
+    while (*p) {
+        const char *eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) + 1 : strlen(p);
+        const char *t = p;
+        while (*t == ' ' || *t == '\t')
+            t++;
+        if (!replaced && strncmp(t, key, klen) == 0 &&
+            (t[klen] == ' ' || t[klen] == '\t')) {
+            strbuf_append(&out, entry, (size_t)n);
+            replaced = true;
+        } else {
+            strbuf_append(&out, p, len);
+        }
+        p += len;
+    }
+    free(old);
+    if (!replaced) {
+        if (out.len > 0 && out.data[out.len - 1] != '\n')
+            strbuf_append_char(&out, '\n');
+        strbuf_append(&out, entry, (size_t)n);
+    }
+
+    char dir[PATH_MAX];
+    snprintf(dir, sizeof(dir), "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (slash && slash != dir) {
+        *slash = '\0';
+        fs_mkdir_p(dir);
+    }
+    EdError err = fs_file_write_atomic(path, out.data, out.len);
+    strbuf_free(&out);
+    return err;
+}
+
 char *fs_path_detect_filetype(const char *path) {
     if (!path)
         return strdup("txt");
