@@ -41,8 +41,9 @@ static char rendered_tid[128] = "";
 static int rendered_chat = 0;
 
 /* Chat view on/off for thread buffers (session-wide; see
- * mail_set_chat / :mail-chat). */
-static int chat_view = 0;
+ * mail_set_chat / :mail-chat). On by default: a thread reads as the
+ * conversation it is, and the headers are one `c` away. */
+static int chat_view = 1;
 
 void mail_set_chat(int on) { chat_view = on ? 1 : 0; }
 int mail_get_chat(void) { return chat_view; }
@@ -1721,12 +1722,18 @@ void mail_handle_mailbox_enter(void) {
     switch (e->kind) {
     case MBE_HEADER:
         return;
+    /* Picking a view, a tag or [All mail] is a fresh start: the extra
+     * filter belongs to the query it was typed against (and a stale one
+     * silently empties the new listing). The mailbox scope is not a
+     * filter — it stays. */
     case MBE_ALL:
         mail_set_mailbox("");
+        mail_set_filter("");
         mail_set_query("*");
         break;
     case MBE_VIEW:
     case MBE_TAG:
+        mail_set_filter("");
         mail_set_query(e->query);
         break;
     case MBE_MAILBOX:

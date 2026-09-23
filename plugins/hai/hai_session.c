@@ -83,15 +83,6 @@ static void free_names(char **names) {
     arrfree(names);
 }
 
-/* Modification time in milliseconds — a directory written twice in
- * one second (a file taken, a file delivered) still reads as changed. */
-static long mtime_of(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0)
-        return 0;
-    return (long)st.st_mtim.tv_sec * 1000 + st.st_mtim.tv_nsec / 1000000;
-}
-
 /* The epoch a Maildir file name starts with (hai and hml both name
  * files `<time>.<pid>...`). 0 when it doesn't. */
 static time_t name_time(const char *name) {
@@ -251,6 +242,11 @@ int hai_msg_read(const char *path, HaiMsg *m) {
     header(h, "Hai-Role", m->role, sizeof(m->role));
     header(h, "Hai-Intent", m->intent, sizeof(m->intent));
     header(h, "Hai-Tool", m->tool, sizeof(m->tool));
+    char date[128];
+    m->date =
+        header(h, "Date", date, sizeof(date)) ? str_parse_rfc2822(date) : -1;
+    if (m->date <= 0)
+        m->date = m->when;
     if (!m->role[0]) /* mail from outside: what hai makes of it */
         snprintf(m->role, sizeof(m->role), "user");
     if (!m->intent[0])
@@ -274,32 +270,6 @@ void hai_msgs_free(HaiMsg *msgs) {
     arrfree(msgs);
 }
 
-size_t hai_msg_content(const HaiMsg *m, const char **calls) {
-    const char *b = m->body ? m->body : "";
-    size_t n = strlen(b);
-    if (calls)
-        *calls = NULL;
-    if (strcmp(m->intent, "tool-call") != 0)
-        return n;
-    /* drop trailing "-> name args" lines */
-    for (;;) {
-        size_t e = n;
-        while (e > 0 && b[e - 1] == '\n')
-            e--;
-        size_t s = e;
-        while (s > 0 && b[s - 1] != '\n')
-            s--;
-        if (e == s || strncmp(b + s, "-> ", 3) != 0)
-            break;
-        if (calls)
-            *calls = b + s;
-        n = s;
-    }
-    if (calls && *calls && n > 0 && b[n - 1] == '\n')
-        n--; /* the newline hai puts between content and calls */
-    return n;
-}
-
 /* ------------------------------------------------------------------ */
 /* Sessions                                                            */
 /* ------------------------------------------------------------------ */
@@ -317,88 +287,11 @@ void hai_session_at(HaiSession *s, const char *mailbox, const char *domain,
         snprintf(s->dir, sizeof(s->dir), "%s/s/%s/%s", mailbox, name, id);
 }
 
-/* Count, last activity and subject from the directory. */
-static void session_stat(HaiSession *s) {
-    char path[HAI_PATH + 8];
-    s->count = 0;
-    s->mtime = 0;
-    char firstname[300] = "", firstpath[HAI_PATH + 300] = "";
-    const char *subs[] = {"cur", "new"};
-    for (int k = 0; k < 2; k++) {
-        snprintf(path, sizeof(path), "%s/%s", s->dir, subs[k]);
-        long mt = mtime_of(path);
-        if (mt > s->mtime)
-            s->mtime = mt;
-        char **names = dir_files(path);
-        s->count += (int)arrlen(names);
-        /* the root message is the oldest file, whichever dir it is in */
-        if (arrlen(names) > 0 &&
-            (!firstname[0] || strcmp(names[0], firstname) < 0)) {
-            snprintf(firstname, sizeof(firstname), "%s", names[0]);
-            snprintf(firstpath, sizeof(firstpath), "%s/%s", path, names[0]);
-        }
-        free_names(names);
-    }
-    if (firstpath[0]) {
-        HaiMsg m;
-        if (hai_msg_read(firstpath, &m) == 0) {
-            snprintf(s->subject, sizeof(s->subject), "%s", m.subject);
-            free(m.body);
-        }
-    }
-}
-
-static int is_session_dir(const char *dir) {
-    char path[HAI_PATH * 2];
-    snprintf(path, sizeof(path), "%s/cur", dir);
-    return fs_is_dir(path);
-}
-
-static int by_mtime_desc(const void *a, const void *b) {
-    const HaiSession *x = a, *y = b;
-    if (x->mtime != y->mtime)
-        return x->mtime > y->mtime ? -1 : 1;
-    return strcmp(y->id, x->id);
-}
-
-HaiSession *hai_sessions_scan(const char *mailbox, const char *domain) {
-    HaiSession *out = NULL;
-    char sdir[HAI_PATH];
-    snprintf(sdir, sizeof(sdir), "%s/s", mailbox);
-    char **top = dir_files(sdir);
-    for (ptrdiff_t i = 0; i < arrlen(top); i++) {
-        char dir[HAI_PATH + 300];
-        snprintf(dir, sizeof(dir), "%s/%s", sdir, top[i]);
-        if (!fs_is_dir(dir))
-            continue;
-        if (is_session_dir(dir)) {
-            HaiSession s;
-            hai_session_at(&s, mailbox, domain, "main", top[i]);
-            session_stat(&s);
-            arrput(out, s);
-            continue;
-        }
-        /* an agent's sessions: s/<name>/<id> */
-        char **sub = dir_files(dir);
-        for (ptrdiff_t j = 0; j < arrlen(sub); j++) {
-            char sd[HAI_PATH + 600];
-            snprintf(sd, sizeof(sd), "%s/%s", dir, sub[j]);
-            if (!is_session_dir(sd))
-                continue;
-            HaiSession s;
-            hai_session_at(&s, mailbox, domain, top[i], sub[j]);
-            session_stat(&s);
-            arrput(out, s);
-        }
-        free_names(sub);
-    }
-    free_names(top);
-    if (arrlen(out) > 1)
-        qsort(out, (size_t)arrlen(out), sizeof(*out), by_mtime_desc);
-    return out;
-}
-
-int hai_session_load(const HaiSession *s, HaiMsg **out) {
+/* Every message file of the session, in name order — which is time
+ * order, and the order hai loads them (stb_ds array of malloc'd paths;
+ * free_names it). `*exists` (optional) says whether the session
+ * directory is there at all. */
+static char **session_files(const HaiSession *s, int *exists) {
     char path[HAI_PATH + 8];
     char **all = NULL;
     const char *subs[] = {"cur", "new"};
@@ -418,10 +311,20 @@ int hai_session_load(const HaiSession *s, HaiMsg **out) {
         }
         free_names(names);
     }
-    if (!any)
-        return -1;
     if (arrlen(all) > 1) /* cur and new interleave by name = by time */
         qsort(all, (size_t)arrlen(all), sizeof(*all), by_name);
+    if (exists)
+        *exists = any;
+    return all;
+}
+
+int hai_session_load(const HaiSession *s, HaiMsg **out) {
+    int exists = 0;
+    char **all = session_files(s, &exists);
+    if (!exists) {
+        free_names(all);
+        return -1;
+    }
     for (ptrdiff_t i = 0; i < arrlen(all); i++) {
         HaiMsg m;
         if (hai_msg_read(all[i], &m) == 0)
@@ -429,42 +332,6 @@ int hai_session_load(const HaiSession *s, HaiMsg **out) {
     }
     free_names(all);
     return 0;
-}
-
-char *hai_session_preview(const HaiSession *s, time_t *started) {
-    char path[HAI_PATH + 16];
-    snprintf(path, sizeof(path), "%s/tmp/reply", s->dir);
-    struct stat st;
-    if (stat(path, &st) != 0)
-        return NULL;
-    if (started)
-        *started = st.st_ctime;
-    char *text = read_file(path, NULL);
-    return text ? text : strdup("");
-}
-
-int hai_session_pending(const HaiSession *s, const char *mailbox,
-                        HaiMsg **out) {
-    char path[HAI_PATH + 8];
-    snprintf(path, sizeof(path), "%s/%s/new", mailbox, s->name);
-    char **names = dir_files(path);
-    int n = 0;
-    for (ptrdiff_t i = 0; i < arrlen(names); i++) {
-        char full[HAI_PATH + 300];
-        snprintf(full, sizeof(full), "%s/%s", path, names[i]);
-        HaiMsg m;
-        if (hai_msg_read(full, &m) != 0)
-            continue;
-        if (strstr(m.refs, s->root) || strcmp(m.inreplyto, s->root) == 0 ||
-            strcmp(m.mid, s->root) == 0) {
-            arrput(*out, m);
-            n++;
-        } else {
-            free(m.body);
-        }
-    }
-    free_names(names);
-    return n;
 }
 
 void hai_session_open_ask(const HaiSession *s, const char *mailbox,
@@ -494,26 +361,6 @@ void hai_session_open_ask(const HaiSession *s, const char *mailbox,
         }
         free_names(names);
     }
-}
-
-void hai_session_sig(const HaiSession *s, const char *mailbox, HaiSig *sig) {
-    char path[HAI_PATH + 16];
-    snprintf(path, sizeof(path), "%s/cur", s->dir);
-    sig->cur = mtime_of(path);
-    snprintf(path, sizeof(path), "%s/new", s->dir);
-    sig->new = mtime_of(path);
-    snprintf(path, sizeof(path), "%s/tmp", s->dir);
-    sig->tmp = mtime_of(path);
-    snprintf(path, sizeof(path), "%s/%s/new", mailbox, s->name);
-    sig->inbox = mtime_of(path);
-    snprintf(path, sizeof(path), "%s/tmp/reply", s->dir);
-    struct stat st;
-    sig->reply = stat(path, &st) == 0 ? (long)st.st_size + 1 : 0;
-}
-
-int hai_sig_eq(const HaiSig *a, const HaiSig *b) {
-    return a->cur == b->cur && a->new == b->new && a->tmp == b->tmp &&
-           a->inbox == b->inbox && a->reply == b->reply;
 }
 
 /* ------------------------------------------------------------------ */

@@ -190,11 +190,11 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `example` | Starter template — copy and rename to make your own. |
 | `fmt` | `:fmt` runs an external formatter by filetype. |
 | `git` | Git integration |
-| `hai` | hai's conversations over mail: sessions list, agent tree (jump into an agent's live conversation), chat view with the streamed reply (watches the session Maildir and `tmp/reply`), send a selection / paragraph into a session (`hml send -t`). Reads hai's Maildirs directly — no socket, no index. |
+| `hai` | hai's agents: the agent tree (state, model, working directory, task), each agent's conversation opened in the mail view, mail-list scopes for the sessions (`:hai`, `:hai-dir`), and a selection / paragraph mailed to an agent (`hml send -t`). Reading is the mail plugin's job — a session is a mail thread. |
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
 | `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source, code actions (`:lsp_code_action`, picker + `codeAction/resolve` + `executeCommand`/`applyEdit`), rename, formatting, references → quickfix — every server edit lands through one undo-grouped `WorkspaceEdit` applier. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |
-| `mail` | Mail integration |
+| `mail` | hml-backed mail reader: threads in a chat view by default (`:mail-chat` for the full headers), queries, tags, mailbox sidebar, compose/reply/forward, attachments. |
 | `mail_git_patch` | Git patch mail integration |
 | `man` | Manual pages viewer |
 | `markdown` | Markdown rendering support |

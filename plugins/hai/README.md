@@ -1,138 +1,105 @@
 # hai
 
-hai's conversations inside hed, over mail. hai keeps every session
-as a Maildir (`hai/MAIL.md`: one file per turn, `Hai-*` headers say
-what each file is); this plugin reads those directories straight off
-the disk and writes your turns back with `hml send -t`, which
-delivers `@hai` mail locally into the agent's inbox. No socket, no
-index: the session list is a directory scan, a chat is the files of
-one session, "streaming" is the reply file hai writes while the model
-talks, and a watcher timer re-renders the open chats when anything
-under them changes.
+hai's agents inside hed, and text sent to them.
+
+Reading the conversations needs no view of its own. A hai session is
+a Maildir (`hai/MAIL.md`), hml indexes it, so it is a mail thread like
+any other — the `mail` plugin already reads threads (chat style by
+default), filters, tags and replies to them. This plugin points the
+mail list at those threads and adds the one thing mail cannot show:
+**the agents** — who is alive, what each is doing, on which model, in
+which directory.
 
 ## Requirements
 
-- `hml` — `hml send -t` for local delivery (the only thing that
-  writes); `hml search` only for `m` (open the same thread in the
-  mail plugin)
-- `hai` — the client, only for the agent tree and "the live session
-  of agent X"; sessions and chats work with no daemon at all
-
-## Buffers
-
-| Buffer | Filetype | Filename |
-|---|---|---|
-| Sessions | `hai-sessions` | `hai://sessions` |
-| Agent tree | `hai-tree` | `hai://tree` |
-| Chat | `hai-chat` | `hai://<agent>/<session-id>` |
-| Compose | `hai-compose` | `hai://compose-<n>` |
+- `hml` — `hml send -t` delivers a turn into an agent's inbox; `hml
+  new` keeps the index current; `hml search` finds a session's thread
+- `hai` — the client, for the agents view (`hai tree`) and "the live
+  session of agent X" (`hai status`). Sending works without it
+- the `mail` plugin — for reading. Weakly linked: hai builds and runs
+  without it, minus the keys that open a thread or a compose
 
 ## Commands
 
 | Command | Action |
 |---|---|
-| `:hai` | Sessions of every agent under the mailbox, newest first |
-| `:hai-tree` | The agent tree (`hai -s main tree`) |
-| `:hai-send [text]` | Mail the visual selection / `text` / the paragraph under the cursor into the session being viewed — or, from any other buffer, into the agent's live conversation (a new session when the daemon is not reachable) |
-| `:hai-send-new [text]` | The same, always as a new session |
-| `:hai-compose` | A compose buffer: a reply into the viewed session, else a new message to the agent. `C-c C-c` sends |
-| `:hai-verbose [on\|off\|toggle]` | Whole tool results in the chat view (default: the first 6 lines) |
-| `:hai-refresh` | Reread the current hai buffer |
+| `:hai-agents` | The agents view: `hai tree` — address, state, mode, model, directory, task |
+| `:hai` | Every agent's sessions, in the mail list |
+| `:hai-sessions [agent]` | One agent's sessions (no argument: the one under the cursor) |
+| `:hai-dir [path]` | The sessions of the agents working in `path` — no argument: this agent's directory, else the editor's |
+| `:hai-send [text]` | Mail the visual selection / `text` / the paragraph under the cursor to an agent, into its live conversation |
+| `:hai-send-new [text]` | The same, as a new session |
+| `:hai-say [text]` | Say one line (prompts when given none) |
+| `:hai-compose` | The mail plugin's compose buffer, addressed to the agent (`C-c C-c` sends) |
 
-Leader keys (from `src/config.h`-style defaults registered by the
-plugin, overridable last-write-wins): `<space>aa` sessions,
-`<space>at` tree, `<space>as` send (paragraph in normal mode,
-selection in visual), `<space>an` send as a new session, `<space>ac`
-compose.
+Leader keys: `<space>aa` agents, `<space>am` sessions in the mail
+list, `<space>ad` sessions for this directory, `<space>as` send
+(paragraph in normal mode, selection in visual), `<space>an` send as a
+new session, `<space>ac` compose.
 
-## Keys
-
-### Sessions (`hai-sessions`)
-
-`<CR>` open the chat · `r` refresh · `t` tree · `n` compose · `q` close
-
-### Agent tree (`hai-tree`)
-
-`<CR>` open the agent's live conversation · `T` a terminal on it
-(`$HAI_TERMINAL -e hai -s NAME`, hterm by default) · `l` sessions ·
-`r` refresh · `q` close
-
-### Chat (`hai-chat`)
-
-`s` say a line (prompt; `:hai-say [text]`) · `S` compose a reply ·
-`r` refresh · `v` whole tool results · `m` the same thread in the
-mail plugin · `t` tree · `l` sessions · `q` close
-
-### Compose (`hai-compose`)
-
-`C-c C-c` send (normal and insert mode) · `q` close
-
-## The chat view
+## The agents view (`hai-agents`)
 
 ```
-Subject: what is eating the disk
-
-● You — 18 Sep 17:19
-what is eating the disk
-
-● main@hai — 18 Sep 17:19
-Let me look.
-  → shell {"command": "du -sh ~/*"}
-  │ 4.0G  /home/halicea/Downloads
-  │ … +12 lines
-
-● main@hai — 18 Sep 17:20
-Downloads is the culprit.
-
-? main@hai — 18 Sep 17:20 · asks
-May I delete the ISOs?
-
-● You — 18 Sep 17:21 · queued
-yes
-
-● main@hai · writing…
-Deleting them now
+main@hai  idle · ask · 1 attached  — Re: taskman v1 — the re-check round
+└─ pm@hai  running · auto  (terminal) in ~/probe/high-company/pm on deepseek-r  — check: qa's report in?
 ```
 
-Files in name order — the order hai loads them — one block per turn:
-system prompts are hidden, an assistant message with tool calls shows
-its prose then one `→ name args` line per call, tool results follow
-as `│` lines (abridged unless `:hai-verbose`), `ask` notes get a `?`
-header, `answer` and `summary` turns are labelled. A turn that came in
-as mail loses the `From:/Date:/Subject:/Message-ID:` envelope hai
-stores with it (the block header says the same).
+hai's own tree, one row per agent: the address, its state (`idle`,
+`running`, `asking`), the mode, whether a terminal is attached, the
+**working directory** for an agent that has one, the model, and the
+task it is on. The address, state and directory are coloured; the
+task is dim.
 
-After the stored turns come the ones **queued**: mailed into the
-agent's inbox (`<mailbox>/<agent>/new`) but not yet taken (an agent
-takes mail only between runs). Last, while `<session>/tmp/reply`
-exists a run is on: its content is the reply being streamed, shown
-under a `writing…` header — minus what is already stored, since an
-assistant message with tool calls lands in `cur/` mid-run and the
-reply file keeps every fragment of the run. `working…` means the run
-is on but nothing has been said yet (a tool is running).
+| Key | Action |
+|---|---|
+| `<CR>` | This agent's live conversation, in the mail thread view |
+| `f` | Its sessions in the mail list |
+| `d` | The sessions of every agent working in its directory |
+| `s` | Say a line to it |
+| `c` | Compose a message to it |
+| `T` | A terminal on it (`$HAI_TERMINAL -e hai -s NAME`, hterm by default) |
+| `r` | Refresh |
+| `m` | Every hai session in the mail list |
+| `q` | Close |
 
-The watcher stats the session's `cur/`, `new/`, `tmp/`, the reply
-file and the agent's inbox every 500 ms while a chat buffer exists;
-a cursor on the last row follows the conversation, any other keeps
-its place.
+## Filtering the mail list
+
+`:hai` sets the mail query to the session Maildirs of every agent, and
+from there the mail plugin's own tools apply: `/` to filter, `b` for
+the sidebar (its Views section gets **hai sessions** and **hai asks**),
+`t` for the tags — hml tags every message `hai:<intent>`, so
+`not tag:hai:tool-call` is the human side of a conversation and
+`tag:hai:ask` is the questions waiting for you.
+
+Filtering by directory is a phrase search: every session carries
+`Working directory: <path>` in the system message hai stores with it,
+so `:hai-dir ~/projects/hackable/hed` lists the sessions of whatever
+agent worked there — including agents that have since exited, which
+the agents view cannot show.
+
+Before every listing the plugin runs `hml new` (mtime-gated,
+milliseconds) so a session hai has just written, or a turn just sent,
+is in the index.
 
 ## Sending
 
-A message from hed is `From: <you>`, `To: <agent>`, threaded into the
-session with `In-Reply-To` the session's last message and `References
-<root> <last>`, which is how hai routes it into that session. When the
-last message is a question hai mailed you (`Hai-Intent: ask`), the
-reply goes `In-Reply-To` the mailed copy in `<mailbox>/user/` instead —
-that is what makes it the answer. A new session is rooted at the
-Message-ID hed writes, so its chat opens at once and shows the message
-queued until the agent takes it.
+A turn is mail: `From: <you>`, `To: <agent>`, threaded with
+`In-Reply-To` the session's last message and `References <root>
+<last>` — which is how hai routes it into that session rather than
+starting a new one. When the last turn is a question hai mailed you
+(`Hai-Intent: ask`), the reply goes to the mailed copy in
+`<mailbox>/user/` instead, which is what makes it the answer.
 
-`:hai-send` outside a chat asks `hai -s <agent> status` for the live
-session; with no daemon it starts a new one.
+A new session is rooted at the Message-ID hed writes, so hai threads
+everything that follows under it.
+
+`:hai-send` is the one that earns its keep from any buffer: select a
+block of code, or leave the cursor in a paragraph, and it reaches the
+agent with no copy-paste.
 
 ## Configuration
 
-All in `hai.h`, from `~/.config/hed/config.c` or `src/config.h` after
+In `hai.h`, from `~/.config/hed/config.c` or `src/config.h` after
 `plugin_load(&plugin_hai, 1)`:
 
 ```c
@@ -140,28 +107,37 @@ All in `hai.h`, from `~/.config/hed/config.c` or `src/config.h` after
 ...
 plugin_load(&plugin_hai, 1);
 
-hai_set_mailbox("~/.mail/hai");   /* hai.conf `mailbox`             */
-hai_set_user("user@hai");         /* hai.conf `useraddr`: shown as You */
-hai_set_agent("main@hai");        /* where blocks go by default      */
-hai_set_send_cmd("hml send -t");  /* reads RFC 822 on stdin          */
-hai_set_result_lines(6);          /* tool result lines when abridged */
+hai_set_mailbox("~/.mail/hai");   /* hai.conf `mailbox`               */
+hai_set_user("user@hai");         /* hai.conf `useraddr`: you         */
+hai_set_agent("main@hai");        /* where a block goes by default    */
+hai_set_send_cmd("hml send -t");  /* reads RFC 822 on stdin           */
+hai_set_query("path:hai/s/**");   /* what :hai scopes the list to     */
 ```
 
 The agent of a session is read from its path: `s/<id>` is main's,
 `s/<name>/<id>` belongs to `<name>@hai` (a child's child is
-`pm.scout`, its directory too).
+`pm.scout`, and its directory sits beside the others).
 
 ## Source layout
 
 ```
 plugins/hai/
-├── hai.c           # buffers, rendering, watcher, sending, keys
+├── hai.c           # the agents view, the mail-list scopes, sending
 ├── hai.h           # public configuration API
-├── hai_session.c   # the Maildir side: scan, load, preview, pending,
-│                   # the mailed question, mail out
+├── hai_session.c   # the Maildir side: a session's files, the mailed
+│                   # question, mail out
 └── hai_session.h
 ```
 
 `hai_session.c` knows nothing about buffers or windows — it is the
-format in `hai/MAIL.md` as C. The only tie to the mail plugin is `m`,
-through a weak `mail_open_thread`; the build links without it.
+part of `hai/MAIL.md` this plugin needs, as C. The mail plugin is
+reached through the command registry (`mail-query`, `mail-filter`) and
+three weak symbols, so neither plugin links against the other.
+
+## What this does not do
+
+Live streaming. While a run is on, hai writes the reply to
+`<session>/tmp/reply` token by token; that file is not mail and hml
+does not index it, so the mail view shows a turn when it lands, not
+as it is typed. `hai` in a terminal (or `T` from the agents view) is
+where you watch a run.

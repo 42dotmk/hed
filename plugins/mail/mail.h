@@ -45,8 +45,8 @@ void mail_set_send_cmd(const char *cmd);
  * or NULL, the From: line is left blank for the user to fill in. */
 void mail_set_from(const char *from);
 
-/* Start thread buffers in the chat view (1) or the full view (0,
- * default). The chat view reads oldest-first with one "● Sender — date"
+/* Start thread buffers in the chat view (1, the default) or the full
+ * view (0). The chat view reads oldest-first with one "● Sender — date"
  * line per message and the quoted replies, signatures and forward
  * headers stripped from the bodies; :mail-chat (c in a thread) toggles
  * it at runtime. */

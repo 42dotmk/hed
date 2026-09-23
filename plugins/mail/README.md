@@ -51,7 +51,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-forward` | Forward the message under the cursor inline, with its attachments re-attached |
 | `:mail-forward-eml` | Forward the message under the cursor verbatim, as one `.eml` (`message/rfc822`) attachment |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
-| `:mail-chat [on\|off\|toggle]` | Switch the thread view between full and chat style (see below); re-renders the viewed thread. Session-wide |
+| `:mail-chat [on\|off\|toggle]` | Switch the thread view between chat style (the default; see below) and the full headers; re-renders the viewed thread. Session-wide |
 | `:mail-attach [n\|all]` | Open attachment(s) of the message under the cursor (whole thread with `all`, or when that message has none) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
 | `:mail-attach save [n\|all] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
 | `:mail-attach-add [path]` | Attach file(s) to the current compose buffer. With `path` (~ expanded) it is attached directly; without, an fzf multi-pick over project files (Tab to select) |
@@ -86,7 +86,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `a` | Open attachment(s) of the message under the cursor — auto if one, fzf multi-pick if many |
 | `A` | Save attachment(s) of the message under the cursor to `~/Downloads` (fzf multi-pick if many) |
 | `o` | Open the message's HTML body in the system browser |
-| `c` | Toggle the chat-style thread view |
+| `c` | Toggle between the chat view and the full headers |
 | `q` | Close the message |
 
 ### In the mailbox sidebar (`mail-mailboxes` filetype)
@@ -144,7 +144,9 @@ section divider.
 
 ### Chat view
 
-`c` in a thread (or `:mail-chat`) re-renders it as a conversation:
+How a thread opens, unless `mail_set_chat(0)` says otherwise —
+a conversation rather than a stack of headers (`c`, or `:mail-chat`,
+flips it back and forth):
 
 ```
 Subject: Quarterly review
@@ -182,8 +184,8 @@ Thanks — one question about slide 3.
 The view is remembered for the session; a thread buffer reopened
 after a toggle is re-rendered in the current view. `<space>tc` (the
 leader toggle cluster in `src/config.h`) flips it from anywhere, so
-the next thread you open already comes up as a chat. Start in chat
-view from config with `mail_set_chat(1)`.
+the next thread you open comes up the same way. `mail_set_chat(0)`
+in config starts in the full view instead.
 
 ## Configuration
 
@@ -201,7 +203,7 @@ mail_set_query("tag:inbox AND NOT tag:muted"); /* default base query  */
 mail_set_sync_cmd("mbsync personal");          /* default: "hml recv" */
 mail_set_send_cmd("msmtp -t -a personal");     /* default: "msmtp -t" */
 mail_set_from("Me <me@example.com>");          /* From: in compose    */
-mail_set_chat(1);                              /* threads open as chat */
+mail_set_chat(0);                              /* full headers, not chat */
 
 /* Saved views shown at the top of the mailbox sidebar. */
 mail_add_view("Unread",      "tag:unread");
