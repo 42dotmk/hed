@@ -244,6 +244,26 @@ int ts_list_langs(char ***out_names) {
 }
 
 /* Load a tree-sitter language .so and return its TSLanguage* and dl handle. */
+/* What people write in a fence info string, or in :tslang, against
+ * the grammar that actually implements it. Injections carry these
+ * names straight from the document (```sh, ```py), so without the
+ * table a fenced block stays unhighlighted for want of an sh.so. */
+static const char *lang_alias(const char *name) {
+    static const char *const map[][2] = {
+        {"sh", "bash"},       {"shell", "bash"},     {"zsh", "bash"},
+        {"console", "bash"},  {"js", "javascript"},  {"jsx", "javascript"},
+        {"ts", "typescript"}, {"tsx", "typescript"}, {"py", "python"},
+        {"rb", "ruby"},       {"yml", "yaml"},       {"md", "markdown"},
+        {"cs", "c-sharp"},    {"csharp", "c-sharp"}, {"c++", "cpp"},
+        {"h", "c"},           {"hpp", "cpp"},        {"golang", "go"},
+        {"htm", "html"},      {"conf", "ini"},
+    };
+    for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(name, map[i][0]) == 0)
+            return map[i][1];
+    return name;
+}
+
 static int load_lang_dl(const char *lang_name, TSLanguage **out_lang,
                         void **out_handle) {
     if (!lang_name || !*lang_name)
@@ -440,6 +460,7 @@ static int ts_lang_is_loaded(TSState *st, const char *lang_name) {
 }
 
 int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
+    lang_name = lang_alias(lang_name);
     if (!buf)
         return 0;
     TSState *st = ts_state_create(buf);
@@ -993,7 +1014,11 @@ static void collect_injections(TSState *st, const char *src, size_t src_len) {
 
         uint32_t cs = ts_node_start_byte(content_node);
         uint32_t ce = ts_node_end_byte(content_node);
-        add_injection(st, lang_buf, cs, ce);
+        /* Canonical from here on: the document says ```sh, the
+         * grammar and its queries are bash's. Downstream keys — the
+         * sub-language states and the "still used" sweep — must agree
+         * on one spelling. */
+        add_injection(st, lang_alias(lang_buf), cs, ce);
     }
     ts_query_cursor_delete(cur);
 }

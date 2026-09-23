@@ -840,6 +840,83 @@ static void cmd_hai_terminal(const char *args) {
 #define HC_DIR COLOR_STRING                 /* the working directory */
 #define HC_DIM COLOR_COMMENT
 
+/* Above mail's spans (1) and a grammar's (0): a tool call is neither
+ * prose nor mail structure. */
+#define HAI_PRIO 2
+
+#define HC_TOOL COLOR_KEYWORD /* the tool's name        */
+#define HC_KEY COLOR_PROPERTY /* an argument's name     */
+#define HC_STR COLOR_STRING   /* its value              */
+#define HC_NUM COLOR_NUMBER   /* numbers, true, false   */
+#define HC_PUNCT COLOR_DELIMITER
+
+/* The JSON arguments of a tool call, coloured the way a value is
+ * anywhere else: names apart from values, strings apart from numbers,
+ * the braces and commas out of the way. One pass, no parser — the
+ * arguments come from the model as one line. */
+static void json_spans(const HookRenderEvent *e, int row, const char *raw,
+                       int from, int len) {
+    int i = from;
+    while (i < len) {
+        char c = raw[i];
+        if (c == '"') {
+            int s = i++;
+            while (i < len && raw[i] != '"') {
+                if (raw[i] == '\\' && i + 1 < len)
+                    i++;
+                i++;
+            }
+            if (i < len)
+                i++; /* the closing quote */
+            int j = i;
+            while (j < len && raw[j] == ' ')
+                j++;
+            int key = j < len && raw[j] == ':';
+            attrspan_push(e->spans, row, s, i, key ? HC_KEY : HC_STR, HAI_PRIO);
+            continue;
+        }
+        if ((c >= '0' && c <= '9') || strncmp(raw + i, "true", 4) == 0 ||
+            strncmp(raw + i, "false", 5) == 0 ||
+            strncmp(raw + i, "null", 4) == 0) {
+            int s = i;
+            while (i < len && raw[i] != ',' && raw[i] != '}' && raw[i] != ']' &&
+                   raw[i] != ' ')
+                i++;
+            attrspan_push(e->spans, row, s, i, HC_NUM, HAI_PRIO);
+            continue;
+        }
+        if (c == '{' || c == '}' || c == '[' || c == ']' || c == ',' ||
+            c == ':') {
+            attrspan_push(e->spans, row, i, i + 1, HC_PUNCT, HAI_PRIO);
+        }
+        i++;
+    }
+}
+
+/* hai writes one "-> name {arguments}" line per tool call into the
+ * text part of an assistant message (hai/MAIL.md), so that is what a
+ * mail thread shows. Give it the shape a reader wants: the tool, then
+ * its arguments as values rather than a wall of punctuation. */
+static void thread_render_hook(const HookRenderEvent *e) {
+    if (!e || !e->buf || !e->spans)
+        return;
+    Buffer *buf = e->buf;
+    for (int row = e->row_start; row < e->row_end; row++) {
+        if (row < 0 || row >= buf->num_rows)
+            continue;
+        const char *raw = buf->rows[row].chars.data;
+        int len = (int)buf->rows[row].chars.len;
+        if (!raw || len < 4 || strncmp(raw, "-> ", 3) != 0)
+            continue;
+        int n = 3;
+        while (n < len && raw[n] != ' ')
+            n++;
+        attrspan_push(e->spans, row, 0, 3, HC_PUNCT, HAI_PRIO);
+        attrspan_push(e->spans, row, 3, n, HC_TOOL, HAI_PRIO);
+        json_spans(e, row, raw, n, len);
+    }
+}
+
 static void agents_render_hook(const HookRenderEvent *e) {
     if (!e || !e->buf || !e->spans)
         return;
@@ -947,6 +1024,8 @@ static int hai_init(void) {
     cmapn(" ac", "hai-compose", "compose to hai");
 
     hook_register_render(HOOK_RENDER_PRE, -1, "hai-agents", agents_render_hook);
+    hook_register_render(HOOK_RENDER_PRE, -1, "mail-message",
+                         thread_render_hook);
 
     /* The live tail on thread buffers. The command boundary is the
      * trigger: whatever opened the thread — <CR> in the mail list, gf

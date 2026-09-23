@@ -16,6 +16,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* The treesitter plugin's, when it is in the build: a mail body is
+ * prose with code in it, so the markdown grammar is the right reader
+ * for it — headings, emphasis, fences, and through markdown's
+ * injections whatever language a fenced block names. Weak, so a build
+ * without that plugin simply shows the mail spans below. */
+extern int ts_buffer_load_language(Buffer *buf, const char *lang)
+    __attribute__((weak));
+extern void ts_buffer_reparse(Buffer *buf) __attribute__((weak));
+
 /* Listing cap handed to `hml search --limit`. */
 #define MAIL_MAX 500
 #define MAIL_LIST_BUF "mail://list"
@@ -458,6 +467,10 @@ void mail_sync(void) {
 #define MC_CHAT_ME "\x1b[1;38;2;158;206;106m"  /* chat "You", bold green  */
 #define MC_CHAT_WHEN COLOR_COMMENT             /* chat timestamp, dim     */
 
+/* Mail's own spans sit above a grammar's (which pushes at 0): the
+ * headers, the quotes and the chat lines are structure, not prose. */
+#define MAIL_PRIO 1
+
 /* A coloured span: [s, e) bytes in the row → SGR escape. */
 typedef struct {
     int s, e;
@@ -537,7 +550,8 @@ static void mail_list_render_hook(const HookRenderEvent *e) {
         MailSpan ms[16];
         int n = parse_list_spans(raw, len, ms, 16);
         for (int i = 0; i < n; i++)
-            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr, 0);
+            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr,
+                          MAIL_PRIO);
     }
 }
 
@@ -632,7 +646,8 @@ static void mail_msg_render_hook(const HookRenderEvent *e) {
         MailSpan ms[8];
         int n = parse_msg_spans(raw, len, ms, 8);
         for (int i = 0; i < n; i++)
-            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr, 0);
+            attrspan_push(e->spans, row, ms[i].s, ms[i].e, ms[i].sgr,
+                          MAIL_PRIO);
     }
 }
 
@@ -822,6 +837,14 @@ static void render_thread(Buffer *tbuf, const char *tid, const char *title) {
 
     snprintf(rendered_tid, sizeof(rendered_tid), "%s", tid);
     rendered_chat = chat_view;
+
+    /* Colour the prose underneath our own spans (below, priority 0 vs
+     * MAIL_PRIO): what a mail body mostly is — paragraphs, lists,
+     * links, fenced code an agent or a colleague pasted. */
+    if (ts_buffer_load_language && ts_buffer_reparse) {
+        ts_buffer_load_language(tbuf, "markdown");
+        ts_buffer_reparse(tbuf);
+    }
 }
 
 /* Where the cursor lands on a fresh render: the top in the full view
@@ -1306,7 +1329,7 @@ static void mailbox_render_hook(const HookRenderEvent *ev) {
         else
             sgr = MC_READ_SENDER; /* blue    */
 
-        attrspan_push(ev->spans, row, 0, len, sgr, 0);
+        attrspan_push(ev->spans, row, 0, len, sgr, MAIL_PRIO);
     }
 }
 

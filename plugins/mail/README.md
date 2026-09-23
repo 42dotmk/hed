@@ -51,6 +51,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-forward` | Forward the message under the cursor inline, with its attachments re-attached |
 | `:mail-forward-eml` | Forward the message under the cursor verbatim, as one `.eml` (`message/rfc822`) attachment |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
+| `:mail-thread-refresh` | Re-render the thread being read (it may have grown) |
 | `:mail-chat [on\|off\|toggle]` | Switch the thread view between chat style (the default; see below) and the full headers; re-renders the viewed thread. Session-wide |
 | `:mail-attach [n\|all]` | Open attachment(s) of the message under the cursor (whole thread with `all`, or when that message has none) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
 | `:mail-attach save [n\|all] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
@@ -87,6 +88,7 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `A` | Save attachment(s) of the message under the cursor to `~/Downloads` (fzf multi-pick if many) |
 | `o` | Open the message's HTML body in the system browser |
 | `c` | Toggle between the chat view and the full headers |
+| `<C-r>` | Re-read the thread — for one still growing while you read it |
 | `q` | Close the message |
 
 ### In the mailbox sidebar (`mail-mailboxes` filetype)
@@ -144,6 +146,14 @@ Attachments:  [2] notes.pdf  [3] chart.png
   `o` / `:mail-open-html` opens the real HTML in the system browser.
 - `\fmessage{`, `\fheader{`, `\fpart{` and the other framing
   markers never reach the buffer.
+
+Bodies are handed to the markdown grammar (when the treesitter plugin
+is in the build): headings, emphasis, lists, links and fenced code
+blocks get their colours, and a fenced block is highlighted in the
+language its fence names — ```` ```sh ```` through bash's grammar,
+```` ```json ```` through JSON's, by tree-sitter injection. Mail's own
+spans sit above that, so the headers, the quoted lines and the chat
+view's sender lines keep their meaning.
 
 The highlighter (`mail_msg_hl`) styles header keys, header values,
 quoted lines (`>`), the `Attachments:` pseudo-header, and the

@@ -97,6 +97,23 @@ everything that follows under it.
 block of code, or leave the cursor in a paragraph, and it reaches the
 agent with no copy-paste.
 
+## Colour
+
+Two layers the plugin adds to a thread it is reading, on top of what
+the mail plugin paints:
+
+- **Tool calls.** hai writes one `-> name {arguments}` line per call
+  into the text part of an assistant message, so that is what the
+  thread shows. The tool gets the keyword colour, its argument names
+  the property colour, string values the string colour, numbers and
+  booleans the number colour, the punctuation gets out of the way.
+- **The agents view**, above: address, state, directory, task.
+
+The prose around them is the mail plugin's doing — it hands thread
+buffers to the markdown grammar, so headings, emphasis, lists and
+fenced code blocks are coloured, the block in whatever language its
+fence names (```sh through bash's grammar, ```json through JSON's).
+
 ## Configuration
 
 In `hai.h`, from `~/.config/hed/config.c` or `src/config.h` after
@@ -118,6 +135,33 @@ The agent of a session is read from its path: `s/<id>` is main's,
 `s/<name>/<id>` belongs to `<name>@hai` (a child's child is
 `pm.scout`, and its directory sits beside the others).
 
+## The reply as it is written
+
+While a run is on, hai streams the reply into `<session>/tmp/reply`
+token by token. That file is not mail and hml never sees it, so the
+thread view would stop at the last stored turn. The plugin tails it:
+each thread buffer is asked once (one hml lookup) whether it is a hai
+session, and while one is open a 400 ms timer appends what the model
+has said so far under the conversation:
+
+```
+● You — 23 Sep 12:03
+what is eating the disk
+
+● main@hai — writing…
+Let me look at the biggest directories
+```
+
+When the turn lands as a real message the index refreshes, the thread
+re-renders and the tail disappears — the message is simply there,
+where it belongs. `working…` in place of `writing…` means the run is
+on but nothing has been said yet (a tool is running). The cursor
+follows the end of the conversation when it was already there, and
+stays put when you have scrolled up to read.
+
+Ordinary mail has no such file: nothing is appended, and the buffer is
+left exactly as the mail plugin rendered it.
+
 ## Source layout
 
 ```
@@ -133,11 +177,3 @@ plugins/hai/
 part of `hai/MAIL.md` this plugin needs, as C. The mail plugin is
 reached through the command registry (`mail-query`, `mail-filter`) and
 three weak symbols, so neither plugin links against the other.
-
-## What this does not do
-
-Live streaming. While a run is on, hai writes the reply to
-`<session>/tmp/reply` token by token; that file is not mail and hml
-does not index it, so the mail view shows a turn when it lands, not
-as it is typed. `hai` in a terminal (or `T` from the agents view) is
-where you watch a run.
