@@ -40,6 +40,10 @@ void mail_handle_enter(void);
  * is, it's also marked read. */
 void mail_open_thread(const char *tid);
 
+/* :mail-quote [on|off|auto|toggle] — whether a reply starts with the
+ * message quoted under it. */
+void mail_quote_cmd(const char *args);
+
 /* :mail-chat [on|off|toggle] — switch between the full and the chat
  * thread view (session-wide) and re-render the viewed thread, if any. */
 void mail_chat_view(const char *args);
@@ -106,6 +110,20 @@ void mail_forward_eml(void);
  * buffer is not a mail-message. `*idx` gets the 0-based display index
  * and `*count` the number of messages, when non-NULL. */
 const MailMsgSpan *mail_cursor_msg(int *idx, int *count);
+
+/* The newest message of the thread being read. NULL when none is. */
+const MailMsgSpan *mail_msg_newest(void);
+
+/* The newest message somebody else sent; NULL when the thread is all
+ * your own. `mail_is_self` is the test it uses. */
+const MailMsgSpan *mail_msg_newest_other(void);
+int mail_is_self(const char *from);
+
+/* The reply box: an editable block under the conversation, sent with
+ * the same command as any other message (see mail_send.c). */
+void mail_reply_inline(void);
+void mail_reply_inline_send(void);
+void mail_reply_inline_cancel(void);
 
 /* 1-based number of display index `idx` counting from the oldest
  * message (the full view shows newest first, the chat view oldest

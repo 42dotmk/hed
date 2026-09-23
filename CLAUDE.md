@@ -194,7 +194,7 @@ Each in `plugins/<name>/` with its own `README.md`. Summary:
 | `hed_themes` | Theme management |
 | `keymap` | `:keymap`, `:keymap-toggle` for runtime keymap swap. |
 | `lsp` | LSP client: hover, definition (via `:definition`), diagnostics → quickfix, completion source, code actions (`:lsp_code_action`, picker + `codeAction/resolve` + `executeCommand`/`applyEdit`), rename, formatting, references → quickfix — every server edit lands through one undo-grouped `WorkspaceEdit` applier. Opt-in — `:lsp_start`, or `:lsp_autostart on` for spawn-on-open. Owns `cJSON`, `:lsp_*` commands. |
-| `mail` | hml-backed mail reader: threads in a chat view by default (`:mail-chat` for the full headers), queries, tags, mailbox sidebar, compose/reply/forward, attachments. |
+| `mail` | hml-backed mail reader: threads in a chat view by default, markdown-coloured bodies with fenced code in its own language, a reply box under the conversation (`i`, `C-c C-c`), queries, tags, mailbox sidebar, compose/forward, attachments. |
 | `mail_git_patch` | Git patch mail integration |
 | `man` | Manual pages viewer |
 | `markdown` | Markdown rendering support |

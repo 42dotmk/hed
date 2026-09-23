@@ -52,6 +52,7 @@ the current listing. `mailto:` URIs route to compose the same way.
 | `:mail-forward-eml` | Forward the message under the cursor verbatim, as one `.eml` (`message/rfc822`) attachment |
 | `:mail-open-html` | Open the viewed message's HTML body in the system browser |
 | `:mail-thread-refresh` | Re-render the thread being read (it may have grown) |
+| `:mail-quote [on\|off\|auto\|toggle]` | Whether a reply starts with the message quoted under it. `auto` (the default) follows the view: quoted in the full view, not in the chat view |
 | `:mail-chat [on\|off\|toggle]` | Switch the thread view between chat style (the default; see below) and the full headers; re-renders the viewed thread. Session-wide |
 | `:mail-attach [n\|all]` | Open attachment(s) of the message under the cursor (whole thread with `all`, or when that message has none) — single auto-opens; many → fzf multi-pick (Tab to select, `<C-a>` for all). `n` is the 1-based number shown in the `Attachments:` line |
 | `:mail-attach save [n\|all] [dir]` | Save attachment(s) instead of opening. `dir` defaults to `~/Downloads`; created if missing |
@@ -88,6 +89,9 @@ Tag tokens without a leading `+`/`-` get `+` prefixed, so
 | `A` | Save attachment(s) of the message under the cursor to `~/Downloads` (fzf multi-pick if many) |
 | `o` | Open the message's HTML body in the system browser |
 | `c` | Toggle between the chat view and the full headers |
+| `i` / `a` | Reply here: a box under the conversation |
+| `<C-c><C-c>` | Send what is in the box |
+| `<C-c><C-k>` | Discard it |
 | `<C-r>` | Re-read the thread — for one still growing while you read it |
 | `q` | Close the message |
 
@@ -112,6 +116,35 @@ name or part of an address — or `Ctrl-Space` after a comma — asks
 `hml address` for the matching correspondents, people you have written
 to first. `Tab`/`Enter` inserts the whole `Name <address>` mailbox.
 The query runs async and a newer one kills the one in flight.
+
+## The reply box
+
+In a thread, `i` opens a box under the last message:
+
+```
+● Alice Smith — 18 May 2026 10:14
+Hi Bob, here are the notes.
+
+──── reply to alice@example.com ─── C-c C-c sends, C-c C-k discards ────
+one question about slide 3
+```
+
+The headers come from `hml reply` — `To:`, `In-Reply-To`, `References`,
+so it threads like any reply — and the quote is skipped: the
+conversation is already above the box. `C-c C-c` sends it through the
+configured send command, exactly as `:mail-send` does for a compose
+buffer, then re-reads the thread so your message is simply there.
+`C-c C-k` throws it away.
+
+The box is addressed to the other party: the newest message that is
+not yours. When the whole thread is your own — you wrote and nobody
+has answered yet — it answers your own last message but keeps writing
+to whoever that went to. `mail_set_from` says which address is yours;
+`mail_add_self` adds the others (a second account, or a bus address
+like `user@hai`, which the hai plugin registers for itself).
+
+Nothing is saved anywhere: the rows are the plugin's own rendering, so
+an accidental edit above the divider disappears with the next render.
 
 ## Message rendering
 
@@ -221,6 +254,8 @@ mail_set_sync_cmd("mbsync personal");          /* default: "hml recv" */
 mail_set_send_cmd("msmtp -t -a personal");     /* default: "msmtp -t" */
 mail_set_from("Me <me@example.com>");          /* From: in compose    */
 mail_set_chat(0);                              /* full headers, not chat */
+mail_set_quote(1);                             /* always quote a reply   */
+mail_add_self("me@work.example");              /* another address of mine */
 
 /* Saved views shown at the top of the mailbox sidebar. */
 mail_add_view("Unread",      "tag:unread");

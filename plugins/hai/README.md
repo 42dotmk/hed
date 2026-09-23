@@ -97,6 +97,13 @@ everything that follows under it.
 block of code, or leave the cursor in a paragraph, and it reaches the
 agent with no copy-paste.
 
+Inside a session's thread there is nothing to do here: `i` opens the
+mail plugin's reply box under the conversation and `C-c C-c` sends it
+— `hml reply` gives the headers that put it back into the session, and
+no quote, so the agent gets what you typed and nothing else. The hai
+plugin only tells mail that `user@hai` is you, so the box is addressed
+to the agent even when your own turn is the newest message.
+
 ## Colour
 
 Two layers the plugin adds to a thread it is reading, on top of what

@@ -502,7 +502,6 @@ void mail_send_current(void) {
 /* ------------------------------------------------------------------ */
 /* Reply / Forward                                                     */
 /* ------------------------------------------------------------------ */
-
 /* The mail-message buffer's filename is "mail://<thread:...>".
  * Return a pointer to the "thread:..." part, or NULL if not a message. */
 static const char *current_thread_id(Buffer *buf) {
@@ -514,6 +513,219 @@ static const char *current_thread_id(Buffer *buf) {
     if (strncmp(fn, "mail://", 7) != 0)
         return NULL;
     return fn + 7;
+}
+
+/* ------------------------------------------------------------------ */
+/* The reply box: typing under the conversation                        */
+/* ------------------------------------------------------------------ */
+
+/* In a thread — the chat view especially — a reply wants no buffer of
+ * its own: the conversation is right there, and what is missing is
+ * somewhere to type. `i` opens a box under the last message. Only the
+ * headers come from `hml reply` (the quote is skipped whatever
+ * :mail-quote says: the thread is above the box), the body is what
+ * you type, and C-c C-c sends it through the same command as any
+ * other message. C-c C-k throws it away.
+ *
+ * The rows are the mail plugin's own rendering, so nothing is saved
+ * and nothing is lost: on send or cancel the thread is re-read from
+ * hml and the box is gone. */
+static struct {
+    char bufname[256]; /* the thread buffer the box belongs to */
+    char **hdrs;       /* the reply headers, stb_ds */
+    int sep_row;       /* the divider; the body is everything below */
+} draft;
+
+static void draft_clear(void) {
+    free_lines(draft.hdrs);
+    draft.hdrs = NULL;
+    draft.bufname[0] = '\0';
+    draft.sep_row = -1;
+}
+
+/* The buffer the open box belongs to, or NULL. */
+static Buffer *draft_buffer(void) {
+    if (!draft.bufname[0])
+        return NULL;
+    int idx = buf_find_by_filename(draft.bufname);
+    if (idx < 0) {
+        draft_clear();
+        return NULL;
+    }
+    Buffer *b = &E.buffers[idx];
+    if (draft.sep_row < 0 || draft.sep_row >= b->num_rows) {
+        draft_clear();
+        return NULL;
+    }
+    return b;
+}
+
+/* Take the box away and hand the buffer back to the renderer. */
+static void draft_close(Buffer *buf) {
+    if (buf) {
+        buf_special_trim(buf, draft.sep_row);
+        buf->readonly = 1;
+        buf->dirty = 0;
+    }
+    draft_clear();
+    ed_set_mode(MODE_NORMAL);
+}
+
+void mail_reply_inline(void) {
+    Buffer *buf = buf_cur();
+    const char *tid = current_thread_id(buf);
+    if (!tid) {
+        ed_set_status_message("mail-reply-inline: open a thread first");
+        return;
+    }
+    if (draft_buffer() == buf) { /* already open: just go there */
+        Window *w = window_cur();
+        if (w)
+            w->cursor.y = buf->num_rows - 1;
+        ed_set_mode(MODE_INSERT);
+        return;
+    }
+    draft_clear();
+
+    /* A reply in a conversation answers the other party's last
+     * message, wherever the cursor is. When the whole thread is your
+     * own — you wrote and nobody has answered — answer your own last
+     * message but keep writing to whoever it went to. */
+    const MailMsgSpan *last = mail_msg_newest_other();
+    const char *keep_to = NULL;
+    if (!last) {
+        last = mail_msg_newest();
+        if (last && last->to[0])
+            keep_to = last->to;
+    }
+    char query[400];
+    if (last && last->msg_id[0])
+        snprintf(query, sizeof(query), "id:%s", last->msg_id);
+    else
+        snprintf(query, sizeof(query), "%s", tid);
+    char qq[512], cmd[600];
+    shell_escape_single(query, qq, sizeof(qq));
+    snprintf(cmd, sizeof(cmd), "hml reply --reply-to=sender -- %s 2>/dev/null",
+             qq);
+
+    char **lines = NULL;
+    int count = 0;
+    term_cmd_capture(cmd, &lines, &count);
+    if (count == 0) {
+        term_cmd_free(lines, count);
+        ed_set_status_message("mail-reply-inline: hml reply gave nothing");
+        return;
+    }
+    char to[600] = "";
+    for (int i = 0; i < count; i++) {
+        if (!lines[i] || !lines[i][0])
+            break; /* the header block ends at the first empty line */
+        if (from_addr[0] && strncasecmp(lines[i], "From:", 5) == 0) {
+            pushf(&draft.hdrs, "From: %s", from_addr);
+        } else if (keep_to && strncasecmp(lines[i], "To:", 3) == 0) {
+            pushf(&draft.hdrs, "To: %s", keep_to);
+            snprintf(to, sizeof(to), "%s", keep_to);
+        } else {
+            arrput(draft.hdrs, strdup(lines[i]));
+            if (strncasecmp(lines[i], "To:", 3) == 0)
+                snprintf(to, sizeof(to), "%s", lines[i] + 3);
+        }
+    }
+    term_cmd_free(lines, count);
+    if (arrlen(draft.hdrs) == 0) {
+        draft_clear();
+        ed_set_status_message("mail-reply-inline: no reply headers");
+        return;
+    }
+
+    snprintf(draft.bufname, sizeof(draft.bufname), "%s", buf->filename);
+    buf_special_add(buf, "", 0);
+    draft.sep_row = buf->num_rows - 1;
+    const char *who = to[0] ? to : "the sender";
+    while (*who == ' ')
+        who++;
+    buf_special_addf(buf,
+                     "──── reply to %s ─── C-c C-c sends, C-c C-k "
+                     "discards ────",
+                     who);
+    buf_special_add(buf, "", 0);
+    buf->readonly = 0;
+    buf->dirty = 0;
+
+    Window *win = window_cur();
+    if (win) {
+        win->cursor.y = buf->num_rows - 1;
+        win->cursor.x = 0;
+    }
+    ed_set_mode(MODE_INSERT);
+    ed_set_status_message("mail: reply to %s — C-c C-c sends", who);
+}
+
+void mail_reply_inline_cancel(void) {
+    Buffer *buf = draft_buffer();
+    if (!buf) {
+        ed_set_status_message("mail: no reply box open");
+        return;
+    }
+    draft_close(buf);
+    ed_set_status_message("mail: reply discarded");
+}
+
+void mail_reply_inline_send(void) {
+    Buffer *buf = draft_buffer();
+    if (!buf || buf != buf_cur()) {
+        ed_set_status_message("mail: no reply box open here");
+        return;
+    }
+    /* Everything below the divider is the message. */
+    int body = draft.sep_row + 2, len = 0;
+    for (int i = body; i < buf->num_rows; i++)
+        len += (int)buf->rows[i].chars.len;
+    if (len == 0) {
+        ed_set_status_message("mail: the reply is empty");
+        return;
+    }
+
+    char tmpl[PATH_MAX];
+    if (fs_temp_path("hed-mail", tmpl, sizeof(tmpl)) != ED_OK) {
+        ed_set_status_message("mail: failed to reserve a temp file");
+        return;
+    }
+    FILE *fp = fopen(tmpl, "w");
+    if (!fp) {
+        fs_unlink(tmpl);
+        ed_set_status_message("mail: failed to open a temp file");
+        return;
+    }
+    for (ptrdiff_t i = 0; i < arrlen(draft.hdrs); i++)
+        fprintf(fp, "%s\n", draft.hdrs[i]);
+    fputc('\n', fp);
+    for (int i = body; i < buf->num_rows; i++) {
+        StrBuf *r = &buf->rows[i].chars;
+        if (r->len)
+            fwrite(r->data, 1, r->len, fp);
+        fputc('\n', fp);
+    }
+    int wr_err = fflush(fp) != 0 || ferror(fp);
+    fclose(fp);
+    if (wr_err) {
+        fs_unlink(tmpl);
+        ed_set_status_message("mail: failed to write the message");
+        return;
+    }
+
+    char shell_cmd[PATH_MAX + 512];
+    snprintf(shell_cmd, sizeof(shell_cmd), "%s < %s", send_cmd, tmpl);
+    int rc = term_cmd_system(shell_cmd);
+    fs_unlink(tmpl);
+    if (rc != 0) {
+        ed_set_status_message("mail: %s exited %d — the reply is still here",
+                              send_cmd, WIFEXITED(rc) ? WEXITSTATUS(rc) : rc);
+        return;
+    }
+    draft_close(buf);
+    mail_thread_refresh();
+    ed_set_status_message("mail: sent");
 }
 
 /* ------------------------------------------------------------------ */
@@ -737,6 +949,30 @@ void mail_reply(int reply_all) {
         ed_set_status_message("mail-reply: hml reply produced no output");
         term_cmd_free(lines, count);
         return;
+    }
+
+    /* The quote is only the template: hml prints the headers, a blank
+     * line, then "On … wrote:" and the message indented. Dropping
+     * everything from that blank line leaves the headers that make it
+     * a reply — In-Reply-To, References, To — and an empty body to
+     * type in. Nothing else changes: :mail-send sends the buffer. */
+    if (!mail_quoting()) {
+        int hdr = count;
+        for (int i = 0; i < count; i++) {
+            if (lines[i] && lines[i][0] == '\0') {
+                hdr = i;
+                break;
+            }
+        }
+        for (int i = hdr; i < count; i++)
+            free(lines[i]);
+        count = hdr;
+        char **grown = realloc(lines, (size_t)(count + 2) * sizeof(char *));
+        if (grown) {
+            lines = grown;
+            lines[count++] = strdup(""); /* the header/body separator */
+            lines[count++] = strdup("");
+        }
     }
 
     /* If a from_addr is configured, override hml's From: line. */

@@ -55,6 +55,35 @@ static int rendered_chat = 0;
 static int chat_view = 1;
 
 void mail_set_chat(int on) { chat_view = on ? 1 : 0; }
+
+/* Whether a reply starts with the message quoted under it. -1 (the
+ * default) follows the view: the full view is mail, where quoting is
+ * how a reader knows what is being answered; the chat view is a
+ * conversation with the thread right above, where a quote is noise. */
+static int quote_reply = -1;
+
+void mail_set_quote(int on) { quote_reply = on < 0 ? -1 : (on ? 1 : 0); }
+int mail_quoting(void) { return quote_reply < 0 ? !chat_view : quote_reply; }
+
+/* :mail-quote [on|off|auto|toggle] */
+void mail_quote_cmd(const char *args) {
+    const char *p = args ? args : "";
+    while (*p == ' ')
+        p++;
+    if (strncmp(p, "auto", 4) == 0)
+        quote_reply = -1;
+    else {
+        int on = args_tristate(p, mail_quoting());
+        if (on < 0) {
+            ed_set_status_message("usage: mail-quote [on|off|auto|toggle]");
+            return;
+        }
+        quote_reply = on;
+    }
+    ed_set_status_message("mail: replies %s the message%s",
+                          mail_quoting() ? "quote" : "do not quote",
+                          quote_reply < 0 ? " (auto: follows the view)" : "");
+}
 int mail_get_chat(void) { return chat_view; }
 
 /* ------------------------------------------------------------------ */
@@ -814,8 +843,12 @@ static void render_thread(Buffer *tbuf, const char *tid, const char *title) {
 
     if (!title && arrlen(mr.msgs) > 0 && mr.msgs[0].subject[0])
         title = mr.msgs[0].subject;
+    /* Copy before freeing: a caller may hand us the buffer's own
+     * title (mail_thread_refresh does — it keeps the one the list
+     * gave the thread). */
+    char *newtitle = strdup(title ? title : tid);
     free(tbuf->title);
-    tbuf->title = strdup(title ? title : tid);
+    tbuf->title = newtitle;
 
     /* Take over the attachment list for :mail-attach without
      * rescanning the buffer. */
@@ -1521,6 +1554,71 @@ const MailMsgSpan *mail_cursor_msg(int *idx, int *count) {
     if (idx)
         *idx = i;
     return &msgs[i];
+}
+
+/* Addresses that are you, besides mail_set_from's: a second account,
+ * or a bus address like user@hai. Used to tell your own messages from
+ * the other party's — which is who a reply goes to. */
+static char **selves = NULL;
+
+void mail_add_self(const char *addr) {
+    if (!addr || !*addr)
+        return;
+    for (ptrdiff_t i = 0; i < arrlen(selves); i++)
+        if (strcmp(selves[i], addr) == 0)
+            return;
+    arrput(selves, strdup(addr));
+}
+
+int mail_is_self(const char *from) {
+    if (!from || !*from)
+        return 0;
+    const char *me = mail_get_from();
+    if (me && *me) {
+        /* compare the address part, not the display name */
+        const char *a = strchr(me, '<');
+        char addr[256];
+        if (a) {
+            const char *e = strchr(++a, '>');
+            size_t n = e ? (size_t)(e - a) : strlen(a);
+            if (n >= sizeof(addr))
+                n = sizeof(addr) - 1;
+            memcpy(addr, a, n);
+            addr[n] = '\0';
+        } else {
+            snprintf(addr, sizeof(addr), "%s", me);
+        }
+        if (addr[0] && strstr(from, addr))
+            return 1;
+    }
+    for (ptrdiff_t i = 0; i < arrlen(selves); i++)
+        if (strstr(from, selves[i]))
+            return 1;
+    return 0;
+}
+
+/* The newest message of the thread being read: the last one in the
+ * chat view, the first in the full view (which renders newest-first).
+ * NULL when no thread is rendered. */
+const MailMsgSpan *mail_msg_newest(void) {
+    if (arrlen(msgs) == 0)
+        return NULL;
+    return chat_view ? &msgs[arrlen(msgs) - 1] : &msgs[0];
+}
+
+/* The newest message the other party sent — who a reply is for. NULL
+ * when every message in the thread is your own (a conversation you
+ * opened and nobody has answered yet); the caller then answers its
+ * own newest message and writes its To: instead. */
+const MailMsgSpan *mail_msg_newest_other(void) {
+    ptrdiff_t n = arrlen(msgs);
+    for (ptrdiff_t k = 0; k < n; k++) {
+        /* newest first, whichever way the view renders */
+        const MailMsgSpan *m = chat_view ? &msgs[n - 1 - k] : &msgs[k];
+        if (!mail_is_self(m->from))
+            return m;
+    }
+    return NULL;
 }
 
 int mail_msg_number(int idx, int count) {

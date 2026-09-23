@@ -188,6 +188,21 @@ static void cmd_mail_attach_add(const char *args) {
 
 static void cmd_mail_chat(const char *args) { mail_chat_view(args); }
 
+static void cmd_mail_quote(const char *args) { mail_quote_cmd(args); }
+
+static void cmd_mail_reply_inline(const char *args) {
+    (void)args;
+    mail_reply_inline();
+}
+static void cmd_mail_reply_inline_send(const char *args) {
+    (void)args;
+    mail_reply_inline_send();
+}
+static void cmd_mail_reply_inline_cancel(const char *args) {
+    (void)args;
+    mail_reply_inline_cancel();
+}
+
 static void cmd_mail_thread_refresh(const char *args) {
     (void)args;
     mail_thread_refresh();
@@ -255,6 +270,9 @@ static int mail_plugin_init(void) {
         "multi-pick)");
     cmd("mail-thread-refresh", cmd_mail_thread_refresh,
         "re-render the thread being read (it may have grown)");
+    cmd("mail-quote", cmd_mail_quote,
+        "replies quote the message: on|off|auto|toggle (auto: quoted in "
+        "the full view, not in the chat view)");
     cmd("mail-chat", cmd_mail_chat,
         "chat-style thread view: on|off|toggle (oldest first, quotes and "
         "signatures stripped)");
@@ -265,6 +283,12 @@ static int mail_plugin_init(void) {
            "mark thread(s) read and advance");
     cmd_ft("mail-mailboxes", "mail-select", cmd_mail_select_mailbox,
            "select this mailbox/view");
+    cmd_ft("mail-message", "mail-write", cmd_mail_reply_inline,
+           "reply here, under the conversation");
+    cmd_ft("mail-message", "mail-write-send", cmd_mail_reply_inline_send,
+           "send the reply written below the conversation");
+    cmd_ft("mail-message", "mail-write-cancel", cmd_mail_reply_inline_cancel,
+           "discard the reply written below the conversation");
     cmd_ft("mail-message", "mail-next", cmd_mail_next,
            "open next message in list");
     cmd_ft("mail-message", "mail-prev", cmd_mail_prev,
@@ -303,6 +327,17 @@ static int mail_plugin_init(void) {
              "save attachment(s) to ~/Downloads (fzf multi-pick if >1)");
     cmapn_ft("mail-message", "c", "mail-chat toggle",
              "toggle chat-style thread view");
+    /* Type where the conversation ends: i (or a) opens the reply box,
+     * C-c C-c sends it, C-c C-k throws it away. Insert mode too — the
+     * box lands you there. */
+    cmapn_ft("mail-message", "i", "mail-write", "reply here");
+    cmapn_ft("mail-message", "a", "mail-write", "reply here");
+    cmapn_ft("mail-message", "<C-c><C-c>", "mail-write-send", "send the reply");
+    cmapi_ft("mail-message", "<C-c><C-c>", "mail-write-send", "send the reply");
+    cmapn_ft("mail-message", "<C-c><C-k>", "mail-write-cancel",
+             "discard the reply");
+    cmapi_ft("mail-message", "<C-c><C-k>", "mail-write-cancel",
+             "discard the reply");
     cmapn_ft("mail-message", "<C-r>", "mail-thread-refresh",
              "re-read this thread (it may have grown)");
     cmapn_ft("mail-message", "<C-n>", "mail-next", "open next message in list");

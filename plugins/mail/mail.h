@@ -53,6 +53,21 @@ void mail_set_from(const char *from);
 void mail_set_chat(int on);
 int mail_get_chat(void);
 
+/* Another address that is you, besides mail_set_from's — a second
+ * account, or a bus address like user@hai. A reply is addressed to
+ * the other party, so hed needs to know which messages are yours.
+ * Call it once per address from config (the hai plugin registers its
+ * own). */
+void mail_add_self(const char *addr);
+
+/* Whether :mail-reply pre-fills the quoted message under the headers.
+ * 1 always, 0 never, -1 (the default) follows the view — quoted in
+ * the full view, not in the chat view, where the thread is already
+ * above what you type. The quote is only the template: what gets sent
+ * is the buffer, so an empty body sends only what you wrote. */
+void mail_set_quote(int on);
+int mail_quoting(void);
+
 /* Read back the configured From: address (set via mail_set_from).
  * Returns "" if none has been configured. The returned pointer is
  * owned by the mail plugin — copy if you need to retain it past the

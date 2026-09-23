@@ -44,6 +44,7 @@ extern void mail_compose_with_lines(const char *title, char **lines, int count)
 extern void mail_add_view(const char *name, const char *query)
     __attribute__((weak));
 extern void mail_thread_refresh(void) __attribute__((weak));
+extern void mail_add_self(const char *addr) __attribute__((weak));
 
 #define HAI_AGENTS_BUF "hai://agents"
 #define HAI_TAIL_MS 400
@@ -422,6 +423,12 @@ static void tail_tick(void *ud) {
             continue;
         }
         if (!t->s.dir[0]) { /* an ordinary mail thread */
+            i++;
+            continue;
+        }
+        if (!E.buffers[idx].readonly) { /* a reply box is open below:
+                                         * leave what is being typed
+                                         * alone until it is sent */
             i++;
             continue;
         }
@@ -1033,6 +1040,11 @@ static int hai_init(void) {
      * is done, and one lookup decides whether it is a hai session. */
     hook_register_key(HOOK_DISPATCH_POST, tail_on_dispatch);
     hook_register_buffer(HOOK_BUFFER_CLOSE, -1, "*", tail_on_close);
+
+    /* Your turns go out as user@hai, so a reply in the mail view is
+     * for the agent, not for you. */
+    if (mail_add_self)
+        mail_add_self(useraddr);
 
     /* The mailbox sidebar's Views section (b in the mail list). */
     if (mail_add_view) {
