@@ -54,12 +54,12 @@ int ts_buffer_autoload(Buffer *buf);
 /* Grammar name → editor filetype string ("c-sharp" → "csharp") */
 const char *ts_filetype_for_grammar(const char *lang);
 
-/* HOOK_RENDER_PRE handler: walks the whole-buffer tree-sitter parse,
- * splits each query capture by line, and pushes one AttrSpan per
- * (capture, row) into event->spans. Tree-sitter sees the full
- * document anyway, so collecting for the whole buffer once per frame
- * is no more parse-work than per-row and gives correct highlighting
- * for tokens that straddle the visible viewport. Forward-declared so
+/* HOOK_RENDER_PRE handler: reparses incrementally if the buffer
+ * changed, then queries the tree over the byte range of the rows being
+ * painted (event->row_start..row_end), splits each capture by line and
+ * pushes one AttrSpan per (capture, row) into event->spans. Captures
+ * that straddle the viewport edge are clipped, not lost — the tree
+ * still covers the whole document. Forward-declared so
  * the treesitter init code can register it without exposing
  * HookRenderEvent's full layout here. */
 struct HookRenderEvent;

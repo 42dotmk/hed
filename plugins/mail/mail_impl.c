@@ -46,7 +46,7 @@ static size_t view_html_len = 0;
 /* Which thread the three caches above describe, and in which view it
  * was rendered — a thread buffer found open is only reused as-is when
  * both still match. */
-static char rendered_tid[128] = "";
+static char rendered_tid[256] = "";
 static int rendered_chat = 0;
 
 /* Chat view on/off for thread buffers (session-wide; see

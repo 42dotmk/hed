@@ -2,9 +2,14 @@
 #define STRUTIL_H
 
 #include <stddef.h>
+#include <time.h>
 
 /* Portable strdup — not part of C11, added in C23/POSIX */
 char *strdup(const char *s);
+
+/* RFC 2822 "Tue, 18 May 2026 10:14:00 +0200" → epoch; -1 when it
+ * doesn't parse. A zone that isn't numeric counts as UTC. */
+time_t str_parse_rfc2822(const char *s);
 
 /* Strip trailing CR/LF bytes from `s` in place. Returns the new length
  * (0 when s is NULL). The single source of truth for line-ending chomp. */

@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
 
 int proc_spawn(const char *const argv[], unsigned flags, Proc *out) {
@@ -29,6 +28,16 @@ int proc_spawn(const char *const argv[], unsigned flags, Proc *out) {
         return -1;
     }
 
+    /* Close-on-exec pipe: a successful exec closes the child's end and
+     * the parent reads EOF at once; a failed one writes errno first. */
+    int exec_pipe[2];
+    if (pipe(exec_pipe) != 0) {
+        exec_pipe[0] = exec_pipe[1] = -1;
+    } else {
+        fcntl(exec_pipe[0], F_SETFD, FD_CLOEXEC);
+        fcntl(exec_pipe[1], F_SETFD, FD_CLOEXEC);
+    }
+
     pid_t pid = fork();
     if (pid < 0) {
         if (in_pipe[0] >= 0) {
@@ -37,6 +46,10 @@ int proc_spawn(const char *const argv[], unsigned flags, Proc *out) {
         }
         close(out_pipe[0]);
         close(out_pipe[1]);
+        if (exec_pipe[0] >= 0) {
+            close(exec_pipe[0]);
+            close(exec_pipe[1]);
+        }
         return -1;
     }
 
@@ -66,12 +79,14 @@ int proc_spawn(const char *const argv[], unsigned flags, Proc *out) {
         close(out_pipe[0]);
         close(out_pipe[1]);
 
+        if (exec_pipe[0] >= 0)
+            close(exec_pipe[0]);
         execvp(argv[0], (char *const *)argv);
-        /* execvp returned → not on $PATH or otherwise unrunnable. The
-         * parent notices via the immediate-death check below; stderr
-         * already points at the log. */
-        fprintf(stderr, "proc: execvp(%s) failed: %s\n", argv[0],
-                strerror(errno));
+        /* execvp returned → not on $PATH or otherwise unrunnable. */
+        int err = errno;
+        if (exec_pipe[1] >= 0)
+            while (write(exec_pipe[1], &err, sizeof err) < 0 && errno == EINTR)
+                ;
         _exit(127);
     }
 
@@ -80,18 +95,23 @@ int proc_spawn(const char *const argv[], unsigned flags, Proc *out) {
         close(in_pipe[0]);
     close(out_pipe[1]);
 
-    /* Immediate-death check: a missing binary otherwise fails silently
-     * on the first write to the pipe. */
-    struct timespec ts = {0, 50 * 1000 * 1000}; /* 50 ms */
-    nanosleep(&ts, NULL);
-    int wstatus = 0;
-    if (waitpid(pid, &wstatus, WNOHANG) == pid) {
+    /* Exec check: a missing binary otherwise fails silently on the
+     * first write to the pipe. */
+    int err = 0;
+    ssize_t got = -1;
+    if (exec_pipe[0] >= 0) {
+        close(exec_pipe[1]);
+        do
+            got = read(exec_pipe[0], &err, sizeof err);
+        while (got < 0 && errno == EINTR);
+        close(exec_pipe[0]);
+    }
+    if (got == (ssize_t)sizeof err) {
+        waitpid(pid, NULL, 0);
         if (in_pipe[1] >= 0)
             close(in_pipe[1]);
         close(out_pipe[0]);
-        log_msg("proc: child '%s' exited immediately (status=%d) — binary "
-                "missing?",
-                argv[0], wstatus);
+        log_msg("proc: execvp(%s) failed: %s", argv[0], strerror(err));
         return -1;
     }
 

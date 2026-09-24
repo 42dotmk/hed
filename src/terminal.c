@@ -618,29 +618,6 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
         win->buffer_index < (int)arrlen(E.buffers))
         buf = &E.buffers[win->buffer_index];
 
-    /* Phase-1 renderer abstraction: clear last frame's spans and let
-     * handlers repopulate them for the rows this window is about to
-     * paint. row_end is a conservative upper bound — wrap/folds can
-     * make the actual visible range smaller; spans outside the
-     * visible area are harmless, just unused. */
-    if (buf) {
-        attrspan_clear(&buf->render_spans);
-        int row_start = win->row_offset;
-        if (row_start < 0)
-            row_start = 0;
-        int row_end = row_start + win->height;
-        if (row_end > buf->num_rows)
-            row_end = buf->num_rows;
-        HookRenderEvent rev = {
-            .buf = buf,
-            .row_start = row_start,
-            .row_end = row_end,
-            .spans = &buf->render_spans,
-        };
-        hook_fire_render(HOOK_RENDER_PRE, &rev);
-        attrspan_sort(&buf->render_spans);
-    }
-
     int gutter = window_gutter_width(win, win->height);
     int margin = gutter ? (gutter + 1) : 0; /* number + space */
     int content_cols = win->width - margin;
@@ -677,6 +654,30 @@ static void ed_draw_rows_win(Abuf *ab, const Window *win) {
             row = buf->num_rows;
             sub = 0;
         }
+    }
+
+    /* Clear last frame's spans and let highlighters repopulate them for
+     * the rows this window is about to paint: from the top row found
+     * above through `height` unfolded rows — an upper bound, since
+     * wrap and virtual lines only make fewer rows fit. Spans outside
+     * the visible area are harmless, just unused. */
+    if (buf) {
+        attrspan_clear(&buf->render_spans);
+        int row_start = row < buf->num_rows ? row : buf->num_rows;
+        int row_end = row_start;
+        for (int shown = 0; row_end < buf->num_rows && shown < win->height;
+             row_end++) {
+            if (!fold_is_line_hidden(&buf->folds, row_end))
+                shown++;
+        }
+        HookRenderEvent rev = {
+            .buf = buf,
+            .row_start = row_start,
+            .row_end = row_end,
+            .spans = &buf->render_spans,
+        };
+        hook_fire_render(HOOK_RENDER_PRE, &rev);
+        attrspan_sort(&buf->render_spans);
     }
 
     for (int vy = 0; vy < win->height; vy++) {

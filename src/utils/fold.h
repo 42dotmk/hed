@@ -24,6 +24,16 @@ typedef struct FoldList {
     FoldRegion *regions; /* Array of fold regions */
     int count;           /* Number of active folds */
     int capacity;        /* Allocated capacity */
+
+    /* Cache for fold_is_line_hidden: the lines hidden by collapsed
+     * regions as sorted, merged [start, end] pairs, rebuilt on the
+     * first query after any change. Large files carry tens of
+     * thousands of regions and the renderer asks per row, so a linear
+     * scan per query is too slow. Anything that flips is_collapsed or
+     * edits regions outside fold.c must call fold_invalidate(). */
+    int *hidden; /* 2 * hidden_n ints */
+    int hidden_n;
+    bool hidden_stale;
 } FoldList;
 
 /* Initialize a new fold list */
@@ -50,11 +60,18 @@ bool fold_collapse_at_line(FoldList *list, int line);
 /* Expand fold at the given line */
 bool fold_expand_at_line(FoldList *list, int line);
 
-/* Check if a line is hidden due to folding */
-bool fold_is_line_hidden(const FoldList *list, int line);
+/* Set region idx's collapsed state (keeps the hidden-line cache valid) */
+void fold_set_collapsed(FoldList *list, int idx, bool collapsed);
+
+/* Mark the hidden-line cache stale after editing regions directly */
+void fold_invalidate(FoldList *list);
+
+/* Check if a line is hidden due to folding. O(log n) — the cache of
+ * hidden spans is rebuilt lazily after a change. */
+bool fold_is_line_hidden(FoldList *list, int line);
 
 /* Get the visible line count (accounting for collapsed folds) */
-int fold_get_visible_line_count(const FoldList *list, int total_lines);
+int fold_get_visible_line_count(FoldList *list, int total_lines);
 
 /* Collapse folds deeper than `level`, expand the rest (vim foldlevel
  * semantics). level 0 = collapse all to top-level summaries; a large

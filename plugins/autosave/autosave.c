@@ -39,6 +39,37 @@
 
 static int g_enabled = 1;
 
+/* buf->dirty at each file's last autosave. dirty counts up on every
+ * edit (undo included) and drops to 0 on :w, so an equal value means
+ * nothing changed since — leaving insert mode again doesn't rewrite a
+ * large file for nothing. Keyed by filename: Buffer pointers move when
+ * E.buffers grows. */
+typedef struct {
+    char *filename;
+    int dirty;
+} Written;
+static Written *g_written; /* stb_ds array */
+
+static Written *written_find(const char *filename) {
+    for (ptrdiff_t i = 0; i < arrlen(g_written); i++)
+        if (strcmp(g_written[i].filename, filename) == 0)
+            return &g_written[i];
+    return NULL;
+}
+
+static void written_set(const char *filename, int dirty) {
+    Written *w = written_find(filename);
+    if (w) {
+        w->dirty = dirty;
+        return;
+    }
+    char *copy = strdup(filename);
+    if (!copy)
+        return;
+    Written nw = {.filename = copy, .dirty = dirty};
+    arrput(g_written, nw);
+}
+
 /* ---------- skip rules ---------- */
 
 static int autosave_skip_buf(const Buffer *buf) {
@@ -106,6 +137,9 @@ static void autosave_write_buf(Buffer *buf) {
         return;
     if (!buf->dirty)
         return;
+    Written *w = written_find(buf->filename);
+    if (w && w->dirty == buf->dirty)
+        return;
 
     size_t n;
     char *text = buf_to_text(buf, &n);
@@ -134,6 +168,7 @@ static void autosave_write_buf(Buffer *buf) {
         log_msg("autosave: write failed for %s", path);
     } else {
         log_msg("autosave: wrote %zu bytes to %s", n, path);
+        written_set(buf->filename, buf->dirty);
     }
     free(text);
     free(path);
@@ -186,6 +221,7 @@ static void on_buffer_save(HookBufferEvent *e) {
         return;
     if (fs_unlink(path) == ED_OK)
         log_msg("autosave: removed %s after save", path);
+    written_set(e->buf->filename, 0);
     free(path);
 }
 
@@ -223,10 +259,13 @@ static int autosave_load_into(Buffer *buf, const char *path) {
     /* Drop vtext marks pinned to old line indices. */
     vtext_clear_all(buf);
 
+    /* Not an edit: no undo records (`u` would delete the restore). */
     const char *line;
     size_t len;
+    buf->undo.applying = 1;
     while (fs_lines_next(r, &line, &len))
         buf_row_insert_in(buf, buf->num_rows, line, len);
+    buf->undo.applying = 0;
     fs_lines_close(r);
 
     buf->dirty = 1;
@@ -314,6 +353,9 @@ static void on_buffer_open(HookBufferEvent *e) {
         return;
     if (autosave_skip_buf(e->buf))
         return;
+    /* A fresh buffer counts dirty from 0 again: forget the last write,
+     * or an equal count after a close-and-reopen would skip a change. */
+    written_set(e->buf->filename, -1);
 
     char *path = NULL;
     if (!autosave_exists_and_fresh(e->buf, &path))

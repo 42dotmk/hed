@@ -117,6 +117,19 @@ EdError buf_new(const char *filename, int *out_idx) {
     return ED_OK;
 }
 
+/* Append every line of `r` to buf. Loading is not an edit: undo
+ * recording is off (the undo stack would otherwise hold one insert per
+ * line, and `u` right after opening would empty the buffer). */
+static void buf_load_lines(Buffer *buf, FsLines *r) {
+    const char *line;
+    size_t len;
+    int was_applying = buf->undo.applying;
+    buf->undo.applying = 1;
+    while (fs_lines_next(r, &line, &len))
+        buf_row_insert_in(buf, buf->num_rows, line, len);
+    buf->undo.applying = was_applying;
+}
+
 /* Opens a file and returns EdError status */
 EdError buf_open_file(const char *filename, Buffer **out) {
     if (!PTR_VALID(out))
@@ -138,10 +151,7 @@ EdError buf_open_file(const char *filename, Buffer **out) {
         return ED_OK;
     }
 
-    const char *line;
-    size_t linelen;
-    while (fs_lines_next(r, &line, &linelen))
-        buf_row_insert_in(buf, buf->num_rows, line, linelen);
+    buf_load_lines(buf, r);
     fs_lines_close(r);
     buf->dirty = 0;
 
@@ -817,10 +827,7 @@ void buf_reload(Buffer *buf) {
         buf->dirty = 0;
         return;
     }
-    const char *line;
-    size_t len;
-    while (fs_lines_next(r, &line, &len))
-        buf_row_insert_in(buf, buf->num_rows, line, len);
+    buf_load_lines(buf, r);
     fs_lines_close(r);
     buf->dirty = 0;
     ed_set_status_message("reloaded: %s", buf->filename);

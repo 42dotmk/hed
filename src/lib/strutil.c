@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <wchar.h>
 
 char *strdup(const char *s) {
@@ -318,4 +319,36 @@ void utf8_slice_by_columns(const char *str, size_t byte_len, int start_col,
 
     *out_byte_start = slice_start_byte;
     *out_byte_len = slice_end_byte - slice_start_byte;
+}
+
+/* RFC 2822 "Tue, 18 May 2026 10:14:00 +0200" → epoch; -1 when it
+ * doesn't parse. A zone that isn't numeric counts as UTC. */
+time_t str_parse_rfc2822(const char *s) {
+    while (*s == ' ' || *s == '\t')
+        s++;
+    if (strlen(s) > 5 && s[3] == ',')
+        s += 4;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    const char *p = strptime(s, "%d %b %Y %H:%M", &tm);
+    if (!p)
+        return -1;
+    if (*p == ':') {
+        int sec = 0;
+        p++;
+        while (*p >= '0' && *p <= '9')
+            sec = sec * 10 + (*p++ - '0');
+        tm.tm_sec = sec;
+    }
+    while (*p == ' ' || *p == '\t')
+        p++;
+    long off = 0;
+    if ((*p == '+' || *p == '-') && strlen(p) >= 5) {
+        int sign = *p == '-' ? -1 : 1;
+        int hh = (p[1] - '0') * 10 + (p[2] - '0');
+        int mm = (p[3] - '0') * 10 + (p[4] - '0');
+        off = sign * (hh * 3600L + mm * 60L);
+    }
+    time_t t = timegm(&tm);
+    return t == (time_t)-1 ? -1 : t - off;
 }

@@ -286,6 +286,49 @@ void test_attachments_line_kept_in_chat(void) {
     free_raw(raw);
 }
 
+/* A body that quotes `hml show` output — what a hai tool result is —
+ * is one message's text, not messages of the thread. hml doubles the
+ * leading form feed of such a line; the render takes the second off
+ * and reads none of it as framing. */
+void test_quoted_show_output_stays_one_message(void) {
+    char **raw = NULL;
+    push_msg(&raw, "a@x", "main@hai", "Tue, 22 Sep 2026 11:51:17 +0200",
+             "Re: check the mail",
+             "\f\fmessage{ id:old@x depth:0 match:1\n"
+             "\f\fheader{\n"
+             "Subject: Exciting updates\n"
+             "From: alerts@officeliveemail.com\n"
+             "Date: Fri, 14 May 2010 06:10:03 -0600\n"
+             "\f\fheader}\n"
+             "\f\fbody{\n"
+             "\f\fpart{ ID: 1, Content-type: text/plain\n"
+             "hello from 2010\n"
+             "\f\fpart}\n"
+             "\f\fbody}\n"
+             "\f\fmessage}");
+    render(raw, 1, NULL);
+    const char *const want[] = {"Subject: Re: check the mail",
+                                "",
+                                "● main@hai — 22 Sep 2026 09:51",
+                                "\fmessage{ id:old@x depth:0 match:1",
+                                "\fheader{",
+                                "Subject: Exciting updates",
+                                "From: alerts@officeliveemail.com",
+                                "Date: Fri, 14 May 2010 06:10:03 -0600",
+                                "\fheader}",
+                                "\fbody{",
+                                "\fpart{ ID: 1, Content-type: text/plain",
+                                "hello from 2010",
+                                "\fpart}",
+                                "\fbody}",
+                                "\fmessage}",
+                                NULL};
+    assert_lines(want);
+    ASSERT_EQ_INT(1, (int)arrlen(R.msgs));
+    ASSERT_EQ_STR("a@x", R.msgs[0].msg_id);
+    free_raw(raw);
+}
+
 int main(void) {
     setenv("TZ", "UTC", 1);
     tzset();
@@ -302,6 +345,7 @@ int main(void) {
     RUN_TEST(test_w3m_reference_list_cut);
     RUN_TEST(test_quote_only_message_gets_placeholder);
     RUN_TEST(test_attachments_line_kept_in_chat);
+    RUN_TEST(test_quoted_show_output_stays_one_message);
     int rc = UNITY_END();
     mail_render_free(&R);
     return rc;

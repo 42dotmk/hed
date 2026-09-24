@@ -9,6 +9,7 @@ static void attrspan_free_index(AttrSpans *s) {
     s->row_first = NULL;
     s->row_count = NULL;
     s->row_index_len = 0;
+    s->row_base = 0;
 }
 
 void attrspan_init(AttrSpans *s) {
@@ -19,6 +20,7 @@ void attrspan_init(AttrSpans *s) {
     s->row_first = NULL;
     s->row_count = NULL;
     s->row_index_len = 0;
+    s->row_base = 0;
 }
 
 void attrspan_free(AttrSpans *s) {
@@ -79,11 +81,9 @@ void attrspan_sort(AttrSpans *s) {
      * row's spans occupy a contiguous range. */
     attrspan_free_index(s);
     if (n > 0) {
-        int max_row = 0;
-        for (size_t i = 0; i < n; i++)
-            if (s->items[i].row > max_row)
-                max_row = s->items[i].row;
-        s->row_index_len = max_row + 1;
+        /* Sorted by row: the first and last spans bound the rows. */
+        s->row_base = s->items[0].row;
+        s->row_index_len = s->items[n - 1].row - s->row_base + 1;
         s->row_first = calloc((size_t)s->row_index_len, sizeof(int));
         s->row_count = calloc((size_t)s->row_index_len, sizeof(int));
         if (!s->row_first || !s->row_count) {
@@ -92,7 +92,7 @@ void attrspan_sort(AttrSpans *s) {
             for (int r = 0; r < s->row_index_len; r++)
                 s->row_first[r] = -1;
             for (size_t i = 0; i < n; i++) {
-                int r = s->items[i].row;
+                int r = s->items[i].row - s->row_base;
                 if (s->row_first[r] < 0)
                     s->row_first[r] = (int)i;
                 s->row_count[r]++;
@@ -106,11 +106,14 @@ const AttrSpan *attrspan_at(const AttrSpans *s, int row, int col) {
     if (!s || !s->items)
         return NULL;
     /* Fast path: row-indexed lookup after sort. */
-    if (s->sorted && s->row_first && row >= 0 && row < s->row_index_len) {
-        int first = s->row_first[row];
+    if (s->sorted && s->row_first) {
+        int r = row - s->row_base;
+        if (r < 0 || r >= s->row_index_len)
+            return NULL;
+        int first = s->row_first[r];
         if (first < 0)
             return NULL;
-        int cnt = s->row_count[row];
+        int cnt = s->row_count[r];
         const AttrSpan *best = NULL;
         for (int i = first; i < first + cnt; i++) {
             const AttrSpan *sp = &s->items[i];

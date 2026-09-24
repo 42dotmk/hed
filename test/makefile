@@ -12,6 +12,7 @@ INPUT_SRC = ../src/input/input.c
 REGISTERS_SRC = ../src/input/registers.c ../src/lib/strbuf.c
 MAIL_CHAT_SRC = ../plugins/mail/mail_parse.c ../src/lib/strbuf.c \
                 ../src/lib/strutil.c ../src/lib/stb_ds.c
+FOLD_SRC = ../src/utils/fold.c
 UNITY_SRC = unity/unity.c
 HELPER_SRC = test_helpers.c
 
@@ -20,10 +21,12 @@ TEST_TEXTOBJ = test_textobj
 TEST_INPUT = test_input
 TEST_REGISTERS = test_registers
 TEST_MAIL_CHAT = test_mail_chat
+TEST_FOLD = test_fold
 
 .PHONY: all clean test
 
-all: $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT)
+all: $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT) \
+     $(TEST_FOLD)
 
 $(TEST_TEXTOBJ): test_textobj.c $(TEXTOBJ_SRC) $(UNITY_SRC) $(HELPER_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
@@ -37,7 +40,11 @@ $(TEST_REGISTERS): test_registers.c $(REGISTERS_SRC) $(UNITY_SRC)
 $(TEST_MAIL_CHAT): test_mail_chat.c $(MAIL_CHAT_SRC) $(UNITY_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
-test: $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT)
+$(TEST_FOLD): test_fold.c $(FOLD_SRC) $(UNITY_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+
+test: $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT) \
+      $(TEST_FOLD)
 	@echo "Running textobject tests..."
 	@./$(TEST_TEXTOBJ)
 	@echo "Running input parser tests..."
@@ -46,6 +53,9 @@ test: $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT)
 	@./$(TEST_REGISTERS)
 	@echo "Running mail chat-view tests..."
 	@./$(TEST_MAIL_CHAT)
+	@echo "Running fold tests..."
+	@./$(TEST_FOLD)
 
 clean:
-	rm -f $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT)
+	rm -f $(TEST_TEXTOBJ) $(TEST_INPUT) $(TEST_REGISTERS) $(TEST_MAIL_CHAT) \
+	      $(TEST_FOLD)

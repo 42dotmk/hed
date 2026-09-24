@@ -44,10 +44,20 @@ typedef struct {
     TSQuery *inject_query;
     void *dl_handle;
     char lang_name[32];
-    int parsed_dirty; /* last buf->dirty value parsed; -1 = needs parse */
-    char *src;        /* text the trees were parsed from (node byte
-                         offsets index into it); predicates read it */
+    /* Change detection. No single counter sees every edit (special
+     * buffers rewrite rows and restore dirty; save and reload zero it;
+     * undo replay doesn't bump the modification generation), so a
+     * change of any of these reparses — and a false alarm costs a join
+     * plus a compare, since the reparse diffs against src first. */
+    int needs_parse; /* 1 = full parse (no old tree) on next render */
+    unsigned long parsed_gen;
+    int parsed_dirty;
+    int parsed_rows;
+    char *src; /* text the trees were parsed from (node byte
+                  offsets index into it); predicates read it */
     size_t src_len;
+    uint32_t *line_starts; /* byte offset of each line of src */
+    int num_lines;
 
     TSInjectionRange *injections;
     int num_injections;
@@ -102,7 +112,7 @@ static TSState *ts_state_create(Buffer *buf) {
     st = calloc(1, sizeof(TSState));
     if (!st)
         return NULL;
-    st->parsed_dirty = -1;
+    st->needs_parse = 1;
     TSStateEntry e = {.key = buf, .value = st};
     arrput(g_states, e);
     return st;
@@ -133,6 +143,7 @@ static void ts_state_destroy(Buffer *buf) {
         if (st->tree)
             ts_tree_delete(st->tree);
         free(st->src);
+        free(st->line_starts);
         if (st->parser)
             ts_parser_delete(st->parser);
         if (st->query)
@@ -468,7 +479,7 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
         return 0;
 
     if (ts_lang_is_loaded(st, lang_name)) {
-        st->parsed_dirty = -1;
+        st->needs_parse = 1;
         return 1;
     }
 
@@ -500,7 +511,7 @@ int ts_buffer_load_language(Buffer *buf, const char *lang_name) {
     }
     st->lang = NULL;
     st->lang_name[0] = '\0';
-    st->parsed_dirty = -1;
+    st->needs_parse = 1;
 
     /* The previous host's sub-language assumptions don't carry over. */
     if (st->sub_langs) {
@@ -867,17 +878,58 @@ static int match_predicates_ok(const TSQuery *q, const TSQueryMatch *m,
     return 1;
 }
 
-static TSPoint byte_to_point(const char *src, uint32_t byte) {
-    TSPoint p = {0, 0};
-    for (uint32_t i = 0; i < byte; i++) {
-        if (src[i] == '\n') {
-            p.row++;
-            p.column = 0;
+/* Line containing `byte`: the last line starting at or before it. */
+static int line_of_byte(const uint32_t *line_starts, int num_lines,
+                        uint32_t byte) {
+    int lo = 0, hi = num_lines - 1, row = 0;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (line_starts[mid] <= byte) {
+            row = mid;
+            lo = mid + 1;
         } else {
-            p.column++;
+            hi = mid - 1;
         }
     }
+    return row;
+}
+
+static TSPoint byte_to_point(const uint32_t *line_starts, int num_lines,
+                             uint32_t byte) {
+    int row = line_of_byte(line_starts, num_lines, byte);
+    TSPoint p = {(uint32_t)row, byte - line_starts[row]};
     return p;
+}
+
+/* The buffer's text (rows joined by '\n', as buf_to_text) plus the
+ * offset where each row begins — one pass over the rows instead of a
+ * join and then a newline scan. The table has num_rows + 1 entries:
+ * the text ends in '\n', so there is one empty last line. */
+static char *join_rows(const Buffer *buf, size_t *out_len,
+                       uint32_t **out_starts, int *out_n) {
+    size_t total = 0;
+    for (int r = 0; r < buf->num_rows; r++)
+        total += buf->rows[r].chars.len + 1;
+    char *out = malloc(total + 1);
+    uint32_t *ls = malloc(((size_t)buf->num_rows + 1) * sizeof(uint32_t));
+    if (!out || !ls) {
+        free(out);
+        free(ls);
+        return NULL;
+    }
+    char *p = out;
+    for (int r = 0; r < buf->num_rows; r++) {
+        ls[r] = (uint32_t)(p - out);
+        memcpy(p, buf->rows[r].chars.data, buf->rows[r].chars.len);
+        p += buf->rows[r].chars.len;
+        *p++ = '\n';
+    }
+    ls[buf->num_rows] = (uint32_t)total;
+    *p = '\0';
+    *out_len = total;
+    *out_starts = ls;
+    *out_n = buf->num_rows + 1;
+    return out;
 }
 
 /* ===================================================================
@@ -959,13 +1011,18 @@ static void add_injection(TSState *st, const char *lang_name, uint32_t s,
     ir->end_byte = e;
 }
 
-static void collect_injections(TSState *st, const char *src, size_t src_len) {
-    st->num_injections = 0;
+/* Append the injections whose nodes intersect bytes [lo, hi) of the
+ * tree. The injection query over a whole large document is slow (a
+ * markdown file has one inline injection per paragraph), so after an
+ * edit only the changed span is re-queried — see update_injections. */
+static void collect_injections_in(TSState *st, const char *src, size_t src_len,
+                                  uint32_t lo, uint32_t hi) {
     if (!st->inject_query || !st->tree)
         return;
     TSNode root = ts_tree_root_node(st->tree);
     TSQueryCursor *cur = ts_query_cursor_new();
     ts_query_cursor_exec(cur, st->inject_query, root);
+    ts_query_cursor_set_byte_range(cur, lo, hi);
 
     TSQueryMatch m;
     while (ts_query_cursor_next_match(cur, &m)) {
@@ -1023,10 +1080,93 @@ static void collect_injections(TSState *st, const char *src, size_t src_len) {
     ts_query_cursor_delete(cur);
 }
 
+static void collect_injections(TSState *st, const char *src, size_t src_len) {
+    st->num_injections = 0;
+    collect_injections_in(st, src, src_len, 0, (uint32_t)src_len);
+}
+
+static int cmp_injection(const void *a, const void *b) {
+    const TSInjectionRange *x = a, *y = b;
+    return (x->start_byte > y->start_byte) - (x->start_byte < y->start_byte);
+}
+
+/* Bring st->injections up to date after an incremental parse. Those
+ * clear of the edit keep their language and move with the text; those
+ * touching it, or anything the parse reports as changed, are dropped
+ * and that span re-queried. `old` is the edited previous tree. */
+static void update_injections(TSState *st, const char *src, size_t src_len,
+                              const TSInputEdit *e, TSTree *old) {
+    if (!st->inject_query || !st->tree) {
+        st->num_injections = 0;
+        return;
+    }
+    uint32_t lo = e->start_byte, hi = e->new_end_byte;
+    uint32_t nch = 0;
+    TSRange *ch = ts_tree_get_changed_ranges(old, st->tree, &nch);
+    for (uint32_t i = 0; i < nch; i++) {
+        if (ch[i].start_byte < lo)
+            lo = ch[i].start_byte;
+        if (ch[i].end_byte > hi)
+            hi = ch[i].end_byte;
+    }
+    free(ch);
+
+    /* To new-text offsets; a range overlapping the edit is dropped and
+     * its extent joins the span to re-query. */
+    int64_t delta = (int64_t)e->new_end_byte - (int64_t)e->old_end_byte;
+    int k = 0;
+    for (int i = 0; i < st->num_injections; i++) {
+        TSInjectionRange ir = st->injections[i];
+        if (ir.end_byte < e->start_byte) {
+            /* before the edit: unchanged */
+        } else if (ir.start_byte > e->old_end_byte) {
+            ir.start_byte = (uint32_t)(ir.start_byte + delta);
+            ir.end_byte = (uint32_t)(ir.end_byte + delta);
+        } else {
+            if (ir.start_byte < lo)
+                lo = ir.start_byte;
+            int64_t end = (int64_t)ir.end_byte + delta;
+            if (end > (int64_t)hi)
+                hi = (uint32_t)end;
+            continue;
+        }
+        st->injections[k++] = ir;
+    }
+    st->num_injections = k;
+
+    /* Drop everything touching the span (inclusive, so a range ending
+     * right where the edit starts is re-derived too), widening it until
+     * no kept range reaches in. */
+    int changed = 1;
+    while (changed) {
+        changed = 0;
+        k = 0;
+        for (int i = 0; i < st->num_injections; i++) {
+            TSInjectionRange ir = st->injections[i];
+            if (ir.end_byte >= lo && ir.start_byte <= hi) {
+                if (ir.start_byte < lo)
+                    lo = ir.start_byte;
+                if (ir.end_byte > hi)
+                    hi = ir.end_byte;
+                changed = 1;
+                continue;
+            }
+            st->injections[k++] = ir;
+        }
+        st->num_injections = k;
+    }
+
+    uint32_t qhi = hi < src_len ? hi + 1 : (uint32_t)src_len;
+    collect_injections_in(st, src, src_len, lo, qhi);
+    qsort(st->injections, (size_t)st->num_injections, sizeof(TSInjectionRange),
+          cmp_injection);
+}
+
 /* ===================================================================
  * Sub-language reparse: feed each sub-parser its accumulated ranges.
  * =================================================================== */
-static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
+static void reparse_sub_langs(TSState *st, const char *src, size_t src_len,
+                              const uint32_t *line_starts, int num_lines) {
     /* Distinct languages used this round (cap protects stack). */
     enum { MAX_DISTINCT = 16 };
     char langs[MAX_DISTINCT][32];
@@ -1050,29 +1190,34 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
         if (!sub || !sub->parser)
             continue;
 
-        enum { MAX_RANGES = 256 };
-        TSRange ranges[MAX_RANGES];
+        TSRange *ranges = malloc((size_t)st->num_injections * sizeof(TSRange));
+        if (!ranges)
+            continue;
         int rc = 0;
-        for (int i = 0; i < st->num_injections && rc < MAX_RANGES; i++) {
+        for (int i = 0; i < st->num_injections; i++) {
             if (strcmp(st->injections[i].lang_name, langs[li]) != 0)
                 continue;
             uint32_t s = st->injections[i].start_byte;
             uint32_t e = st->injections[i].end_byte;
             ranges[rc].start_byte = s;
             ranges[rc].end_byte = e;
-            ranges[rc].start_point = byte_to_point(src, s);
-            ranges[rc].end_point = byte_to_point(src, e);
+            ranges[rc].start_point = byte_to_point(line_starts, num_lines, s);
+            ranges[rc].end_point = byte_to_point(line_starts, num_lines, e);
             rc++;
         }
-        if (rc == 0)
+        if (rc == 0) {
+            free(ranges);
             continue;
-        ts_parser_set_included_ranges(sub->parser, ranges, (uint32_t)rc);
-        if (sub->tree) {
-            ts_tree_delete(sub->tree);
-            sub->tree = NULL;
         }
+        ts_parser_set_included_ranges(sub->parser, ranges, (uint32_t)rc);
+        free(ranges);
+        /* sub->tree, when kept, was already ts_tree_edit'ed by the
+         * caller; tree-sitter reuses it across changed ranges. */
+        TSTree *old = sub->tree;
         sub->tree =
-            ts_parser_parse_string(sub->parser, NULL, src, (uint32_t)src_len);
+            ts_parser_parse_string(sub->parser, old, src, (uint32_t)src_len);
+        if (old)
+            ts_tree_delete(old);
     }
 
     /* Drop trees for languages that no longer have any injection so we
@@ -1091,34 +1236,110 @@ static void reparse_sub_langs(TSState *st, const char *src, size_t src_len) {
     }
 }
 
+static int ts_buffer_changed(const TSState *st, const Buffer *buf) {
+    return st->needs_parse || !st->tree ||
+           st->parsed_gen != undo_mod_generation() ||
+           st->parsed_dirty != buf->dirty || st->parsed_rows != buf->num_rows;
+}
+
+/* Describe the change from st->src to src as one edit: everything
+ * between the common prefix and the common suffix. Returns 0 when the
+ * texts are identical. */
+static int ts_diff_edit(const TSState *st, const char *src, size_t len,
+                        const uint32_t *line_starts, int num_lines,
+                        TSInputEdit *edit) {
+    size_t old_len = st->src_len;
+    size_t min = old_len < len ? old_len : len;
+    /* Skip equal blocks with memcmp, then finish byte by byte. */
+    enum { BLK = 4096 };
+    size_t pre = 0;
+    while (pre + BLK <= min && memcmp(st->src + pre, src + pre, BLK) == 0)
+        pre += BLK;
+    while (pre < min && st->src[pre] == src[pre])
+        pre++;
+    if (pre == min && old_len == len)
+        return 0;
+    size_t suf = 0;
+    while (suf + BLK <= min - pre && memcmp(st->src + old_len - suf - BLK,
+                                            src + len - suf - BLK, BLK) == 0)
+        suf += BLK;
+    while (suf < min - pre && st->src[old_len - 1 - suf] == src[len - 1 - suf])
+        suf++;
+    edit->start_byte = (uint32_t)pre;
+    edit->old_end_byte = (uint32_t)(old_len - suf);
+    edit->new_end_byte = (uint32_t)(len - suf);
+    edit->start_point = byte_to_point(line_starts, num_lines, (uint32_t)pre);
+    edit->old_end_point =
+        byte_to_point(st->line_starts, st->num_lines, edit->old_end_byte);
+    edit->new_end_point =
+        byte_to_point(line_starts, num_lines, edit->new_end_byte);
+    return 1;
+}
+
 void ts_buffer_reparse(Buffer *buf) {
     if (!buf)
         return;
     TSState *st = ts_state_get(buf);
     if (!st || !st->parser || !st->lang)
         return;
-    if (st->parsed_dirty == buf->dirty && st->tree)
+    if (!ts_buffer_changed(st, buf))
         return;
+    st->parsed_gen = undo_mod_generation();
+    st->parsed_dirty = buf->dirty;
+    st->parsed_rows = buf->num_rows;
+
     size_t len = 0;
-    char *src = buf_to_text(buf, &len);
+    int num_lines = 0;
+    uint32_t *line_starts = NULL;
+    char *src = join_rows(buf, &len, &line_starts, &num_lines);
     if (!src)
         return;
+
+    /* Incremental: tell the old trees what changed and let tree-sitter
+     * reuse everything outside the edit. A full parse only when forced
+     * (language (re)load) or there is nothing to reuse. */
+    TSTree *old = NULL;
+    TSInputEdit edit;
+    if (!st->needs_parse && st->tree && st->src) {
+        if (!ts_diff_edit(st, src, len, line_starts, num_lines, &edit)) {
+            free(src);
+            free(line_starts);
+            return; /* false alarm: same text */
+        }
+        ts_tree_edit(st->tree, &edit);
+        for (int i = 0; i < st->num_sub_langs; i++)
+            if (st->sub_langs[i].tree)
+                ts_tree_edit(st->sub_langs[i].tree, &edit);
+        old = st->tree;
+    } else {
+        if (st->tree)
+            ts_tree_delete(st->tree);
+        for (int i = 0; i < st->num_sub_langs; i++)
+            if (st->sub_langs[i].tree) {
+                ts_tree_delete(st->sub_langs[i].tree);
+                st->sub_langs[i].tree = NULL;
+            }
+    }
+    st->needs_parse = 0;
 
     /* Make sure the host parser is unrestricted in case it was reused with
      * included_ranges set elsewhere. */
     ts_parser_set_included_ranges(st->parser, NULL, 0);
-
-    if (st->tree)
-        ts_tree_delete(st->tree);
-    st->tree = ts_parser_parse_string(st->parser, NULL, src, (uint32_t)len);
-    st->parsed_dirty = buf->dirty;
-
-    collect_injections(st, src, len);
-    reparse_sub_langs(st, src, len);
+    st->tree = ts_parser_parse_string(st->parser, old, src, (uint32_t)len);
+    if (old && st->tree)
+        update_injections(st, src, len, &edit, old);
+    else
+        collect_injections(st, src, len);
+    if (old)
+        ts_tree_delete(old);
+    reparse_sub_langs(st, src, len, line_starts, num_lines);
 
     free(st->src);
     st->src = src;
     st->src_len = len;
+    free(st->line_starts);
+    st->line_starts = line_starts;
+    st->num_lines = num_lines;
 }
 
 /* ===================================================================
@@ -1208,7 +1429,7 @@ static const char *capture_name_to_sgr(const char *name, uint32_t nlen) {
 }
 
 /* ===================================================================
- * HOOK_RENDER_PRE: push AttrSpans for the whole buffer.
+ * HOOK_RENDER_PRE: push AttrSpans for the rows being painted.
  * =================================================================== */
 
 /* Push spans for one (tree, query) over a byte range, splitting each
@@ -1218,8 +1439,7 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query, const char *src,
                                  size_t src_len, uint32_t range_start,
                                  uint32_t range_end, uint32_t clip_start,
                                  uint32_t clip_end, const uint32_t *line_starts,
-                                 const int *line_lens, int num_rows,
-                                 AttrSpans *spans) {
+                                 int num_rows, AttrSpans *spans) {
     if (!tree || !query)
         return;
     TSNode root = ts_tree_root_node(tree);
@@ -1260,19 +1480,12 @@ static void push_spans_from_tree(TSTree *tree, TSQuery *query, const char *src,
             /* Walk the rows this capture intersects and push one span
              * per row's slice. Linear scan from a binary-searched
              * starting row keeps multi-line tokens cheap. */
-            int lo = 0, hi = num_rows - 1, row = 0;
-            while (lo <= hi) {
-                int mid = (lo + hi) / 2;
-                if (line_starts[mid] <= s) {
-                    row = mid;
-                    lo = mid + 1;
-                } else {
-                    hi = mid - 1;
-                }
-            }
+            int row = line_of_byte(line_starts, num_rows, s);
             while (row < num_rows && line_starts[row] < e) {
                 uint32_t row_start = line_starts[row];
-                uint32_t row_end = row_start + (uint32_t)line_lens[row];
+                /* Line ends at the next line's newline, or at src end. */
+                uint32_t row_end = row + 1 < num_rows ? line_starts[row + 1] - 1
+                                                      : (uint32_t)src_len;
                 uint32_t cs = s > row_start ? s : row_start;
                 uint32_t ce = e < row_end ? e : row_end;
                 if (ce > cs) {
@@ -1299,46 +1512,35 @@ void ts_render_pre_hook(const struct HookRenderEvent *event) {
      * the per-frame reparse-all loop that used to live in
      * src/terminal.c — the renderer fires this hook once per visible
      * window, so tree-sitter sees the same trigger. */
-    if (st->parser && st->lang && st->parsed_dirty != buf->dirty)
+    if (st->parser && st->lang)
         ts_buffer_reparse(buf);
-    if (!st->tree || !st->query)
-        return;
-    if (buf->num_rows <= 0)
+    if (!st->tree || !st->query || !st->line_starts)
         return;
 
-    /* Precompute per-row byte offsets in chars-space. */
-    int n = buf->num_rows;
-    uint32_t *line_starts = malloc((size_t)n * sizeof(uint32_t));
-    int *line_lens = malloc((size_t)n * sizeof(int));
-    if (!line_starts || !line_lens) {
-        free(line_starts);
-        free(line_lens);
+    /* Only the rows being painted: query the byte range they cover.
+     * Line offsets come from the parsed text, so they match the tree. */
+    int n = st->num_lines;
+    int r0 = event->row_start < n ? event->row_start : n;
+    int r1 = event->row_end < n ? event->row_end : n;
+    if (r0 < 0 || r1 <= r0)
         return;
-    }
-    uint32_t off = 0;
-    for (int r = 0; r < n; r++) {
-        line_starts[r] = off;
-        line_lens[r] = (int)buf->rows[r].chars.len;
-        off += (uint32_t)line_lens[r] + 1; /* +1 for newline */
-    }
-    uint32_t total = off > 0 ? off - 1 : 0;
+    uint32_t start = st->line_starts[r0];
+    uint32_t end = r1 < n ? st->line_starts[r1] : (uint32_t)st->src_len;
 
-    /* Host segments over the whole buffer. */
-    push_spans_from_tree(st->tree, st->query, st->src, st->src_len, 0, total, 0,
-                         total, line_starts, line_lens, n, event->spans);
+    push_spans_from_tree(st->tree, st->query, st->src, st->src_len, start, end,
+                         start, end, st->line_starts, n, event->spans);
 
-    /* Sub-language segments for each injection range. */
+    /* Sub-language segments for each injection range in view. */
     for (int j = 0; j < st->num_injections; j++) {
         TSInjectionRange *ir = &st->injections[j];
+        if (ir->end_byte <= start || ir->start_byte >= end)
+            continue;
         TSSubLang *sub = find_sub_lang(st, ir->lang_name);
         if (!sub || !sub->tree || !sub->query)
             continue;
-        push_spans_from_tree(sub->tree, sub->query, st->src, st->src_len,
-                             ir->start_byte, ir->end_byte, ir->start_byte,
-                             ir->end_byte, line_starts, line_lens, n,
-                             event->spans);
+        uint32_t cs = ir->start_byte > start ? ir->start_byte : start;
+        uint32_t ce = ir->end_byte < end ? ir->end_byte : end;
+        push_spans_from_tree(sub->tree, sub->query, st->src, st->src_len, cs,
+                             ce, cs, ce, st->line_starts, n, event->spans);
     }
-
-    free(line_starts);
-    free(line_lens);
 }

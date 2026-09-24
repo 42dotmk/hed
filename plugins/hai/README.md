@@ -3,17 +3,25 @@
 hai's agents inside hed, and text sent to them.
 
 Reading the conversations needs no view of its own. A hai session is
-a Maildir (`hai/MAIL.md`), hml indexes it, so it is a mail thread like
-any other — the `mail` plugin already reads threads (chat style by
-default), filters, tags and replies to them. This plugin points the
-mail list at those threads and adds the one thing mail cannot show:
-**the agents** — who is alive, what each is doing, on which model, in
-which directory.
+a Maildir (`hai/MAIL.md`) and hml indexes it, so the `mail` plugin
+already reads it (chat style by default), filters, tags and replies to
+it. This plugin points the mail list at those sessions and adds the
+one thing mail cannot show: **the agents** — who is alive, what each
+is doing, on which model, in which directory.
+
+A session is that directory, not a thread. A child agent's session
+starts from the mail that spawned it, so its first message carries the
+parent's `References` and hml threads the two together — ask for the
+thread and the parent's whole conversation comes with it. Every scope
+here is therefore a `path:` query over the session boxes: one session
+(`path:hai/s/<agent>/<id>`), one agent's (`path:hai/s/<agent>/**`),
+main's own (`path:hai/s/*` — one level, or the children's come too),
+or all of them (`path:hai/s/**`, the configurable base query).
 
 ## Requirements
 
 - `hml` — `hml send -t` delivers a turn into an agent's inbox; `hml
-  new` keeps the index current; `hml search` finds a session's thread
+  new` keeps the index current; `hml show` reads a session's box
 - `hai` — the client, for the agents view (`hai tree`) and "the live
   session of agent X" (`hai status`). Sending works without it
 - the `mail` plugin — for reading. Weakly linked: hai builds and runs
@@ -52,7 +60,7 @@ task is dim.
 
 | Key | Action |
 |---|---|
-| `<CR>` | This agent's live conversation, in the mail thread view |
+| `<CR>` | This agent's live session, in the mail conversation view |
 | `f` | Its sessions in the mail list |
 | `d` | The sessions of every agent working in its directory |
 | `s` | Say a line to it |
@@ -91,7 +99,8 @@ starting a new one. When the last turn is a question hai mailed you
 `<mailbox>/user/` instead, which is what makes it the answer.
 
 A new session is rooted at the Message-ID hed writes, so hai threads
-everything that follows under it.
+everything that follows under it — and stores it in a Maildir of its
+own, which is what the views here scope to.
 
 `:hai-send` is the one that earns its keep from any buffer: select a
 block of code, or leave the cursor in a paragraph, and it reaches the

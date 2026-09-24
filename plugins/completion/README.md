@@ -21,7 +21,8 @@ line, deleting past the word start, switching buffers or leaving
 insert mode dismisses the menu.
 
 Filtering ranks prefix matches over case-insensitive prefixes over
-subsequence matches, then sorts by the source's `sort_text`. The
+subsequence matches (against the item's `filter_text` when it has
+one, else its label), then sorts by the source's `sort_text`. The
 accept edit replaces the item's range (`textEdit`-style if the source
 provided one, else the typed word) through the undo-recorded edit
 path, so the whole insert session — typed text plus completion — is

@@ -23,10 +23,10 @@ enum {
 
 /* Fork + execvp argv (NULL-terminated). stdout lands on from_fd;
  * stderr goes to the editor log so child noise never repaints the
- * terminal. A child that dies within ~50ms (execvp failure — binary
- * not installed) is detected, reaped, and reported as -1 instead of
- * failing silently on the first write. Returns 0 and fills *out on
- * success. */
+ * terminal. An execvp failure (binary not installed) is detected
+ * without waiting, reaped, and reported as -1 instead of failing
+ * silently on the first write; a child that runs and exits at once is
+ * a success. Returns 0 and fills *out on success. */
 int proc_spawn(const char *const argv[], unsigned flags, Proc *out);
 
 /* Close both fds (if open), send `sig` (0 = none), and reap without

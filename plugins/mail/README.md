@@ -178,7 +178,13 @@ Attachments:  [2] notes.pdf  [3] chart.png
   With neither available, a placeholder line is shown. Either way,
   `o` / `:mail-open-html` opens the real HTML in the system browser.
 - `\fmessage{`, `\fheader{`, `\fpart{` and the other framing
-  markers never reach the buffer.
+  markers never reach the buffer — but inside a text part they are
+  body, not framing. A mail may quote the output of `hml show`
+  verbatim (a hai tool result usually does); hml doubles the leading
+  form feed of such a line so it cannot pass for a marker of the
+  stream, and the render takes the second one back off. Without that
+  the quoted mail read as messages of the thread, which in the chat
+  view sorted them by their own dates — to the top, years early.
 
 Bodies are handed to the markdown grammar (when the treesitter plugin
 is in the build): headings, emphasis, lists, links and fenced code

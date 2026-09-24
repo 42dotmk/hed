@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Internal helper from buf/buffer.c, not exposed in buffer.h. */
@@ -170,20 +171,51 @@ static void run_startup_command(const char *cmdline) {
 /* ------------------------------------------------------------------------- */
 /* Event loop                                                                */
 
+/* HED_PROFILE=1 logs each frame's render time and the key handling
+ * that preceded it — the before/after number for performance work on
+ * large files. */
+static int g_profile;
+static double g_key_ms;
+
+static double now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6;
+}
+
+static void process_keypress_timed(void) {
+    if (!g_profile) {
+        ed_process_keypress();
+        return;
+    }
+    double t0 = now_ms();
+    ed_process_keypress();
+    g_key_ms += now_ms() - t0;
+}
+
 static void on_stdin_readable(int fd, void *ud) {
     (void)fd;
     (void)ud;
-    ed_process_keypress();
+    process_keypress_timed();
 }
 
 static void event_loop(void) {
+    g_profile = getenv("HED_PROFILE") != NULL;
     while (1) {
-        ed_render_frame();
+        if (g_profile) {
+            double t0 = now_ms();
+            ed_render_frame();
+            log_msg("profile: key %.2fms render %.2fms", g_key_ms,
+                    now_ms() - t0);
+            g_key_ms = 0;
+        } else {
+            ed_render_frame();
+        }
 
         /* Drain queued macro keystrokes without going through select(),
          * since they have no fd to wake us. */
         if (macro_queue_has_keys()) {
-            ed_process_keypress();
+            process_keypress_timed();
             continue;
         }
 

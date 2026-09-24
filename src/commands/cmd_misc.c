@@ -662,7 +662,7 @@ void cmd_fold_open_all(const char *args) {
     int count = 0;
     for (int i = 0; i < buf->folds.count; i++) {
         if (buf->folds.regions[i].is_collapsed) {
-            buf->folds.regions[i].is_collapsed = false;
+            fold_set_collapsed(&buf->folds, i, false);
             count++;
         }
     }
@@ -678,7 +678,7 @@ void cmd_fold_close_all(const char *args) {
     int count = 0;
     for (int i = 0; i < buf->folds.count; i++) {
         if (!buf->folds.regions[i].is_collapsed) {
-            buf->folds.regions[i].is_collapsed = true;
+            fold_set_collapsed(&buf->folds, i, true);
             count++;
         }
     }

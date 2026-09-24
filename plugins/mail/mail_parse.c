@@ -636,6 +636,26 @@ void mail_render_show_text(MailRender *r, char **raw, int raw_count, int chat,
     for (int i = 0; i < raw_count; i++) {
         const char *line = raw[i] ? raw[i] : "";
 
+        /* --- body text ----------------------------------------------- */
+        /* Inside a text part every line is content — only the marker
+         * that closes the part is framing. A body may quote the
+         * output of `hml show` verbatim (a hai tool result usually
+         * does), and hml doubles the leading form feed of such a line
+         * so it cannot pass for a marker of this stream; the second
+         * one comes back off here. Without that, mail quoted inside a
+         * tool result read as messages of the thread, dated whenever
+         * they were written. */
+        int mode = pstack_depth > 0 ? pstack_mode[pstack_depth - 1] : 0;
+        if (mode && strcmp(line, "\fpart}") != 0 &&
+            strcmp(line, "\fattachment}") != 0) {
+            const char *text =
+                line[0] == '\f' && line[1] == '\f' ? line + 1 : line;
+            StrBuf *acc = mode == 1 ? &msg.plain : &msg.html;
+            strbuf_append(acc, text, strlen(text));
+            strbuf_append_char(acc, '\n');
+            continue;
+        }
+
         /* --- markers ------------------------------------------------- */
         if (str_starts_with(line, "\fmessage{")) {
             if (in_message)
@@ -674,8 +694,8 @@ void mail_render_show_text(MailRender *r, char **raw, int raw_count, int chat,
         }
 
         if (str_starts_with(line, "\fpart{")) {
-            int mode = 0;
             char ct[128] = "";
+            mode = 0;
             marker_field(line, "Content-type:", ct, sizeof(ct), 1);
             if (strncasecmp(ct, "text/plain", 10) == 0) {
                 mode = 1;
@@ -747,19 +767,10 @@ void mail_render_show_text(MailRender *r, char **raw, int raw_count, int chat,
             continue;
         }
 
-        /* Body content — only when the innermost open part says so.
-         * Each captured line carries a trailing newline. */
-        if (pstack_depth > 0) {
-            int mode = pstack_mode[pstack_depth - 1];
-            size_t llen = strlen(line);
-            StrBuf *acc = (mode == 1)   ? &msg.plain
-                          : (mode == 2) ? &msg.html
-                                        : NULL;
-            if (acc) {
-                strbuf_append(acc, line, llen);
-                strbuf_append_char(acc, '\n');
-            }
-        }
+        /* Anything else is inside a part that captures nothing (a
+         * multipart wrapper, message/rfc822 headers): dropped. The
+         * capturing parts never reach here — the body-text block at
+         * the top of the loop took their lines. */
     }
 
     if (in_message)

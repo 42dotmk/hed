@@ -12,3 +12,4 @@ test/test_registers
 .understand-anything/
 .claude/
 test/test_mail_chat
+test/test_fold

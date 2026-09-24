@@ -35,10 +35,13 @@ typedef struct {
     /* Row index built by attrspan_sort: row_first[r] is the index of
      * the first span on row r in `items`; row_count[r] is the count.
      * Lets per-byte lookups skip straight to the row's spans instead
-     * of scanning the whole vector. Indexed by row 0..row_index_len. */
+     * of scanning the whole vector. Indexed by row - row_base, over
+     * row_base..row_base + row_index_len (the rows that have spans,
+     * so a viewport near line 100K doesn't index from row 0). */
     int *row_first;
     int *row_count;
     int row_index_len;
+    int row_base;
 } AttrSpans;
 
 /* Lifecycle. Called from buf_new / buf_close. */

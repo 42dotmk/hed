@@ -22,8 +22,8 @@
 #define CMP_MAX_SOURCES 8
 #define CMP_MAX_VISIBLE 10
 #define CMP_LABEL_MAX_W 30
-#define CMP_DETAIL_MAX_W 24
-#define CMP_MENU_MAX_W 60
+#define CMP_DETAIL_MAX_W 32
+#define CMP_MENU_MAX_W 70
 #define CMP_TIMER_NAME "completion:idle"
 
 /* Fallback SGRs; a theme may override via the menu.* palette keys. */
@@ -133,6 +133,7 @@ static void cmp_items_clear(void) {
         free(M.items[i].insert_text);
         free(M.items[i].detail);
         free(M.items[i].sort_text);
+        free(M.items[i].filter_text);
     }
     cmp_arr_clear(M.items);
     cmp_arr_clear(M.filtered);
@@ -384,7 +385,9 @@ static void cmp_menu_refilter(void) {
 
     cmp_arr_clear(M.filtered);
     for (ptrdiff_t i = 0; i < arrlen(M.items); i++) {
-        int rank = cmp_rank_one(M.items[i].label, M.filter, flen);
+        const CmpItem *it = &M.items[i];
+        int rank = cmp_rank_one(it->filter_text ? it->filter_text : it->label,
+                                M.filter, flen);
         if (rank >= 0) {
             CmpFiltEnt e = {.idx = (int)i, .rank = rank};
             arrput(M.filtered, e);
@@ -428,6 +431,7 @@ static void cmp_item_free(CmpItem *it) {
     free(it->insert_text);
     free(it->detail);
     free(it->sort_text);
+    free(it->filter_text);
 }
 
 /* Sources overlap (LSP and buffer-words both know `window_cur`); keep

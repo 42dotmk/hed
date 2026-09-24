@@ -33,12 +33,14 @@ typedef enum {
 } CmpKind;
 
 /* One completion candidate. All strings are owned by the item (the
- * menu frees them); insert_text/detail/sort_text may be NULL. */
+ * menu frees them); insert_text/detail/sort_text/filter_text may be
+ * NULL. */
 typedef struct {
     char *label;       /* display + filter text */
     char *insert_text; /* NULL -> insert label */
     char *detail;      /* right column, e.g. a type signature */
     char *sort_text;   /* server-provided sort key */
+    char *filter_text; /* NULL -> filter on label */
     CmpKind kind;
     /* Byte replacement range on the request line ([start, end)); the
      * accepted text replaces at least [start, cursor). -1/-1 -> the

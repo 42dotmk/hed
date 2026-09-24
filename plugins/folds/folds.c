@@ -66,28 +66,6 @@ static int bstack_pop(BracketStack *s) {
     return s->lines[--s->count];
 }
 
-/* Cheap string-literal detector: scan the prefix tracking quote
- * state with \ escaping. Misses raw strings, heredocs, comments —
- * good enough for braces in mainstream syntaxes. */
-static bool char_is_inside_string(const char *line, size_t pos) {
-    bool in_sq = false, in_dq = false, escaped = false;
-    for (size_t i = 0; i < pos; i++) {
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-        if (line[i] == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (line[i] == '\'' && !in_dq)
-            in_sq = !in_sq;
-        else if (line[i] == '"' && !in_sq)
-            in_dq = !in_dq;
-    }
-    return in_sq || in_dq;
-}
-
 static void detect_brackets(Buffer *buf) {
     if (!buf)
         return;
@@ -99,9 +77,23 @@ static void detect_brackets(Buffer *buf) {
 
     for (int line = 0; line < buf->num_rows; line++) {
         Row *row = &buf->rows[line];
+        /* Cheap string-literal detector, carried along the line: quote
+         * state with \ escaping, reset per line. Misses raw strings,
+         * heredocs, comments — good enough for braces in mainstream
+         * syntaxes. */
+        bool in_sq = false, in_dq = false, escaped = false;
         for (size_t i = 0; i < row->chars.len; i++) {
             char c = row->chars.data[i];
-            if (char_is_inside_string(row->chars.data, i))
+            bool in_string = in_sq || in_dq;
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '\'' && !in_dq)
+                in_sq = !in_sq;
+            else if (c == '"' && !in_sq)
+                in_dq = !in_dq;
+            if (in_string)
                 continue;
             if (c == '{') {
                 bstack_push(&stack, line);

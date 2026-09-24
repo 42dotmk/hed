@@ -238,32 +238,50 @@ static int agent_live_session(const char *name, HaiSession *out) {
     return found;
 }
 
-/* Open session `s` in the mail plugin: its root Message-ID is what
- * hml threads the whole conversation under. */
+/* The box prefix hml knows the session Maildirs by: the base query
+ * with its path: prefix and trailing glob taken off, so there is one
+ * place to change when the mailbox moves. */
+static const char *session_box_root(void) {
+    static char root[512];
+    const char *q = base_query;
+    if (strncmp(q, "path:", 5) == 0)
+        q += 5;
+    snprintf(root, sizeof(root), "%s", q);
+    size_t n = strlen(root);
+    while (n > 0 && (root[n - 1] == '*' || root[n - 1] == '/'))
+        root[--n] = '\0';
+    return root[0] ? root : "hai/s";
+}
+
+/* The mail query that is exactly session `s`: the box its messages
+ * live in. A session is a Maildir, not a thread — a child agent's
+ * session starts from the mail that spawned it, so its root carries
+ * the parent's References and hml threads the two together. Asking
+ * for the thread hands back the parent's whole conversation (and
+ * every message it ever quoted); the directory is the conversation. */
+static void session_query(const HaiSession *s, char *out, size_t cap) {
+    if (strcmp(s->name, "main") == 0)
+        snprintf(out, cap, "path:%s/%s", session_box_root(), s->id);
+    else
+        snprintf(out, cap, "path:%s/%s/%s", session_box_root(), s->name, s->id);
+}
+
+/* Open session `s` in the mail plugin, scoped to its own Maildir. */
 static void open_in_mail(const HaiSession *s) {
     if (!mail_open_thread) {
         ed_set_status_message("hai: the mail plugin is not loaded");
         return;
     }
-    char id[256];
-    snprintf(id, sizeof(id), "%s", s->root[0] == '<' ? s->root + 1 : s->root);
-    size_t n = strlen(id);
-    if (n && id[n - 1] == '>')
-        id[n - 1] = '\0';
-
+    char dir[HAI_PATH + 8];
+    snprintf(dir, sizeof(dir), "%s/cur", s->dir);
+    if (!fs_is_dir(dir)) {
+        ed_set_status_message("hai: %s has no session mail yet", s->agent);
+        return;
+    }
     index_refresh();
-    char idq[600], cmd[800];
-    shell_escape_single(id, idq, sizeof(idq));
-    snprintf(cmd, sizeof(cmd),
-             "hml search --output=threads -- id:%s 2>/dev/null", idq);
-    char **lines = NULL;
-    int count = 0;
-    term_cmd_capture(cmd, &lines, &count);
-    if (count > 0 && lines[0] && strncmp(lines[0], "thread:", 7) == 0)
-        mail_open_thread(lines[0]);
-    else
-        ed_set_status_message("hai: no thread for %s yet", id);
-    term_cmd_free(lines, count);
+    char q[700];
+    session_query(s, q, sizeof(q));
+    mail_open_thread(q);
 }
 
 /* ------------------------------------------------------------------ */
@@ -289,10 +307,37 @@ typedef struct {
 static Tail *tails = NULL; /* stb_ds; one per thread buffer seen */
 static int watching = 0;
 
-/* The session a thread belongs to, from the files hml has for it: a
- * hai session's messages live under <mailbox>/s/[<agent>/]<id>/. */
+/* The session the buffer showing `tid` reads — the scope hai opened,
+ * or a thread reached from the mail list, whose files say: a hai
+ * session's messages live under <mailbox>/s/[<agent>/]<id>/. */
 static int session_of_thread(const char *tid, HaiSession *out) {
     char q[600], cmd[900];
+
+    /* The scope hai opens itself names the session's box: read it
+     * off that rather than guessing from the files of a thread. */
+    if (strncmp(tid, "path:", 5) == 0) {
+        const char *root = session_box_root();
+        size_t rlen = strlen(root);
+        const char *rel = tid + 5;
+        if (strncmp(rel, root, rlen) != 0 || rel[rlen] != '/' ||
+            strchr(rel, '*'))
+            return 0;
+        rel += rlen + 1;
+        const char *sep = strchr(rel, '/');
+        if (!sep) {
+            hai_session_at(out, hai_get_mailbox(), agent_domain(), "main", rel);
+            return 1;
+        }
+        char name[128];
+        size_t n = (size_t)(sep - rel);
+        if (n >= sizeof(name))
+            n = sizeof(name) - 1;
+        memcpy(name, rel, n);
+        name[n] = '\0';
+        hai_session_at(out, hai_get_mailbox(), agent_domain(), name, sep + 1);
+        return 1;
+    }
+
     shell_escape_single(tid, q, sizeof(q));
     snprintf(cmd, sizeof(cmd),
              "hml search --output=files -- %s 2>/dev/null | grep '/s/' | "
@@ -590,12 +635,12 @@ static void cmd_hai_sessions(const char *args) {
         addr_split(agentaddr, name, sizeof(name), domain, sizeof(domain));
 
     char q[1024];
-    /* main's sessions sit directly under s/, a child's under its name */
+    /* main's sessions sit directly under s/ — one level, or a child's
+     * boxes come too; a child's own sit under its name. */
     if (strcmp(name, "main") == 0)
-        snprintf(q, sizeof(q), "%s and from:main@%s", base_query,
-                 agent_domain());
+        snprintf(q, sizeof(q), "path:%s/*", session_box_root());
     else
-        snprintf(q, sizeof(q), "path:hai/s/%s/**", name);
+        snprintf(q, sizeof(q), "path:%s/%s/**", session_box_root(), name);
     if (mail_query(q)) {
         ed_set_status_message("hai: %s@%s sessions", name, agent_domain());
         ed_render_frame();
