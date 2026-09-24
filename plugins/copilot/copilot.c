@@ -25,6 +25,15 @@
 
 static int g_enabled = 1; /* default on once spawned + signed in */
 
+/* URIs the current server has seen a didOpen for. Plugin buffers
+ * (mail compose, the thread view's reply box) are created with
+ * buf_new, which fires no HOOK_BUFFER_OPEN — so the first sync of a
+ * document has to be able to open it rather than assume it. */
+static struct {
+    char *key;
+    int value;
+} *g_open_docs = NULL;
+
 /* ----- helpers ----- */
 
 static char *cp_uri_for(const char *filepath) {
@@ -204,6 +213,8 @@ static void cp_send_did_change(Buffer *buf, const char *uri, const char *text) {
     (void)buf;
 }
 
+static void cp_send_did_open(Buffer *buf);
+
 static void cp_request_completions_for_cursor(Buffer *buf) {
     if (!CP.spawned || !CP.initialized || !CP.signed_in)
         return;
@@ -223,7 +234,10 @@ static void cp_request_completions_for_cursor(Buffer *buf) {
     /* Sync the document FIRST so the server's view matches what we're
      * about to point at with `position`. The version we set here is
      * the one we cite in getCompletions immediately below. */
-    cp_send_did_change(buf, uri, text);
+    if (g_open_docs && shgeti(g_open_docs, uri) >= 0)
+        cp_send_did_change(buf, uri, text);
+    else
+        cp_send_did_open(buf); /* bumps CP.doc_version the same way */
 
     cJSON *params = cJSON_CreateObject();
     cJSON *doc = cJSON_CreateObject();
@@ -319,6 +333,15 @@ static void cp_send_did_open(Buffer *buf) {
         return;
     }
 
+    if (!g_open_docs)
+        sh_new_strdup(g_open_docs);
+    if (shgeti(g_open_docs, uri) >= 0) {
+        free(uri);
+        free(text);
+        return;
+    }
+    shput(g_open_docs, uri, 1);
+
     cJSON *p = cJSON_CreateObject();
     cJSON *td = cJSON_CreateObject();
     cJSON_AddStringToObject(td, "uri", uri);
@@ -358,6 +381,8 @@ static void on_buffer_close(HookBufferEvent *e) {
     cJSON_AddStringToObject(td, "uri", uri);
     cJSON_AddItemToObject(p, "textDocument", td);
     cp_proto_notify("textDocument/didClose", p);
+    if (g_open_docs)
+        (void)shdel(g_open_docs, uri);
     free(uri);
 }
 
@@ -402,6 +427,7 @@ static void cp_send_initialized(void) {
     cJSON_AddItemToObject(cfg, "settings", settings);
     cp_proto_notify("workspace/didChangeConfiguration", cfg);
 
+    shfree(g_open_docs);
     CP.initialized = 1;
     log_msg("copilot: initialized");
     /* Ask the server whether we already have a usable token cached. */
