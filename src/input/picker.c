@@ -22,7 +22,7 @@ void picker_register(const char *name, PickerFn fn) {
         return;
     ensure_init();
     if (!fn) {
-        shdel(g_pickers, name);
+        (void)shdel(g_pickers, name);
         return;
     }
     shput(g_pickers, name, fn);

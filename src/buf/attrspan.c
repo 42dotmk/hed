@@ -1,5 +1,5 @@
 #include "buf/attrspan.h"
-#include "stb_ds.h"
+#include "lib/vector.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,9 +35,8 @@ void attrspan_free(AttrSpans *s) {
 void attrspan_clear(AttrSpans *s) {
     if (!s)
         return;
-    /* arrsetlen(items, 0) keeps the backing storage warm across frames. */
-    if (s->items)
-        arrsetlen(s->items, 0);
+    /* Keep the backing storage warm across frames. */
+    arr_reset(s->items);
     s->sorted = 0;
     attrspan_free_index(s);
 }
