@@ -57,7 +57,7 @@ static char mailbox_dir[HAI_PATH] = "";
 static char useraddr[160] = "user@hai";
 static char agentaddr[160] = "main@hai";
 static char sendcmd[512] = "hml send -t";
-static char base_query[512] = "path:hai/s/**";
+static char base_query[512] = "path:hai/** and not tag:deleted";
 
 void hai_set_mailbox(const char *dir) {
     if (dir && *dir)
@@ -238,32 +238,53 @@ static int agent_live_session(const char *name, HaiSession *out) {
     return found;
 }
 
-/* The box prefix hml knows the session Maildirs by: the base query
- * with its path: prefix and trailing glob taken off, so there is one
- * place to change when the mailbox moves. */
+/* The box prefix hml knows the agents' Maildirs by: the path: term
+ * the base query starts with, its trailing glob taken off, so there is
+ * one place to change when the mailbox moves. */
 static const char *session_box_root(void) {
     static char root[512];
     const char *q = base_query;
     if (strncmp(q, "path:", 5) == 0)
         q += 5;
-    snprintf(root, sizeof(root), "%s", q);
-    size_t n = strlen(root);
+    size_t n = strcspn(q, " ");
+    snprintf(root, sizeof(root), "%.*s", (int)n, q);
+    n = strlen(root);
     while (n > 0 && (root[n - 1] == '*' || root[n - 1] == '/'))
         root[--n] = '\0';
-    return root[0] ? root : "hai/s";
+    return root[0] ? root : "hai";
 }
 
-/* The mail query that is exactly session `s`: the box its messages
- * live in. A session is a Maildir, not a thread — a child agent's
- * session starts from the mail that spawned it, so its root carries
- * the parent's References and hml threads the two together. Asking
- * for the thread hands back the parent's whole conversation (and
- * every message it ever quoted); the directory is the conversation. */
+/* The mail query that is exactly session `s`: its thread, scoped to
+ * the agent's box. The scope matters — a child agent's session starts
+ * from the mail that spawned it, so its root carries the parent's
+ * References and hml threads the two together; the box keeps the
+ * parent's turns out. The thread is found from a message of the
+ * session (its root may be a message in another box, or none). */
 static void session_query(const HaiSession *s, char *out, size_t cap) {
-    if (strcmp(s->name, "main") == 0)
-        snprintf(out, cap, "path:%s/%s", session_box_root(), s->id);
+    HaiSession t = *s;
+    HaiMsg *msgs = NULL;
+    char thread[64] = "";
+    hai_session_load(&t, &msgs);
+    if (arrlen(msgs) > 0 && msgs[arrlen(msgs) - 1].mid[0]) {
+        char id[300], q[400], cmd[600];
+        snprintf(id, sizeof(id), "id:\"%s\"", msgs[arrlen(msgs) - 1].mid);
+        shell_escape_single(id, q, sizeof(q));
+        snprintf(cmd, sizeof(cmd),
+                 "hml search --output=threads -- %s 2>/dev/null", q);
+        char **lines = NULL;
+        int count = 0;
+        if (term_cmd_capture(cmd, &lines, &count) && count > 0 && lines[0] &&
+            strncmp(lines[0], "thread:", 7) == 0)
+            snprintf(thread, sizeof(thread), "%s", lines[0]);
+        term_cmd_free(lines, count);
+    }
+    hai_msgs_free(msgs);
+    if (thread[0])
+        snprintf(out, cap, "path:%s/%s and %s and not tag:deleted",
+                 session_box_root(), s->name, thread);
     else
-        snprintf(out, cap, "path:%s/%s/%s", session_box_root(), s->name, s->id);
+        snprintf(out, cap, "path:%s/%s and not tag:deleted", session_box_root(),
+                 s->name);
 }
 
 /* Open session `s` in the mail plugin, scoped to its own Maildir. */
@@ -272,9 +293,12 @@ static void open_in_mail(const HaiSession *s) {
         ed_set_status_message("hai: the mail plugin is not loaded");
         return;
     }
-    char dir[HAI_PATH + 8];
-    snprintf(dir, sizeof(dir), "%s/cur", s->dir);
-    if (!fs_is_dir(dir)) {
+    HaiSession t = *s;
+    HaiMsg *msgs = NULL;
+    hai_session_load(&t, &msgs);
+    int none = arrlen(msgs) == 0;
+    hai_msgs_free(msgs);
+    if (none) {
         ed_set_status_message("hai: %s has no session mail yet", s->agent);
         return;
     }
@@ -289,7 +313,7 @@ static void open_in_mail(const HaiSession *s) {
 /* ------------------------------------------------------------------ */
 
 /* A mail thread buffer that shows a hai session. While a run is on,
- * hai writes the reply into <session>/tmp/reply token by token; that
+ * hai writes the reply into <box>/tmp/reply.<id> token by token; that
  * file is not mail and hml never sees it, so the thread view stops at
  * the last stored turn. This appends the streamed text under the
  * conversation and takes it away again when the turn lands as a real
@@ -297,9 +321,9 @@ static void open_in_mail(const HaiSession *s) {
  * the buffer is left exactly as the mail plugin rendered it. */
 typedef struct {
     char bufname[256]; /* mail://thread:... */
-    HaiSession s;      /* the session behind it; dir "" = not one */
-    long cur;          /* the session's cur/ mtime: a turn landing */
-    long reply;        /* mtime of tmp/reply: the stream moving */
+    HaiSession s;      /* the session behind it; box "" = not one */
+    long cur;          /* the agent's cur/ mtime: a turn landing */
+    long reply;        /* mtime of tmp/reply.<id>: the stream moving */
     int rows;          /* rows appended below the render */
     int base;          /* rows the mail plugin rendered */
 } Tail;
@@ -308,75 +332,21 @@ static Tail *tails = NULL; /* stb_ds; one per thread buffer seen */
 static int watching = 0;
 
 /* The session the buffer showing `tid` reads — the scope hai opened,
- * or a thread reached from the mail list, whose files say: a hai
- * session's messages live under <mailbox>/s/[<agent>/]<id>/. */
+ * or a thread reached from the mail list: the newest of its files
+ * that is a turn hai stored says, by its box and Hai-Conversation. */
 static int session_of_thread(const char *tid, HaiSession *out) {
     char q[600], cmd[900];
-
-    /* The scope hai opens itself names the session's box: read it
-     * off that rather than guessing from the files of a thread. */
-    if (strncmp(tid, "path:", 5) == 0) {
-        const char *root = session_box_root();
-        size_t rlen = strlen(root);
-        const char *rel = tid + 5;
-        if (strncmp(rel, root, rlen) != 0 || rel[rlen] != '/' ||
-            strchr(rel, '*'))
-            return 0;
-        rel += rlen + 1;
-        const char *sep = strchr(rel, '/');
-        if (!sep) {
-            hai_session_at(out, hai_get_mailbox(), agent_domain(), "main", rel);
-            return 1;
-        }
-        char name[128];
-        size_t n = (size_t)(sep - rel);
-        if (n >= sizeof(name))
-            n = sizeof(name) - 1;
-        memcpy(name, rel, n);
-        name[n] = '\0';
-        hai_session_at(out, hai_get_mailbox(), agent_domain(), name, sep + 1);
-        return 1;
-    }
-
     shell_escape_single(tid, q, sizeof(q));
     snprintf(cmd, sizeof(cmd),
-             "hml search --output=files -- %s 2>/dev/null | grep '/s/' | "
-             "tail -1",
-             q);
+             "hml search --output=files -- %s 2>/dev/null | tail -50", q);
     char **lines = NULL;
     int count = 0;
     term_cmd_capture(cmd, &lines, &count);
     int found = 0;
-    if (count > 0 && lines[0] && lines[0][0]) {
-        /* <mailbox>/s/<id>/cur/<file>, or <mailbox>/s/<name>/<id>/… */
-        char path[HAI_PATH];
-        snprintf(path, sizeof(path), "%s", lines[0]);
-        char *slash = strrchr(path, '/'); /* the file */
-        if (slash)
-            *slash = '\0';
-        slash = strrchr(path, '/'); /* cur / new */
-        if (slash)
-            *slash = '\0';
-        const char *mailbox = hai_get_mailbox();
-        size_t mlen = strlen(mailbox);
-        if (strncmp(path, mailbox, mlen) == 0 &&
-            strncmp(path + mlen, "/s/", 3) == 0) {
-            const char *rel = path + mlen + 3;
-            const char *sep = strchr(rel, '/');
-            if (sep) {
-                char name[128];
-                size_t n = (size_t)(sep - rel);
-                if (n >= sizeof(name))
-                    n = sizeof(name) - 1;
-                memcpy(name, rel, n);
-                name[n] = '\0';
-                hai_session_at(out, mailbox, agent_domain(), name, sep + 1);
-            } else {
-                hai_session_at(out, mailbox, agent_domain(), "main", rel);
-            }
-            found = 1;
-        }
-    }
+    for (int i = count - 1; i >= 0 && !found; i--)
+        if (lines[i] && lines[i][0])
+            found = hai_session_of_file(lines[i], hai_get_mailbox(),
+                                        agent_domain(), out);
     term_cmd_free(lines, count);
     return found;
 }
@@ -385,7 +355,7 @@ static int session_of_thread(const char *tid, HaiSession *out) {
  * every fragment of the run, and an assistant message with tool calls
  * lands in cur/ while the run goes on, so the text already stored is
  * dropped from the front. */
-static char *tail_text(const Tail *t) {
+static char *tail_text(Tail *t) {
     time_t started = 0;
     char *preview = hai_session_preview(&t->s, &started);
     if (!preview)
@@ -467,7 +437,7 @@ static void tail_tick(void *ud) {
             arrdel(tails, i);
             continue;
         }
-        if (!t->s.dir[0]) { /* an ordinary mail thread */
+        if (!t->s.box[0]) { /* an ordinary mail thread */
             i++;
             continue;
         }
@@ -477,10 +447,10 @@ static void tail_tick(void *ud) {
             i++;
             continue;
         }
-        char path[HAI_PATH + 16];
-        snprintf(path, sizeof(path), "%s/cur", t->s.dir);
+        char path[HAI_PATH + 160];
+        snprintf(path, sizeof(path), "%s/cur", t->s.box);
         long cur = hai_mtime(path);
-        snprintf(path, sizeof(path), "%s/tmp/reply", t->s.dir);
+        snprintf(path, sizeof(path), "%s/tmp/reply.%s", t->s.box, t->s.id);
         long reply = hai_mtime(path);
         if (cur == t->cur && reply == t->reply) {
             i++;
@@ -535,7 +505,7 @@ static void tail_track(void) {
     t.base = buf->num_rows;
     if (session_of_thread(buf->filename + 7, &t.s)) {
         char path[HAI_PATH + 8];
-        snprintf(path, sizeof(path), "%s/cur", t.s.dir);
+        snprintf(path, sizeof(path), "%s/cur", t.s.box);
         t.cur = hai_mtime(path);
     }
     arrput(tails, t);
@@ -635,12 +605,9 @@ static void cmd_hai_sessions(const char *args) {
         addr_split(agentaddr, name, sizeof(name), domain, sizeof(domain));
 
     char q[1024];
-    /* main's sessions sit directly under s/ — one level, or a child's
-     * boxes come too; a child's own sit under its name. */
-    if (strcmp(name, "main") == 0)
-        snprintf(q, sizeof(q), "path:%s/*", session_box_root());
-    else
-        snprintf(q, sizeof(q), "path:%s/%s/**", session_box_root(), name);
+    /* every agent's sessions are threads in its own box */
+    snprintf(q, sizeof(q), "path:%s/%s and not tag:deleted", session_box_root(),
+             name);
     if (mail_query(q)) {
         ed_set_status_message("hai: %s@%s sessions", name, agent_domain());
         ed_render_frame();
@@ -654,9 +621,9 @@ static void cmd_hai_sessions(const char *args) {
 /* "Re: subject", unless it already is one. */
 static void reply_subject(const char *subject, char *out, size_t cap) {
     if (strncasecmp(subject, "Re:", 3) == 0)
-        snprintf(out, cap, "%s", subject);
+        snprintf(out, cap, "%.511s", subject);
     else
-        snprintf(out, cap, "Re: %s", subject);
+        snprintf(out, cap, "Re: %.511s", subject);
 }
 
 /* The first line of `text`, capped, as a subject for a new session. */
@@ -675,7 +642,8 @@ static void first_line_subject(const char *text, char *out, size_t cap) {
 /* Mail `text` into session `s` as the next turn: a reply to its last
  * message — or, when that is a question hai mailed the user, to the
  * mailed twin, which is what makes it the answer. */
-static int send_into(const HaiSession *s, const char *text) {
+static int send_into(const HaiSession *session, const char *text) {
+    HaiSession t = *session, *s = &t;
     HaiMsg *msgs = NULL;
     hai_session_load(s, &msgs);
     const HaiMsg *last = arrlen(msgs) ? &msgs[arrlen(msgs) - 1] : NULL;
@@ -692,11 +660,11 @@ static int send_into(const HaiSession *s, const char *text) {
     if (!inreplyto[0] && last && last->mid[0])
         snprintf(inreplyto, sizeof(inreplyto), "%s", last->mid);
     if (inreplyto[0] && strcmp(inreplyto, s->root) != 0)
-        snprintf(refs, sizeof(refs), "%s %s", s->root, inreplyto);
+        snprintf(refs, sizeof(refs), "%.159s %.255s", s->root, inreplyto);
     else
-        snprintf(refs, sizeof(refs), "%s", s->root);
+        snprintf(refs, sizeof(refs), "%.159s", s->root);
     if (!inreplyto[0])
-        snprintf(inreplyto, sizeof(inreplyto), "%s", s->root);
+        snprintf(inreplyto, sizeof(inreplyto), "%.159s", s->root);
     hai_msgs_free(msgs);
 
     char mid[256], err[600];

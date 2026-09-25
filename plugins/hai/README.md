@@ -2,21 +2,24 @@
 
 hai's agents inside hed, and text sent to them.
 
-Reading the conversations needs no view of its own. A hai session is
-a Maildir (`hai/MAIL.md`) and hml indexes it, so the `mail` plugin
+Reading the conversations needs no view of its own. Every hai agent
+has one Maildir (`hai/MAIL.md`): its inbox in `new/`, every session it
+had in `cur/`, one thread each. hml indexes it, so the `mail` plugin
 already reads it (chat style by default), filters, tags and replies to
 it. This plugin points the mail list at those sessions and adds the
 one thing mail cannot show: **the agents** — who is alive, what each
 is doing, on which model, in which directory.
 
-A session is that directory, not a thread. A child agent's session
-starts from the mail that spawned it, so its first message carries the
-parent's `References` and hml threads the two together — ask for the
-thread and the parent's whole conversation comes with it. Every scope
-here is therefore a `path:` query over the session boxes: one session
-(`path:hai/s/<agent>/<id>`), one agent's (`path:hai/s/<agent>/**`),
-main's own (`path:hai/s/*` — one level, or the children's come too),
-or all of them (`path:hai/s/**`, the configurable base query).
+A session is a thread, scoped to its agent's box. A child agent's
+session starts from the mail that spawned it, so its first message
+carries the parent's `References` and hml threads the two together —
+ask for the thread alone and the parent's whole conversation comes
+with it. Every scope is therefore a `path:` query over the agents'
+boxes: one session (`path:hai/<agent> and thread:<T>`), one agent's
+(`path:hai/<agent>`), or all of them (`path:hai/**`, the configurable
+base query). A message deleted in the mail view (`D`, the `deleted`
+tag) is flagged T in its file: hai no longer loads it, these scopes
+leave it out, and `hml recv` removes it.
 
 ## Requirements
 
@@ -144,17 +147,18 @@ hai_set_mailbox("~/.mail/hai");   /* hai.conf `mailbox`               */
 hai_set_user("user@hai");         /* hai.conf `useraddr`: you         */
 hai_set_agent("main@hai");        /* where a block goes by default    */
 hai_set_send_cmd("hml send -t");  /* reads RFC 822 on stdin           */
-hai_set_query("path:hai/s/**");   /* what :hai scopes the list to     */
+hai_set_query("path:hai/** and not tag:deleted"); /* what :hai lists */
 ```
 
-The agent of a session is read from its path: `s/<id>` is main's,
-`s/<name>/<id>` belongs to `<name>@hai` (a child's child is
-`pm.scout`, and its directory sits beside the others).
+The agent of a session is read from its path: `<mailbox>/<name>/cur/`
+belongs to `<name>@hai` (a child's child is `pm.scout`, and its box
+sits beside the others); the session from the file's
+`Hai-Conversation`.
 
 ## The reply as it is written
 
-While a run is on, hai streams the reply into `<session>/tmp/reply`
-token by token. That file is not mail and hml never sees it, so the
+While a run is on, hai streams the reply into the agent's
+`tmp/reply.<session id>` token by token. That file is not mail and hml never sees it, so the
 thread view would stop at the last stored turn. The plugin tails it:
 each thread buffer is asked once (one hml lookup) whether it is a hai
 session, and while one is open a 400 ms timer appends what the model
@@ -184,7 +188,8 @@ left exactly as the mail plugin rendered it.
 plugins/hai/
 ├── hai.c           # the agents view, the mail-list scopes, sending
 ├── hai.h           # public configuration API
-├── hai_session.c   # the Maildir side: a session's files, the mailed
+├── hai_session.c   # the Maildir side: a session's files in its agent's
+│                   # box, the mailed
 │                   # question, mail out
 └── hai_session.h
 ```

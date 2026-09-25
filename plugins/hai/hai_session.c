@@ -1,4 +1,4 @@
-/* The on-disk side of the hai plugin: hai's session Maildirs read as
+/* The on-disk side of the hai plugin: hai's agent Maildirs read as
  * files (hai/MAIL.md is the format), and the user's turns mailed back.
  * Knows nothing about buffers or windows. */
 
@@ -242,6 +242,7 @@ int hai_msg_read(const char *path, HaiMsg *m) {
     header(h, "Hai-Role", m->role, sizeof(m->role));
     header(h, "Hai-Intent", m->intent, sizeof(m->intent));
     header(h, "Hai-Tool", m->tool, sizeof(m->tool));
+    header(h, "Hai-Conversation", m->conv, sizeof(m->conv));
     char date[128];
     m->date =
         header(h, "Date", date, sizeof(date)) ? str_parse_rfc2822(date) : -1;
@@ -281,40 +282,95 @@ void hai_session_at(HaiSession *s, const char *mailbox, const char *domain,
     snprintf(s->name, sizeof(s->name), "%s", name);
     snprintf(s->agent, sizeof(s->agent), "%s@%s", name, domain);
     snprintf(s->root, sizeof(s->root), "<%s@%s>", id, domain);
-    if (strcmp(name, "main") == 0)
-        snprintf(s->dir, sizeof(s->dir), "%s/s/%s", mailbox, id);
-    else
-        snprintf(s->dir, sizeof(s->dir), "%s/s/%s/%s", mailbox, name, id);
+    snprintf(s->box, sizeof(s->box), "%s/%s", mailbox, name);
 }
 
-/* Every message file of the session, in name order — which is time
- * order, and the order hai loads them (stb_ds array of malloc'd paths;
- * free_names it). `*exists` (optional) says whether the session
- * directory is there at all. */
+/* The session id of a root, as hai makes it: the local part, with
+ * '/', ' ' and a leading '.' turned into '_'. */
+static void id_of(const char *mid, char *out, size_t cap) {
+    size_t i = 0;
+    const char *p = mid;
+    if (*p == '<')
+        p++;
+    for (; *p && *p != '@' && *p != '>' && i + 1 < cap; p++, i++)
+        out[i] = (*p == '/' || *p == ' ' || (*p == '.' && !i)) ? '_' : *p;
+    out[i] = '\0';
+}
+
+/* A Maildir file flagged T: deleted, no part of any session. */
+static int trashed(const char *name) {
+    const char *info = strstr(name, ":2,");
+    return info && strchr(info + 3, 'T');
+}
+
+/* The Hai-Conversation of a file hai stored (Hai-Role present), from
+ * its first 8 KB; 0 when it is not one. */
+static int conv_of(const char *path, char *out, size_t cap) {
+    char buf[8193], role[16];
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return 0;
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    char *body = NULL;
+    char *h = split_headers(buf, &body);
+    if (!h)
+        return 0;
+    int ok = header(h, "Hai-Role", role, sizeof(role)) &&
+             header(h, "Hai-Conversation", out, cap);
+    free(h);
+    return ok;
+}
+
+int hai_session_of_file(const char *path, const char *mailbox,
+                        const char *domain, HaiSession *out) {
+    char name[128], conv[256], id[128];
+    size_t mlen = strlen(mailbox);
+    if (strncmp(path, mailbox, mlen) != 0 || path[mlen] != '/')
+        return 0;
+    const char *rel = path + mlen + 1, *sep = strchr(rel, '/');
+    if (!sep || strncmp(sep, "/cur/", 5) != 0 || strchr(sep + 5, '/') ||
+        (size_t)(sep - rel) >= sizeof(name) || trashed(sep + 5))
+        return 0;
+    memcpy(name, rel, (size_t)(sep - rel));
+    name[sep - rel] = '\0';
+    if (!conv_of(path, conv, sizeof(conv)))
+        return 0;
+    id_of(conv, id, sizeof(id));
+    hai_session_at(out, mailbox, domain, name, id);
+    snprintf(out->root, sizeof(out->root), "%.159s", conv);
+    return 1;
+}
+
+/* The session's files in name order — which is time order, and the
+ * order hai loads them (stb_ds array of malloc'd paths; free_names
+ * it). `*exists` (optional) says whether the agent's cur/ is there. */
 static char **session_files(const HaiSession *s, int *exists) {
-    char path[HAI_PATH + 8];
+    char path[HAI_PATH + 8], conv[256], id[128];
     char **all = NULL;
-    const char *subs[] = {"cur", "new"};
-    int any = 0;
-    for (int k = 0; k < 2; k++) {
-        snprintf(path, sizeof(path), "%s/%s", s->dir, subs[k]);
-        if (fs_is_dir(path))
-            any = 1;
-        char **names = dir_files(path);
-        for (ptrdiff_t i = 0; i < arrlen(names); i++) {
-            size_t n = strlen(path) + strlen(names[i]) + 2;
-            char *full = malloc(n);
-            if (full) {
-                snprintf(full, n, "%s/%s", path, names[i]);
+    snprintf(path, sizeof(path), "%s/cur", s->box);
+    if (exists)
+        *exists = fs_is_dir(path);
+    char **names = dir_files(path);
+    for (ptrdiff_t i = 0; i < arrlen(names); i++) {
+        if (trashed(names[i]))
+            continue;
+        size_t n = strlen(path) + strlen(names[i]) + 2;
+        char *full = malloc(n);
+        if (!full)
+            continue;
+        snprintf(full, n, "%s/%s", path, names[i]);
+        if (conv_of(full, conv, sizeof(conv))) {
+            id_of(conv, id, sizeof(id));
+            if (strcmp(id, s->id) == 0) {
                 arrput(all, full);
+                continue;
             }
         }
-        free_names(names);
+        free(full);
     }
-    if (arrlen(all) > 1) /* cur and new interleave by name = by time */
-        qsort(all, (size_t)arrlen(all), sizeof(*all), by_name);
-    if (exists)
-        *exists = any;
+    free_names(names);
     return all;
 }
 
@@ -327,11 +383,12 @@ long hai_mtime(const char *path) {
     return (long)st.st_mtim.tv_sec * 1000 + st.st_mtim.tv_nsec / 1000000;
 }
 
-/* The reply a run is streaming into <dir>/tmp/reply, or NULL when no
- * run is on. malloc'd; `*started` gets the moment the file appeared. */
+/* The reply a run of the session is streaming into
+ * <box>/tmp/reply.<id>, or NULL when none is on. malloc'd; `*started`
+ * gets the moment the file appeared. */
 char *hai_session_preview(const HaiSession *s, time_t *started) {
-    char path[HAI_PATH + 16];
-    snprintf(path, sizeof(path), "%s/tmp/reply", s->dir);
+    char path[HAI_PATH + 160];
+    snprintf(path, sizeof(path), "%s/tmp/reply.%s", s->box, s->id);
     struct stat st;
     if (stat(path, &st) != 0)
         return NULL;
@@ -365,7 +422,7 @@ size_t hai_msg_content(const HaiMsg *m) {
     return n;
 }
 
-int hai_session_load(const HaiSession *s, HaiMsg **out) {
+int hai_session_load(HaiSession *s, HaiMsg **out) {
     int exists = 0;
     char **all = session_files(s, &exists);
     if (!exists) {
@@ -374,8 +431,10 @@ int hai_session_load(const HaiSession *s, HaiMsg **out) {
     }
     for (ptrdiff_t i = 0; i < arrlen(all); i++) {
         HaiMsg m;
-        if (hai_msg_read(all[i], &m) == 0)
-            arrput(*out, m);
+        if (hai_msg_read(all[i], &m) != 0)
+            continue;
+        snprintf(s->root, sizeof(s->root), "%.159s", m.conv);
+        arrput(*out, m);
     }
     free_names(all);
     return 0;
