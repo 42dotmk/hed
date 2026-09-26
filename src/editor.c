@@ -324,6 +324,11 @@ void ed_dispatch_key(int c) {
     if (buf && E.mode != MODE_INSERT && undo_has_open(buf))
         undo_end(buf);
 
+    /* An edit made through another window on this buffer may have
+     * shrunk it under our cursor; restore the in-bounds invariant the
+     * dispatch paths assert on. */
+    win_clamp_cursor(win, buf);
+
     int old_x = win ? win->cursor.x : 0;
     int old_y = win ? win->cursor.y : 0;
 

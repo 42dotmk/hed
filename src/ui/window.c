@@ -81,6 +81,25 @@ void win_attach_buf(Window *win, Buffer *buf) {
     }
 }
 
+void win_clamp_cursor(Window *win, const Buffer *buf) {
+    if (!win || !buf)
+        return;
+    if (buf->num_rows == 0) {
+        win->cursor.y = 0;
+        win->cursor.x = 0;
+        return;
+    }
+    if (win->cursor.y >= buf->num_rows)
+        win->cursor.y = buf->num_rows - 1;
+    if (win->cursor.y < 0)
+        win->cursor.y = 0;
+    int len = (int)buf->rows[win->cursor.y].chars.len;
+    if (win->cursor.x > len)
+        win->cursor.x = len;
+    if (win->cursor.x < 0)
+        win->cursor.x = 0;
+}
+
 void windows_split_vertical(void) {
     WIN(win)
     int prev_idx = E.current_window;

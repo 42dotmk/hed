@@ -55,6 +55,10 @@ Window *window_cur(void);
  * is 0 or the window has been closed. */
 Window *window_find_by_id(int id);
 void win_attach_buf(Window *win, Buffer *buf);
+/* Pull win's cursor back inside buf's rows. Edits only fix up the
+ * focused window, so another window on the same buffer can be left
+ * past a shrunken end. */
+void win_clamp_cursor(Window *win, const Buffer *buf);
 
 /* Screen cell of `win`'s cursor (gutter-, fold-, wrap- and
  * virtual-text-aware) — where anchored popups attach. NULL-safe:

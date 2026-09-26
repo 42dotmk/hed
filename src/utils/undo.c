@@ -277,20 +277,7 @@ static void clamp_windows(struct Buffer *buf) {
         Window *w = &E.windows[i];
         if (w->buffer_index != idx)
             continue;
-        if (buf->num_rows == 0) {
-            w->cursor.y = 0;
-            w->cursor.x = 0;
-            continue;
-        }
-        if (w->cursor.y >= buf->num_rows)
-            w->cursor.y = buf->num_rows - 1;
-        if (w->cursor.y < 0)
-            w->cursor.y = 0;
-        int len = (int)buf->rows[w->cursor.y].chars.len;
-        if (w->cursor.x > len)
-            w->cursor.x = len;
-        if (w->cursor.x < 0)
-            w->cursor.x = 0;
+        win_clamp_cursor(w, buf);
     }
 }
 
